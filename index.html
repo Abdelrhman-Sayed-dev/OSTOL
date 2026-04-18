@@ -1,0 +1,1710 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>نظام إدارة الأسطول v2</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Tajawal',system-ui,sans-serif}
+:root{
+  --primary:#1a6b58;--primary-light:#2a9d8f;--primary-dark:#0f4a3c;
+  --danger:#e63946;--sidebar-bg:#0f2027;--sidebar-width:255px;
+  --header-h:64px;--card-radius:16px;--bg:#f0f4f8;
+  --white:#fff;--text:#1e293b;--muted:#64748b;--border:#e2e8f0;
+  --emergency:#dc2626;--accident:#d97706;
+}
+body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
+
+/* ── LOGIN ── */
+.login-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#0f2027,#1a6b58 50%,#203a43);display:flex;align-items:center;justify-content:center;z-index:2000}
+.login-card{background:rgba(255,255,255,.08);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.15);border-radius:24px;padding:2.8rem 2.4rem;width:90%;max-width:420px;text-align:center;box-shadow:0 40px 80px rgba(0,0,0,.4)}
+.login-logo{font-size:2.8rem;margin-bottom:.5rem}
+.login-card h2{font-size:1.6rem;color:white;font-weight:700;margin-bottom:.4rem}
+.login-card p{color:rgba(255,255,255,.6);font-size:.9rem;margin-bottom:2rem}
+.login-card input{width:100%;padding:.85rem 1.2rem;margin-bottom:1rem;border:1.5px solid rgba(255,255,255,.2);border-radius:12px;font-size:1rem;background:rgba(255,255,255,.1);color:white}
+.login-card input::placeholder{color:rgba(255,255,255,.4)}
+.login-card input:focus{outline:none;border-color:var(--primary-light);background:rgba(255,255,255,.15)}
+.login-btn{width:100%;background:var(--primary-light);border:none;padding:.9rem;border-radius:12px;font-weight:700;font-size:1rem;color:white;cursor:pointer;transition:.2s}
+.login-btn:hover{background:var(--primary);transform:translateY(-1px)}
+
+/* ── SHELL ── */
+#appShell{display:flex;min-height:100vh}
+.sidebar{width:var(--sidebar-width);background:var(--sidebar-bg);min-height:100vh;display:flex;flex-direction:column;position:fixed;right:0;top:0;bottom:0;z-index:100;transition:.3s}
+.sidebar-header{padding:1.4rem 1.2rem 1rem;border-bottom:1px solid rgba(255,255,255,.07)}
+.sidebar-logo{font-size:1.3rem;color:white;font-weight:800;display:flex;align-items:center;gap:.5rem}
+.sidebar-subtitle{color:rgba(255,255,255,.35);font-size:.68rem;margin-top:.2rem}
+.sidebar-user{padding:1rem 1.2rem;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:.8rem}
+.user-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary-light),var(--primary));display:flex;align-items:center;justify-content:center;font-size:1rem;color:white;font-weight:700}
+.user-name{font-size:.8rem;color:white;font-weight:600}
+.user-role{font-size:.68rem;color:rgba(255,255,255,.4);margin-top:1px}
+.sidebar-nav{flex:1;padding:.8rem .7rem;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:.75rem;padding:.6rem .9rem;border-radius:10px;cursor:pointer;color:rgba(255,255,255,.55);font-size:.86rem;font-weight:500;transition:.15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:right;position:relative}
+.nav-item:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.9)}
+.nav-item.active{background:var(--primary);color:white;font-weight:700}
+.nav-icon{font-size:1rem;width:20px;text-align:center}
+.nav-badge{background:#dc2626;color:white;border-radius:50px;font-size:.65rem;font-weight:700;padding:.1rem .45rem;min-width:18px;text-align:center;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+.sidebar-footer{padding:1rem .7rem;border-top:1px solid rgba(255,255,255,.07)}
+.logout-btn-sidebar{display:flex;align-items:center;gap:.75rem;padding:.6rem .9rem;border-radius:10px;cursor:pointer;color:#ef4444;font-size:.86rem;font-weight:600;transition:.15s;background:none;border:none;width:100%;text-align:right}
+.logout-btn-sidebar:hover{background:rgba(239,68,68,.1)}
+.main-content{margin-right:var(--sidebar-width);flex:1;min-height:100vh;display:flex;flex-direction:column}
+.topbar{height:var(--header-h);background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 1.8rem;gap:1rem;position:sticky;top:0;z-index:50;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.topbar-title{font-size:1.15rem;font-weight:700;color:var(--text);flex:1}
+.page-content{padding:1.8rem;flex:1}
+
+/* ── CARDS & STATS ── */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:1.2rem;margin-bottom:1.8rem}
+.stat-card{background:var(--white);border-radius:var(--card-radius);padding:1.2rem 1.4rem;border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.stat-icon{font-size:1.6rem;margin-bottom:.6rem}
+.stat-value{font-size:1.8rem;font-weight:800;color:var(--primary);line-height:1}
+.stat-label{font-size:.78rem;color:var(--muted);margin-top:.3rem}
+.card{background:var(--white);border-radius:var(--card-radius);border:1px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.04);padding:1.4rem 1.6rem;margin-bottom:1.4rem}
+.card:last-child{margin-bottom:0}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem}
+.card-title{font-size:1rem;font-weight:700;color:var(--text);display:flex;align-items:center;gap:.5rem}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;margin-bottom:1.4rem}
+@media(max-width:900px){.two-col{grid-template-columns:1fr}}
+
+/* ── FORMS ── */
+.form-group{margin-bottom:.9rem}
+label{display:block;font-weight:600;margin-bottom:.35rem;font-size:.76rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+label .req{color:#e63946;margin-right:.2rem}
+input,select,textarea{width:100%;padding:.65rem 1rem;border:1.5px solid var(--border);border-radius:10px;font-size:.9rem;background:#fafafa;color:var(--text);transition:.15s;font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary-light);background:white;box-shadow:0 0 0 3px rgba(42,157,143,.1)}
+input[disabled]{background:#f1f5f9;color:var(--muted);cursor:not-allowed}
+textarea{resize:vertical;min-height:70px}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1.2rem;border-radius:10px;font-weight:600;font-size:.85rem;cursor:pointer;border:none;transition:.15s;font-family:inherit}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:var(--primary);color:white}
+.btn-primary:hover:not(:disabled){background:var(--primary-dark);transform:translateY(-1px)}
+.btn-outline{background:transparent;border:1.5px solid var(--primary);color:var(--primary)}
+.btn-outline:hover{background:var(--primary);color:white}
+.btn-danger{background:var(--danger);color:white}
+.btn-danger:hover{background:#c0392b}
+.btn-ghost{background:#f1f5f9;color:var(--text);border:none}
+.btn-ghost:hover{background:#e2e8f0}
+.btn-success{background:#059669;color:white}
+.btn-success:hover{background:#047857}
+.btn-warning{background:#d97706;color:white}
+.btn-sm{padding:.35rem .8rem;font-size:.76rem;border-radius:8px}
+
+/* ── EMERGENCY BUTTONS ── */
+.emergency-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem;margin-bottom:1.4rem}
+.emergency-btn-card{border-radius:20px;padding:2rem;text-align:center;cursor:pointer;transition:.2s;border:3px solid transparent;position:relative;overflow:hidden}
+.emergency-btn-card:hover{transform:translateY(-3px);box-shadow:0 12px 32px rgba(0,0,0,.15)}
+.emergency-btn-card.emg{background:linear-gradient(135deg,#dc2626,#b91c1c);color:white}
+.emergency-btn-card.acc{background:linear-gradient(135deg,#d97706,#b45309);color:white}
+.emg-icon{font-size:3rem;margin-bottom:.8rem;display:block}
+.emg-title{font-size:1.3rem;font-weight:800;margin-bottom:.4rem}
+.emg-sub{font-size:.85rem;opacity:.85}
+
+/* ── RECORDING UI ── */
+.recording-indicator{display:flex;align-items:center;gap:.8rem;background:#fee2e2;border:2px solid #dc2626;border-radius:12px;padding:1rem 1.4rem;margin-bottom:1rem}
+.rec-dot{width:14px;height:14px;border-radius:50%;background:#dc2626;animation:blink .8s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.rec-text{font-weight:700;color:#dc2626;font-size:.95rem}
+.rec-timer{margin-right:auto;font-weight:700;color:#dc2626;font-family:monospace;font-size:1rem}
+
+/* ── TABLES ── */
+.table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:.85rem;direction:rtl}
+th{background:#f8fafc;color:var(--muted);font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:.75rem 1rem;text-align:right;border-bottom:2px solid var(--border)}
+td{padding:.75rem 1rem;border-bottom:1px solid var(--border);text-align:right;color:var(--text)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#f8fafc}
+
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:50px;font-size:.72rem;font-weight:700}
+.badge-green{background:#d1fae5;color:#065f46}
+.badge-red{background:#fee2e2;color:#991b1b}
+.badge-blue{background:#dbeafe;color:#1e40af}
+.badge-yellow{background:#fef3c7;color:#92400e}
+.badge-purple{background:#ede9fe;color:#5b21b6}
+.badge-orange{background:#ffedd5;color:#9a3412}
+.badge-pink{background:#fce7f3;color:#9d174d}
+.badge-emg{background:#fee2e2;color:#991b1b;animation:pulse 2s infinite}
+.badge-acc{background:#fef3c7;color:#92400e;animation:pulse 2s infinite}
+
+/* ── NOTIFICATION TOAST ── */
+.notification{position:fixed;bottom:20px;left:20px;padding:.8rem 1.4rem;border-radius:12px;z-index:4000;font-size:.88rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:slideUp .3s ease;max-width:360px}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.notification.success{background:#065f46;color:white}
+.notification.error{background:#991b1b;color:white}
+.notification.info{background:#1e40af;color:white}
+.notification.emergency{background:#dc2626;color:white;font-size:.95rem;border:2px solid #fca5a5}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:600;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal{background:var(--white);border-radius:20px;padding:2rem;width:90%;max-width:580px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:slideUp .25s}
+.modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.4rem}
+.modal-title{font-size:1.1rem;font-weight:800;color:var(--text)}
+.modal-close{background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--muted);padding:.3rem;border-radius:8px}
+.modal-close:hover{background:#f1f5f9;color:var(--text)}
+.modal-footer{display:flex;gap:.8rem;justify-content:flex-end;margin-top:1.4rem;padding-top:1rem;border-top:1px solid var(--border)}
+
+/* ── WORKSHOP ── */
+.workshop-items{display:grid;grid-template-columns:repeat(3,1fr);gap:.9rem;margin-bottom:1.4rem}
+.workshop-item{background:var(--white);border:2px solid var(--border);border-radius:14px;padding:1rem;text-align:center;cursor:pointer;transition:.2s}
+.workshop-item:hover{border-color:var(--primary-light);transform:translateY(-2px)}
+.workshop-item.selected{border-color:var(--primary);background:#f0fdf9}
+.workshop-item-icon{font-size:1.8rem;margin-bottom:.4rem}
+.workshop-item-label{font-size:.85rem;font-weight:700}
+
+/* ── DRIVER HERO ── */
+.driver-hero{background:linear-gradient(135deg,var(--primary-dark),var(--primary));border-radius:var(--card-radius);color:white;padding:1.4rem 1.8rem;margin-bottom:1.4rem;display:flex;align-items:center;gap:1.2rem}
+.driver-hero-icon{font-size:2.2rem}
+.driver-hero h2{font-size:1.2rem;font-weight:800}
+.driver-hero p{font-size:.82rem;opacity:.75;margin-top:.2rem}
+
+/* ── MAP ── */
+#fleetMap{height:500px;border-radius:12px;border:1px solid var(--border)}
+.map-legend{display:flex;gap:1.4rem;flex-wrap:wrap;margin-top:.8rem;font-size:.8rem;color:var(--muted)}
+.map-legend span{display:flex;align-items:center;gap:.35rem}
+.legend-dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+
+/* ── EMPTY ── */
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.empty-state .empty-icon{font-size:2.5rem;margin-bottom:.8rem}
+
+.location-hint{font-size:.72rem;color:var(--muted);margin-top:.3rem}
+.location-hint.maps-only{color:#d97706;font-weight:600}
+/* ── GPS PICKER ── */
+.gps-picker{border:2px dashed var(--border);border-radius:12px;padding:.9rem 1rem;background:#f8fafc;transition:.25s}
+.gps-picker.gps-ok{border:2px solid #10b981;background:#f0fdf9}
+.gps-picker.gps-err{border:2px solid #dc2626;background:#fff5f5}
+.gps-capture-btn{width:100%;padding:.75rem 1rem;border:none;border-radius:10px;font-family:inherit;font-size:.92rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.6rem;transition:.2s;color:white;background:linear-gradient(135deg,#1e40af,#3b82f6)}
+.gps-capture-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 14px rgba(59,130,246,.35)}
+.gps-capture-btn:disabled{opacity:.65;cursor:not-allowed;transform:none}
+.gps-capture-btn.gps-btn-ok{background:linear-gradient(135deg,#065f46,#10b981)}
+.gps-capture-btn.gps-btn-spin{background:linear-gradient(135deg,#92400e,#d97706)}
+.gps-result{margin-top:.55rem;font-size:.78rem;display:flex;align-items:center;gap:.4rem}
+.gps-result.ok{color:#065f46;font-weight:600}
+.gps-result.err{color:#dc2626;font-weight:600}
+.gps-coords{font-family:monospace;color:var(--muted);font-size:.72rem;margin-top:.2rem;direction:ltr;text-align:left}
+.location-link{color:var(--primary-light);text-decoration:none;font-size:.8rem}
+.location-link:hover{text-decoration:underline}
+code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;font-family:monospace}
+.filters-bar{display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1rem}
+.filters-bar select,.filters-bar input{flex:1;min-width:140px;padding:.5rem .9rem;font-size:.84rem}
+
+/* ── AUDIO PLAYER ── */
+.audio-player-wrap audio{width:100%;height:36px;border-radius:8px}
+.report-row-emg{background:#fff5f5!important}
+.report-row-acc{background:#fffbeb!important}
+
+/* ── MOBILE ── */
+.sidebar-toggle{display:none}
+@media(max-width:900px){
+  .sidebar{transform:translateX(100%)}
+  .sidebar.open{transform:translateX(0)}
+  .main-content{margin-right:0}
+  .sidebar-toggle{display:flex}
+  .page-content{padding:1rem}
+  .workshop-items{grid-template-columns:repeat(2,1fr)}
+  .emergency-grid{grid-template-columns:1fr}
+}
+.sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
+.sidebar-overlay.show{display:block}
+</style>
+</head>
+<body>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<div id="appShell" style="display:none">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo"><span>🚛</span> إدارة الأسطول</div>
+      <div class="sidebar-subtitle">Fleet Management v2</div>
+    </div>
+    <div class="sidebar-user">
+      <div class="user-avatar" id="userAvatar">؟</div>
+      <div><div class="user-name" id="sidebarUsername">—</div><div class="user-role" id="sidebarRole">—</div></div>
+    </div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div class="sidebar-footer">
+      <button class="logout-btn-sidebar" id="logoutBtn"><span>🚪</span> تسجيل الخروج</button>
+    </div>
+  </aside>
+  <div class="main-content">
+    <header class="topbar">
+      <button class="btn btn-ghost btn-sm sidebar-toggle" onclick="toggleSidebar()">☰</button>
+      <div class="topbar-title" id="topbarTitle">لوحة التحكم</div>
+    </header>
+    <div class="page-content" id="pageContent"></div>
+  </div>
+</div>
+
+<script>
+// Auto-detect environment: empty string = same domain (Railway/VPS)
+const API = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
+  ? "http://127.0.0.1:8000"
+  : "";
+let currentUser = null;
+let notifPollInterval = null;
+let lastUnreadCount = 0;
+
+const getToken = () => localStorage.getItem('access_token');
+const setToken = t => t ? localStorage.setItem('access_token',t) : localStorage.removeItem('access_token');
+const clearAuth = () => { localStorage.removeItem('access_token'); localStorage.removeItem('user_data'); };
+const saveUser = u => localStorage.setItem('user_data', JSON.stringify(u));
+const loadUser = () => { try { return JSON.parse(localStorage.getItem('user_data')); } catch { return null; } };
+
+function showNotification(msg, type='success', duration=3200) {
+  const el = document.createElement('div');
+  el.className = `notification ${type}`;
+  el.innerHTML = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+
+async function apiCall(endpoint, method='GET', body=null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const tok = getToken();
+  if (tok) opts.headers['Authorization'] = `Bearer ${tok}`;
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${API}${endpoint}`, opts);
+  if (res.status === 401) { clearAuth(); showNotification('انتهت الجلسة','error'); setTimeout(()=>location.reload(),1500); throw new Error('Unauthorized'); }
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || `خطأ ${res.status}`); }
+  if (method === 'DELETE') return {success:true};
+  return res.json();
+}
+
+const loadDrivers = () => apiCall('/drivers').catch(()=>[]);
+const loadCars    = () => apiCall('/cars').catch(()=>[]);
+const loadPerms   = () => apiCall('/permissions').catch(()=>[]);
+const loadTrips   = () => apiCall('/trips').catch(()=>[]);
+const loadUsers   = () => apiCall('/users/list').catch(()=>[]);
+const loadWorkshops = () => apiCall('/workshops').catch(()=>[]);
+const loadEmergencies = () => apiCall('/emergency/reports').catch(()=>[]);
+const loadGarageRecords = () => apiCall('/garage/records').catch(()=>[]);
+const loadLatestGarage  = () => apiCall('/garage/latest').catch(()=>[]);
+const loadAllowedCars = () => currentUser?.driver_id
+  ? apiCall(`/drivers/${currentUser.driver_id}/allowed-cars`).catch(()=>[]) : [];
+
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebarOverlay').classList.toggle('show'); }
+function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('show'); }
+
+/* ── MODAL ── */
+function openModal(html) {
+  closeModal();
+  const ov = document.createElement('div');
+  ov.className='modal-overlay'; ov.id='activeModal';
+  ov.innerHTML=`<div class="modal">${html}</div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) closeModal(); });
+  document.body.appendChild(ov);
+}
+function closeModal() { document.getElementById('activeModal')?.remove(); }
+
+/* ── NAV ── */
+let currentSection = '';
+function buildAdminNav() {
+  return [
+    {id:'overview',   icon:'📊', label:'نظرة عامة'},
+    {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},
+    {id:'cars',       icon:'🚙', label:'المركبات'},
+    {id:'trips',      icon:'🗺️', label:'الرحلات'},
+    {id:'workshops',  icon:'🛠️', label:'الورش'},
+    {id:'map',        icon:'📍', label:'خريطة الأسطول'},
+    {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
+    {id:'permissions',icon:'🔗', label:'الصلاحيات'},
+
+  ];
+}
+function buildDriverNav() {
+  return [
+    {id:'driver-trip',     icon:'🚗', label:'تسجيل رحلة'},
+    {id:'driver-workshop', icon:'🛠️', label:'الورشة'},
+    {id:'driver-emergency',icon:'🚨', label:'طارئ / حادث'},
+  ];
+}
+
+function renderNav(items) {
+  document.getElementById('sidebarNav').innerHTML = items.map(item=>`
+    <button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
+      <span class="nav-icon">${item.icon}</span> ${item.label}
+      ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
+    </button>`).join('');
+}
+
+function switchSection(id) {
+  currentSection=id;
+  const items = currentUser.role==='admin' ? buildAdminNav() : buildDriverNav();
+  renderNav(items);
+  const item = items.find(i=>i.id===id);
+  document.getElementById('topbarTitle').textContent = item?.label||'';
+  renderSection(id);
+  closeSidebar();
+}
+
+async function renderSection(id) {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+  switch(id) {
+    case 'overview':       await renderOverview(); break;
+    case 'drivers':        await renderDriversSection(); break;
+    case 'cars':           await renderCarsSection(); break;
+    case 'trips':          await renderTripsSection(); break;
+    case 'workshops':      await renderAdminWorkshops(); break;
+    case 'map':            await renderMapSection(); break;
+    case 'emergencies':    await renderEmergenciesSection(); break;
+    case 'permissions':    await renderPermissionsSection(); break;
+
+    case 'driver-trip':    await renderDriverTrip(); break;
+    case 'driver-workshop':await renderDriverWorkshop(); break;
+    case 'driver-emergency':await renderDriverEmergency(); break;
+  }
+}
+
+/* ── OVERVIEW ── */
+async function renderOverview() {
+  const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
+  const active = trips.filter(t=>!t.end_time).length;
+  const garageRecs = await loadLatestGarage().catch(()=>[]);
+  // Count parked: latest garage record exists AND car has NO active trip
+  const activeTripCarIds = trips.filter(t=>!t.end_time).map(t=>t.car_id);
+  const garageCount = garageRecs.filter(g => g.car_id && !activeTripCarIds.includes(g.car_id)).length;
+  const unread = emgs.filter(e=>!e.is_read).length;
+  document.getElementById('pageContent').innerHTML = `
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-icon">👨‍✈️</div><div class="stat-value">${drivers.filter(d=>d.status==='active').length}</div><div class="stat-label">سائق نشط</div></div>
+      <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${cars.length}</div><div class="stat-label">إجمالي المركبات</div></div>
+      <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value" style="color:#10b981">${active}</div><div class="stat-label">رحلة جارية</div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value">${trips.filter(t=>t.end_time).length}</div><div class="stat-label">رحلة مكتملة</div></div>
+      <div class="stat-card"><div class="stat-icon">🅿️</div><div class="stat-value">${garageCount}</div><div class="stat-label">في الجراج</div></div>
+      <div class="stat-card"><div class="stat-icon">🚨</div><div class="stat-value" style="color:${unread>0?'#dc2626':'var(--primary)'}">${unread}</div><div class="stat-label">بلاغ غير مقروء</div></div>
+      <div class="stat-card"><div class="stat-icon">🛠️</div><div class="stat-value">${records.length}</div><div class="stat-label">سجل ورشة</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🗺️ آخر الرحلات</div></div>
+      <div class="table-wrap">${buildTripsTable(trips.slice(0,6),drivers,cars,garageRecs)}</div>
+    </div>
+    ${(()=>{
+      const today=new Date().toISOString().split('T')[0];
+      const soon=new Date(Date.now()+30*864e5).toISOString().split('T')[0];
+      const expiring=drivers.filter(d=>
+        (d.driver_license_expiry&&d.driver_license_expiry<=soon)||
+        (d.vehicle_license_expiry&&d.vehicle_license_expiry<=soon));
+      if(!expiring.length) return '';
+      return `<div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
+        <div class="card-header"><div class="card-title" style="color:#92400e">⚠️ رخص قاربت على الانتهاء أو منتهية (${expiring.length})</div></div>
+        <div class="table-wrap"><table><thead><tr>
+          <th>السائق</th><th>الرقم التعريفي</th><th>انتهاء رخصة السائق</th><th>انتهاء رخصة العربة</th>
+        </tr></thead><tbody>
+        ${expiring.map(d=>{
+          function licBadge(dt){ if(!dt) return '—'; if(dt<today) return '<span class="badge badge-red">⚠️ منتهية '+dt+'</span>'; return '<span class="badge badge-yellow">⏰ '+dt+'</span>'; }
+          return '<tr><td><strong>'+d.name+'</strong></td><td><code>'+(d.national_id||'—')+'</code></td><td>'+licBadge(d.driver_license_expiry)+'</td><td>'+licBadge(d.vehicle_license_expiry)+'</td></tr>';
+        }).join('')}
+        </tbody></table></div>
+      </div>`;
+    })()}`;
+}
+
+/* ── DRIVERS — Modal UX ── */
+async function renderDriversSection() {
+  const drivers = await loadDrivers();
+  document.getElementById('pageContent').innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">👥 السائقون والمشغّلون (${drivers.length})</div>
+        <div style="display:flex;gap:.6rem">
+          <button class="btn btn-outline btn-sm" onclick="openAssignPermModal()">🔗 تعيين صلاحية</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddDriverModal()">➕ إضافة سائق</button>
+        </div>
+      </div>
+      <div class="table-wrap" id="driversList">
+        <table><thead><tr>
+          <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم التعريفي</th>
+          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th><th>انتهاء رخصة العربة</th>
+          <th>الحالة</th><th>إجراءات</th>
+        </tr></thead><tbody>
+        ${drivers.length ? drivers.map(d=>{
+          const today=new Date().toISOString().split('T')[0];
+          const soon =new Date(Date.now()+30*864e5).toISOString().split('T')[0];
+          function licBadge(dt){
+            if(!dt) return '—';
+            if(dt<today) return '<span class="badge badge-red">⚠️ منتهية '+dt+'</span>';
+            if(dt<=soon)  return '<span class="badge badge-yellow">⏰ '+dt+'</span>';
+            return '<span class="badge badge-green">✓ '+dt+'</span>';
+          }
+          return `<tr>
+            <td>${d.id}</td>
+            <td><strong>${d.name}</strong></td>
+            <td dir="ltr">${d.phone||'—'}</td>
+            <td><code>${d.national_id||'—'}</code></td>
+            <td style="font-size:.82rem">${d.birth_date||'—'}</td>
+            <td>${licBadge(d.driver_license_expiry)}</td>
+            <td>${licBadge(d.vehicle_license_expiry)}</td>
+            <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost btn-sm edit-driver"
+                data-id="${d.id}" data-name="${d.name}" data-phone="${d.phone||''}"
+                data-status="${d.status}" data-nid="${d.national_id||''}"
+                data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
+                data-clic="${d.vehicle_license_expiry||''}"
+                data-username="${d.username||''}">✏️</button>
+              <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>
+            </td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
+        </tbody></table>
+      </div>
+    </div>`;
+  document.getElementById('driversList').addEventListener('click', async e=>{
+    if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username); }
+    if(e.target.closest('.del-driver')){ const id=+e.target.closest('.del-driver').dataset.id; if(!confirm('حذف هذا السائق؟')) return; try{ await apiCall(`/drivers/${id}`,'DELETE'); showNotification('تم الحذف','success'); await renderDriversSection(); }catch(e){showNotification(e.message,'error');} }
+  });
+}
+
+function openAddDriverModal() {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">➕ إضافة سائق جديد</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>الاسم الكامل <span class="req">*</span></label><input id="mDrvName" placeholder="مثال: أحمد محمد"></div>
+      <div class="form-group"><label>رقم الهاتف <span class="req">*</span></label><input type="tel" id="mDrvPhone" placeholder="0123456789"></div>
+    </div>
+
+    <div style="background:#f0fdf9;border:1.5px solid #10b981;border-radius:12px;padding:1rem;margin-bottom:.8rem">
+      <div style="font-size:.82rem;font-weight:700;color:#065f46;margin-bottom:.7rem">🔐 بيانات تسجيل الدخول</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+        <div class="form-group" style="margin-bottom:0">
+          <label>اسم المستخدم <span class="req">*</span></label>
+          <input id="mDrvUser" placeholder="مثال: ahmed_driver">
+          <div class="location-hint">يُستخدم لتسجيل الدخول — بالإنجليزية</div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>كلمة المرور <span class="req">*</span></label>
+          <input type="password" id="mDrvPass" placeholder="كلمة مرور قوية">
+          <div class="location-hint">لا تشاركها مع أحد</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>الرقم التعريفي (قومي)</label><input id="mDrvNid" placeholder="مثال: 29801011234567" maxlength="14"></div>
+      <div class="form-group"><label>تاريخ الميلاد</label><input type="date" id="mDrvBirth"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>انتهاء رخصة السائق</label>
+        <input type="date" id="mDrvLic">
+      </div>
+      <div class="form-group">
+        <label>انتهاء رخصة العربة</label>
+        <input type="date" id="mCarLic">
+      </div>
+    </div>
+
+    <div class="form-group"><label>الحالة</label><select id="mDrvStatus"><option value="active">نشط</option><option value="inactive">غير نشط</option></select></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="mDrvSave">➕ إضافة السائق</button>
+    </div>`);
+
+  document.getElementById('mDrvSave').onclick = async () => {
+    const name     = document.getElementById('mDrvName').value.trim();
+    const phone    = document.getElementById('mDrvPhone').value.trim();
+    const username = document.getElementById('mDrvUser').value.trim();
+    const password = document.getElementById('mDrvPass').value.trim();
+    const status   = document.getElementById('mDrvStatus').value;
+    const national_id            = document.getElementById('mDrvNid').value.trim();
+    const birth_date             = document.getElementById('mDrvBirth').value;
+    const driver_license_expiry  = document.getElementById('mDrvLic').value;
+    const vehicle_license_expiry = document.getElementById('mCarLic').value;
+
+    if(!name)     return showNotification('اسم السائق مطلوب','error');
+    if(!phone)    return showNotification('رقم الهاتف مطلوب','error');
+    if(!username) return showNotification('اسم المستخدم مطلوب','error');
+    if(!password) return showNotification('كلمة المرور مطلوبة','error');
+    if(password.length < 3) return showNotification('كلمة المرور قصيرة جداً','error');
+
+    try{
+      await apiCall('/drivers','POST',{
+        name, phone, username, password, status,
+        national_id, birth_date, driver_license_expiry, vehicle_license_expiry
+      });
+      showNotification(`✅ تم إضافة السائق "${name}" — يمكنه الدخول بـ: ${username}`,'success');
+      closeModal();
+      await renderDriversSection();
+    }catch(e){ showNotification(e.message,'error'); }
+  };
+}
+
+function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_license_expiry,vehicle_license_expiry,currentUsername) {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات السائق</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>الاسم الكامل <span class="req">*</span></label><input id="mEditName" value="${name}"></div>
+      <div class="form-group"><label>رقم الهاتف <span class="req">*</span></label><input type="tel" id="mEditPhone" value="${phone}"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>الرقم التعريفي</label><input id="mEditNid" value="${national_id||''}" maxlength="14"></div>
+      <div class="form-group"><label>تاريخ الميلاد</label><input type="date" id="mEditBirth" value="${birth_date||''}"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>انتهاء رخصة السائق</label>
+        <input type="date" id="mEditLic" value="${driver_license_expiry||''}">
+      </div>
+      <div class="form-group">
+        <label>انتهاء رخصة العربة</label>
+        <input type="date" id="mEditCarLic" value="${vehicle_license_expiry||''}">
+      </div>
+    </div>
+
+    <div class="form-group"><label>الحالة</label>
+      <select id="mEditStatus">
+        <option value="active" ${status==='active'?'selected':''}>نشط</option>
+        <option value="inactive" ${status!=='active'?'selected':''}>غير نشط</option>
+      </select>
+    </div>
+
+    <hr style="margin:1rem 0;border:none;border-top:1px solid var(--border)">
+    <div style="background:#f0fdf9;border:1.5px solid #10b981;border-radius:12px;padding:1rem;margin-bottom:.5rem">
+      <div style="font-size:.82rem;font-weight:700;color:#065f46;margin-bottom:.7rem">🔐 تعديل بيانات تسجيل الدخول</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+        <div class="form-group" style="margin-bottom:0">
+          <label>اسم المستخدم <span class="req">*</span></label>
+          <input id="mEditUser" value="${currentUsername||''}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>كلمة المرور الجديدة</label>
+          <input type="password" id="mEditPass" placeholder="اتركه فارغاً إذا لا تريد تغييره">
+        </div>
+      </div>
+      <div class="location-hint" style="margin-top:.5rem">⚠️ تغيير كلمة المرور سيُلغي جلسة السائق الحالية</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="mEditSave">💾 حفظ التعديلات</button>
+    </div>`);
+
+  document.getElementById('mEditSave').onclick = async () => {
+    const n    = document.getElementById('mEditName').value.trim();
+    const p    = document.getElementById('mEditPhone').value.trim();
+    const s    = document.getElementById('mEditStatus').value;
+    const nid  = document.getElementById('mEditNid').value.trim();
+    const bd   = document.getElementById('mEditBirth').value;
+    const dl   = document.getElementById('mEditLic').value;
+    const cl   = document.getElementById('mEditCarLic').value;
+    const uname= document.getElementById('mEditUser').value.trim();
+    const upass= document.getElementById('mEditPass').value.trim();
+
+    if(!n||!p)   return showNotification('الاسم والهاتف مطلوبان','error');
+    if(!uname)   return showNotification('اسم المستخدم مطلوب','error');
+
+    const btn = document.getElementById('mEditSave');
+    btn.disabled=true; btn.textContent='جاري...';
+
+    try{
+      // Update driver profile
+      await apiCall(`/drivers/${id}`,'PUT',{
+        name:n, phone:p, status:s,
+        national_id:nid, birth_date:bd,
+        driver_license_expiry:dl, vehicle_license_expiry:cl
+      });
+
+      // Update credentials if username changed or password provided
+      if(uname !== currentUsername || upass){
+        await apiCall(`/drivers/${id}/credentials`,'PUT',{
+          username: uname,
+          password: upass || undefined
+        });
+      }
+
+      showNotification('✅ تم تحديث بيانات السائق','success');
+      closeModal();
+      await renderDriversSection();
+    }catch(e){
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent='💾 حفظ التعديلات';
+    }
+  };
+}
+
+async function openAssignPermModal() {
+  const [drivers,cars]=await Promise.all([loadDrivers(),loadCars()]);
+  openModal(`
+    <div class="modal-header"><div class="modal-title">🔗 تعيين مركبة لسائق</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>السائق <span class="req">*</span></label><select id="mAsDrv"><option value="">-- اختر --</option>${drivers.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select></div>
+    <div class="form-group"><label>المركبة <span class="req">*</span></label><select id="mAsCar"><option value="">-- اختر --</option>${cars.map(c=>`<option value="${c.id}">${c.plate} - ${c.model}</option>`).join('')}</select></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="mAsBtn">📌 تعيين</button>
+    </div>`);
+  document.getElementById('mAsBtn').onclick = async()=>{
+    const d=document.getElementById('mAsDrv').value, c=document.getElementById('mAsCar').value;
+    if(!d||!c) return showNotification('اختر السائق والمركبة','error');
+    try{ await apiCall('/permissions','POST',{driver_id:+d,car_id:+c}); showNotification('✅ تم تعيين الصلاحية','success'); closeModal(); }catch(e){showNotification(e.message,'error');}
+  };
+}
+
+/* ── CARS ── */
+async function renderCarsSection() {
+  const cars = await loadCars();
+  document.getElementById('pageContent').innerHTML = `
+    <div class="two-col">
+      <div class="card">
+        <div class="card-header"><div class="card-title">➕ إضافة مركبة</div></div>
+        <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="carPlate" placeholder="ABC-123"></div>
+        <div class="form-group"><label>الموديل <span class="req">*</span></label><input id="carModel" placeholder="تويوتا كورولا"></div>
+        <div class="form-group"><label>الحالة</label><select id="carStatus"><option value="available">متاحة</option><option value="maintenance">صيانة</option></select></div>
+        <input type="hidden" id="editCarId">
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          <button class="btn btn-primary" id="addCarBtn">➕ إضافة</button>
+          <button class="btn btn-outline" id="updateCarBtn" style="display:none">✏️ حفظ</button>
+          <button class="btn btn-ghost" id="cancelCarEdit" style="display:none">إلغاء</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📊 إحصائيات</div></div>
+        <div class="stats-row" style="grid-template-columns:1fr 1fr;margin-bottom:0">
+          <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value">${cars.filter(c=>c.status==='available').length}</div><div class="stat-label">متاحة</div></div>
+          <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status!=='available').length}</div><div class="stat-label">صيانة</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🚘 قائمة المركبات</div></div>
+      <div class="table-wrap" id="carsList">
+        <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
+        ${cars.map(c=>`<tr><td>${c.id}</td><td dir="ltr"><strong>${c.plate}</strong></td><td>${c.model}</td>
+          <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
+          <td><button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}" data-plate="${c.plate}" data-model="${c.model}" data-status="${c.status}">✏️</button>
+          <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button></td></tr>`).join('')}
+        </tbody></table>
+      </div>
+    </div>`;
+  document.getElementById('addCarBtn').onclick=async()=>{ const plate=document.getElementById('carPlate').value.trim(),model=document.getElementById('carModel').value.trim(),status=document.getElementById('carStatus').value; if(!plate||!model)return showNotification('اللوحة والموديل مطلوبان','error'); try{await apiCall('/cars','POST',{plate,model,status});showNotification('تمت الإضافة','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');} };
+  document.getElementById('updateCarBtn').onclick=async()=>{ const id=document.getElementById('editCarId').value,plate=document.getElementById('carPlate').value,model=document.getElementById('carModel').value,status=document.getElementById('carStatus').value; try{await apiCall(`/cars/${id}`,'PUT',{plate,model,status});showNotification('تم التحديث','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');} };
+  document.getElementById('cancelCarEdit').onclick=()=>renderCarsSection();
+  document.getElementById('carsList').addEventListener('click',async e=>{
+    if(e.target.closest('.edit-car')){const b=e.target.closest('.edit-car');document.getElementById('carPlate').value=b.dataset.plate;document.getElementById('carModel').value=b.dataset.model;document.getElementById('carStatus').value=b.dataset.status;document.getElementById('editCarId').value=b.dataset.id;document.getElementById('addCarBtn').style.display='none';document.getElementById('updateCarBtn').style.display='';document.getElementById('cancelCarEdit').style.display='';}
+    if(e.target.closest('.del-car')){const id=+e.target.closest('.del-car').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/cars/${id}`,'DELETE');showNotification('تم الحذف','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');}}
+  });
+}
+
+/* ── LOCATION HELPERS ── */
+function parseCoords(str) {
+  if(!str) return null;
+  let m = str.match(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/); if(m) return [parseFloat(m[1]),parseFloat(m[2])];
+  m = str.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/); if(m) return [parseFloat(m[1]),parseFloat(m[2])];
+  m = str.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/); if(m) return [parseFloat(m[1]),parseFloat(m[2])];
+  m = str.match(/maps\/(-?\d+\.?\d*),(-?\d+\.?\d*)/); if(m) return [parseFloat(m[1]),parseFloat(m[2])];
+  return null;
+}
+function formatLocation(loc, asGarage=false) {
+  if(!loc||!loc.trim()) return '—';
+  const coords=parseCoords(loc);
+  if(coords){
+    const url=`https://www.google.com/maps?q=${coords[0]},${coords[1]}`;
+    if(asGarage) return `<a href="${url}" target="_blank"
+      style="display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;background:#fee2e2;color:#dc2626;border-radius:6px;text-decoration:none;font-size:.78rem;font-weight:700;border:1px solid #fca5a5">
+      🅿️ ${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}</a>`;
+    return `<a class="location-link" href="${url}" target="_blank">📍 ${coords[0].toFixed(4)}, ${coords[1].toFixed(4)}</a>`;
+  }
+  if(loc.startsWith('http')){
+    if(asGarage) return `<a href="${loc}" target="_blank"
+      style="display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .6rem;background:#fee2e2;color:#dc2626;border-radius:6px;text-decoration:none;font-size:.78rem;font-weight:700;border:1px solid #fca5a5">
+      🅿️ فتح الموقع</a>`;
+    return `<a class="location-link" href="${loc}" target="_blank">📍 فتح الخريطة</a>`;
+  }
+  return `<span style="font-size:.8rem">${loc}</span>`;
+}
+
+/* ── TRIPS TABLE ── */
+function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
+  if(!trips.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات</p></div>';
+  return `<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>المسافة</th><th>موقع البداية</th><th>موقع النهاية</th><th>موقع الجراج</th><th>ملاحظات</th><th>الحالة</th></tr></thead><tbody>
+  ${trips.map(t=>{
+    const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
+    const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
+    const dist=(t.end_odometer&&t.start_odometer)?(t.end_odometer-t.start_odometer).toFixed(1)+' كم':'—';
+    const gRec=garageLatest.find(g=>g.car_id===t.car_id);
+    const garageLoc=t.garage_location||gRec?.location||'';
+    return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
+      <td>${t.start_time?new Date(t.start_time).toLocaleString('ar-EG'):'—'}</td>
+      <td>${t.end_time?new Date(t.end_time).toLocaleString('ar-EG'):'—'}</td>
+      <td><strong>${dist}</strong></td>
+      <td>${formatLocation(t.start_location)}</td><td>${formatLocation(t.end_location)}</td><td>${formatLocation(garageLoc, true)}</td>
+      <td style="font-size:.8rem;max-width:110px">${t.notes||'—'}</td>
+      <td>${!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>'}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+async function renderTripsSection() {
+  const [trips,drivers,cars,garageLatest]=await Promise.all([loadTrips(),loadDrivers(),loadCars(),loadLatestGarage()]);
+  window._tripsData=trips; window._driversData=drivers; window._carsData=cars; window._garageLatest=garageLatest;
+  document.getElementById('pageContent').innerHTML=`<div class="card"><div class="card-header"><div class="card-title">🗺️ جميع الرحلات (${trips.length})</div><button class="btn btn-success btn-sm" onclick="exportCSV()">⬇️ تصدير CSV</button></div><div class="table-wrap">${buildTripsTable(trips,drivers,cars,garageLatest)}</div></div>`;
+}
+function exportCSV(){
+  const trips=window._tripsData||[],drivers=window._driversData||[],cars=window._carsData||[];
+  const rows=[['#','السائق','المركبة','وقت البداية','وقت النهاية','عداد البداية','عداد النهاية','المسافة','موقع البداية','موقع النهاية','موقع الجراج','ملاحظات','الحالة']];
+  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const dist=(t.end_odometer&&t.start_odometer)?(t.end_odometer-t.start_odometer).toFixed(1):''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const garageLoc=t.garage_location||gRec?.location||''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer,t.end_odometer||'',dist,t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
+  const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`رحلات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
+  showNotification('تم تصدير الرحلات ✅','success');
+}
+
+/* ── WORKSHOPS ── */
+const WT = { fuel:{icon:'⛽',label:'وقود / بنزين'}, oil:{icon:'🛢️',label:'تغيير زيت'}, filter:{icon:'🔧',label:'فلتر'}, tire:{icon:'⚫',label:'كوتش'}, battery:{icon:'🔋',label:'بطارية'}, belt:{icon:'🔩',label:'سيور'}, other:{icon:'🔨',label:'أخرى'} };
+const TIRE_ACTIONS = { puncture:'ثقب', replacement:'استبدال', repair:'تصليح' };
+
+async function renderAdminWorkshops() {
+  const [records, cars, currentPrices] = await Promise.all([
+    loadWorkshops(), loadCars(),
+    apiCall('/settings/prices').catch(()=>({}))
+  ]);
+  const total = records.reduce((s,r)=>s+(r.price||0),0).toFixed(2);
+  // Build unique car list from records that have a vehicle_plate
+  const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
+  document.getElementById('pageContent').innerHTML=`
+    <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1.2rem">
+      <div class="card-header">
+        <div class="card-title" style="color:#065f46">💰 أسعار الصيانة لكل نوع (يُطبَّق تلقائياً على السائقين)</div>
+        <button class="btn btn-success btn-sm" onclick="saveTypePrices()">💾 حفظ الأسعار</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem">
+        ${Object.entries(WT).map(([k,v])=>`
+          <div style="background:white;border-radius:10px;padding:.8rem;border:1px solid #e2e8f0">
+            <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.4rem">${v.icon} ${v.label}</div>
+            <div style="display:flex;align-items:center;gap:.4rem">
+              <input type="number" id="typePrice_${k}" value="${currentPrices[k]||0}" placeholder="0" min="0" step="0.01"
+                style="width:100%;padding:.45rem .7rem;border:1.5px solid #10b981;border-radius:8px;font-size:.88rem">
+              <span style="font-size:.78rem;color:var(--muted);white-space:nowrap">جنيه</span>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:.78rem;color:var(--muted);margin-top:.6rem">
+        ⚠️ السائق لا يرى المبلغ — فقط "السعر محدد من قبل الإدارة" • القيمة 0 = بدون سعر
+      </div>
+    </div>
+    <div class="stats-row">${Object.entries(WT).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}<div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value">${total}</div><div class="stat-label">إجمالي التكاليف</div></div></div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
+      <div class="filters-bar">
+        <select id="filterCar" onchange="filterWS()">
+          <option value="">🚗 كل المركبات</option>
+          ${cars.map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('')}
+        </select>
+        <select id="filterType" onchange="filterWS()">
+          <option value="">📋 كل الأنواع</option>
+          ${Object.entries(WT).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}
+        </select>
+        <input type="date" id="filterDate" onchange="filterWS()" placeholder="تاريخ">
+      </div>
+      <div class="table-wrap" id="wsTable">${buildWSTable(records)}</div>
+    </div>`;
+  window._wsRecords = records;
+}
+
+function buildWSTable(records) {
+  if(!records.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد سجلات</p></div>';
+  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>السعر</th><th>موقع الورشة</th><th>الوصف</th><th>ملاحظات</th><th>التاريخ</th></tr></thead><tbody>
+  ${records.map(r=>{
+    const wt=WT[r.type]||{icon:'🔨',label:r.type};
+    const opLabel=r.operation_type?(r.operation_type==='maintenance'?'صيانة':'استبدال'):'—';
+    const taLabel=r.tire_action?`<span class="badge badge-orange">${TIRE_ACTIONS[r.tire_action]||r.tire_action}</span>`:'—';
+    return `<tr><td>${r.id}</td><td>${r.driver_name||'—'}</td>
+      <td><span class="badge badge-purple">${wt.icon} ${wt.label}</span></td>
+      <td>${r.operation_type?`<span class="badge badge-blue">${opLabel}</span>`:'—'}</td>
+      <td>${r.type==='tire'?taLabel:'—'}</td>
+      <td dir="ltr">${r.vehicle_plate||'—'}</td><td>${r.odometer_reading?r.odometer_reading+' كم':'—'}</td>
+      <td>${r.quantity||'—'}</td><td>${r.price}</td>
+      <td>${formatLocation(r.location)}</td>
+      <td style="max-width:100px;font-size:.8rem">${r.description||'—'}</td>
+      <td style="max-width:100px;font-size:.8rem">${r.notes||'—'}</td>
+      <td>${r.created_at?new Date(r.created_at).toLocaleString('ar-EG'):'—'}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+function filterWS(){
+  const car  = document.getElementById('filterCar')?.value  || '';
+  const type = document.getElementById('filterType')?.value || '';
+  const date = document.getElementById('filterDate')?.value || '';
+  let f = (window._wsRecords||[]).filter(r=>{
+    if(car  && String(r.vehicle_id) !== car)          return false;
+    if(type && r.type !== type)                        return false;
+    if(date && !r.created_at?.startsWith(date))       return false;
+    return true;
+  });
+  document.getElementById('wsTable').innerHTML = buildWSTable(f);
+}
+
+/* ── MAP — Dual Location Pins ── */
+async function renderMapSection() {
+  const [trips,drivers,cars,garageLatest]=await Promise.all([loadTrips(),loadDrivers(),loadCars(),loadLatestGarage()]);
+  document.getElementById('pageContent').innerHTML=`
+    <div class="card">
+      <div class="card-header"><div class="card-title">📍 خريطة الأسطول الكاملة</div><button class="btn btn-ghost btn-sm" onclick="renderMapSection()">🔄 تحديث</button></div>
+      <div id="fleetMap"></div>
+      <div class="map-legend">
+        <span><span class="legend-dot" style="background:#10b981"></span> رحلة نشطة (موقع البداية)</span>
+        <span><span class="legend-dot" style="background:#3b82f6"></span> آخر موقع معروف (نهاية رحلة)</span>
+        <span><span class="legend-dot" style="background:#dc2626"></span> موقع الجراج / وقوف</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🅿️ آخر تسجيل جراج لكل سائق</div></div>
+      <div class="table-wrap">${buildGarageTable(garageLatest)}</div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📋 ملخص المركبات والمواقع</div></div>
+      <div class="table-wrap">${buildMapSummaryTable(trips,drivers,cars,garageLatest)}</div>
+    </div>`;
+
+  setTimeout(()=>{
+    const map=L.map('fleetMap').setView([24.7136,46.6753],6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+    const markers=[];
+
+    // ── ONE marker per car (Priority: garage latest > active > last completed) ──
+    cars.forEach(car=>{
+      const activeTrip = trips.find(t=>t.car_id===car.id&&!t.end_time);
+      const lastTrip   = trips.filter(t=>t.car_id===car.id&&t.end_time).sort((a,b)=>b.id-a.id)[0];
+      const driver     = drivers.find(d=>d.id===(activeTrip||lastTrip)?.driver_id);
+      const garageRec  = garageLatest.find(g=>g.car_id===car.id);
+
+      let coords=null, color='#3b82f6', label='📍 آخر موقع معروف', isGarage=false;
+
+      // Priority 1: Active trip → show start location (green)
+      if(activeTrip){
+        coords=parseCoords(activeTrip.start_location||'');
+        color='#10b981'; label='● رحلة نشطة';
+      }
+      // Priority 2: No active trip → show last completed trip end location (blue)
+      if(!coords && lastTrip){
+        coords=parseCoords(lastTrip.end_location||'') || parseCoords(lastTrip.start_location||'');
+        color='#3b82f6'; label='📍 آخر موقع معروف';
+      }
+      // Priority 3: Garage record overrides if no active trip (red pin)
+      if(!activeTrip && garageRec){
+        const gc=parseCoords(garageRec.location);
+        if(gc){
+          coords=gc; color='#dc2626'; label='🅿️ في الجراج'; isGarage=true;
+        }
+      }
+
+      if(!coords) return;
+
+      const icon=L.divIcon({
+        className:'',
+        html:`<div style="background:${color};color:white;border-radius:50%;width:${isGarage?38:34}px;height:${isGarage?38:34}px;display:flex;align-items:center;justify-content:center;font-size:${isGarage?'1.2rem':'1rem'};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,.3)">${isGarage?'🅿️':'🚗'}</div>`,
+        iconSize:[isGarage?38:34,isGarage?38:34],iconAnchor:[isGarage?19:17,isGarage?19:17]
+      });
+
+      const mapsUrl=`https://www.google.com/maps?q=${coords[0]},${coords[1]}`;
+      L.marker(coords,{icon}).addTo(map).bindPopup(`<div dir="rtl" style="min-width:210px;font-family:Tajawal,sans-serif;line-height:1.7">
+        <strong style="font-size:.95rem">${isGarage?'🅿️':'🚗'} ${car.plate}</strong><br>
+        <span style="color:#666;font-size:.83rem">${car.model}</span>
+        <hr style="margin:.4rem 0;border:none;border-top:1px solid #e2e8f0">
+        <span style="font-size:.85rem">👨‍✈️ <strong>${driver?.name||'—'}</strong></span><br>
+        <span style="color:${color};font-weight:700;font-size:.82rem">${label}</span><br>
+        <a href="${mapsUrl}" target="_blank"
+           style="display:inline-flex;align-items:center;gap:.3rem;margin-top:.4rem;padding:.3rem .7rem;background:${color};color:white;border-radius:8px;text-decoration:none;font-size:.8rem;font-weight:700">
+          🗺️ فتح الموقع
+        </a>
+      </div>`);
+      markers.push(coords);
+    });
+
+    if(markers.length>0) map.fitBounds(L.latLngBounds(markers.map(c=>L.latLng(c[0],c[1]))),{padding:[40,40]});
+  },100);
+}
+
+function buildGarageTable(records){
+  if(!records||!records.length) return '<div class="empty-state"><div class="empty-icon">✅</div><p>لا يوجد تسجيل جراج بعد</p></div>';
+  return `<table><thead><tr><th>السائق</th><th>العربية</th><th>وقت التسجيل</th><th>ملاحظات</th><th>الموقع</th></tr></thead><tbody>
+  ${records.map(r=>`<tr>
+    <td><strong>${r.driver_name||'—'}</strong></td>
+    <td dir="ltr">${r.car_plate||'—'}</td>
+    <td>${r.recorded_at?new Date(r.recorded_at).toLocaleString('ar-EG'):'—'}</td>
+    <td style="font-size:.82rem">${r.notes||'—'}</td>
+    <td>${formatLocation(r.location)}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+function buildMapSummaryTable(trips,drivers,cars,garageLatest){
+  if(!cars.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد مركبات</p></div>';
+  return `<table><thead><tr><th>رقم المركبة</th><th>الموديل</th><th>السائق</th><th>الحالة</th><th>آخر موقع معروف</th><th>موقع الجراج</th></tr></thead><tbody>
+  ${cars.map(car=>{
+    const activeTrip=trips.find(t=>t.car_id===car.id&&!t.end_time);
+    const lastTrip=trips.filter(t=>t.car_id===car.id&&t.end_time).sort((a,b)=>b.id-a.id)[0];
+    const trip=activeTrip||lastTrip;
+    const drv=trip?drivers.find(d=>d.id===trip.driver_id):null;
+    const lastLoc=activeTrip?activeTrip.start_location:(lastTrip?.end_location);
+    // Garage from standalone garage_records table
+    const garageRec=(garageLatest||[]).find(g=>g.car_id===car.id);
+    const garageLoc=garageRec?.location;
+    const hasActiveTrip=!!activeTrip; const statusBadge=hasActiveTrip?'<span class="badge badge-blue">● نشطة</span>':(garageLoc?'<span class="badge badge-red">🅿️ جراج</span>':'<span class="badge badge-green">✓ متاحة</span>');
+    return `<tr><td dir="ltr"><strong>${car.plate}</strong></td><td>${car.model}</td><td>${drv?.name||'—'}</td><td>${statusBadge}</td><td>${formatLocation(lastLoc)}</td><td>${formatLocation(garageLoc)}</td></tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+/* ── EMERGENCIES SECTION (Admin) ── */
+async function renderEmergenciesSection() {
+  const reports=await loadEmergencies();
+  const unread=reports.filter(r=>!r.is_read).length;
+  // Mark all as read
+  reports.filter(r=>!r.is_read).forEach(r=>{ apiCall(`/emergency/reports/${r.id}/read`,'PUT').catch(()=>{}); });
+  lastUnreadCount=0;
+  renderNav(buildAdminNav());
+
+  document.getElementById('pageContent').innerHTML=`
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-icon">🚨</div><div class="stat-value" style="color:#dc2626">${reports.filter(r=>r.type==='emergency').length}</div><div class="stat-label">بلاغات طارئة</div></div>
+      <div class="stat-card"><div class="stat-icon">🚗</div><div class="stat-value" style="color:#d97706">${reports.filter(r=>r.type==='accident').length}</div><div class="stat-label">حوادث</div></div>
+      <div class="stat-card"><div class="stat-icon">📋</div><div class="stat-value">${reports.length}</div><div class="stat-label">إجمالي البلاغات</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🚨 جميع البلاغات والحوادث</div><button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button></div>
+      ${reports.length ? `<div class="table-wrap"><table><thead><tr>
+        <th>#</th><th>النوع</th><th>السائق</th><th>المركبة</th><th>الوقت</th>
+        <th>الموقع</th><th>ملاحظات</th><th>التسجيل الصوتي</th>
+        <th>الحالة</th><th>الإجراء المتخذ</th><th>بواسطة</th><th>إجراء</th>
+      </tr></thead><tbody>
+      ${reports.map(r=>`<tr class="report-row-${r.type}">
+        <td>${r.id}</td>
+        <td>${r.type==='emergency'?'<span class="badge badge-emg">🚨 طارئ</span>':'<span class="badge badge-acc">🚗 حادث</span>'}</td>
+        <td><strong>${r.driver_name||'—'}</strong></td>
+        <td dir="ltr">${r.car_plate||'—'}</td>
+        <td style="font-size:.8rem">${r.created_at?new Date(r.created_at).toLocaleString('ar-EG'):'—'}</td>
+        <td>${r.location?formatLocation(r.location):'<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
+        <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
+        <td>${r.audio_data?`<div class="audio-player-wrap"><audio controls preload="none"><source src="${r.audio_data}" type="audio/webm"></audio></div>`:'<span style="color:var(--muted);font-size:.78rem">لا يوجد</span>'}</td>
+        <td>${r.is_handled
+          ?'<span class="badge badge-green">✓ تم التعامل</span>'
+          :'<span class="badge badge-red">⏳ لم يُعالج</span>'}</td>
+        <td style="max-width:130px;font-size:.8rem">${r.action_taken||'—'}</td>
+        <td style="font-size:.8rem">${r.handled_by||'—'}</td>
+        <td>
+          ${!r.is_handled?`<button class="btn btn-success btn-sm" onclick="openEmergencyActionModal(${r.id})">✍️ إجراء</button>`
+          :`<button class="btn btn-ghost btn-sm" onclick="openEmergencyActionModal(${r.id})">✏️ تعديل</button>`}
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
+    </div>`;
+}
+
+/* ── PERMISSIONS ── */
+async function renderPermissionsSection() {
+  const [perms,drivers,cars]=await Promise.all([loadPerms(),loadDrivers(),loadCars()]);
+  document.getElementById('pageContent').innerHTML=`<div class="card"><div class="card-header"><div class="card-title">🔐 الصلاحيات النشطة (${perms.length})</div><button class="btn btn-primary btn-sm" onclick="openAssignPermModal()">➕ تعيين</button></div><div class="table-wrap" id="permsTable">${perms.length?`<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>إجراء</th></tr></thead><tbody>${perms.map(p=>{const d=drivers.find(d=>d.id===p.driver_id),c=cars.find(c=>c.id===p.car_id);return`<tr><td>${p.id}</td><td>${d?.name||'—'}</td><td dir="ltr">${c?c.plate+' - '+c.model:'—'}</td><td><button class="btn btn-danger btn-sm del-perm" data-id="${p.id}">🗑️</button></td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد صلاحيات</p></div>'}</div></div>`;
+  document.getElementById('permsTable').addEventListener('click',async e=>{ if(e.target.closest('.del-perm')){const id=+e.target.closest('.del-perm').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/permissions/${id}`,'DELETE');showNotification('تم الحذف','success');await renderPermissionsSection();}catch(e){showNotification(e.message,'error');}} });
+}
+
+/* ── SILENT GPS — runs in background, no UI feedback ── */
+function silentGetLocation(timeoutMs=10000) {
+  return new Promise(resolve=>{
+    if(!navigator.geolocation){ resolve(''); return; }
+    navigator.geolocation.getCurrentPosition(
+      p=>resolve(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
+      ()=>resolve(''),
+      {enableHighAccuracy:true,timeout:timeoutMs,maximumAge:0}
+    );
+    // Always resolve within timeout
+    setTimeout(()=>resolve(''),timeoutMs+500);
+  });
+}
+
+/* ── DRIVER TRIP — Two-step: Start then End ── */
+async function renderDriverTrip() {
+  const [allowedCars, allTrips] = await Promise.all([loadAllowedCars(), loadTrips()]);
+  const activeTrip = allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
+  const carOpts = allowedCars.length
+    ? '<option value="">-- اختر المركبة --</option>'+allowedCars.map(c=>`<option value="${c.id}" ${activeTrip&&activeTrip.car_id===c.id?'selected':''}>${c.plate} — ${c.model}</option>`).join('')
+    : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
+
+  document.getElementById('pageContent').innerHTML=`
+    <div class="driver-hero">
+      <div class="driver-hero-icon">🚗</div>
+      <div><h2>تسجيل رحلة</h2><p>أدخل قراءة العداد — الموقع يُسحب تلقائياً</p></div>
+    </div>
+
+    ${activeTrip ? `
+    <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:.8rem">
+        <span style="font-size:2rem">🟢</span>
+        <div>
+          <div style="font-weight:800;color:#065f46;font-size:1rem">رحلة نشطة — #${activeTrip.id}</div>
+          <div style="font-size:.82rem;color:#047857">بدأت: ${new Date(activeTrip.start_time).toLocaleString('ar-EG')} | عداد البداية: ${activeTrip.start_odometer} كم</div>
+        </div>
+      </div>
+    </div>` : `
+    <div class="card" style="border:2px solid #e2e8f0;background:#f8fafc;margin-bottom:1rem">
+      <div style="display:flex;align-items:center;gap:.8rem">
+        <span style="font-size:2rem">⚪</span>
+        <div style="color:var(--muted);font-size:.9rem">لا توجد رحلة نشطة — ابدأ رحلة جديدة</div>
+      </div>
+    </div>`}
+
+    <div class="two-col">
+      <!-- START TRIP -->
+      <div class="card" style="${activeTrip?'opacity:.5;pointer-events:none;':''}">
+        <div class="card-header"><div class="card-title" style="color:#1e40af">🚀 بدء رحلة جديدة</div></div>
+        ${activeTrip?'<div style="text-align:center;padding:1rem;color:var(--muted);font-size:.9rem">يوجد رحلة نشطة بالفعل</div>':''}
+        <div class="form-group"><label>المركبة <span class="req">*</span></label>
+          <select id="startCarId">${carOpts}</select></div>
+        <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
+          <input type="number" id="startOdo" placeholder="مثال: 54200" min="0"></div>
+
+        <button class="btn btn-primary" id="startTripBtn" style="width:100%" ${activeTrip?'disabled':''}>
+          🚀 بدء الرحلة
+        </button>
+      </div>
+
+      <!-- END TRIP -->
+      <div class="card" style="${!activeTrip?'opacity:.5;pointer-events:none;':''}">
+        <div class="card-header"><div class="card-title" style="color:#b45309">🏁 إنهاء الرحلة الحالية</div></div>
+        ${!activeTrip?'<div style="text-align:center;padding:1rem;color:var(--muted);font-size:.9rem">لا توجد رحلة نشطة</div>':''}
+        <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
+          <input type="number" id="endOdo" placeholder="مثال: 54350" min="${activeTrip?activeTrip.start_odometer+1:0}"></div>
+        <div class="form-group"><label>ملاحظات</label>
+          <input type="text" id="endNotes" placeholder="ملاحظات اختيارية..."></div>
+
+        <button class="btn btn-warning" id="endTripBtn" style="width:100%" ${!activeTrip?'disabled':''}>
+          🏁 إنهاء الرحلة
+        </button>
+      </div>
+    </div>
+
+    <!-- GARAGE -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:.95rem">🅿️ موقع الجراج</div>
+          <div style="font-size:.82rem;color:var(--muted);margin-top:.2rem">يُسجَّل مرة واحدة في نهاية يوم العمل</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="openGarageModal()">🅿️ تسجيل الموقع الآن</button>
+      </div>
+    </div>`;
+
+  // ── START TRIP handler ──
+  document.getElementById('startTripBtn')?.addEventListener('click', async () => {
+    const car_id  = parseInt(document.getElementById('startCarId').value);
+    const start_odo = parseFloat(document.getElementById('startOdo').value);
+    const btn = document.getElementById('startTripBtn');
+
+    if(!car_id)           return showNotification('اختر المركبة','error');
+    if(isNaN(start_odo))  return showNotification('أدخل عداد البداية','error');
+
+    btn.disabled=true; btn.textContent='🚀 جاري...';
+    const location = await silentGetLocation();
+    try{
+      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id,start_odometer:start_odo,start_location:location});
+      showNotification('✅ بدأت الرحلة!','success');
+      await renderDriverTrip();
+    }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='🚀 بدء الرحلة'; }
+  });
+
+  // ── END TRIP handler ──
+  document.getElementById('endTripBtn')?.addEventListener('click', async () => {
+    const end_odo = parseFloat(document.getElementById('endOdo').value);
+    const notes   = document.getElementById('endNotes').value.trim();
+    const btn = document.getElementById('endTripBtn');
+
+    if(!activeTrip) return showNotification('لا توجد رحلة نشطة','error');
+    if(isNaN(end_odo)) return showNotification('أدخل عداد النهاية','error');
+    if(end_odo <= activeTrip.start_odometer) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+activeTrip.start_odometer+' كم)','error');
+
+    btn.disabled=true; btn.textContent='🏁 جاري...';
+    const location = await silentGetLocation();
+    try{
+      await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:end_odo,end_location:location,notes});
+      showNotification('✅ انتهت الرحلة بنجاح!','success');
+      await renderDriverTrip();
+    }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='🏁 إنهاء الرحلة'; }
+  });
+}
+
+async function renderMyTrips() {
+  const [allTrips,cars]=await Promise.all([loadTrips(),loadAllowedCars()]);
+  const myTrips=allTrips.filter(t=>t.driver_id==currentUser.driver_id);
+  document.getElementById('pageContent').innerHTML=`
+    <div class="card">
+      <div class="card-header"><div class="card-title">📋 رحلاتي (${myTrips.length})</div></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>#</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>المسافة</th><th>الموقع</th><th>ملاحظات</th><th>الحالة</th></tr></thead><tbody>
+        ${myTrips.map(t=>{
+          const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
+          const dist=(t.end_odometer&&t.start_odometer)?(t.end_odometer-t.start_odometer).toFixed(1)+' كم':'—';
+          return `<tr>
+            <td>${t.id}</td><td dir="ltr">${cPlate}</td>
+            <td>${t.start_time?new Date(t.start_time).toLocaleString('ar-EG'):'—'}</td>
+            <td>${t.end_time?new Date(t.end_time).toLocaleString('ar-EG'):'—'}</td>
+            <td><strong>${dist}</strong></td>
+            <td>${formatLocation(t.start_location)||formatLocation(t.end_location)}</td>
+            <td style="font-size:.8rem">${t.notes||'—'}</td>
+            <td>${!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>'}</td>
+          </tr>`;
+        }).join('')}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+
+/* ── GPS HELPER — Reusable auto-location capture ── */
+function gpsPickerHTML(fieldId, label='الموقع الحالي') {
+  return `<div class="form-group">
+    <label>${label} <span class="req">*</span></label>
+    <div class="gps-picker" id="gpsPicker_${fieldId}">
+      <button type="button" class="gps-capture-btn" id="gpsBtn_${fieldId}" onclick="captureGPS('${fieldId}')">
+        📍 تسجيل موقعي الآن
+      </button>
+      <div id="gpsResult_${fieldId}" class="gps-result" style="display:none"></div>
+      <div id="gpsCoords_${fieldId}" class="gps-coords" style="display:none"></div>
+    </div>
+    <input type="hidden" id="${fieldId}">
+  </div>`;
+}
+
+function captureGPS(fieldId) {
+  const btn    = document.getElementById('gpsBtn_'+fieldId);
+  const result = document.getElementById('gpsResult_'+fieldId);
+  const coords = document.getElementById('gpsCoords_'+fieldId);
+  const picker = document.getElementById('gpsPicker_'+fieldId);
+  const hidden = document.getElementById(fieldId);
+
+  if(!navigator.geolocation){
+    result.className='gps-result err';
+    result.innerHTML='❌ المتصفح لا يدعم GPS';
+    result.style.display='flex';
+    return;
+  }
+
+  btn.disabled=true;
+  btn.className='gps-capture-btn gps-btn-spin';
+  btn.innerHTML='⏳ جاري تحديد موقعك...';
+  result.style.display='none';
+  coords.style.display='none';
+  picker.className='gps-picker';
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const lat=pos.coords.latitude.toFixed(6);
+      const lng=pos.coords.longitude.toFixed(6);
+      const acc=Math.round(pos.coords.accuracy);
+      const val=`${lat},${lng}`;
+
+      hidden.value=val;
+      picker.className='gps-picker gps-ok';
+      btn.className='gps-capture-btn gps-btn-ok';
+      btn.innerHTML='✅ تم تسجيل الموقع — اضغط لتحديثه';
+      btn.disabled=false;
+
+      result.className='gps-result ok';
+      result.innerHTML=`✅ الموقع مسجّل (دقة: ${acc} متر)`;
+      result.style.display='flex';
+
+      coords.textContent=`${lat}, ${lng}`;
+      coords.style.display='block';
+    },
+    err => {
+      const msgs={1:'رُفض الإذن — فعّل صلاحية الموقع في المتصفح',2:'الإشارة ضعيفة — تأكد من تشغيل GPS',3:'انتهت المهلة — حاول مجدداً'};
+      picker.className='gps-picker gps-err';
+      btn.className='gps-capture-btn';
+      btn.innerHTML='📍 تسجيل موقعي الآن';
+      btn.disabled=false;
+      result.className='gps-result err';
+      result.innerHTML='❌ '+(msgs[err.code]||err.message);
+      result.style.display='flex';
+    },
+    {enableHighAccuracy:true, timeout:12000, maximumAge:0}
+  );
+}
+
+async function openStartTripModal() {
+  const allowedCars=await loadAllowedCars();
+  openModal(`
+    <div class="modal-header"><div class="modal-title">🚀 بدء رحلة جديدة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>السائق</label><input value="${currentUser.username}" disabled></div>
+    <div class="form-group"><label>المركبة <span class="req">*</span></label>
+      <select id="stCarId">${allowedCars.length?'<option value="">-- اختر --</option>'+allowedCars.map(c=>`<option value="${c.id}">${c.plate} - ${c.model}</option>`).join(''):'<option value="">⚠️ لا توجد مركبات مسموح بها</option>'}</select></div>
+    <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label><input type="number" id="stOdo" placeholder="قراءة العداد الحالية" min="0"></div>
+    ${gpsPickerHTML('stLoc','موقع البداية')}
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="stBtn">🚀 بدء الرحلة</button>
+    </div>`);
+  document.getElementById('stBtn').onclick=async()=>{
+    const car_id=document.getElementById('stCarId').value;
+    const start_odometer=parseFloat(document.getElementById('stOdo').value);
+    const start_location=document.getElementById('stLoc').value.trim();
+    if(!car_id) return showNotification('اختر المركبة','error');
+    if(isNaN(start_odometer)||start_odometer<0) return showNotification('عداد البداية غير صحيح','error');
+    if(!start_location) return showNotification('⚠️ سجّل موقع البداية أولاً','error');
+    const btn=document.getElementById('stBtn'); btn.disabled=true; btn.textContent='جاري...';
+    try{
+      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:+car_id,start_odometer,start_location});
+      showNotification('✅ بدأت الرحلة! لا تنسَ تسجيل موقع الجراج 🅿️ في نهاية اليوم','success'); closeModal(); await renderDriverTrip();
+    }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='🚀 بدء الرحلة';}
+  };
+}
+
+async function openGarageModal() {
+  // Completely independent — no trip required
+  const allowedCars = await loadAllowedCars();
+  openModal(`
+    <div class="modal-header"><div class="modal-title">🅿️ تسجيل الجراج</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#92400e">
+      🕐 يُسجَّل مرة واحدة في <strong>نهاية يوم العمل</strong> — المكان اللي العربية بتجرش فيه
+    </div>
+    <div class="form-group"><label>العربية <span class="req">*</span></label>
+      <select id="gCarId">
+        <option value="">-- اختر العربية --</option>
+        ${allowedCars.map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('')}
+      </select>
+    </div>
+    <input type="hidden" id="gLoc">
+    <div class="form-group"><label>ملاحظات</label><input id="gNotes" placeholder="مثال: جراج الشركة — مبنى 3"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-danger" id="gSaveBtn">🅿️ تسجيل</button>
+    </div>`);
+  document.getElementById('gSaveBtn').onclick=async()=>{
+    const car_id = parseInt(document.getElementById('gCarId').value)||null;
+    const notes  = document.getElementById('gNotes').value.trim();
+    const btn    = document.getElementById('gSaveBtn');
+    btn.disabled=true; btn.textContent='جاري...';
+    // GPS في الخلفية — السائق مش شايف حاجة
+    const location = await silentGetLocation(10000);
+    try{
+      await apiCall('/garage/record','POST',{driver_id:currentUser.driver_id,car_id,location,notes});
+      showNotification('✅ تم تسجيل الجراج','success'); closeModal();
+    }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='🅿️ تسجيل';}
+  };
+}
+
+async function openEndTripModal(activeTrips) {
+  if(!activeTrips||!activeTrips.length) return showNotification('لا توجد رحلات نشطة','info');
+  openModal(`
+    <div class="modal-header"><div class="modal-title">🏁 إنهاء رحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>الرحلة النشطة <span class="req">*</span></label>
+      <select id="etSel"><option value="">-- اختر الرحلة --</option>${activeTrips.map(t=>`<option value="${t.id}" data-start="${t.start_odometer}">رحلة #${t.id} | بداية: ${t.start_odometer} كم</option>`).join('')}</select></div>
+    <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label><input type="number" id="etOdo" placeholder="أكبر من عداد البداية" min="0"></div>
+    ${gpsPickerHTML('etLoc','موقع النهاية')}
+    <div class="form-group"><label>ملاحظات</label><input type="text" id="etNotes" placeholder="ملاحظات عن الرحلة..."></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-warning" id="etBtn">✅ إنهاء الرحلة</button>
+    </div>`);
+  document.getElementById('etBtn').onclick=async()=>{
+    const trip_id=document.getElementById('etSel').value;
+    const end_odometer=parseFloat(document.getElementById('etOdo').value);
+    const end_location=(document.getElementById('etLoc')?.value||'').trim();
+    const notes=document.getElementById('etNotes').value;
+    if(!trip_id) return showNotification('اختر رحلة','error');
+    if(!end_location) return showNotification('⚠️ سجّل موقع النهاية أولاً','error');
+    const sel=document.getElementById('etSel');
+    const startOdo=parseFloat(sel.options[sel.selectedIndex]?.dataset.start);
+    if(isNaN(end_odometer)||end_odometer<=startOdo) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية','error');
+    const btn=document.getElementById('etBtn'); btn.disabled=true; btn.textContent='جاري...';
+    try{
+      await apiCall('/trips/end','POST',{trip_id:+trip_id,end_odometer,end_location,notes});
+      showNotification('✅ انتهت الرحلة!','success'); closeModal(); await renderDriverTrip();
+    }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='✅ إنهاء الرحلة';}
+  };
+}
+
+
+
+/* ── DRIVER EMERGENCY / ACCIDENT ── */
+let mediaRecorder=null, audioChunks=[], recInterval=null, recSeconds=0, currentRecordingType=null;
+
+async function renderDriverEmergency() {
+  const [allowedCars,allTrips]=await Promise.all([loadAllowedCars(),loadTrips()]);
+  const activeTrip=allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
+  window._emergAllowedCars=allowedCars;
+  window._emergActiveTripId=activeTrip?.id||null;
+  window._emergActiveCarId=activeTrip?.car_id||null;
+
+  document.getElementById('pageContent').innerHTML=`
+    <div class="driver-hero" style="background:linear-gradient(135deg,#7f1d1d,#dc2626)">
+      <div class="driver-hero-icon">🚨</div>
+      <div><h2>نظام الطوارئ والحوادث</h2><p>اضغط على الزر المناسب وسجّل رسالتك الصوتية</p></div>
+    </div>
+    ${activeTrip?`<div class="card" style="background:#fff7ed;border:2px solid #f59e0b"><div class="card-header"><div class="card-title" style="color:#92400e">⚡ رحلة نشطة — سيتم ربط البلاغ بها تلقائياً</div></div><p style="font-size:.85rem;color:#78350f">رحلة #${activeTrip.id} | بداية: ${new Date(activeTrip.start_time).toLocaleString('ar-EG')}</p></div>`:''}
+    <div class="emergency-grid">
+      <div class="emergency-btn-card emg" onclick="startRecording('emergency')">
+        <span class="emg-icon">🚨</span>
+        <div class="emg-title">طارئ</div>
+        <div class="emg-sub">اضغط لتسجيل بلاغ طارئ</div>
+      </div>
+      <div class="emergency-btn-card acc" onclick="startRecording('accident')">
+        <span class="emg-icon">💥</span>
+        <div class="emg-title">حادث</div>
+        <div class="emg-sub">اضغط لتسجيل تفاصيل حادث</div>
+      </div>
+    </div>
+    <div id="recordingPanel" style="display:none" class="card">
+      <div id="recIndicator" class="recording-indicator">
+        <div class="rec-dot"></div>
+        <div class="rec-text" id="recTypeLabel">جاري التسجيل...</div>
+        <div class="rec-timer" id="recTimer">0:00</div>
+      </div>
+      <div class="form-group"><label>ملاحظات إضافية</label><input id="recNotes" placeholder="وصف موجز للموقف..."></div>
+      <div style="display:flex;gap:.8rem;flex-wrap:wrap">
+        <button class="btn btn-danger" id="stopRecBtn" onclick="stopAndSend()">⏹ إيقاف وإرسال</button>
+        <button class="btn btn-ghost" onclick="cancelRecording()">❌ إلغاء</button>
+      </div>
+    </div>`;
+}
+
+async function startRecording(type) {
+  if(mediaRecorder&&mediaRecorder.state==='recording') return;
+  currentRecordingType=type;
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    audioChunks=[];
+    // Detect supported MIME type
+    const mimeTypes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4',''];
+    let mimeType='';
+    for(const t of mimeTypes){ try{ if(!t||MediaRecorder.isTypeSupported(t)){mimeType=t;break;} }catch(e){} }
+    mediaRecorder=new MediaRecorder(stream, mimeType?{mimeType}:{});
+
+    mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size>0) audioChunks.push(e.data); };
+
+    mediaRecorder.onstop=()=>{
+      const finalMime=mediaRecorder.mimeType||'audio/webm';
+      const blob=new Blob(audioChunks,{type:finalMime});
+      if(blob.size<100){ showNotification('لم يُسجَّل أي صوت، حاول مرة أخرى','error'); return; }
+      const notes=document.getElementById('recNotes')?.value||'';
+      const reader=new FileReader();
+      reader.onloadend=async()=>{
+        // Auto-capture GPS location for emergency (silent background)
+        const emgLocation = await silentGetLocation(8000);
+        try{
+          await apiCall('/emergency/report','POST',{
+            driver_id:currentUser.driver_id,
+            car_id:window._emergActiveCarId||null,
+            type:currentRecordingType,
+            audio_data:reader.result,
+            notes,
+            location:emgLocation
+          });
+          showNotification(currentRecordingType==='emergency'?'🚨 تم إرسال بلاغ الطوارئ للإدارة!':'💥 تم إرسال تقرير الحادث للإدارة!','emergency',5000);
+          const panel=document.getElementById('recordingPanel');
+          if(panel) panel.style.display='none';
+          audioChunks=[]; mediaRecorder=null;
+        }catch(err){
+          showNotification('فشل الإرسال: '+err.message,'error');
+          const btn=document.getElementById('stopRecBtn');
+          if(btn){ btn.disabled=false; btn.textContent='⏹ إيقاف وإرسال'; }
+        }
+      };
+      reader.readAsDataURL(blob);
+    };
+
+    mediaRecorder.start(300);
+    document.getElementById('recordingPanel').style.display='block';
+    document.getElementById('recTypeLabel').textContent=type==='emergency'?'🚨 جاري تسجيل بلاغ طارئ...':'💥 جاري تسجيل تفاصيل الحادث...';
+    recSeconds=0; document.getElementById('recTimer').textContent='0:00';
+    recInterval=setInterval(()=>{ recSeconds++; const m=Math.floor(recSeconds/60),s=recSeconds%60; const el=document.getElementById('recTimer'); if(el) el.textContent=`${m}:${String(s).padStart(2,'0')}`; },1000);
+
+  }catch(e){
+    console.error('Mic error:',e);
+    showNotification('تعذّر الوصول للميكروفون — تأكد من منح صلاحية الميكروفون في المتصفح','error');
+  }
+}
+
+function cancelRecording() {
+  clearInterval(recInterval);
+  if(mediaRecorder){ try{ if(mediaRecorder.state!=='inactive'){ mediaRecorder.stream?.getTracks().forEach(t=>t.stop()); mediaRecorder.stop(); } }catch(e){} mediaRecorder=null; }
+  audioChunks=[];
+  const panel=document.getElementById('recordingPanel');
+  if(panel) panel.style.display='none';
+}
+
+function stopAndSend() {
+  if(!mediaRecorder||mediaRecorder.state==='inactive'){ showNotification('لا يوجد تسجيل نشط','error'); return; }
+  const btn=document.getElementById('stopRecBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري المعالجة...';
+  clearInterval(recInterval);
+  try{
+    mediaRecorder.requestData();
+    mediaRecorder.stream?.getTracks().forEach(t=>t.stop());
+    mediaRecorder.stop(); // triggers onstop → sends data
+  }catch(e){ showNotification('خطأ: '+e.message,'error'); btn.disabled=false; btn.textContent='⏹ إيقاف وإرسال'; }
+}
+
+/* ── DRIVER WORKSHOP — Dynamic ── */
+let selWsType=null;
+
+async function renderDriverWorkshop() {
+  const [allowedCars, pricesData] = await Promise.all([
+    loadAllowedCars(),
+    apiCall('/settings/prices').catch(()=>({}))
+  ]);
+  window._typePrices    = pricesData || {};
+  window._wsAllowedCars = allowedCars;
+  selWsType = null;
+
+  document.getElementById('pageContent').innerHTML=`
+    <div class="driver-hero" style="background:linear-gradient(135deg,#1e3a5f,#264d73)">
+      <div class="driver-hero-icon">🛠️</div>
+      <div><h2>الورشة</h2><p>اختر نوع الصيانة لتسجيل العملية</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">اختر نوع الصيانة</div></div>
+      <div class="workshop-items">
+        ${Object.entries(WT).map(([k,v])=>`
+          <div class="workshop-item" onclick="openWsModal('${k}')">
+            <div class="workshop-item-icon">${v.icon}</div>
+            <div class="workshop-item-label">${v.label}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function openWsModal(type) {
+  selWsType = type;
+  const wt  = WT[type];
+  const carOpts = (window._wsAllowedCars||[]).length
+    ? '<option value="">-- اختر المركبة --</option>'
+      + (window._wsAllowedCars||[]).map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('')
+    : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
+
+  let specific = '';
+  if(type==='fuel') specific=`
+    <div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label>
+      <input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
+  else if(type==='oil') specific=`
+    <div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label>
+      <input type="number" id="wQty" placeholder="4" min="0.1" step="0.1"></div>`;
+  else if(type==='tire') specific=`
+    <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label>
+      <input type="number" id="wQty" placeholder="4" min="1" step="1"></div>
+    <div class="form-group"><label>حالة الكوتش <span class="req">*</span></label>
+      <select id="wTireAction">
+        <option value="">-- اختر --</option>
+        <option value="puncture">🔴 ثقب</option>
+        <option value="repair">🔧 تصليح</option>
+        <option value="replacement">🔄 استبدال</option>
+      </select></div>`;
+  else if(['filter','battery','belt'].includes(type)) specific=`
+    <div class="form-group"><label>نوع العملية <span class="req">*</span></label>
+      <select id="wOpType">
+        <option value="">-- اختر --</option>
+        <option value="maintenance">🔧 صيانة</option>
+        <option value="replacement">🔄 استبدال</option>
+      </select></div>`;
+  else if(type==='other') specific=`
+    <div class="form-group"><label>وصف العملية <span class="req">*</span></label>
+      <textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>`;
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${wt.icon}  ${wt.label}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    ${specific}
+
+    <div class="form-group">
+      <label>المركبة <span class="req">*</span></label>
+      <select id="wVehicle">${carOpts}</select>
+    </div>
+
+    <div class="form-group">
+      <label>قراءة العداد (كم) <span class="req">*</span></label>
+      <input type="number" id="wOdo" placeholder="مثال: 54000" min="0">
+    </div>
+
+    <div class="form-group">
+      <label>ملاحظات</label>
+      <textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea>
+    </div>
+
+    <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ السجل</button>
+    </div>`);
+
+  document.getElementById('wsSubmitBtn').onclick = async () => {
+    const vehicle_id       = parseInt(document.getElementById('wVehicle')?.value)||null;
+    const odometer_reading = parseFloat(document.getElementById('wOdo')?.value)||null;
+    const price            = parseFloat(document.getElementById('wPrice')?.value)||0;
+    const notes            = document.getElementById('wNotes')?.value?.trim()||'';
+    const btn              = document.getElementById('wsSubmitBtn');
+
+    if(!vehicle_id)                             return showNotification('اختر المركبة','error');
+    if(!odometer_reading||odometer_reading<=0)  return showNotification('أدخل قراءة العداد','error');
+
+    const payload = {
+      driver_id:currentUser.driver_id, type:selWsType,
+      price, notes, vehicle_id, odometer_reading, location:''
+    };
+
+    if(['fuel','oil','tire'].includes(selWsType)){
+      const qty=parseFloat(document.getElementById('wQty')?.value);
+      if(!qty||qty<=0) return showNotification('أدخل الكمية','error');
+      payload.quantity=qty;
+    }
+    if(selWsType==='tire'){
+      const ta=document.getElementById('wTireAction')?.value;
+      if(!ta) return showNotification('اختر حالة الكوتش','error');
+      payload.tire_action=ta;
+    }
+    if(['filter','battery','belt'].includes(selWsType)){
+      const op=document.getElementById('wOpType')?.value;
+      if(!op) return showNotification('اختر نوع العملية','error');
+      payload.operation_type=op;
+    }
+    if(selWsType==='other'){
+      const desc=document.getElementById('wDesc')?.value?.trim();
+      if(!desc) return showNotification('أدخل وصف العملية','error');
+      payload.description=desc;
+    }
+
+    btn.disabled=true; btn.textContent='💾 جاري الحفظ...';
+    payload.location = await silentGetLocation();
+
+    try{
+      await apiCall('/workshops','POST',payload);
+      showNotification(`✅ تم حفظ سجل ${WT[selWsType]?.label}`,'success');
+      closeModal();
+    }catch(e){
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent='💾 حفظ السجل';
+    }
+  };
+}
+
+/* ── EMERGENCY ACTION MODAL ── */
+function openEmergencyActionModal(reportId) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✍️ تسجيل الإجراء المتخذ</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#92400e">
+      📋 البلاغ رقم #${reportId}
+    </div>
+    <div class="form-group">
+      <label>الإجراء المتخذ <span class="req">*</span></label>
+      <textarea id="eActionText" placeholder="مثال: تم التواصل مع السائق وإرسال طاقم إسعاف..." style="min-height:90px"></textarea>
+    </div>
+    <div class="form-group">
+      <label>اسم المسؤول / الأدمن</label>
+      <input id="eHandledBy" value="${currentUser?.username||''}" placeholder="اسمك">
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:.8rem">
+      <input type="checkbox" id="eIsHandled" checked style="width:auto;margin:0">
+      <label style="text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--text);margin:0">تم التعامل مع البلاغ بالكامل</label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-success" id="saveActionBtn">💾 حفظ الإجراء</button>
+    </div>`);
+
+  document.getElementById('saveActionBtn').onclick = async () => {
+    const action    = document.getElementById('eActionText').value.trim();
+    const handledBy = document.getElementById('eHandledBy').value.trim();
+    const isHandled = document.getElementById('eIsHandled').checked;
+    if(!action) return showNotification('أدخل الإجراء المتخذ','error');
+    const btn = document.getElementById('saveActionBtn');
+    btn.disabled=true; btn.textContent='جاري...';
+    try{
+      await apiCall(`/emergency/reports/${reportId}/action`,'PUT',{
+        is_handled: isHandled,
+        action_taken: action,
+        handled_by: handledBy || currentUser?.username || 'admin'
+      });
+      showNotification('✅ تم حفظ الإجراء','success');
+      closeModal();
+      await renderEmergenciesSection();
+    }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ الإجراء'; }
+  };
+}
+
+/* ── PER-TYPE PRICE MANAGEMENT ── */
+async function saveTypePrices() {
+  const body={};
+  Object.keys(WT).forEach(k=>{
+    const el=document.getElementById('typePrice_'+k);
+    if(el) body[k]=parseFloat(el.value)||0;
+  });
+  try{
+    await apiCall('/settings/prices','PUT',body);
+    showNotification('✅ تم حفظ أسعار الصيانة بنجاح','success');
+    await renderAdminWorkshops();
+  }catch(e){ showNotification(e.message,'error'); }
+}
+
+/* ── NOTIFICATION POLLING ── */
+async function pollNotifications() {
+  if(currentUser?.role!=='admin') return;
+  try{
+    const r=await apiCall('/emergency/unread-count');
+    const count=r.count||0;
+    if(count>lastUnreadCount && lastUnreadCount>=0 && count>0){
+      showNotification(`🚨 ${count} بلاغ طوارئ/حوادث جديد — <a href="#" onclick="switchSection('emergencies');return false;" style="color:white;text-decoration:underline">عرض</a>`,'emergency',6000);
+    }
+    lastUnreadCount=count;
+    renderNav(buildAdminNav());
+  }catch(e){}
+}
+
+/* ── INIT ── */
+function initUI() {
+  document.getElementById('appShell').style.display='flex';
+  document.getElementById('userAvatar').textContent=currentUser.username.charAt(0).toUpperCase();
+  document.getElementById('sidebarUsername').textContent=currentUser.username;
+  document.getElementById('sidebarRole').textContent=currentUser.role==='admin'?'👑 مدير النظام':'🚗 سائق';
+  if(currentUser.role==='admin'){
+    currentSection='overview'; renderNav(buildAdminNav()); renderSection('overview');
+    notifPollInterval=setInterval(pollNotifications,20000);
+    setTimeout(pollNotifications,3000);
+  } else {
+    currentSection='driver-trip'; renderNav(buildDriverNav());
+    document.getElementById('topbarTitle').textContent='رحلة جديدة';
+    renderSection('driver-trip');
+  }
+}
+
+/* ── LOGIN ── */
+function showLogin() {
+  const saved=loadUser(), token=getToken();
+  if(saved&&token){ currentUser=saved; initUI(); return; }
+  document.body.insertAdjacentHTML('afterbegin',`<div class="login-overlay" id="loginOverlay"><div class="login-card"><div class="login-logo">🚛</div><h2>نظام إدارة الأسطول</h2><p>Fleet Management v2</p><input type="text" id="luName" placeholder="اسم المستخدم"><input type="password" id="luPw" placeholder="كلمة المرور"><button class="login-btn" id="doLoginBtn">تسجيل الدخول</button></div></div>`);
+  const doLogin=async()=>{
+    const username=document.getElementById('luName').value, password=document.getElementById('luPw').value;
+    const btn=document.getElementById('doLoginBtn'); btn.disabled=true; btn.textContent='جاري...';
+    try{
+      const data=await apiCall('/login','POST',{username,password});
+      setToken(data.access_token);
+      const u={id:data.user.id,username:data.user.username,role:data.user.role,driver_id:data.user.driver_id};
+      saveUser(u); currentUser=u;
+      document.getElementById('loginOverlay').remove();
+      initUI();
+      showNotification(`مرحباً ${currentUser.username} 👋`,'success');
+    }catch(e){ showNotification(e.message||'بيانات خاطئة','error'); btn.disabled=false; btn.textContent='تسجيل الدخول'; }
+  };
+  document.getElementById('doLoginBtn').onclick=doLogin;
+  document.getElementById('luPw').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+}
+
+document.getElementById('logoutBtn').addEventListener('click',()=>{
+  clearInterval(notifPollInterval); clearAuth(); currentUser=null;
+  showNotification('تم تسجيل الخروج','info');
+  setTimeout(()=>location.reload(),600);
+});
+
+showLogin();
+</script>
+</body>
+</html>
