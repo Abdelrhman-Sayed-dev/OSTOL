@@ -2162,8 +2162,8 @@ function openEmergencyModal(type) {
       <div id="emgErrBox" style="display:none;background:#fff5f5;border:2px solid #dc2626;border-radius:14px;padding:1.2rem;text-align:center;margin-bottom:1.2rem">
         <div style="font-size:1.5rem;margin-bottom:.4rem">🎙️❌</div>
         <div style="font-weight:700;color:#dc2626;font-size:.9rem" id="emgErrMsg">تعذر الوصول للميكروفون</div>
-        <div style="font-size:.8rem;color:#64748b;margin-top:.5rem;line-height:1.5">
-          افتح إعدادات المتصفح ← الخصوصية ← أذونات الميكروفون<br>واسمح للموقع، ثم حاول مجدداً
+        <div style="font-size:.8rem;color:#64748b;margin-top:.5rem;line-height:1.6" id="emgErrHint">
+          تأكد من إذن الميكروفون في إعدادات المتصفح وحاول مجدداً
         </div>
       </div>
       <div class="modal-footer">
@@ -2230,13 +2230,57 @@ function cancelEmergencyModal() {
 async function startEmergencyRecording(type) {
   if(mediaRecorder && mediaRecorder.state === 'recording') return;
   currentRecordingType = type;
+
+  const startBox = document.getElementById('emgStepStart');
+  const recStep  = document.getElementById('emgStepRec');
+  const recBox   = document.getElementById('emgRecBox');
+  const errBox   = document.getElementById('emgErrBox');
+  const errMsg   = document.getElementById('emgErrMsg');
+  const sendBtn  = document.getElementById('emgSendBtn');
+
+  // دالة مساعدة لإظهار الخطأ والانتقال لشاشة الإرسال بدون صوت
+  function showMicError(msg, hint) {
+    console.error('[EMG] Mic error:', msg, hint || '');
+    if(startBox) startBox.style.display = 'none';
+    if(recStep)  recStep.style.display  = 'block';
+    if(errBox)   errBox.style.display   = 'block';
+    if(errMsg)   errMsg.textContent     = msg;
+    const hintEl = document.getElementById('emgErrHint');
+    if(hintEl && hint) hintEl.innerHTML = hint;
+    if(sendBtn)  sendBtn.disabled = false;
+    window._emgNoAudio = true;
+  }
+
+  // 1. التحقق من HTTPS أو localhost
+  const isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if(!isSecure) {
+    showMicError(
+      'التسجيل الصوتي يتطلب اتصالاً آمناً (HTTPS)',
+      'يرجى فتح الموقع عبر <b>https://</b> لتفعيل الميكروفون'
+    );
+    return;
+  }
+
+  // 2. التحقق من دعم المتصفح لـ mediaDevices
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.warn('[EMG] navigator.mediaDevices غير مدعوم في هذا المتصفح');
+    showMicError(
+      'المتصفح لا يدعم تسجيل الصوت',
+      'جرّب Chrome أو Firefox أو Safari بإصدار حديث'
+    );
+    return;
+  }
+
+  // 3. إظهار رسالة "جاري طلب الإذن" قبل الطلب
+  const micBtn = document.getElementById('emgMicBtn');
+  if(micBtn) micBtn.textContent = '⏳ جاري طلب إذن الميكروفون...';
+  console.log('[EMG] طلب إذن الميكروفون...');
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+    console.log('[EMG] تم الحصول على إذن الميكروفون بنجاح');
 
     // إخفاء شاشة البداية وإظهار شاشة التسجيل
-    const startBox = document.getElementById('emgStepStart');
-    const recStep  = document.getElementById('emgStepRec');
-    const recBox   = document.getElementById('emgRecBox');
     if(startBox) startBox.style.display = 'none';
     if(recStep)  recStep.style.display  = 'block';
     if(recBox)   recBox.style.display   = 'block';
@@ -2309,21 +2353,29 @@ async function startEmergencyRecording(type) {
     }, 1000);
 
   } catch(e) {
-    console.error('Mic error:', e);
-    // إخفاء شاشة البداية وإظهار شاشة الخطأ
-    const startBox = document.getElementById('emgStepStart');
-    const recStep  = document.getElementById('emgStepRec');
-    const errBox   = document.getElementById('emgErrBox');
-    const errMsg   = document.getElementById('emgErrMsg');
-    const sendBtn  = document.getElementById('emgSendBtn');
-    if(startBox) startBox.style.display = 'none';
-    if(recStep)  recStep.style.display  = 'block';
-    if(errBox)   errBox.style.display   = 'block';
-    if(errMsg)   errMsg.textContent     = e.name === 'NotAllowedError'
-      ? 'رفض المتصفح الوصول للميكروفون'
-      : 'تعذر الوصول للميكروفون';
-    if(sendBtn)  sendBtn.disabled = false;
-    window._emgNoAudio = true;
+    console.error('[EMG] getUserMedia error — name:', e.name, '| message:', e.message);
+
+    if(e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      showMicError(
+        'رفض المتصفح الوصول للميكروفون',
+        'لتفعيله: اضغط على أيقونة 🔒 في شريط العنوان ← الميكروفون ← سماح، ثم أعد تحميل الصفحة'
+      );
+    } else if(e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+      showMicError(
+        'لم يتم العثور على ميكروفون',
+        'تأكد من توصيل الميكروفون أو تفعيله من إعدادات الجهاز'
+      );
+    } else if(e.name === 'NotReadableError' || e.name === 'TrackStartError') {
+      showMicError(
+        'الميكروفون مشغول بتطبيق آخر',
+        'أغلق التطبيقات الأخرى التي قد تستخدم الميكروفون وحاول مجدداً'
+      );
+    } else {
+      showMicError(
+        'تعذر الوصول للميكروفون',
+        'تأكد من إذن الميكروفون في إعدادات المتصفح وحاول مجدداً'
+      );
+    }
   }
 }
 
