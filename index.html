@@ -1384,15 +1384,15 @@ async function renderMyTrips() {
     <div class="card">
       <div class="card-header"><div class="card-title">📋 رحلاتي (${myTrips.length})</div></div>
       <div class="table-wrap">
-        <table><thead><tr><th>#</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>المسافة</th><th>الموقع</th><th>ملاحظات</th><th>الحالة</th></tr></thead><tbody>
+        <table><thead><tr><th>#</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>عداد البداية</th><th>عداد النهاية</th><th>الموقع</th><th>ملاحظات</th><th>الحالة</th></tr></thead><tbody>
         ${myTrips.map(t=>{
           const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
-          const dist=(t.end_odometer&&t.start_odometer)?(t.end_odometer-t.start_odometer).toFixed(1)+' كم':'—';
           return `<tr>
             <td>${t.id}</td><td dir="ltr">${cPlate}</td>
             <td>${t.start_time?new Date(t.start_time).toLocaleString('ar-EG'):'—'}</td>
             <td>${t.end_time?new Date(t.end_time).toLocaleString('ar-EG'):'—'}</td>
-            <td><strong>${dist}</strong></td>
+            <td><strong>${t.start_odometer!=null?t.start_odometer+' كم':'—'}</strong></td>
+            <td><strong>${t.end_odometer!=null?t.end_odometer+' كم':'—'}</strong></td>
             <td>${formatLocation(t.start_location)||formatLocation(t.end_location)}</td>
             <td style="font-size:.8rem">${t.notes||'—'}</td>
             <td>${!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>'}</td>
@@ -1954,13 +1954,6 @@ async function renderDriverSinglePage() {
   const dateStr = now.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
   const carLabel = primaryCar ? `${primaryCar.plate} — ${primaryCar.model}` : 'لا توجد مركبة مخصصة';
 
-  const statusBar = activeTrip
-    ? `<div class="dp-status active">
-        <span class="ds-icon">🟢</span>
-        <div><div>رحلة نشطة #${activeTrip.id}</div>
-        <div class="ds-sub">بدأت: ${new Date(activeTrip.start_time).toLocaleString('ar-EG')} | عداد: ${activeTrip.start_odometer} كم</div></div>
-       </div>`
-    : `<div class="dp-status idle"><span class="ds-icon">⚪</span><div>لا توجد رحلة نشطة</div></div>`;
 
   const wsTypes = Object.entries(WT).filter(([k])=>!['fuel','oil'].includes(k));
 
@@ -1978,7 +1971,6 @@ async function renderDriverSinglePage() {
       </div>
 
       <!-- TRIP STATUS -->
-      ${statusBar}
 
       <!-- TRIP BUTTONS -->
       <div class="dp-section">
@@ -2054,6 +2046,8 @@ async function renderDriverSinglePage() {
         🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
         <span style="font-size:.8rem;opacity:.8">📍 سيتم تسجيل موقعك الحالي تلقائياً</span>
       </div>
+      <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
+        <input type="number" id="dpEndOdo" placeholder="مثال: 54350" min="${startOdo+1}"></div>
       <div class="form-group"><label>ملاحظات</label>
         <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
       <div class="modal-footer">
@@ -2061,12 +2055,15 @@ async function renderDriverSinglePage() {
         <button class="btn btn-success" id="dpEndOk">✔ إنهاء الرحلة</button>
       </div>`);
     document.getElementById('dpEndOk').onclick=async()=>{
+      const end_odo=parseFloat(document.getElementById('dpEndOdo').value);
       const notes=document.getElementById('dpEndNotes').value.trim();
+      if(isNaN(end_odo)||end_odo<=0) return showNotification('أدخل عداد النهاية','error');
+      if(end_odo<=startOdo) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+startOdo+' كم)','error');
       const btn=document.getElementById('dpEndOk');
       btn.disabled=true; btn.textContent='⏳ جاري...';
       const loc=await silentGetLocation();
       try{
-        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_location:loc,notes});
+        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:end_odo,end_location:loc,notes});
         showNotification('✅ انتهت الرحلة!','success');
         closeModal(); await renderDriverSinglePage();
       }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✔ إنهاء الرحلة'; }
@@ -2339,174 +2336,6 @@ async function requestDriverPermissions() {
     s.getTracks().forEach(t=>t.stop());
     localStorage.setItem('dp_perms_ok','1');
   } catch(e){ /* silent */ }
-}
-
-/* ── DRIVER SINGLE PAGE ── */
-async function renderDriverSinglePage() {
-  document.body.classList.add('driver-mode');
-
-  const [primaryCar, allTrips, pricesData] = await Promise.all([
-    apiCall(`/drivers/${currentUser.driver_id}/primary-car`).catch(()=>null),
-    loadTrips().catch(()=>[]),
-    apiCall('/settings/prices').catch(()=>({}))
-  ]);
-  window._typePrices = pricesData||{};
-  window._driverCar  = primaryCar;
-
-  const activeTrip = allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
-  const now = new Date();
-  const dayName = now.toLocaleDateString('ar-EG',{weekday:'long'});
-  const dateStr = now.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
-  const carLabel = primaryCar ? `${primaryCar.plate} — ${primaryCar.model}` : 'لا توجد مركبة مخصصة';
-
-  const statusBar = activeTrip
-    ? `<div class="dp-status active">
-        <span class="ds-icon">🟢</span>
-        <div><div>رحلة نشطة #${activeTrip.id}</div>
-        <div class="ds-sub">بدأت: ${new Date(activeTrip.start_time).toLocaleString('ar-EG')} | عداد: ${activeTrip.start_odometer} كم</div></div>
-       </div>`
-    : `<div class="dp-status idle"><span class="ds-icon">⚪</span><div>لا توجد رحلة نشطة</div></div>`;
-
-  const wsTypes = Object.entries(WT).filter(([k])=>!['fuel','oil'].includes(k));
-
-  document.getElementById('appShell').innerHTML = `
-    <button class="dp-logout" id="dpLogout">خروج</button>
-
-    <div class="dp-wrap">
-
-      <!-- GREETING -->
-      <div class="dp-top">
-        <div class="dp-greeting">مرحباً، ${currentUser.username}</div>
-        <div class="dp-date">${dayName}، ${dateStr}</div>
-        <hr class="dp-divider">
-        <div class="dp-car">السيارة: <span>${carLabel}</span></div>
-      </div>
-
-      <!-- TRIP STATUS -->
-      ${statusBar}
-
-      <!-- TRIP BUTTONS -->
-      <div class="dp-section">
-        <div class="dp-label">الرحلة</div>
-        ${!activeTrip
-          ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶  بدء الرحلة</button>`
-          : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔  إنهاء الرحلة</button>`}
-        <button class="dp-btn-garage" id="dpGarage">🅿  إنهاء رحلات اليوم / دخول الجراج</button>
-      </div>
-
-      <!-- 4 QUICK BUTTONS -->
-      <div class="dp-section">
-        <div class="dp-label">إجراء سريع</div>
-        <div class="dp-quick">
-          <button class="dp-qbtn dp-qbtn-fuel"  onclick="dpQuick('fuel')"><span class="qi">⛽</span><span class="ql">وقود</span></button>
-          <button class="dp-qbtn dp-qbtn-oil"   onclick="dpQuick('oil')"><span class="qi">🛢️</span><span class="ql">زيت</span></button>
-          <button class="dp-qbtn dp-qbtn-acc"   onclick="dpQuick('accident')"><span class="qi">💥</span><span class="ql">حادت</span></button>
-          <button class="dp-qbtn dp-qbtn-emg"   onclick="dpQuick('emergency')"><span class="qi">🚨</span><span class="ql">طارئ</span></button>
-        </div>
-      </div>
-
-      <!-- WORKSHOP -->
-      <div class="dp-section">
-        <div class="dp-label">خدمات الصيانة</div>
-        <div class="dp-ws-grid">
-          ${wsTypes.map(([k,v])=>`
-            <button class="dp-ws-btn" onclick="dpWsModal('${k}')">${v.label}</button>`).join('')}
-        </div>
-      </div>
-
-    </div>`;
-
-  // Logout
-  document.getElementById('dpLogout').onclick=()=>{
-    clearInterval(notifPollInterval); clearAuth(); currentUser=null;
-    setTimeout(()=>location.reload(),300);
-  };
-
-  // Start trip
-  document.getElementById('dpStart')?.addEventListener('click',()=>{
-    if(!primaryCar) return showNotification('لا توجد مركبة مخصصة','error');
-    openModal(`
-      <div class="modal-header"><div class="modal-title">▶ بدء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-weight:700;color:#166534;font-size:.92rem">
-        🚗 ${primaryCar.plate} — ${primaryCar.model}
-      </div>
-      <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpStartOdo" placeholder="مثال: 54200" min="0"></div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-primary" id="dpStartOk">تأكيد وبدء</button>
-      </div>`);
-    document.getElementById('dpStartOk').onclick=async()=>{
-      const odo=parseFloat(document.getElementById('dpStartOdo').value);
-      if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
-      const btn=document.getElementById('dpStartOk');
-      btn.disabled=true; btn.textContent='جاري...';
-      const loc=await silentGetLocation();
-      try{
-        await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc});
-        showNotification('✅ بدأت الرحلة!','success');
-        closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء'; }
-    };
-  });
-
-  // End trip
-  document.getElementById('dpEnd')?.addEventListener('click',()=>{
-    const startOdo = activeTrip ? activeTrip.start_odometer : 0;
-    openModal(`
-      <div class="modal-header"><div class="modal-title">✔ إنهاء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#166534">
-        🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
-        <span style="font-size:.8rem;opacity:.8">📍 سيتم تسجيل موقعك الحالي تلقائياً</span>
-      </div>
-      <div class="form-group"><label>ملاحظات</label>
-        <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-success" id="dpEndOk">✔ إنهاء الرحلة</button>
-      </div>`);
-    document.getElementById('dpEndOk').onclick=async()=>{
-      const notes=document.getElementById('dpEndNotes').value.trim();
-      const btn=document.getElementById('dpEndOk');
-      btn.disabled=true; btn.textContent='⏳ جاري...';
-      const loc=await silentGetLocation();
-      try{
-        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_location:loc,notes});
-        showNotification('✅ انتهت الرحلة!','success');
-        closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✔ إنهاء الرحلة'; }
-    };
-  });
-
-  // Garage
-  document.getElementById('dpGarage').addEventListener('click',()=>{
-    openModal(`
-      <div class="modal-header"><div class="modal-title">🅿 دخول الجراج / نهاية اليوم</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="form-group"><label>عداد الختام (كم) <span class="req">*</span></label>
-        <input type="number" id="dpGarOdo" placeholder="قراءة العداد الآن" min="0"></div>
-      <div class="form-group"><label>ملاحظات</label>
-        <input type="text" id="dpGarNotes" placeholder="اختياري..."></div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-danger" id="dpGarOk">تسجيل</button>
-      </div>`);
-    document.getElementById('dpGarOk').onclick=async()=>{
-      const odo=parseFloat(document.getElementById('dpGarOdo').value);
-      const notes=document.getElementById('dpGarNotes').value.trim();
-      if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
-      const btn=document.getElementById('dpGarOk');
-      btn.disabled=true; btn.textContent='جاري...';
-      const loc=await silentGetLocation(10000);
-      if(!loc){ showNotification('تعذّر تحديد موقعك','error'); btn.disabled=false; btn.textContent='تسجيل'; return; }
-      try{
-        if(activeTrip&&odo>activeTrip.start_odometer)
-          await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
-        await apiCall('/garage/record','POST',{driver_id:currentUser.driver_id,car_id:primaryCar?.id||null,location:loc,notes});
-        showNotification('✅ تم تسجيل نهاية اليوم','success');
-        closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تسجيل'; }
-    };
-  });
 }
 
 /* Quick action dispatcher */
