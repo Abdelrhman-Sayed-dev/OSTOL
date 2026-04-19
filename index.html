@@ -607,11 +607,13 @@ async function renderOverview() {
 /* ── DRIVERS — Modal UX ── */
 async function renderDriversSection() {
   const drivers = await loadDrivers();
+  window._driversCSVData = drivers;
   document.getElementById('pageContent').innerHTML = `
     <div class="card">
       <div class="card-header">
         <div class="card-title">👥 السائقون والمشغّلون (${drivers.length})</div>
-        <div style="display:flex;gap:.6rem">
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="exportDriversCSV()">⬇️ تصدير CSV</button>
           <button class="btn btn-outline btn-sm" onclick="openAssignPermModal()">🔗 تعيين صلاحية</button>
           <button class="btn btn-primary btn-sm" onclick="openAddDriverModal()">➕ إضافة سائق</button>
         </div>
@@ -853,30 +855,20 @@ async function openAssignPermModal() {
 /* ── CARS ── */
 async function renderCarsSection() {
   const cars = await loadCars();
+  window._carsCSVData = cars;
   document.getElementById('pageContent').innerHTML = `
-    <div class="two-col">
-      <div class="card">
-        <div class="card-header"><div class="card-title">➕ إضافة مركبة</div></div>
-        <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="carPlate" placeholder="ABC-123"></div>
-        <div class="form-group"><label>الموديل <span class="req">*</span></label><input id="carModel" placeholder="تويوتا كورولا"></div>
-        <div class="form-group"><label>الحالة</label><select id="carStatus"><option value="available">متاحة</option><option value="maintenance">صيانة</option></select></div>
-        <input type="hidden" id="editCarId">
-        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-          <button class="btn btn-primary" id="addCarBtn">➕ إضافة</button>
-          <button class="btn btn-outline" id="updateCarBtn" style="display:none">✏️ حفظ</button>
-          <button class="btn btn-ghost" id="cancelCarEdit" style="display:none">إلغاء</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header"><div class="card-title">📊 إحصائيات</div></div>
-        <div class="stats-row" style="grid-template-columns:1fr 1fr;margin-bottom:0">
-          <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value">${cars.filter(c=>c.status==='available').length}</div><div class="stat-label">متاحة</div></div>
-          <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status!=='available').length}</div><div class="stat-label">صيانة</div></div>
-        </div>
-      </div>
-    </div>
     <div class="card">
-      <div class="card-header"><div class="card-title">🚘 قائمة المركبات</div></div>
+      <div class="card-header">
+        <div class="card-title">🚘 قائمة المركبات (${cars.length})</div>
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="exportCarsCSV()">⬇️ تصدير CSV</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddCarModal()">➕ إضافة مركبة</button>
+        </div>
+      </div>
+      <div class="stats-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:1rem">
+        <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value">${cars.filter(c=>c.status==='available').length}</div><div class="stat-label">متاحة</div></div>
+        <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status!=='available').length}</div><div class="stat-label">صيانة</div></div>
+      </div>
       <div class="table-wrap" id="carsList">
         <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
         ${cars.map(c=>`<tr><td>${c.id}</td><td dir="ltr"><strong>${c.plate}</strong></td><td>${c.model}</td>
@@ -886,13 +878,52 @@ async function renderCarsSection() {
         </tbody></table>
       </div>
     </div>`;
-  document.getElementById('addCarBtn').onclick=async()=>{ const plate=document.getElementById('carPlate').value.trim(),model=document.getElementById('carModel').value.trim(),status=document.getElementById('carStatus').value; if(!plate||!model)return showNotification('اللوحة والموديل مطلوبان','error'); try{await apiCall('/cars','POST',{plate,model,status});showNotification('تمت الإضافة','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');} };
-  document.getElementById('updateCarBtn').onclick=async()=>{ const id=document.getElementById('editCarId').value,plate=document.getElementById('carPlate').value,model=document.getElementById('carModel').value,status=document.getElementById('carStatus').value; try{await apiCall(`/cars/${id}`,'PUT',{plate,model,status});showNotification('تم التحديث','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');} };
-  document.getElementById('cancelCarEdit').onclick=()=>renderCarsSection();
   document.getElementById('carsList').addEventListener('click',async e=>{
-    if(e.target.closest('.edit-car')){const b=e.target.closest('.edit-car');document.getElementById('carPlate').value=b.dataset.plate;document.getElementById('carModel').value=b.dataset.model;document.getElementById('carStatus').value=b.dataset.status;document.getElementById('editCarId').value=b.dataset.id;document.getElementById('addCarBtn').style.display='none';document.getElementById('updateCarBtn').style.display='';document.getElementById('cancelCarEdit').style.display='';}
+    if(e.target.closest('.edit-car')){const b=e.target.closest('.edit-car'); openEditCarModal(b.dataset.id,b.dataset.plate,b.dataset.model,b.dataset.status);}
     if(e.target.closest('.del-car')){const id=+e.target.closest('.del-car').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/cars/${id}`,'DELETE');showNotification('تم الحذف','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');}}
   });
+}
+
+function openAddCarModal() {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">➕ إضافة مركبة جديدة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="mCarPlate" placeholder="ABC-123"></div>
+    <div class="form-group"><label>الموديل <span class="req">*</span></label><input id="mCarModel" placeholder="تويوتا كورولا"></div>
+    <div class="form-group"><label>الحالة</label><select id="mCarStatus"><option value="available">متاحة</option><option value="maintenance">صيانة</option></select></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="mCarSave">➕ إضافة</button>
+    </div>`);
+  document.getElementById('mCarSave').onclick=async()=>{
+    const plate=document.getElementById('mCarPlate').value.trim();
+    const model=document.getElementById('mCarModel').value.trim();
+    const status=document.getElementById('mCarStatus').value;
+    if(!plate||!model) return showNotification('اللوحة والموديل مطلوبان','error');
+    const btn=document.getElementById('mCarSave'); btn.disabled=true; btn.textContent='جاري...';
+    try{await apiCall('/cars','POST',{plate,model,status});showNotification('✅ تمت إضافة المركبة','success');closeModal();await renderCarsSection();}
+    catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='➕ إضافة';}
+  };
+}
+
+function openEditCarModal(id,plate,model,status) {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات المركبة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="mEditCarPlate" value="${plate}"></div>
+    <div class="form-group"><label>الموديل <span class="req">*</span></label><input id="mEditCarModel" value="${model}"></div>
+    <div class="form-group"><label>الحالة</label><select id="mEditCarStatus"><option value="available" ${status==='available'?'selected':''}>متاحة</option><option value="maintenance" ${status!=='available'?'selected':''}>صيانة</option></select></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="mEditCarSave">💾 حفظ</button>
+    </div>`);
+  document.getElementById('mEditCarSave').onclick=async()=>{
+    const p=document.getElementById('mEditCarPlate').value.trim();
+    const m=document.getElementById('mEditCarModel').value.trim();
+    const s=document.getElementById('mEditCarStatus').value;
+    if(!p||!m) return showNotification('اللوحة والموديل مطلوبان','error');
+    const btn=document.getElementById('mEditCarSave'); btn.disabled=true; btn.textContent='جاري...';
+    try{await apiCall(`/cars/${id}`,'PUT',{plate:p,model:m,status:s});showNotification('✅ تم التحديث','success');closeModal();await renderCarsSection();}
+    catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
+  };
 }
 
 /* ── LOCATION HELPERS ── */
@@ -926,17 +957,17 @@ function formatLocation(loc, asGarage=false) {
 /* ── TRIPS TABLE ── */
 function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
   if(!trips.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات</p></div>';
-  return `<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>المسافة</th><th>موقع البداية</th><th>موقع النهاية</th><th>موقع الجراج</th><th>ملاحظات</th><th>الحالة</th></tr></thead><tbody>
+  return `<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>عداد البداية</th><th>عداد النهاية</th><th>موقع البداية</th><th>موقع النهاية</th><th>موقع الجراج</th><th>ملاحظات</th><th>الحالة</th></tr></thead><tbody>
   ${trips.map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
-    const dist=(t.end_odometer&&t.start_odometer)?(t.end_odometer-t.start_odometer).toFixed(1)+' كم':'—';
     const gRec=garageLatest.find(g=>g.car_id===t.car_id);
     const garageLoc=t.garage_location||gRec?.location||'';
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
       <td>${t.start_time?new Date(t.start_time).toLocaleString('ar-EG'):'—'}</td>
       <td>${t.end_time?new Date(t.end_time).toLocaleString('ar-EG'):'—'}</td>
-      <td><strong>${dist}</strong></td>
+      <td><strong>${t.start_odometer!=null?t.start_odometer+' كم':'—'}</strong></td>
+      <td><strong>${t.end_odometer!=null?t.end_odometer+' كم':'—'}</strong></td>
       <td>${formatLocation(t.start_location)}</td><td>${formatLocation(t.end_location)}</td><td>${formatLocation(garageLoc, true)}</td>
       <td style="font-size:.8rem;max-width:110px">${t.notes||'—'}</td>
       <td>${!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>'}</td></tr>`;
@@ -950,11 +981,29 @@ async function renderTripsSection() {
 }
 function exportCSV(){
   const trips=window._tripsData||[],drivers=window._driversData||[],cars=window._carsData||[];
-  const rows=[['#','السائق','المركبة','وقت البداية','وقت النهاية','عداد البداية','عداد النهاية','المسافة','موقع البداية','موقع النهاية','موقع الجراج','ملاحظات','الحالة']];
-  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const dist=(t.end_odometer&&t.start_odometer)?(t.end_odometer-t.start_odometer).toFixed(1):''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const garageLoc=t.garage_location||gRec?.location||''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer,t.end_odometer||'',dist,t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
+  const rows=[['#','السائق','المركبة','وقت البداية','وقت النهاية','عداد البداية','عداد النهاية','موقع البداية','موقع النهاية','موقع الجراج','ملاحظات','الحالة']];
+  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const garageLoc=t.garage_location||gRec?.location||''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer||'',t.end_odometer||'',t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`رحلات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير الرحلات ✅','success');
+}
+
+function exportDriversCSV(){
+  const drivers=window._driversCSVData||[];
+  const rows=[['#','الاسم','الهاتف','الرقم التعريفي','تاريخ الميلاد','انتهاء رخصة السائق','انتهاء رخصة العربة','الحالة','اسم المستخدم']];
+  drivers.forEach(d=>rows.push([d.id,d.name,d.phone||'',d.national_id||'',d.birth_date||'',d.driver_license_expiry||'',d.vehicle_license_expiry||'',d.status==='active'?'نشط':'غير نشط',d.username||'']));
+  const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`السائقون_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
+  showNotification('تم تصدير السائقين ✅','success');
+}
+
+function exportCarsCSV(){
+  const cars=window._carsCSVData||[];
+  const rows=[['#','رقم اللوحة','الموديل','الحالة']];
+  cars.forEach(c=>rows.push([c.id,c.plate,c.model,c.status==='available'?'متاحة':'صيانة']));
+  const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`المركبات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
+  showNotification('تم تصدير المركبات ✅','success');
 }
 
 /* ── WORKSHOPS ── */
@@ -1998,29 +2047,29 @@ async function renderDriverSinglePage() {
 
   // End trip
   document.getElementById('dpEnd')?.addEventListener('click',()=>{
+    const startOdo = activeTrip ? activeTrip.start_odometer : 0;
     openModal(`
       <div class="modal-header"><div class="modal-title">✔ إنهاء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpEndOdo" placeholder="مثال: 54350" min="${activeTrip?activeTrip.start_odometer+1:0}"></div>
+      <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#166534">
+        🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
+        <span style="font-size:.8rem;opacity:.8">📍 سيتم تسجيل موقعك الحالي تلقائياً</span>
+      </div>
       <div class="form-group"><label>ملاحظات</label>
         <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-success" id="dpEndOk">إنهاء</button>
+        <button class="btn btn-success" id="dpEndOk">✔ إنهاء الرحلة</button>
       </div>`);
     document.getElementById('dpEndOk').onclick=async()=>{
-      const odo=parseFloat(document.getElementById('dpEndOdo').value);
       const notes=document.getElementById('dpEndNotes').value.trim();
-      if(isNaN(odo)) return showNotification('أدخل عداد النهاية','error');
-      if(activeTrip&&odo<=activeTrip.start_odometer) return showNotification(`يجب أن يكون أكبر من ${activeTrip.start_odometer}','error`);
       const btn=document.getElementById('dpEndOk');
-      btn.disabled=true; btn.textContent='جاري...';
+      btn.disabled=true; btn.textContent='⏳ جاري...';
       const loc=await silentGetLocation();
       try{
-        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
+        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_location:loc,notes});
         showNotification('✅ انتهت الرحلة!','success');
         closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='إنهاء'; }
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✔ إنهاء الرحلة'; }
     };
   });
 
@@ -2057,9 +2106,153 @@ async function renderDriverSinglePage() {
 
 /* Quick action dispatcher */
 async function dpQuick(type) {
-  if(type==='accident'||type==='emergency'){ startRecording(type); return; }
+  if(type==='accident'||type==='emergency'){ openEmergencyModal(type); return; }
   if(!window._typePrices) window._typePrices=await apiCall('/settings/prices').catch(()=>({}));
   dpWsModal(type);
+}
+
+/* ── EMERGENCY MODAL — step 1: confirm → step 2: recording ── */
+function openEmergencyModal(type) {
+  const isEmg = type === 'emergency';
+  const color  = isEmg ? '#dc2626' : '#d97706';
+  const icon   = isEmg ? '🚨' : '💥';
+  const title  = isEmg ? 'بلاغ طارئ' : 'تقرير حادث';
+  const subMsg = isEmg ? 'سيتم إرسال موقعك وتسجيل صوتي للإدارة فوراً' : 'سيتم إرسال موقعك وتسجيل صوتي للإدارة';
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title" style="color:${color}">${icon} ${title}</div>
+      <button class="modal-close" onclick="cancelEmergencyModal()">✕</button>
+    </div>
+
+    <div id="emgStep1">
+      <div style="background:${isEmg?'#fee2e2':'#fef3c7'};border:2px solid ${color};border-radius:12px;padding:1.2rem;text-align:center;margin-bottom:1.2rem">
+        <div style="font-size:3rem;margin-bottom:.5rem">${icon}</div>
+        <div style="font-weight:800;color:${color};font-size:1.1rem;margin-bottom:.3rem">${title}</div>
+        <div style="font-size:.85rem;color:#64748b">${subMsg}</div>
+      </div>
+      <div class="form-group"><label>ملاحظات (اختياري)</label>
+        <input id="emgNotes" placeholder="وصف موجز للموقف..." style="border-color:${color}"></div>
+      <div class="modal-footer" style="margin-top:.5rem">
+        <button class="btn btn-ghost" onclick="cancelEmergencyModal()">إلغاء</button>
+        <button class="btn" style="background:${color};color:white;font-size:1rem;padding:.75rem 1.5rem" id="emgStartBtn">
+          ${icon} ابدأ التسجيل
+        </button>
+      </div>
+    </div>
+
+    <div id="emgStep2" style="display:none">
+      <div class="recording-indicator" style="margin-bottom:1rem;border-color:${color}">
+        <div class="rec-dot" style="background:${color}"></div>
+        <div class="rec-text" style="color:${color}">${icon} جاري التسجيل...</div>
+        <div class="rec-timer" style="color:${color}" id="emgRecTimer">0:00</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.85rem;margin-bottom:1rem;font-size:.83rem;color:#64748b;text-align:center">
+        📍 سيتم سحب موقعك تلقائياً عند الإرسال
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="cancelEmergencyModal()">❌ إلغاء</button>
+        <button class="btn btn-danger" id="emgSendBtn" style="font-size:1rem;padding:.75rem 1.5rem">⏹ إيقاف وإرسال</button>
+      </div>
+    </div>`);
+
+  document.getElementById('emgStartBtn').onclick = async () => {
+    window._emgPendingNotes = document.getElementById('emgNotes')?.value || '';
+    window._emgPendingType  = type;
+    document.getElementById('emgStep1').style.display = 'none';
+    document.getElementById('emgStep2').style.display = 'block';
+    await startEmergencyRecording(type);
+  };
+
+  document.getElementById('emgSendBtn').onclick = () => {
+    const btn = document.getElementById('emgSendBtn');
+    btn.disabled=true; btn.textContent='⏳ جاري الإرسال...';
+    stopAndSendEmergency();
+  };
+}
+
+function cancelEmergencyModal() {
+  if(mediaRecorder && mediaRecorder.state!=='inactive'){
+    try{ mediaRecorder.stream?.getTracks().forEach(t=>t.stop()); mediaRecorder.stop(); }catch(e){}
+  }
+  clearInterval(recInterval);
+  mediaRecorder=null; audioChunks=[];
+  closeModal();
+}
+
+async function startEmergencyRecording(type) {
+  if(mediaRecorder && mediaRecorder.state==='recording') return;
+  currentRecordingType=type;
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    audioChunks=[];
+    const mimeTypes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4',''];
+    let mimeType='';
+    for(const t of mimeTypes){ try{ if(!t||MediaRecorder.isTypeSupported(t)){mimeType=t;break;} }catch(e){} }
+    mediaRecorder=new MediaRecorder(stream,mimeType?{mimeType}:{});
+    mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size>0) audioChunks.push(e.data); };
+    mediaRecorder.onstop=async()=>{
+      const finalMime=mediaRecorder.mimeType||'audio/webm';
+      const blob=new Blob(audioChunks,{type:finalMime});
+      if(blob.size<100){
+        showNotification('لم يُسجَّل أي صوت، حاول مرة أخرى','error');
+        const btn=document.getElementById('emgSendBtn');
+        if(btn){btn.disabled=false;btn.textContent='⏹ إيقاف وإرسال';}
+        return;
+      }
+      const notes=window._emgPendingNotes||'';
+      const reader=new FileReader();
+      reader.onloadend=async()=>{
+        const emgLocation=await silentGetLocation(8000);
+        try{
+          await apiCall('/emergency/report','POST',{
+            driver_id:currentUser.driver_id,
+            car_id:window._emergActiveCarId||null,
+            type:currentRecordingType,
+            audio_data:reader.result,
+            notes,
+            location:emgLocation
+          });
+          closeModal();
+          showNotification(currentRecordingType==='emergency'?'🚨 تم إرسال بلاغ الطوارئ للإدارة!':'💥 تم إرسال تقرير الحادث للإدارة!','emergency',5000);
+          audioChunks=[]; mediaRecorder=null;
+        }catch(err){
+          showNotification('فشل الإرسال: '+err.message,'error');
+          const btn=document.getElementById('emgSendBtn');
+          if(btn){btn.disabled=false;btn.textContent='⏹ إيقاف وإرسال';}
+        }
+      };
+      reader.readAsDataURL(blob);
+    };
+    mediaRecorder.start(300);
+    recSeconds=0;
+    const timerEl=document.getElementById('emgRecTimer');
+    if(timerEl) timerEl.textContent='0:00';
+    recInterval=setInterval(()=>{
+      recSeconds++;
+      const m=Math.floor(recSeconds/60),s=recSeconds%60;
+      const el=document.getElementById('emgRecTimer');
+      if(el) el.textContent=`${m}:${String(s).padStart(2,'0')}`;
+    },1000);
+  }catch(e){
+    console.error('Mic error:',e);
+    closeModal();
+    showNotification('تعذّر الوصول للميكروفون — تأكد من منح صلاحية الميكروفون في المتصفح','error');
+  }
+}
+
+function stopAndSendEmergency() {
+  if(!mediaRecorder||mediaRecorder.state==='inactive'){showNotification('لا يوجد تسجيل نشط','error');return;}
+  clearInterval(recInterval);
+  try{
+    mediaRecorder.requestData();
+    mediaRecorder.stream?.getTracks().forEach(t=>t.stop());
+    mediaRecorder.stop();
+  }catch(e){
+    showNotification('خطأ: '+e.message,'error');
+    const btn=document.getElementById('emgSendBtn');
+    if(btn){btn.disabled=false;btn.textContent='⏹ إيقاف وإرسال';}
+  }
 }
 
 /* Workshop modal — car is read-only, set to primary car */
@@ -2240,29 +2433,29 @@ async function renderDriverSinglePage() {
 
   // End trip
   document.getElementById('dpEnd')?.addEventListener('click',()=>{
+    const startOdo = activeTrip ? activeTrip.start_odometer : 0;
     openModal(`
       <div class="modal-header"><div class="modal-title">✔ إنهاء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpEndOdo" placeholder="مثال: 54350" min="${activeTrip?activeTrip.start_odometer+1:0}"></div>
+      <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#166534">
+        🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
+        <span style="font-size:.8rem;opacity:.8">📍 سيتم تسجيل موقعك الحالي تلقائياً</span>
+      </div>
       <div class="form-group"><label>ملاحظات</label>
         <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-success" id="dpEndOk">إنهاء</button>
+        <button class="btn btn-success" id="dpEndOk">✔ إنهاء الرحلة</button>
       </div>`);
     document.getElementById('dpEndOk').onclick=async()=>{
-      const odo=parseFloat(document.getElementById('dpEndOdo').value);
       const notes=document.getElementById('dpEndNotes').value.trim();
-      if(isNaN(odo)) return showNotification('أدخل عداد النهاية','error');
-      if(activeTrip&&odo<=activeTrip.start_odometer) return showNotification(`يجب أن يكون أكبر من ${activeTrip.start_odometer}','error`);
       const btn=document.getElementById('dpEndOk');
-      btn.disabled=true; btn.textContent='جاري...';
+      btn.disabled=true; btn.textContent='⏳ جاري...';
       const loc=await silentGetLocation();
       try{
-        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
+        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_location:loc,notes});
         showNotification('✅ انتهت الرحلة!','success');
         closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='إنهاء'; }
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✔ إنهاء الرحلة'; }
     };
   });
 
@@ -2299,7 +2492,7 @@ async function renderDriverSinglePage() {
 
 /* Quick action dispatcher */
 async function dpQuick(type) {
-  if(type==='accident'||type==='emergency'){ startRecording(type); return; }
+  if(type==='accident'||type==='emergency'){ openEmergencyModal(type); return; }
   if(!window._typePrices) window._typePrices=await apiCall('/settings/prices').catch(()=>({}));
   dpWsModal(type);
 }
