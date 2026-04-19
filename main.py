@@ -372,9 +372,10 @@ class LoginReq(BaseModel):
 
     @validator("username")
     def sanitize_username(cls, v):
-        if not re.match(r"^[a-zA-Z0-9_.-]{3,50}$", v):
-            raise ValueError("اسم المستخدم غير صالح")
-        return v.strip()
+        v = v.strip()
+        if len(v) < 2 or len(v) > 100:
+            raise ValueError("اسم المستخدم يجب أن يكون بين 2 و100 حرف")
+        return v
 
 class RefreshReq(BaseModel):
     refresh_token: str
