@@ -448,6 +448,13 @@ let currentUser = null;
 let notifPollInterval = null;
 let lastUnreadCount = 0;
 
+// Recording globals
+let mediaRecorder = null;
+let audioChunks = [];
+let recInterval = null;
+let recSeconds = 0;
+let currentRecordingType = null;
+
 const getToken = () => localStorage.getItem('access_token');
 const setToken = t => t ? localStorage.setItem('access_token',t) : localStorage.removeItem('access_token');
 const clearAuth = () => { localStorage.removeItem('access_token'); localStorage.removeItem('user_data'); localStorage.removeItem('refresh_token'); };
@@ -2108,12 +2115,19 @@ async function dpQuick(type) {
   dpWsModal(type);
 }
 
-/* ── EMERGENCY MODAL — اضغط فيبدأ التسجيل فوراً ── */
+/* ── EMERGENCY MODAL — يسجل الصوت أولاً ثم يرسل عند الضغط على الزر ── */
 function openEmergencyModal(type) {
   const isEmg = type === 'emergency';
   const color  = isEmg ? '#dc2626' : '#d97706';
   const icon   = isEmg ? '🚨' : '💥';
   const title  = isEmg ? 'بلاغ طارئ' : 'تقرير حادث';
+
+  // تنظيف أي تسجيل سابق
+  if(mediaRecorder && mediaRecorder.state !== 'inactive'){
+    try{ mediaRecorder.stream?.getTracks().forEach(t=>t.stop()); mediaRecorder.stop(); }catch(e){}
+  }
+  clearInterval(recInterval);
+  mediaRecorder = null; audioChunks = []; recSeconds = 0;
 
   openModal(`
     <div class="modal-header">
@@ -2121,18 +2135,27 @@ function openEmergencyModal(type) {
       <button class="modal-close" id="emgCloseBtn" onclick="cancelEmergencyModal()">✕</button>
     </div>
 
-    <!-- شاشة التسجيل — تظهر مباشرة -->
+    <!-- شاشة التسجيل -->
     <div id="emgStepRec">
-      <div style="background:${isEmg?'#fee2e2':'#fef3c7'};border:2px solid ${color};border-radius:14px;padding:1.4rem;text-align:center;margin-bottom:1.2rem">
+      <div id="emgWaiting" style="background:#f1f5f9;border:2px solid #cbd5e1;border-radius:14px;padding:1.4rem;text-align:center;margin-bottom:1.2rem">
+        <div style="font-size:2rem;margin-bottom:.5rem">🎙️</div>
+        <div style="font-weight:700;color:#475569;font-size:.95rem">جاري تشغيل الميكروفون...</div>
+      </div>
+      <div id="emgRecBox" style="display:none;background:${isEmg?'#fee2e2':'#fef3c7'};border:2px solid ${color};border-radius:14px;padding:1.4rem;text-align:center;margin-bottom:1.2rem">
         <div style="display:flex;align-items:center;justify-content:center;gap:.7rem;margin-bottom:.6rem">
           <span style="width:13px;height:13px;border-radius:50%;background:${color};display:inline-block;animation:blink .8s infinite"></span>
-          <span style="font-weight:800;color:${color};font-size:1.1rem">🎙️ جاري التسجيل...</span>
+          <span style="font-weight:800;color:${color};font-size:1.05rem">جاري التسجيل...</span>
         </div>
         <div style="font-family:monospace;font-size:2rem;font-weight:800;color:${color}" id="emgRecTimer">0:00</div>
       </div>
+      <div id="emgErrBox" style="display:none;background:#fff5f5;border:2px solid #dc2626;border-radius:14px;padding:1.2rem;text-align:center;margin-bottom:1.2rem">
+        <div style="font-size:1.5rem;margin-bottom:.4rem">🎙️❌</div>
+        <div style="font-weight:700;color:#dc2626;font-size:.9rem" id="emgErrMsg">تعذر الوصول للميكروفون</div>
+        <div style="font-size:.8rem;color:#94a3b8;margin-top:.3rem">سيتم إرسال البلاغ بدون تسجيل صوتي</div>
+      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="cancelEmergencyModal()">❌ إلغاء</button>
-        <button class="btn" style="background:${color};color:white;font-size:1.05rem;padding:.85rem 2rem;font-weight:800" id="emgSendBtn">
+        <button class="btn" style="background:${color};color:white;font-size:1.05rem;padding:.85rem 2rem;font-weight:800" id="emgSendBtn" disabled>
           📤 إرسال البلاغ
         </button>
       </div>
@@ -2153,121 +2176,177 @@ function openEmergencyModal(type) {
       <button class="btn btn-ghost" onclick="cancelEmergencyModal()">إغلاق</button>
     </div>`);
 
-  // ابدأ التسجيل فوراً بدون انتظار
   window._emgPendingNotes = '';
   window._emgPendingType  = type;
+  currentRecordingType    = type;
+
+  // ابدأ التسجيل وعند النجاح فعّل زر الإرسال
   startEmergencyRecording(type);
 
-  // زر الإرسال — يوقف التسجيل ويبعت
-  document.getElementById('emgSendBtn').onclick = () => {
-    document.getElementById('emgStepRec').style.display    = 'none';
+  // زر الإرسال — يوقف التسجيل ويرسله
+  document.getElementById('emgSendBtn').addEventListener('click', () => {
+    document.getElementById('emgStepRec').style.display     = 'none';
     document.getElementById('emgStepSending').style.display = 'block';
-    document.getElementById('emgCloseBtn').style.display   = 'none';
+    document.getElementById('emgCloseBtn').style.display    = 'none';
     stopAndSendEmergency();
-  };
+  });
 }
+
 function cancelEmergencyModal() {
-  if(mediaRecorder && mediaRecorder.state!=='inactive'){
+  if(mediaRecorder && mediaRecorder.state !== 'inactive'){
     try{ mediaRecorder.stream?.getTracks().forEach(t=>t.stop()); mediaRecorder.stop(); }catch(e){}
   }
   clearInterval(recInterval);
-  mediaRecorder=null; audioChunks=[];
+  mediaRecorder = null; audioChunks = []; recSeconds = 0;
   closeModal();
 }
 
 async function startEmergencyRecording(type) {
-  if(mediaRecorder && mediaRecorder.state==='recording') return;
-  currentRecordingType=type;
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-    audioChunks=[];
-    const mimeTypes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4',''];
-    let mimeType='';
-    for(const t of mimeTypes){ try{ if(!t||MediaRecorder.isTypeSupported(t)){mimeType=t;break;} }catch(e){} }
-    mediaRecorder=new MediaRecorder(stream,mimeType?{mimeType}:{});
-    mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size>0) audioChunks.push(e.data); };
-    mediaRecorder.onstop=async()=>{
-      const finalMime=mediaRecorder.mimeType||'audio/webm';
-      const blob=new Blob(audioChunks,{type:finalMime});
-      if(blob.size<100){
+  if(mediaRecorder && mediaRecorder.state === 'recording') return;
+  currentRecordingType = type;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+
+    // إخفاء شاشة الانتظار وإظهار شاشة التسجيل
+    const waitBox = document.getElementById('emgWaiting');
+    const recBox  = document.getElementById('emgRecBox');
+    const sendBtn = document.getElementById('emgSendBtn');
+    if(waitBox) waitBox.style.display = 'none';
+    if(recBox)  recBox.style.display  = 'block';
+    if(sendBtn) sendBtn.disabled      = false;
+
+    audioChunks = [];
+    const mimeTypes = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4',''];
+    let mimeType = '';
+    for(const t of mimeTypes){ try{ if(!t || MediaRecorder.isTypeSupported(t)){ mimeType = t; break; } }catch(e){} }
+    mediaRecorder = new MediaRecorder(stream, mimeType ? {mimeType} : {});
+
+    mediaRecorder.ondataavailable = e => { if(e.data && e.data.size > 0) audioChunks.push(e.data); };
+
+    mediaRecorder.onstop = async () => {
+      const finalMime = mediaRecorder.mimeType || 'audio/webm';
+      const blob = new Blob(audioChunks, {type: finalMime});
+      stream.getTracks().forEach(t => t.stop());
+
+      if(blob.size < 100) {
         showNotification('لم يُسجَّل أي صوت، حاول مرة أخرى','error');
-        const btn=document.getElementById('emgSendBtn');
-        if(btn){btn.disabled=false;btn.textContent='📤 إرسال البلاغ';}
+        document.getElementById('emgStepSending').style.display = 'none';
+        document.getElementById('emgStepRec').style.display     = 'block';
+        document.getElementById('emgCloseBtn').style.display    = '';
+        const btn = document.getElementById('emgSendBtn');
+        if(btn){ btn.disabled = false; }
         return;
       }
-      const notes=window._emgPendingNotes||'';
-      const reader=new FileReader();
-      reader.onloadend=async()=>{
-        const emgLocation=await silentGetLocation(8000);
-        try{
+
+      const notes  = window._emgPendingNotes || '';
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const emgLocation = await silentGetLocation(8000);
+        try {
           await apiCall('/emergency/report','POST',{
-            driver_id:currentUser.driver_id,
-            car_id:window._emergActiveCarId||null,
-            type:currentRecordingType,
-            audio_data:reader.result,
+            driver_id: currentUser.driver_id,
+            car_id:    window._driverCar?.id || null,
+            type:      currentRecordingType,
+            audio_data: reader.result,
             notes,
-            location:emgLocation
+            location:  emgLocation
           });
-          audioChunks=[]; mediaRecorder=null;
-          const sSending=document.getElementById('emgStepSending');
-          const sDone=document.getElementById('emgStepDone');
-          if(sSending) sSending.style.display='none';
-          if(sDone){ sDone.style.display='block'; }
-          else { closeModal(); }
-        }catch(err){
-          showNotification('فشل الإرسال: '+err.message,'error');
-          const btn=document.getElementById('emgSendBtn');
-          if(btn){btn.disabled=false;btn.textContent='⏹ إيقاف وإرسال';}
+          audioChunks = []; mediaRecorder = null;
+          clearInterval(recInterval);
+          const sSending = document.getElementById('emgStepSending');
+          const sDone    = document.getElementById('emgStepDone');
+          if(sSending) sSending.style.display = 'none';
+          if(sDone)    sDone.style.display    = 'block';
+          else         closeModal();
+        } catch(err) {
+          showNotification('فشل الإرسال: ' + err.message, 'error');
+          document.getElementById('emgStepSending').style.display = 'none';
+          document.getElementById('emgStepRec').style.display     = 'block';
+          document.getElementById('emgCloseBtn').style.display    = '';
+          const btn = document.getElementById('emgSendBtn');
+          if(btn){ btn.disabled = false; }
         }
       };
       reader.readAsDataURL(blob);
     };
+
     mediaRecorder.start(300);
-    recSeconds=0;
-    const timerEl=document.getElementById('emgRecTimer');
-    if(timerEl) timerEl.textContent='0:00';
-    recInterval=setInterval(()=>{
+    recSeconds = 0;
+    const timerEl = document.getElementById('emgRecTimer');
+    if(timerEl) timerEl.textContent = '0:00';
+    clearInterval(recInterval);
+    recInterval = setInterval(() => {
       recSeconds++;
-      const m=Math.floor(recSeconds/60),s=recSeconds%60;
-      const el=document.getElementById('emgRecTimer');
-      if(el) el.textContent=`${m}:${String(s).padStart(2,'0')}`;
-    },1000);
-  }catch(e){
-    console.error('Mic error:',e);
-    // في حال عدم توفر الميكروفون، أرسل البلاغ بدون صوت
-    const emgLocation2=await silentGetLocation(8000).catch(()=>'');
-    try{
-      await apiCall('/emergency/report','POST',{
-        driver_id:currentUser.driver_id,
-        car_id:window._emergActiveCarId||null,
-        type:currentRecordingType,
-        audio_data:'',
-        notes:window._emgPendingNotes||'',
-        location:emgLocation2
-      });
-      const sSending2=document.getElementById('emgStepSending');
-      const sDone2=document.getElementById('emgStepDone');
-      if(sSending2) sSending2.style.display='none';
-      if(sDone2){ sDone2.style.display='block'; }
-      else { closeModal(); }
-    }catch(err2){
-      closeModal();
-      showNotification('فشل الإرسال: '+err2.message,'error');
-    }
+      const m = Math.floor(recSeconds / 60), s = recSeconds % 60;
+      const el = document.getElementById('emgRecTimer');
+      if(el) el.textContent = `${m}:${String(s).padStart(2,'0')}`;
+    }, 1000);
+
+  } catch(e) {
+    console.error('Mic error:', e);
+    // إظهار رسالة الخطأ والسماح بالإرسال بدون صوت
+    const waitBox  = document.getElementById('emgWaiting');
+    const errBox   = document.getElementById('emgErrBox');
+    const errMsg   = document.getElementById('emgErrMsg');
+    const sendBtn  = document.getElementById('emgSendBtn');
+    if(waitBox) waitBox.style.display = 'none';
+    if(errBox)  errBox.style.display  = 'block';
+    if(errMsg)  errMsg.textContent    = e.name === 'NotAllowedError'
+      ? 'الرجاء السماح للتطبيق باستخدام الميكروفون'
+      : 'تعذر الوصول للميكروفون';
+    // فعّل زر الإرسال حتى بدون صوت
+    if(sendBtn) sendBtn.disabled = false;
+    // علّم إن التسجيل فاشل
+    window._emgNoAudio = true;
   }
 }
 
 function stopAndSendEmergency() {
-  if(!mediaRecorder||mediaRecorder.state==='inactive'){ return; } // البلاغ أُرسل بدون صوت بالفعل
   clearInterval(recInterval);
-  try{
+
+  // لو التسجيل فاشل من الأساس، ابعت بدون صوت مباشرة
+  if(window._emgNoAudio || !mediaRecorder || mediaRecorder.state === 'inactive') {
+    window._emgNoAudio = false;
+    _sendEmergencyNoAudio();
+    return;
+  }
+
+  try {
     mediaRecorder.requestData();
-    mediaRecorder.stream?.getTracks().forEach(t=>t.stop());
     mediaRecorder.stop();
-  }catch(e){
-    showNotification('خطأ: '+e.message,'error');
-    const btn=document.getElementById('emgSendBtn');
-    if(btn){btn.disabled=false;btn.textContent='⏹ إيقاف وإرسال';}
+  } catch(e) {
+    showNotification('خطأ: ' + e.message, 'error');
+    document.getElementById('emgStepSending').style.display = 'none';
+    document.getElementById('emgStepRec').style.display     = 'block';
+    document.getElementById('emgCloseBtn').style.display    = '';
+    const btn = document.getElementById('emgSendBtn');
+    if(btn){ btn.disabled = false; }
+  }
+}
+
+async function _sendEmergencyNoAudio() {
+  const emgLocation = await silentGetLocation(8000).catch(() => '');
+  try {
+    await apiCall('/emergency/report','POST',{
+      driver_id:  currentUser.driver_id,
+      car_id:     window._driverCar?.id || null,
+      type:       currentRecordingType,
+      audio_data: '',
+      notes:      window._emgPendingNotes || '',
+      location:   emgLocation
+    });
+    const sSending = document.getElementById('emgStepSending');
+    const sDone    = document.getElementById('emgStepDone');
+    if(sSending) sSending.style.display = 'none';
+    if(sDone)    sDone.style.display    = 'block';
+    else         closeModal();
+  } catch(err) {
+    showNotification('فشل الإرسال: ' + err.message, 'error');
+    document.getElementById('emgStepSending').style.display = 'none';
+    document.getElementById('emgStepRec').style.display     = 'block';
+    document.getElementById('emgCloseBtn').style.display    = '';
+    const btn = document.getElementById('emgSendBtn');
+    if(btn){ btn.disabled = false; }
   }
 }
 
@@ -2327,79 +2406,6 @@ function dpWsModal(type) {
   };
 }
 
-
-async function requestDriverPermissions() {
-  if(localStorage.getItem('dp_perms_ok')) return;
-  try {
-    await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:8000}));
-    const s=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-    s.getTracks().forEach(t=>t.stop());
-    localStorage.setItem('dp_perms_ok','1');
-  } catch(e){ /* silent */ }
-}
-
-/* Quick action dispatcher */
-async function dpQuick(type) {
-  if(type==='accident'||type==='emergency'){ openEmergencyModal(type); return; }
-  if(!window._typePrices) window._typePrices=await apiCall('/settings/prices').catch(()=>({}));
-  dpWsModal(type);
-}
-
-/* Workshop modal — car is read-only, set to primary car */
-function dpWsModal(type) {
-  selWsType=type;
-  const car=window._driverCar, wt=WT[type];
-  const carOpts=car?`<option value="${car.id}" selected>${car.plate} — ${car.model}</option>`
-    :'<option value="">⚠️ لا توجد مركبة</option>';
-
-  let specific='';
-  if(['fuel','oil'].includes(type)) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
-  else if(type==='tire') specific=`
-    <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label><input type="number" id="wQty" placeholder="4" min="1"></div>
-    <div class="form-group"><label>حالة الكوتش <span class="req">*</span></label>
-      <select id="wTireAction"><option value="">-- اختر --</option>
-        <option value="puncture">🔴 ثقب</option><option value="repair">🔧 تصليح</option><option value="replacement">🔄 استبدال</option>
-      </select></div>`;
-  else if(['filter','battery','belt'].includes(type)) specific=`<div class="form-group"><label>نوع العملية <span class="req">*</span></label>
-    <select id="wOpType"><option value="">-- اختر --</option>
-      <option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option>
-    </select></div>`;
-  else if(type==='other') specific=`<div class="form-group"><label>وصف العملية <span class="req">*</span></label><textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>`;
-
-  openModal(`
-    <div class="modal-header"><div class="modal-title">${wt.icon} ${wt.label}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    ${specific}
-    <div class="form-group"><label>المركبة</label><select id="wVehicle" disabled>${carOpts}</select></div>
-    <div class="form-group"><label>قراءة العداد (كم) <span class="req">*</span></label><input type="number" id="wOdo" placeholder="مثال: 54000" min="0"></div>
-    <div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>
-    <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:8px;padding:.55rem 1rem;font-size:.8rem;color:#166534;font-weight:700;margin-bottom:.8rem">💰 السعر محدد من قبل الإدارة</div>
-    <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button>
-    </div>`);
-
-  document.getElementById('wsSubmitBtn').onclick=async()=>{
-    const vid=car?.id||null, odo=parseFloat(document.getElementById('wOdo')?.value)||null;
-    const price=parseFloat(document.getElementById('wPrice')?.value)||0;
-    const notes=document.getElementById('wNotes')?.value?.trim()||'';
-    const btn=document.getElementById('wsSubmitBtn');
-    if(!vid)            return showNotification('لا توجد مركبة مخصصة','error');
-    if(!odo||odo<=0)    return showNotification('أدخل قراءة العداد','error');
-    const payload={driver_id:currentUser.driver_id,type:selWsType,price,notes,vehicle_id:vid,odometer_reading:odo,location:''};
-    if(['fuel','oil','tire'].includes(selWsType)){const q=parseFloat(document.getElementById('wQty')?.value);if(!q||q<=0)return showNotification('أدخل الكمية','error');payload.quantity=q;}
-    if(selWsType==='tire'){const ta=document.getElementById('wTireAction')?.value;if(!ta)return showNotification('اختر حالة الكوتش','error');payload.tire_action=ta;}
-    if(['filter','battery','belt'].includes(selWsType)){const op=document.getElementById('wOpType')?.value;if(!op)return showNotification('اختر نوع العملية','error');payload.operation_type=op;}
-    if(selWsType==='other'){const d=document.getElementById('wDesc')?.value?.trim();if(!d)return showNotification('أدخل وصف العملية','error');payload.description=d;}
-    btn.disabled=true; btn.textContent='جاري...';
-    payload.location=await silentGetLocation();
-    try{
-      await apiCall('/workshops','POST',payload);
-      showNotification(`✅ تم حفظ ${WT[selWsType]?.label}`,'success');
-      closeModal();
-    }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
-  };
-}
 
 /* ── LOGIN ── */
 function showLogin() {
