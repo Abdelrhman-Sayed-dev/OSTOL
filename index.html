@@ -1237,7 +1237,18 @@ async function renderEmergenciesSection() {
         <td style="font-size:.8rem">${r.created_at?new Date(r.created_at).toLocaleString('ar-EG'):'—'}</td>
         <td>${r.location?formatLocation(r.location):'<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
         <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
-        <td>${(r.audio_url||r.audio_data)?`<div class="audio-player-wrap"><audio controls preload="none"><source src="${r.audio_url||r.audio_data}" type="audio/webm"></audio></div>`:'<span style="color:var(--muted);font-size:.78rem">لا يوجد</span>'}</td>
+        <td>${(r.audio_url||r.audio_data)?(()=>{
+  const src=r.audio_url||r.audio_data;
+  // Try all formats — browser picks first it can play
+  return `<div class="audio-player-wrap">
+    <audio controls preload="none" style="max-width:180px;height:36px">
+      <source src="${src}" type="audio/webm">
+      <source src="${src}" type="audio/mp4">
+      <source src="${src}" type="audio/ogg">
+      <source src="${src}">
+    </audio>
+  </div>`;
+})():'<span style="color:var(--muted);font-size:.78rem">لا يوجد</span>'}</td>
         <td>${r.is_handled
           ?'<span class="badge badge-green">✓ تم التعامل</span>'
           :'<span class="badge badge-red">⏳ لم يُعالج</span>'}</td>
@@ -1261,28 +1272,36 @@ async function renderPermissionsSection() {
 
 /* ── SILENT GPS — runs in background, no UI feedback ── */
 function silentGetLocation(timeoutMs=10000) {
-  return new Promise(resolve => {
+  return new Promise(async resolve => {
     if(!navigator.geolocation){ resolve(''); return; }
+
+    // Check permission state first (Chrome/Android/Desktop)
+    if(navigator.permissions) {
+      try {
+        const perm = await navigator.permissions.query({name:'geolocation'});
+        if(perm.state === 'denied') {
+          // Permission permanently blocked — can't re-request via JS
+          resolve('');
+          return;
+        }
+      } catch(e) { /* some browsers don't support permissions API */ }
+    }
 
     let done = false;
     const finish = val => { if(!done){ done=true; resolve(val); } };
 
-    // المرحلة الأولى: دقة منخفضة (سريعة — تعمل على WiFi/شبكة بدون GPS)
+    // Single attempt with high accuracy — works across Android/Desktop/iOS
     navigator.geolocation.getCurrentPosition(
       p => finish(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
-      () => {
-        // المرحلة الثانية: لو فشلت المنخفضة، جرّب الدقة العالية مع مهلة أقصر
-        navigator.geolocation.getCurrentPosition(
-          p => finish(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
-          () => finish(''),
-          { enableHighAccuracy:true, timeout: Math.min(timeoutMs, 8000), maximumAge:0 }
-        );
+      err => {
+        // If denied, just resolve empty (silent fail — don't annoy user)
+        finish('');
       },
-      { enableHighAccuracy:false, timeout: Math.min(timeoutMs, 5000), maximumAge:30000 }
+      { enableHighAccuracy:true, timeout: Math.min(timeoutMs, 12000), maximumAge:0 }
     );
 
-    // ضمان الانتهاء قبل انتهاء المهلة الكلية
-    setTimeout(() => finish(''), timeoutMs);
+    // Hard timeout safety net
+    setTimeout(() => finish(''), timeoutMs + 500);
   });
 }
 
@@ -1651,51 +1670,86 @@ async function startRecording(type) {
   if(mediaRecorder&&mediaRecorder.state==='recording') return;
   currentRecordingType=type;
 
-  // فحص HTTPS
+  // Check HTTPS (required for getUserMedia on Android/Desktop)
   const isSecure = location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1';
   if(!isSecure){
-    showNotification('التسجيل الصوتي يتطلب اتصالاً آمناً (HTTPS)','error');
+    showNotification('التسجيل يتطلب HTTPS — تأكد من الرابط الآمن','error');
     return;
   }
-  // فحص دعم المتصفح
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
-    showNotification('المتصفح لا يدعم تسجيل الصوت — جرّب Chrome أو Firefox','error');
+  if(!navigator.mediaDevices?.getUserMedia){
+    showNotification('المتصفح لا يدعم تسجيل الصوت — استخدم Chrome أو Safari','error');
     return;
   }
 
-  console.log('[REC] طلب إذن الميكروفون — النوع:', type);
+  // ── Check if microphone is already permanently denied ──
+  if(navigator.permissions) {
+    try {
+      const perm = await navigator.permissions.query({name:'microphone'});
+      if(perm.state === 'denied') {
+        showMicDeniedGuide(); return;
+      }
+    } catch(e) {}
+  }
+
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-    console.log('[REC] تم الحصول على الميكروفون بنجاح');
+    // MUST be called directly in user gesture context (no awaits before this on Android)
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+
     audioChunks=[];
-    const mimeTypes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4',''];
+    // Pick best supported codec: webm on Desktop/Android, mp4 on Safari
+    const mimeTypes=[
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/mp4',
+      ''
+    ];
     let mimeType='';
-    for(const t of mimeTypes){ try{ if(!t||MediaRecorder.isTypeSupported(t)){mimeType=t;break;} }catch(e){} }
-    mediaRecorder=new MediaRecorder(stream, mimeType?{mimeType}:{});
+    for(const t of mimeTypes){
+      try{ if(!t || MediaRecorder.isTypeSupported(t)){ mimeType=t; break; } }catch(e){}
+    }
+    mediaRecorder = new MediaRecorder(stream, mimeType ? {mimeType} : {});
 
-    mediaRecorder.ondataavailable=e=>{ if(e.data&&e.data.size>0) audioChunks.push(e.data); };
+    mediaRecorder.ondataavailable = e => { if(e.data?.size>0) audioChunks.push(e.data); };
 
-    mediaRecorder.onstop=()=>{
-      const finalMime=mediaRecorder.mimeType||'audio/webm';
-      const blob=new Blob(audioChunks,{type:finalMime});
-      if(blob.size<100){ showNotification('لم يُسجَّل أي صوت، حاول مرة أخرى','error'); return; }
-      const notes=document.getElementById('recNotes')?.value||'';
-      const reader=new FileReader();
-      reader.onloadend=async()=>{
-        const emgLocation = await silentGetLocation(8000);
+    mediaRecorder.onstop = async () => {
+      const finalMime = mediaRecorder?.mimeType || mimeType || 'audio/webm';
+      const blob = new Blob(audioChunks, {type: finalMime});
+
+      if(blob.size < 100){
+        showNotification('لم يُسجَّل أي صوت — حاول مرة أخرى','error'); return;
+      }
+
+      const notes = document.getElementById('recNotes')?.value || '';
+
+      // Get location silently in background
+      const emgLocation = await silentGetLocation(8000);
+
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onloadend = async () => {
         try{
           await apiCall('/emergency/report','POST',{
-            driver_id:currentUser.driver_id,
-            car_id:window._driverCar?.id||null,
-            type:currentRecordingType,
-            audio_data:reader.result,
+            driver_id: currentUser.driver_id,
+            car_id:    window._driverCar?.id || null,
+            type:      currentRecordingType,
+            audio_data: reader.result,
             notes,
-            location:emgLocation
+            location: emgLocation
           });
-          showNotification(currentRecordingType==='emergency'?'🚨 تم إرسال بلاغ الطوارئ للإدارة!':'💥 تم إرسال تقرير الحادث للإدارة!','emergency',5000);
-          const panel=document.getElementById('recordingPanel');
-          if(panel) panel.style.display='none';
+
+          // ── Success: show confirmation ──
+          const panel = document.getElementById('recordingPanel');
+          if(panel){
+            panel.innerHTML=`<div style="text-align:center;padding:2.5rem 1rem">
+              <div style="font-size:3.5rem;margin-bottom:.8rem">${currentRecordingType==='emergency'?'🚨':'💥'}</div>
+              <div style="font-size:1.3rem;font-weight:800;color:#065f46;margin-bottom:.5rem">تم إرسال بلاغك للإدارة</div>
+              <div style="font-size:.88rem;color:var(--muted);margin-bottom:1.2rem">سيتم التواصل معك في أقرب وقت</div>
+              <button class="btn btn-success btn-sm" onclick="document.getElementById('recordingPanel').style.display='none'">حسناً ✓</button>
+            </div>`;
+          }
           audioChunks=[]; mediaRecorder=null;
+
         }catch(err){
           showNotification('فشل الإرسال: '+err.message,'error');
           const btn=document.getElementById('stopRecBtn');
@@ -1707,22 +1761,75 @@ async function startRecording(type) {
 
     mediaRecorder.start(300);
     document.getElementById('recordingPanel').style.display='block';
-    document.getElementById('recTypeLabel').textContent=type==='emergency'?'🚨 جاري تسجيل بلاغ طارئ...':'💥 جاري تسجيل تفاصيل الحادث...';
-    recSeconds=0; document.getElementById('recTimer').textContent='0:00';
-    recInterval=setInterval(()=>{ recSeconds++; const m=Math.floor(recSeconds/60),s=recSeconds%60; const el=document.getElementById('recTimer'); if(el) el.textContent=`${m}:${String(s).padStart(2,'0')}`; },1000);
+    document.getElementById('recTypeLabel').textContent =
+      type==='emergency' ? '🚨 جاري تسجيل بلاغ طارئ...' : '💥 جاري تسجيل تفاصيل الحادث...';
+    recSeconds=0;
+    document.getElementById('recTimer').textContent='0:00';
+    recInterval = setInterval(()=>{
+      recSeconds++;
+      const m=Math.floor(recSeconds/60), s=recSeconds%60;
+      const el=document.getElementById('recTimer');
+      if(el) el.textContent=`${m}:${String(s).padStart(2,'0')}`;
+    }, 1000);
 
   }catch(e){
-    console.error('[REC] getUserMedia error — name:', e.name, '| message:', e.message);
+    console.error('[MIC] Error:', e.name, e.message);
     if(e.name==='NotAllowedError'||e.name==='PermissionDeniedError'){
-      showNotification('رفض المتصفح الوصول للميكروفون — اضغط أيقونة 🔒 في شريط العنوان واسمح للميكروفون','error',6000);
+      showMicDeniedGuide();
     } else if(e.name==='NotFoundError'||e.name==='DevicesNotFoundError'){
-      showNotification('لم يتم العثور على ميكروفون — تأكد من توصيله','error');
+      showNotification('❌ لم يتم العثور على ميكروفون في الجهاز','error',5000);
     } else if(e.name==='NotReadableError'||e.name==='TrackStartError'){
-      showNotification('الميكروفون مشغول بتطبيق آخر — أغلق التطبيقات الأخرى وحاول مجدداً','error');
+      showNotification('⚠️ الميكروفون مشغول بتطبيق آخر — أغلق التطبيقات وأعد المحاولة','error',5000);
     } else {
-      showNotification('تعذّر الوصول للميكروفون: '+e.message,'error');
+      showNotification('خطأ في الميكروفون: '+e.message,'error');
     }
   }
+}
+
+/* Guide user to unblock mic — shown when NotAllowedError */
+function showMicDeniedGuide() {
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const isIOS     = /iphone|ipad/i.test(navigator.userAgent);
+
+  let steps = '';
+  if(isAndroid){
+    steps = `<ol style="text-align:right;padding-right:1.2rem;line-height:2;font-size:.88rem">
+      <li>اضغط على أيقونة 🔒 أو ⓘ بجانب رابط الموقع في شريط العنوان</li>
+      <li>اختر <b>أذونات الموقع</b> أو <b>Permissions</b></li>
+      <li>ابحث عن <b>الميكروفون / Microphone</b></li>
+      <li>غيّره من <b>محجوب</b> إلى <b>سماح</b></li>
+      <li>أعد تحميل الصفحة واضغط التسجيل مجدداً</li>
+    </ol>`;
+  } else if(isIOS){
+    steps = `<ol style="text-align:right;padding-right:1.2rem;line-height:2;font-size:.88rem">
+      <li>افتح <b>الإعدادات</b> ← <b>Safari</b> أو المتصفح الذي تستخدمه</li>
+      <li>اضغط على <b>ميكروفون</b></li>
+      <li>اختر <b>سماح</b></li>
+      <li>ارجع للتطبيق وأعد المحاولة</li>
+    </ol>`;
+  } else {
+    steps = `<ol style="text-align:right;padding-right:1.2rem;line-height:2;font-size:.88rem">
+      <li>اضغط على أيقونة 🔒 في شريط العنوان (قرب رابط الموقع)</li>
+      <li>ابحث عن <b>الميكروفون / Microphone</b></li>
+      <li>غيّره إلى <b>سماح / Allow</b></li>
+      <li>أعد تحميل الصفحة وأعد المحاولة</li>
+    </ol>`;
+  }
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title" style="color:#dc2626">🎙️ الميكروفون محجوب</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="background:#fef2f2;border-radius:10px;padding:1rem;margin-bottom:1rem">
+      <div style="font-weight:700;color:#991b1b;margin-bottom:.5rem">
+        تم حجب إذن الميكروفون — يجب فتحه يدوياً:
+      </div>
+      ${steps}
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="location.reload()">
+      🔄 أعد تحميل الصفحة بعد تغيير الإعداد
+    </button>`);
 }
 
 function cancelRecording() {
@@ -1983,49 +2090,102 @@ function initUI() {
 
 
 /* ── طلب أذونات الميكروفون والموقع مرة واحدة بعد تسجيل الدخول ── */
-function showPermissionsModal() {
-  // لو الإذن ممنوح من قبل لا تظهر المودال
+async function showPermissionsModal() {
+  // Check current permission states
+  let micState = 'prompt', geoState = 'prompt';
+  if(navigator.permissions) {
+    try { micState = (await navigator.permissions.query({name:'microphone'})).state; } catch(e){}
+    try { geoState = (await navigator.permissions.query({name:'geolocation'})).state; } catch(e){}
+  }
+  const hasMic = !!(navigator.mediaDevices?.getUserMedia);
+  const hasGeo = !!navigator.geolocation;
+
+  // Both already granted → save and skip
+  if(micState === 'granted' && geoState === 'granted') {
+    localStorage.setItem('dp_perms_ok','1'); return;
+  }
+  // Already asked before → skip modal (but don't block if denied)
   if(localStorage.getItem('dp_perms_ok')) return;
 
-  // لا تظهر لو كان الجهاز لا يدعم الميكروفون أصلاً
-  const hasMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-  const hasGeo = !!navigator.geolocation;
-  if(!hasMic && !hasGeo){ localStorage.setItem('dp_perms_ok','1'); return; }
+  // Build status indicators
+  const micIcon  = micState==='granted' ? '✅' : micState==='denied' ? '❌' : '⏳';
+  const geoIcon  = geoState==='granted' ? '✅' : geoState==='denied' ? '❌' : '⏳';
+  const anyDenied = micState==='denied' || geoState==='denied';
 
   openModal(`
     <div class="modal-header">
       <div class="modal-title" style="color:#1d4ed8">🔐 السماح للتطبيق بالوصول</div>
     </div>
-    <div style="text-align:center;padding:.5rem 0 1rem">
-      <div style="font-size:2.5rem;margin-bottom:.8rem">🎙️ 📍</div>
-      <div style="font-weight:700;font-size:1rem;color:#334155;margin-bottom:.5rem">
+    <div style="padding:.5rem 0 1rem">
+      <div style="text-align:center;font-size:2rem;margin-bottom:.8rem">🎙️ 📍</div>
+      <div style="font-weight:700;font-size:.95rem;color:#334155;margin-bottom:.8rem;text-align:center">
         يحتاج التطبيق إذنك للوصول إلى:
       </div>
-      <div style="font-size:.9rem;color:#475569;line-height:2;margin-bottom:1.2rem">
-        <div>🎙️ <b>الميكروفون</b> — لتسجيل بلاغات الطوارئ والحوادث</div>
-        <div>📍 <b>الموقع</b> — لتتبع الرحلات وتسجيل النقاط</div>
+      <div style="background:#f8fafc;border-radius:10px;padding:.9rem 1rem;margin-bottom:1rem">
+        <div style="display:flex;align-items:center;gap:.7rem;margin-bottom:.6rem">
+          <span style="font-size:1.3rem">${micIcon}</span>
+          <div><b>الميكروفون</b>
+            ${micState==='denied'?'<div style="font-size:.75rem;color:#dc2626">محجوب — يجب فتحه من إعدادات المتصفح</div>':'<div style="font-size:.75rem;color:#64748b">لتسجيل بلاغات الطوارئ</div>'}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.7rem">
+          <span style="font-size:1.3rem">${geoIcon}</span>
+          <div><b>الموقع الجغرافي</b>
+            ${geoState==='denied'?'<div style="font-size:.75rem;color:#dc2626">محجوب — يجب فتحه من إعدادات المتصفح</div>':'<div style="font-size:.75rem;color:#64748b">لتتبع الرحلات</div>'}
+          </div>
+        </div>
       </div>
+
+      ${anyDenied ? `
+      <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:.9rem 1rem;margin-bottom:1rem;font-size:.82rem;color:#991b1b">
+        <b>⚙️ كيفية فتح الأذونات المحجوبة:</b><br>
+        <b>أندرويد:</b> اضغط 🔒 في شريط العنوان → أذونات الموقع/الميكروفون → سماح<br>
+        <b>ديسكتوب:</b> اضغط 🔒 أو ⚙️ بجانب الرابط → ضبط الإذن على "سماح"
+      </div>` : ''}
+
       <button id="dpAllowPermsBtn"
-        style="width:100%;padding:1.1rem;border:none;border-radius:14px;background:#1d4ed8;color:white;font-size:1.1rem;font-weight:800;cursor:pointer;font-family:inherit">
-        ✅ السماح للتطبيق
+        style="width:100%;padding:1.1rem;border:none;border-radius:12px;background:${anyDenied?'#64748b':'#1d4ed8'};color:white;font-size:1rem;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:.5rem">
+        ${anyDenied ? '🔄 أعد تحميل بعد تغيير الإعدادات' : '✅ السماح للتطبيق'}
       </button>
-      <div style="font-size:.75rem;color:#94a3b8;margin-top:.8rem">
-        ستظهر نافذة الإذن من المتصفح — اضغط "سماح"
+      <div style="text-align:center;font-size:.72rem;color:#94a3b8">
+        ${anyDenied ? 'غيّر الإعداد ثم أعد تحميل الصفحة' : 'ستظهر نافذة طلب الإذن — اضغط "سماح" أو "Allow"'}
       </div>
     </div>`);
 
-  document.getElementById('dpAllowPermsBtn').onclick = () => {
-    // ← iOS/Android: يجب أن يكون getUserMedia أول شيء يُنفَّذ داخل handler الضغطة
-    if(hasMic) {
-      navigator.mediaDevices.getUserMedia({audio:true, video:false})
-        .then(s => s.getTracks().forEach(t => t.stop()))
-        .catch(() => {});
+  document.getElementById('dpAllowPermsBtn').onclick = async () => {
+    if(anyDenied) {
+      location.reload(); return;
     }
-    if(hasGeo) {
-      navigator.geolocation.getCurrentPosition(() => {}, () => {}, {timeout:8000, enableHighAccuracy:false});
-    }
+    // CRITICAL on Android/Desktop: getUserMedia MUST be called synchronously
+    // inside a user gesture handler — do NOT await anything before it
+    let micOk = false, geoOk = false;
+    if(hasMic && micState !== 'denied') {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+        s.getTracks().forEach(t => t.stop());
+        micOk = true;
+      } catch(e) {
+        console.warn('[PERMS] mic denied:', e.name);
+      }
+    } else { micOk = true; }
+
+    if(hasGeo && geoState !== 'denied') {
+      await new Promise(res => {
+        navigator.geolocation.getCurrentPosition(
+          () => { geoOk=true; res(); },
+          () => { res(); },
+          {enableHighAccuracy:false, timeout:8000}
+        );
+      });
+    } else { geoOk = true; }
+
     localStorage.setItem('dp_perms_ok','1');
     closeModal();
+
+    // If still denied after attempt, show guidance
+    if(hasMic && !micOk) {
+      setTimeout(()=>showNotification('⚠️ الميكروفون محجوب — اضغط 🔒 في شريط العنوان لتغيير الإذن','error',6000),500);
+    }
   };
 }
 
