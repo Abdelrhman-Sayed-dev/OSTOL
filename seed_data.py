@@ -10,10 +10,29 @@ conn.row_factory = sqlite3.Row
 conn.execute("PRAGMA foreign_keys=ON")
 c = conn.cursor()
 
+# ══ ADD MISSING COLUMNS (safe migration) ══
+print("Running migrations...")
+migrations = [
+    ("cars",    "chassis",             "TEXT DEFAULT ''"),
+    ("cars",    "car_license_expiry",  "TEXT DEFAULT ''"),
+    ("cars",    "sector",              "TEXT DEFAULT ''"),
+    ("drivers", "driver_license_expiry","TEXT DEFAULT ''"),
+    ("drivers", "vehicle_license_expiry","TEXT DEFAULT ''"),
+    ("drivers", "national_id",         "TEXT DEFAULT ''"),
+]
+for tbl, col, typ in migrations:
+    try:
+        c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
+        print(f"  + Added {tbl}.{col}")
+    except Exception:
+        pass  # already exists
+conn.commit()
+print("✓ Migrations done")
+
 # ══ WIPE ALL OLD DATA ══
 print("Wiping old data...")
 for tbl in ["driver_car_permissions","workshop_records","trips","emergency_reports",
-            "garage_records","workshop_records"]:
+            "garage_records"]:
     c.execute(f"DELETE FROM {tbl}")
 c.execute("DELETE FROM drivers")
 c.execute("DELETE FROM cars")
