@@ -19,7 +19,6 @@
 body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 
 
-/* ── Request permissions once on first driver login ── */
 /* ── LOGIN ── */
 .login-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#0f2027,#1a6b58 50%,#203a43);display:flex;align-items:center;justify-content:center;z-index:2000}
 .login-card{background:rgba(255,255,255,.08);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.15);border-radius:24px;padding:2.8rem 2.4rem;width:90%;max-width:420px;text-align:center;box-shadow:0 40px 80px rgba(0,0,0,.4)}
@@ -1930,15 +1929,51 @@ function initUI() {
 }
 
 
-/* ── Request permissions once on first driver login ── */
-async function requestDriverPermissions() {
+/* ── طلب أذونات الميكروفون والموقع مرة واحدة بعد تسجيل الدخول ── */
+function showPermissionsModal() {
+  // لو الإذن ممنوح من قبل لا تظهر المودال
   if(localStorage.getItem('dp_perms_ok')) return;
-  try {
-    await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:8000}));
-    const s=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
-    s.getTracks().forEach(t=>t.stop());
+
+  // لا تظهر لو كان الجهاز لا يدعم الميكروفون أصلاً
+  const hasMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const hasGeo = !!navigator.geolocation;
+  if(!hasMic && !hasGeo){ localStorage.setItem('dp_perms_ok','1'); return; }
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title" style="color:#1d4ed8">🔐 السماح للتطبيق بالوصول</div>
+    </div>
+    <div style="text-align:center;padding:.5rem 0 1rem">
+      <div style="font-size:2.5rem;margin-bottom:.8rem">🎙️ 📍</div>
+      <div style="font-weight:700;font-size:1rem;color:#334155;margin-bottom:.5rem">
+        يحتاج التطبيق إذنك للوصول إلى:
+      </div>
+      <div style="font-size:.9rem;color:#475569;line-height:2;margin-bottom:1.2rem">
+        <div>🎙️ <b>الميكروفون</b> — لتسجيل بلاغات الطوارئ والحوادث</div>
+        <div>📍 <b>الموقع</b> — لتتبع الرحلات وتسجيل النقاط</div>
+      </div>
+      <button id="dpAllowPermsBtn"
+        style="width:100%;padding:1.1rem;border:none;border-radius:14px;background:#1d4ed8;color:white;font-size:1.1rem;font-weight:800;cursor:pointer;font-family:inherit">
+        ✅ السماح للتطبيق
+      </button>
+      <div style="font-size:.75rem;color:#94a3b8;margin-top:.8rem">
+        ستظهر نافذة الإذن من المتصفح — اضغط "سماح"
+      </div>
+    </div>`);
+
+  document.getElementById('dpAllowPermsBtn').onclick = () => {
+    // ← iOS/Android: يجب أن يكون getUserMedia أول شيء يُنفَّذ داخل handler الضغطة
+    if(hasMic) {
+      navigator.mediaDevices.getUserMedia({audio:true, video:false})
+        .then(s => s.getTracks().forEach(t => t.stop()))
+        .catch(() => {});
+    }
+    if(hasGeo) {
+      navigator.geolocation.getCurrentPosition(() => {}, () => {}, {timeout:8000, enableHighAccuracy:false});
+    }
     localStorage.setItem('dp_perms_ok','1');
-  } catch(e){ /* silent */ }
+    closeModal();
+  };
 }
 
 /* ── DRIVER SINGLE PAGE ── */
@@ -2104,6 +2139,9 @@ async function renderDriverSinglePage() {
       }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تسجيل'; }
     };
   });
+
+  // اطلب الأذونات مرة واحدة بعد أول تسجيل دخول
+  showPermissionsModal();
 }
 
 /* Quick action dispatcher */
