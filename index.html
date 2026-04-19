@@ -1618,10 +1618,24 @@ async function renderDriverEmergency() {
 async function startRecording(type) {
   if(mediaRecorder&&mediaRecorder.state==='recording') return;
   currentRecordingType=type;
+
+  // فحص HTTPS
+  const isSecure = location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1';
+  if(!isSecure){
+    showNotification('التسجيل الصوتي يتطلب اتصالاً آمناً (HTTPS)','error');
+    return;
+  }
+  // فحص دعم المتصفح
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    showNotification('المتصفح لا يدعم تسجيل الصوت — جرّب Chrome أو Firefox','error');
+    return;
+  }
+
+  console.log('[REC] طلب إذن الميكروفون — النوع:', type);
   try{
     const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    console.log('[REC] تم الحصول على الميكروفون بنجاح');
     audioChunks=[];
-    // Detect supported MIME type
     const mimeTypes=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/ogg','audio/mp4',''];
     let mimeType='';
     for(const t of mimeTypes){ try{ if(!t||MediaRecorder.isTypeSupported(t)){mimeType=t;break;} }catch(e){} }
@@ -1636,12 +1650,11 @@ async function startRecording(type) {
       const notes=document.getElementById('recNotes')?.value||'';
       const reader=new FileReader();
       reader.onloadend=async()=>{
-        // Auto-capture GPS location for emergency (silent background)
         const emgLocation = await silentGetLocation(8000);
         try{
           await apiCall('/emergency/report','POST',{
             driver_id:currentUser.driver_id,
-            car_id:window._emergActiveCarId||null,
+            car_id:window._driverCar?.id||null,
             type:currentRecordingType,
             audio_data:reader.result,
             notes,
@@ -1667,8 +1680,16 @@ async function startRecording(type) {
     recInterval=setInterval(()=>{ recSeconds++; const m=Math.floor(recSeconds/60),s=recSeconds%60; const el=document.getElementById('recTimer'); if(el) el.textContent=`${m}:${String(s).padStart(2,'0')}`; },1000);
 
   }catch(e){
-    console.error('Mic error:',e);
-    showNotification('تعذّر الوصول للميكروفون — تأكد من منح صلاحية الميكروفون في المتصفح','error');
+    console.error('[REC] getUserMedia error — name:', e.name, '| message:', e.message);
+    if(e.name==='NotAllowedError'||e.name==='PermissionDeniedError'){
+      showNotification('رفض المتصفح الوصول للميكروفون — اضغط أيقونة 🔒 في شريط العنوان واسمح للميكروفون','error',6000);
+    } else if(e.name==='NotFoundError'||e.name==='DevicesNotFoundError'){
+      showNotification('لم يتم العثور على ميكروفون — تأكد من توصيله','error');
+    } else if(e.name==='NotReadableError'||e.name==='TrackStartError'){
+      showNotification('الميكروفون مشغول بتطبيق آخر — أغلق التطبيقات الأخرى وحاول مجدداً','error');
+    } else {
+      showNotification('تعذّر الوصول للميكروفون: '+e.message,'error');
+    }
   }
 }
 
