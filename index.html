@@ -2111,63 +2111,59 @@ async function dpQuick(type) {
   dpWsModal(type);
 }
 
-/* ── EMERGENCY MODAL — step 1: confirm → step 2: recording ── */
+/* ── EMERGENCY MODAL — اضغط وأرسل بدون تفاصيل تقنية ── */
 function openEmergencyModal(type) {
   const isEmg = type === 'emergency';
   const color  = isEmg ? '#dc2626' : '#d97706';
   const icon   = isEmg ? '🚨' : '💥';
   const title  = isEmg ? 'بلاغ طارئ' : 'تقرير حادث';
-  const subMsg = isEmg ? 'سيتم إرسال موقعك وتسجيل صوتي للإدارة فوراً' : 'سيتم إرسال موقعك وتسجيل صوتي للإدارة';
+  const btnLabel = isEmg ? '🚨 إرسال البلاغ' : '💥 إرسال البلاغ';
 
   openModal(`
     <div class="modal-header">
       <div class="modal-title" style="color:${color}">${icon} ${title}</div>
-      <button class="modal-close" onclick="cancelEmergencyModal()">✕</button>
+      <button class="modal-close" id="emgCloseBtn" onclick="cancelEmergencyModal()">✕</button>
     </div>
 
     <div id="emgStep1">
-      <div style="background:${isEmg?'#fee2e2':'#fef3c7'};border:2px solid ${color};border-radius:12px;padding:1.2rem;text-align:center;margin-bottom:1.2rem">
-        <div style="font-size:3rem;margin-bottom:.5rem">${icon}</div>
-        <div style="font-weight:800;color:${color};font-size:1.1rem;margin-bottom:.3rem">${title}</div>
-        <div style="font-size:.85rem;color:#64748b">${subMsg}</div>
+      <div style="background:${isEmg?'#fee2e2':'#fef3c7'};border:2px solid ${color};border-radius:12px;padding:1.4rem;text-align:center;margin-bottom:1.2rem">
+        <div style="font-size:3.5rem;margin-bottom:.6rem">${icon}</div>
+        <div style="font-weight:800;color:${color};font-size:1.15rem">${title}</div>
       </div>
       <div class="form-group"><label>ملاحظات (اختياري)</label>
-        <input id="emgNotes" placeholder="وصف موجز للموقف..." style="border-color:${color}"></div>
+        <input id="emgNotes" placeholder="وصف موجز للموقف..." style="border-color:${color}">
+      </div>
       <div class="modal-footer" style="margin-top:.5rem">
         <button class="btn btn-ghost" onclick="cancelEmergencyModal()">إلغاء</button>
-        <button class="btn" style="background:${color};color:white;font-size:1rem;padding:.75rem 1.5rem" id="emgStartBtn">
-          ${icon} ابدأ التسجيل
+        <button class="btn" style="background:${color};color:white;font-size:1rem;padding:.8rem 1.8rem;font-weight:800" id="emgSendBtn">
+          ${btnLabel}
         </button>
       </div>
     </div>
 
-    <div id="emgStep2" style="display:none">
-      <div class="recording-indicator" style="margin-bottom:1rem;border-color:${color}">
-        <div class="rec-dot" style="background:${color}"></div>
-        <div class="rec-text" style="color:${color}">${icon} جاري التسجيل...</div>
-        <div class="rec-timer" style="color:${color}" id="emgRecTimer">0:00</div>
-      </div>
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:.85rem;margin-bottom:1rem;font-size:.83rem;color:#64748b;text-align:center">
-        📍 سيتم سحب موقعك تلقائياً عند الإرسال
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="cancelEmergencyModal()">❌ إلغاء</button>
-        <button class="btn btn-danger" id="emgSendBtn" style="font-size:1rem;padding:.75rem 1.5rem">⏹ إيقاف وإرسال</button>
-      </div>
+    <div id="emgStep2" style="display:none;text-align:center;padding:1.5rem 1rem">
+      <div style="font-size:3rem;margin-bottom:.8rem">⏳</div>
+      <div style="font-weight:800;font-size:1.1rem;color:#334155;margin-bottom:.4rem">جاري إرسال البلاغ...</div>
+      <div style="font-size:.85rem;color:#94a3b8">يُرجى الانتظار</div>
+    </div>
+
+    <div id="emgStep3" style="display:none;text-align:center;padding:1.5rem 1rem">
+      <div style="font-size:3.5rem;margin-bottom:.8rem">✅</div>
+      <div style="font-weight:800;font-size:1.15rem;color:#166534;margin-bottom:.4rem">تم إرسال بلاغك للإدارة</div>
+      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:1.2rem">سيتم التواصل معك في أقرب وقت</div>
+      <button class="btn btn-ghost" onclick="cancelEmergencyModal()">إغلاق</button>
     </div>`);
 
-  document.getElementById('emgStartBtn').onclick = async () => {
+  document.getElementById('emgSendBtn').onclick = async () => {
     window._emgPendingNotes = document.getElementById('emgNotes')?.value || '';
     window._emgPendingType  = type;
+    // أخفِ زر الإغلاق وانتقل لشاشة الإرسال
+    document.getElementById('emgCloseBtn').style.display = 'none';
     document.getElementById('emgStep1').style.display = 'none';
     document.getElementById('emgStep2').style.display = 'block';
     await startEmergencyRecording(type);
-  };
-
-  document.getElementById('emgSendBtn').onclick = () => {
-    const btn = document.getElementById('emgSendBtn');
-    btn.disabled=true; btn.textContent='⏳ جاري الإرسال...';
-    stopAndSendEmergency();
+    // سجّل 5 ثوانٍ ثم أرسل تلقائياً
+    setTimeout(() => stopAndSendEmergency(), 5000);
   };
 }
 
@@ -2213,9 +2209,12 @@ async function startEmergencyRecording(type) {
             notes,
             location:emgLocation
           });
-          closeModal();
-          showNotification(currentRecordingType==='emergency'?'🚨 تم إرسال بلاغ الطوارئ للإدارة!':'💥 تم إرسال تقرير الحادث للإدارة!','emergency',5000);
           audioChunks=[]; mediaRecorder=null;
+          const s2=document.getElementById('emgStep2');
+          const s3=document.getElementById('emgStep3');
+          if(s2) s2.style.display='none';
+          if(s3){ s3.style.display='block'; }
+          else { closeModal(); }
         }catch(err){
           showNotification('فشل الإرسال: '+err.message,'error');
           const btn=document.getElementById('emgSendBtn');
@@ -2236,13 +2235,31 @@ async function startEmergencyRecording(type) {
     },1000);
   }catch(e){
     console.error('Mic error:',e);
-    closeModal();
-    showNotification('تعذّر الوصول للميكروفون — تأكد من منح صلاحية الميكروفون في المتصفح','error');
+    // في حال عدم توفر الميكروفون، أرسل البلاغ بدون صوت
+    const emgLocation2=await silentGetLocation(8000).catch(()=>'');
+    try{
+      await apiCall('/emergency/report','POST',{
+        driver_id:currentUser.driver_id,
+        car_id:window._emergActiveCarId||null,
+        type:currentRecordingType,
+        audio_data:'',
+        notes:window._emgPendingNotes||'',
+        location:emgLocation2
+      });
+      const s2=document.getElementById('emgStep2');
+      const s3=document.getElementById('emgStep3');
+      if(s2) s2.style.display='none';
+      if(s3){ s3.style.display='block'; }
+      else { closeModal(); }
+    }catch(err2){
+      closeModal();
+      showNotification('فشل الإرسال: '+err2.message,'error');
+    }
   }
 }
 
 function stopAndSendEmergency() {
-  if(!mediaRecorder||mediaRecorder.state==='inactive'){showNotification('لا يوجد تسجيل نشط','error');return;}
+  if(!mediaRecorder||mediaRecorder.state==='inactive'){ return; } // البلاغ أُرسل بدون صوت بالفعل
   clearInterval(recInterval);
   try{
     mediaRecorder.requestData();
