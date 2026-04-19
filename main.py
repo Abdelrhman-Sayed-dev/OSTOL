@@ -129,7 +129,10 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             plate TEXT UNIQUE NOT NULL,
             model TEXT NOT NULL,
-            status TEXT DEFAULT 'available'
+            status TEXT DEFAULT 'available',
+            chassis TEXT DEFAULT '',
+            car_license_expiry TEXT DEFAULT '',
+            sector TEXT DEFAULT ''
         )""")
 
         # PERMISSIONS
@@ -234,7 +237,7 @@ def migrate_db():
         # Seed price settings
         for ws_type in ["fuel","oil","filter","tire","battery","belt","other"]:
             c.execute("INSERT OR IGNORE INTO app_settings(key,value,updated_at) VALUES(?,?,?)",
-                      (f"price_{ws_type}", "0", datetime.now().isoformat()))
+                      (f"price_{ws_type}", "0", datetime.utcnow().isoformat() + "Z"))
 
 def _safe_add_columns(c):
     """Add columns that may not exist in older databases."""
@@ -357,7 +360,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"]         = "DENY"
         response.headers["X-XSS-Protection"]        = "1; mode=block"
         response.headers["Referrer-Policy"]         = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"]      = "geolocation=(self), microphone=(self)"
+        response.headers["Permissions-Policy"]      = "geolocation=(), microphone=()"
         if ENVIRONMENT == "production":
             response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         return response
@@ -415,12 +418,15 @@ class DriverResp(BaseModel):
 
 class CarCreate(BaseModel):
     plate: str; model: str; status: str = "available"
+    chassis: Optional[str] = ""; car_license_expiry: Optional[str] = ""; sector: Optional[str] = ""
 
 class CarUpdate(BaseModel):
     plate: str; model: str; status: str
+    chassis: Optional[str] = ""; car_license_expiry: Optional[str] = ""; sector: Optional[str] = ""
 
 class CarResp(BaseModel):
     id: int; plate: str; model: str; status: str
+    chassis: Optional[str] = None; car_license_expiry: Optional[str] = None; sector: Optional[str] = None
 
 class PermCreate(BaseModel):
     driver_id: int; car_id: int
@@ -592,7 +598,7 @@ async def login(request: Request, data: LoginReq):
 
         # Persist refresh token (one per user)
         c.execute("UPDATE users SET refresh_token=?,refresh_exp=?,last_login=? WHERE id=?",
-                  (refresh_token, refresh_exp, datetime.now().isoformat(), u["id"]))
+                  (refresh_token, refresh_exp, datetime.utcnow().isoformat() + "Z", u["id"]))
 
         log_event("login_success", user_id=u["id"], role=u["role"])
         return LoginResp(
@@ -799,17 +805,22 @@ async def allowed_cars(did: int, cu: dict = Depends(get_user)):
 async def get_cars(cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id,plate,model,status FROM cars ORDER BY id DESC LIMIT 500")
-        return [dict(r) for r in c.fetchall()]
+        c.execute("SELECT id,plate,model,status,chassis,car_license_expiry,sector FROM cars ORDER BY id DESC LIMIT 500")
+        rows=[]
+        for r in c.fetchall():
+            d=dict(r); d.setdefault("chassis",""); d.setdefault("car_license_expiry",""); d.setdefault("sector","")
+            rows.append(d)
+        return rows
 
 @app.post("/cars", response_model=CarResp)
 async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
         try:
-            c.execute("INSERT INTO cars(plate,model,status) VALUES(?,?,?)",
-                      (car.plate, car.model, car.status))
-            return {"id": c.lastrowid, "plate": car.plate, "model": car.model, "status": car.status}
+            c.execute("INSERT INTO cars(plate,model,status,chassis,car_license_expiry,sector) VALUES(?,?,?,?,?,?)",
+                      (car.plate, car.model, car.status, car.chassis or "", car.car_license_expiry or "", car.sector or ""))
+            return {"id": c.lastrowid, "plate": car.plate, "model": car.model, "status": car.status,
+                    "chassis": car.chassis or "", "car_license_expiry": car.car_license_expiry or "", "sector": car.sector or ""}
         except sqlite3.IntegrityError:
             raise HTTPException(400, "رقم اللوحة موجود مسبقاً")
 
@@ -817,11 +828,12 @@ async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
 async def update_car(cid: int, car: CarUpdate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("UPDATE cars SET plate=?,model=?,status=? WHERE id=?",
-                  (car.plate, car.model, car.status, cid))
+        c.execute("UPDATE cars SET plate=?,model=?,status=?,chassis=?,car_license_expiry=?,sector=? WHERE id=?",
+                  (car.plate, car.model, car.status, car.chassis or "", car.car_license_expiry or "", car.sector or "", cid))
         if c.rowcount == 0:
             raise HTTPException(404, "المركبة غير موجودة")
-        return {"id": cid, "plate": car.plate, "model": car.model, "status": car.status}
+        return {"id": cid, "plate": car.plate, "model": car.model, "status": car.status,
+                "chassis": car.chassis or "", "car_license_expiry": car.car_license_expiry or "", "sector": car.sector or ""}
 
 @app.delete("/cars/{cid}")
 async def delete_car(cid: int, cu: dict = Depends(require_admin)):
@@ -893,7 +905,7 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         c.execute("SELECT id FROM trips WHERE driver_id=? AND end_time IS NULL", (trip.driver_id,))
         if c.fetchone():
             raise HTTPException(400, "لديك رحلة نشطة — أنهها أولاً")
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat() + "Z"
         c.execute("""INSERT INTO trips(driver_id,car_id,start_time,start_odometer,start_location,garage_location)
                      VALUES(?,?,?,?,?,'')""",
                   (trip.driver_id, trip.car_id, now, trip.start_odometer, trip.start_location))
@@ -917,7 +929,7 @@ async def end_trip(te: TripEnd, cu: dict = Depends(get_user)):
             raise HTTPException(403, "لا يمكنك إنهاء رحلة سائق آخر")
         if te.end_odometer <= trip["start_odometer"]:
             raise HTTPException(400, f"عداد النهاية يجب أن يكون أكبر من {trip['start_odometer']}")
-        now = datetime.now().isoformat()
+        now = datetime.utcnow().isoformat() + "Z"
         c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,notes=? WHERE id=?",
                   (now, te.end_odometer, te.end_location, te.notes, te.trip_id))
         c.execute("SELECT * FROM trips WHERE id=?", (te.trip_id,))
@@ -948,7 +960,7 @@ async def end_current(body: dict, cu: dict = Depends(get_user)):
     end_odo = body.get("end_odometer")
     loc     = body.get("location", "")
     notes   = body.get("notes", "")
-    now = datetime.now().isoformat()
+    now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id,start_odometer FROM trips WHERE driver_id=? AND end_time IS NULL", (did,))
@@ -1022,7 +1034,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             final_price = float(row["value"]) if row else 0.0
     if final_price < 0:
         raise HTTPException(400, "السعر لا يمكن أن يكون سالباً")
-    now = datetime.now().isoformat()
+    now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO workshop_records
@@ -1077,7 +1089,7 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
         raise HTTPException(400, "موقع الجراج مطلوب")
     if cu["role"] != "admin" and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
-    now = datetime.now().isoformat()
+    now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
         c.execute("INSERT INTO garage_records(driver_id,car_id,location,recorded_at,notes) VALUES(?,?,?,?,?)",
@@ -1134,7 +1146,7 @@ async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = De
         raise HTTPException(400, "نوع البلاغ غير صالح")
     if cu["role"] != "admin" and rep.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
-    now = datetime.now().isoformat()
+    now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
         # Save base64 audio to file if provided
@@ -1191,7 +1203,7 @@ async def mark_read(rid: int, cu: dict = Depends(require_admin)):
 
 @app.put("/emergency/reports/{rid}/action")
 async def update_emergency_action(rid: int, body: EmergencyAction, cu: dict = Depends(require_admin)):
-    action_ts  = datetime.now().isoformat()
+    action_ts  = datetime.utcnow().isoformat() + "Z"
     admin_name = body.handled_by or cu.get("username", "admin")
     with get_db() as conn:
         c = conn.cursor()
@@ -1224,7 +1236,7 @@ async def get_prices(cu: dict = Depends(get_user)):
 @app.put("/settings/prices")
 async def set_prices(body: dict, cu: dict = Depends(require_admin)):
     valid = ["fuel","oil","filter","tire","battery","belt","other"]
-    now   = datetime.now().isoformat()
+    now   = datetime.utcnow().isoformat() + "Z"
     saved = {}
     with get_db() as conn:
         c = conn.cursor()
