@@ -18,6 +18,8 @@
 }
 body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 
+
+/* ── Request permissions once on first driver login ── */
 /* ── LOGIN ── */
 .login-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#0f2027,#1a6b58 50%,#203a43);display:flex;align-items:center;justify-content:center;z-index:2000}
 .login-card{background:rgba(255,255,255,.08);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.15);border-radius:24px;padding:2.8rem 2.4rem;width:90%;max-width:420px;text-align:center;box-shadow:0 40px 80px rgba(0,0,0,.4)}
@@ -211,6 +213,203 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
 }
 .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
 .sidebar-overlay.show{display:block}
+
+/* ════════════════════════════════════════
+   DRIVER PAGE — Clean app-like, responsive
+   ════════════════════════════════════════ */
+
+/* Hide admin elements */
+body.driver-mode .sidebar,
+body.driver-mode #sidebarOverlay,
+body.driver-mode .topbar { display:none !important; }
+body.driver-mode #appShell { display:block !important; }
+body.driver-mode .main-content { margin-right:0 !important; }
+body.driver-mode { background:#f5f5f5; }
+
+/* Full-width page wrapper */
+.dp-wrap {
+  width:100%;
+  min-height:100vh;
+  max-width:640px;
+  margin:0 auto;
+  padding:0 0 40px;
+  display:flex;
+  flex-direction:column;
+}
+
+/* ── TOP SECTION: greeting + date + car ── */
+.dp-top {
+  background:#fff;
+  padding:1.6rem 1.4rem 1.2rem;
+  border-bottom:1px solid #e8e8e8;
+  text-align:center;
+}
+.dp-greeting {
+  font-size:1.7rem;
+  font-weight:800;
+  color:#1e293b;
+  margin-bottom:.3rem;
+}
+.dp-date {
+  font-size:.9rem;
+  color:#94a3b8;
+  font-weight:500;
+  margin-bottom:.9rem;
+}
+.dp-divider { border:none; border-top:1px solid #f1f5f9; margin:.8rem 0; }
+.dp-car {
+  font-size:1rem;
+  font-weight:700;
+  color:#334155;
+}
+.dp-car span { color:var(--primary); }
+.dp-logout {
+  position:fixed;
+  top:.75rem;
+  left:.75rem;
+  z-index:300;
+  background:white;
+  border:1.5px solid #e2e8f0;
+  color:#94a3b8;
+  border-radius:50px;
+  padding:.35rem .9rem;
+  font-size:.75rem;
+  font-weight:700;
+  cursor:pointer;
+  font-family:inherit;
+  box-shadow:0 1px 4px rgba(0,0,0,.06);
+  transition:.15s;
+}
+.dp-logout:hover { border-color:#dc2626; color:#dc2626; }
+
+/* ── TRIP STATUS ── */
+.dp-status {
+  margin:1rem 1.2rem 0;
+  border-radius:12px;
+  padding:.85rem 1.1rem;
+  display:flex;
+  align-items:center;
+  gap:.75rem;
+  font-weight:700;
+  font-size:.88rem;
+}
+.dp-status.active { background:#dcfce7; color:#166534; border:1.5px solid #86efac; }
+.dp-status.idle   { background:#f1f5f9; color:#94a3b8; border:1.5px solid #e2e8f0; }
+.dp-status .ds-icon { font-size:1.3rem; flex-shrink:0; }
+.dp-status .ds-sub  { font-size:.75rem; font-weight:400; margin-top:.1rem; }
+
+/* ── TRIP BUTTONS section ── */
+.dp-section {
+  padding:1rem 1.2rem 0;
+  display:flex;
+  flex-direction:column;
+  gap:.55rem;
+}
+.dp-label {
+  font-size:.68rem;
+  font-weight:800;
+  color:#94a3b8;
+  text-transform:uppercase;
+  letter-spacing:1.3px;
+  margin-bottom:.1rem;
+}
+
+/* Main trip button */
+.dp-btn-main {
+  width:100%;
+  padding:1rem 1rem;
+  border:none;
+  border-radius:14px;
+  font-size:1.1rem;
+  font-weight:800;
+  cursor:pointer;
+  font-family:inherit;
+  transition:.15s;
+}
+.dp-btn-main:active { transform:scale(.98); }
+.dp-btn-start  { background:#2563eb; color:#fff; }
+.dp-btn-start:hover  { background:#1d4ed8; }
+.dp-btn-end    { background:#16a34a; color:#fff; }
+.dp-btn-end:hover    { background:#15803d; }
+.dp-btn-garage {
+  width:100%;
+  padding:.75rem 1rem;
+  border:none;
+  border-radius:10px;
+  font-size:.88rem;
+  font-weight:700;
+  cursor:pointer;
+  font-family:inherit;
+  background:#475569;
+  color:#fff;
+  transition:.15s;
+}
+.dp-btn-garage:hover { background:#334155; }
+.dp-btn-garage:active { transform:scale(.98); }
+
+/* ── 4 QUICK BUTTONS ── */
+.dp-quick {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:.6rem;
+  padding:0 1.2rem;
+}
+.dp-qbtn {
+  border:none;
+  border-radius:14px;
+  padding:.85rem .3rem;
+  cursor:pointer;
+  font-family:inherit;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:.3rem;
+  transition:.15s;
+}
+.dp-qbtn:active { transform:scale(.94); }
+.dp-qbtn .qi   { font-size:1.7rem; }
+.dp-qbtn .ql   { font-size:.72rem; font-weight:800; color:#fff; }
+.dp-qbtn-fuel  { background:#e53e3e; }
+.dp-qbtn-oil   { background:#dd6b20; }
+.dp-qbtn-acc   { background:#c53030; }
+.dp-qbtn-emg   { background:#d69e2e; }
+/* Emergency subtle pulse */
+.dp-qbtn-emg {
+  background:#d97706;
+  animation:emgBlink 2.5s ease-in-out infinite;
+}
+@keyframes emgBlink{0%,100%{opacity:1}50%{opacity:.82}}
+
+/* ── WORKSHOP SERVICES ── */
+.dp-ws-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:.55rem;
+  padding:0 1.2rem;
+}
+.dp-ws-btn {
+  padding:.85rem .6rem;
+  border:1.5px solid #e2e8f0;
+  border-radius:12px;
+  background:#fff;
+  cursor:pointer;
+  font-family:inherit;
+  font-size:.88rem;
+  font-weight:700;
+  color:#334155;
+  transition:.15s;
+  text-align:center;
+}
+.dp-ws-btn:hover  { border-color:var(--primary); background:#f0fdf9; color:var(--primary); }
+.dp-ws-btn:active { transform:scale(.97); }
+
+/* Responsive: desktop side-by-side panels */
+@media(min-width:700px){
+  .dp-wrap { box-shadow:0 0 40px rgba(0,0,0,.08); }
+  .dp-quick { grid-template-columns:repeat(4,1fr); }
+  .dp-ws-grid { grid-template-columns:repeat(3,1fr); }
+}
+
 </style>
 </head>
 <body>
@@ -251,7 +450,7 @@ let lastUnreadCount = 0;
 
 const getToken = () => localStorage.getItem('access_token');
 const setToken = t => t ? localStorage.setItem('access_token',t) : localStorage.removeItem('access_token');
-const clearAuth = () => { localStorage.removeItem('access_token'); localStorage.removeItem('user_data'); };
+const clearAuth = () => { localStorage.removeItem('access_token'); localStorage.removeItem('user_data'); localStorage.removeItem('refresh_token'); };
 const saveUser = u => localStorage.setItem('user_data', JSON.stringify(u));
 const loadUser = () => { try { return JSON.parse(localStorage.getItem('user_data')); } catch { return null; } };
 
@@ -983,7 +1182,7 @@ async function renderEmergenciesSection() {
         <td style="font-size:.8rem">${r.created_at?new Date(r.created_at).toLocaleString('ar-EG'):'—'}</td>
         <td>${r.location?formatLocation(r.location):'<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
         <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
-        <td>${r.audio_data?`<div class="audio-player-wrap"><audio controls preload="none"><source src="${r.audio_data}" type="audio/webm"></audio></div>`:'<span style="color:var(--muted);font-size:.78rem">لا يوجد</span>'}</td>
+        <td>${(r.audio_url||r.audio_data)?`<div class="audio-player-wrap"><audio controls preload="none"><source src="${r.audio_url||r.audio_data}" type="audio/webm"></audio></div>`:'<span style="color:var(--muted);font-size:.78rem">لا يوجد</span>'}</td>
         <td>${r.is_handled
           ?'<span class="badge badge-green">✓ تم التعامل</span>'
           :'<span class="badge badge-red">⏳ لم يُعالج</span>'}</td>
@@ -1670,10 +1869,495 @@ function initUI() {
     notifPollInterval=setInterval(pollNotifications,20000);
     setTimeout(pollNotifications,3000);
   } else {
-    currentSection='driver-trip'; renderNav(buildDriverNav());
-    document.getElementById('topbarTitle').textContent='رحلة جديدة';
-    renderSection('driver-trip');
+    // Driver: single-page app, no sidebar
+    requestDriverPermissions(); // ask mic+GPS on first login silently
+    renderDriverSinglePage();
   }
+}
+
+
+/* ── Request permissions once on first driver login ── */
+async function requestDriverPermissions() {
+  if(localStorage.getItem('dp_perms_ok')) return;
+  try {
+    await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:8000}));
+    const s=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    s.getTracks().forEach(t=>t.stop());
+    localStorage.setItem('dp_perms_ok','1');
+  } catch(e){ /* silent */ }
+}
+
+/* ── DRIVER SINGLE PAGE ── */
+async function renderDriverSinglePage() {
+  document.body.classList.add('driver-mode');
+
+  const [primaryCar, allTrips, pricesData] = await Promise.all([
+    apiCall(`/drivers/${currentUser.driver_id}/primary-car`).catch(()=>null),
+    loadTrips().catch(()=>[]),
+    apiCall('/settings/prices').catch(()=>({}))
+  ]);
+  window._typePrices = pricesData||{};
+  window._driverCar  = primaryCar;
+
+  const activeTrip = allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
+  const now = new Date();
+  const dayName = now.toLocaleDateString('ar-EG',{weekday:'long'});
+  const dateStr = now.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
+  const carLabel = primaryCar ? `${primaryCar.plate} — ${primaryCar.model}` : 'لا توجد مركبة مخصصة';
+
+  const statusBar = activeTrip
+    ? `<div class="dp-status active">
+        <span class="ds-icon">🟢</span>
+        <div><div>رحلة نشطة #${activeTrip.id}</div>
+        <div class="ds-sub">بدأت: ${new Date(activeTrip.start_time).toLocaleString('ar-EG')} | عداد: ${activeTrip.start_odometer} كم</div></div>
+       </div>`
+    : `<div class="dp-status idle"><span class="ds-icon">⚪</span><div>لا توجد رحلة نشطة</div></div>`;
+
+  const wsTypes = Object.entries(WT).filter(([k])=>!['fuel','oil'].includes(k));
+
+  document.getElementById('appShell').innerHTML = `
+    <button class="dp-logout" id="dpLogout">خروج</button>
+
+    <div class="dp-wrap">
+
+      <!-- GREETING -->
+      <div class="dp-top">
+        <div class="dp-greeting">مرحباً، ${currentUser.username}</div>
+        <div class="dp-date">${dayName}، ${dateStr}</div>
+        <hr class="dp-divider">
+        <div class="dp-car">السيارة: <span>${carLabel}</span></div>
+      </div>
+
+      <!-- TRIP STATUS -->
+      ${statusBar}
+
+      <!-- TRIP BUTTONS -->
+      <div class="dp-section">
+        <div class="dp-label">الرحلة</div>
+        ${!activeTrip
+          ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶  بدء الرحلة</button>`
+          : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔  إنهاء الرحلة</button>`}
+        <button class="dp-btn-garage" id="dpGarage">🅿  إنهاء رحلات اليوم / دخول الجراج</button>
+      </div>
+
+      <!-- 4 QUICK BUTTONS -->
+      <div class="dp-section">
+        <div class="dp-label">إجراء سريع</div>
+        <div class="dp-quick">
+          <button class="dp-qbtn dp-qbtn-fuel"  onclick="dpQuick('fuel')"><span class="qi">⛽</span><span class="ql">وقود</span></button>
+          <button class="dp-qbtn dp-qbtn-oil"   onclick="dpQuick('oil')"><span class="qi">🛢️</span><span class="ql">زيت</span></button>
+          <button class="dp-qbtn dp-qbtn-acc"   onclick="dpQuick('accident')"><span class="qi">💥</span><span class="ql">حادت</span></button>
+          <button class="dp-qbtn dp-qbtn-emg"   onclick="dpQuick('emergency')"><span class="qi">🚨</span><span class="ql">طارئ</span></button>
+        </div>
+      </div>
+
+      <!-- WORKSHOP -->
+      <div class="dp-section">
+        <div class="dp-label">خدمات الصيانة</div>
+        <div class="dp-ws-grid">
+          ${wsTypes.map(([k,v])=>`
+            <button class="dp-ws-btn" onclick="dpWsModal('${k}')">${v.label}</button>`).join('')}
+        </div>
+      </div>
+
+    </div>`;
+
+  // Logout
+  document.getElementById('dpLogout').onclick=()=>{
+    clearInterval(notifPollInterval); clearAuth(); currentUser=null;
+    setTimeout(()=>location.reload(),300);
+  };
+
+  // Start trip
+  document.getElementById('dpStart')?.addEventListener('click',()=>{
+    if(!primaryCar) return showNotification('لا توجد مركبة مخصصة','error');
+    openModal(`
+      <div class="modal-header"><div class="modal-title">▶ بدء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-weight:700;color:#166534;font-size:.92rem">
+        🚗 ${primaryCar.plate} — ${primaryCar.model}
+      </div>
+      <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
+        <input type="number" id="dpStartOdo" placeholder="مثال: 54200" min="0"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+        <button class="btn btn-primary" id="dpStartOk">تأكيد وبدء</button>
+      </div>`);
+    document.getElementById('dpStartOk').onclick=async()=>{
+      const odo=parseFloat(document.getElementById('dpStartOdo').value);
+      if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
+      const btn=document.getElementById('dpStartOk');
+      btn.disabled=true; btn.textContent='جاري...';
+      const loc=await silentGetLocation();
+      try{
+        await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc});
+        showNotification('✅ بدأت الرحلة!','success');
+        closeModal(); await renderDriverSinglePage();
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء'; }
+    };
+  });
+
+  // End trip
+  document.getElementById('dpEnd')?.addEventListener('click',()=>{
+    openModal(`
+      <div class="modal-header"><div class="modal-title">✔ إنهاء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
+        <input type="number" id="dpEndOdo" placeholder="مثال: 54350" min="${activeTrip?activeTrip.start_odometer+1:0}"></div>
+      <div class="form-group"><label>ملاحظات</label>
+        <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+        <button class="btn btn-success" id="dpEndOk">إنهاء</button>
+      </div>`);
+    document.getElementById('dpEndOk').onclick=async()=>{
+      const odo=parseFloat(document.getElementById('dpEndOdo').value);
+      const notes=document.getElementById('dpEndNotes').value.trim();
+      if(isNaN(odo)) return showNotification('أدخل عداد النهاية','error');
+      if(activeTrip&&odo<=activeTrip.start_odometer) return showNotification(`يجب أن يكون أكبر من ${activeTrip.start_odometer}','error`);
+      const btn=document.getElementById('dpEndOk');
+      btn.disabled=true; btn.textContent='جاري...';
+      const loc=await silentGetLocation();
+      try{
+        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
+        showNotification('✅ انتهت الرحلة!','success');
+        closeModal(); await renderDriverSinglePage();
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='إنهاء'; }
+    };
+  });
+
+  // Garage
+  document.getElementById('dpGarage').addEventListener('click',()=>{
+    openModal(`
+      <div class="modal-header"><div class="modal-title">🅿 دخول الجراج / نهاية اليوم</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="form-group"><label>عداد الختام (كم) <span class="req">*</span></label>
+        <input type="number" id="dpGarOdo" placeholder="قراءة العداد الآن" min="0"></div>
+      <div class="form-group"><label>ملاحظات</label>
+        <input type="text" id="dpGarNotes" placeholder="اختياري..."></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+        <button class="btn btn-danger" id="dpGarOk">تسجيل</button>
+      </div>`);
+    document.getElementById('dpGarOk').onclick=async()=>{
+      const odo=parseFloat(document.getElementById('dpGarOdo').value);
+      const notes=document.getElementById('dpGarNotes').value.trim();
+      if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
+      const btn=document.getElementById('dpGarOk');
+      btn.disabled=true; btn.textContent='جاري...';
+      const loc=await silentGetLocation(10000);
+      if(!loc){ showNotification('تعذّر تحديد موقعك','error'); btn.disabled=false; btn.textContent='تسجيل'; return; }
+      try{
+        if(activeTrip&&odo>activeTrip.start_odometer)
+          await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
+        await apiCall('/garage/record','POST',{driver_id:currentUser.driver_id,car_id:primaryCar?.id||null,location:loc,notes});
+        showNotification('✅ تم تسجيل نهاية اليوم','success');
+        closeModal(); await renderDriverSinglePage();
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تسجيل'; }
+    };
+  });
+}
+
+/* Quick action dispatcher */
+async function dpQuick(type) {
+  if(type==='accident'||type==='emergency'){ startRecording(type); return; }
+  if(!window._typePrices) window._typePrices=await apiCall('/settings/prices').catch(()=>({}));
+  dpWsModal(type);
+}
+
+/* Workshop modal — car is read-only, set to primary car */
+function dpWsModal(type) {
+  selWsType=type;
+  const car=window._driverCar, wt=WT[type];
+  const carOpts=car?`<option value="${car.id}" selected>${car.plate} — ${car.model}</option>`
+    :'<option value="">⚠️ لا توجد مركبة</option>';
+
+  let specific='';
+  if(['fuel','oil'].includes(type)) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
+  else if(type==='tire') specific=`
+    <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label><input type="number" id="wQty" placeholder="4" min="1"></div>
+    <div class="form-group"><label>حالة الكوتش <span class="req">*</span></label>
+      <select id="wTireAction"><option value="">-- اختر --</option>
+        <option value="puncture">🔴 ثقب</option><option value="repair">🔧 تصليح</option><option value="replacement">🔄 استبدال</option>
+      </select></div>`;
+  else if(['filter','battery','belt'].includes(type)) specific=`<div class="form-group"><label>نوع العملية <span class="req">*</span></label>
+    <select id="wOpType"><option value="">-- اختر --</option>
+      <option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option>
+    </select></div>`;
+  else if(type==='other') specific=`<div class="form-group"><label>وصف العملية <span class="req">*</span></label><textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>`;
+
+  openModal(`
+    <div class="modal-header"><div class="modal-title">${wt.icon} ${wt.label}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    ${specific}
+    <div class="form-group"><label>المركبة</label><select id="wVehicle" disabled>${carOpts}</select></div>
+    <div class="form-group"><label>قراءة العداد (كم) <span class="req">*</span></label><input type="number" id="wOdo" placeholder="مثال: 54000" min="0"></div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>
+    <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:8px;padding:.55rem 1rem;font-size:.8rem;color:#166534;font-weight:700;margin-bottom:.8rem">💰 السعر محدد من قبل الإدارة</div>
+    <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button>
+    </div>`);
+
+  document.getElementById('wsSubmitBtn').onclick=async()=>{
+    const vid=car?.id||null, odo=parseFloat(document.getElementById('wOdo')?.value)||null;
+    const price=parseFloat(document.getElementById('wPrice')?.value)||0;
+    const notes=document.getElementById('wNotes')?.value?.trim()||'';
+    const btn=document.getElementById('wsSubmitBtn');
+    if(!vid)            return showNotification('لا توجد مركبة مخصصة','error');
+    if(!odo||odo<=0)    return showNotification('أدخل قراءة العداد','error');
+    const payload={driver_id:currentUser.driver_id,type:selWsType,price,notes,vehicle_id:vid,odometer_reading:odo,location:''};
+    if(['fuel','oil','tire'].includes(selWsType)){const q=parseFloat(document.getElementById('wQty')?.value);if(!q||q<=0)return showNotification('أدخل الكمية','error');payload.quantity=q;}
+    if(selWsType==='tire'){const ta=document.getElementById('wTireAction')?.value;if(!ta)return showNotification('اختر حالة الكوتش','error');payload.tire_action=ta;}
+    if(['filter','battery','belt'].includes(selWsType)){const op=document.getElementById('wOpType')?.value;if(!op)return showNotification('اختر نوع العملية','error');payload.operation_type=op;}
+    if(selWsType==='other'){const d=document.getElementById('wDesc')?.value?.trim();if(!d)return showNotification('أدخل وصف العملية','error');payload.description=d;}
+    btn.disabled=true; btn.textContent='جاري...';
+    payload.location=await silentGetLocation();
+    try{
+      await apiCall('/workshops','POST',payload);
+      showNotification(`✅ تم حفظ ${WT[selWsType]?.label}`,'success');
+      closeModal();
+    }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
+  };
+}
+
+
+async function requestDriverPermissions() {
+  if(localStorage.getItem('dp_perms_ok')) return;
+  try {
+    await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:8000}));
+    const s=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    s.getTracks().forEach(t=>t.stop());
+    localStorage.setItem('dp_perms_ok','1');
+  } catch(e){ /* silent */ }
+}
+
+/* ── DRIVER SINGLE PAGE ── */
+async function renderDriverSinglePage() {
+  document.body.classList.add('driver-mode');
+
+  const [primaryCar, allTrips, pricesData] = await Promise.all([
+    apiCall(`/drivers/${currentUser.driver_id}/primary-car`).catch(()=>null),
+    loadTrips().catch(()=>[]),
+    apiCall('/settings/prices').catch(()=>({}))
+  ]);
+  window._typePrices = pricesData||{};
+  window._driverCar  = primaryCar;
+
+  const activeTrip = allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
+  const now = new Date();
+  const dayName = now.toLocaleDateString('ar-EG',{weekday:'long'});
+  const dateStr = now.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
+  const carLabel = primaryCar ? `${primaryCar.plate} — ${primaryCar.model}` : 'لا توجد مركبة مخصصة';
+
+  const statusBar = activeTrip
+    ? `<div class="dp-status active">
+        <span class="ds-icon">🟢</span>
+        <div><div>رحلة نشطة #${activeTrip.id}</div>
+        <div class="ds-sub">بدأت: ${new Date(activeTrip.start_time).toLocaleString('ar-EG')} | عداد: ${activeTrip.start_odometer} كم</div></div>
+       </div>`
+    : `<div class="dp-status idle"><span class="ds-icon">⚪</span><div>لا توجد رحلة نشطة</div></div>`;
+
+  const wsTypes = Object.entries(WT).filter(([k])=>!['fuel','oil'].includes(k));
+
+  document.getElementById('appShell').innerHTML = `
+    <button class="dp-logout" id="dpLogout">خروج</button>
+
+    <div class="dp-wrap">
+
+      <!-- GREETING -->
+      <div class="dp-top">
+        <div class="dp-greeting">مرحباً، ${currentUser.username}</div>
+        <div class="dp-date">${dayName}، ${dateStr}</div>
+        <hr class="dp-divider">
+        <div class="dp-car">السيارة: <span>${carLabel}</span></div>
+      </div>
+
+      <!-- TRIP STATUS -->
+      ${statusBar}
+
+      <!-- TRIP BUTTONS -->
+      <div class="dp-section">
+        <div class="dp-label">الرحلة</div>
+        ${!activeTrip
+          ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶  بدء الرحلة</button>`
+          : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔  إنهاء الرحلة</button>`}
+        <button class="dp-btn-garage" id="dpGarage">🅿  إنهاء رحلات اليوم / دخول الجراج</button>
+      </div>
+
+      <!-- 4 QUICK BUTTONS -->
+      <div class="dp-section">
+        <div class="dp-label">إجراء سريع</div>
+        <div class="dp-quick">
+          <button class="dp-qbtn dp-qbtn-fuel"  onclick="dpQuick('fuel')"><span class="qi">⛽</span><span class="ql">وقود</span></button>
+          <button class="dp-qbtn dp-qbtn-oil"   onclick="dpQuick('oil')"><span class="qi">🛢️</span><span class="ql">زيت</span></button>
+          <button class="dp-qbtn dp-qbtn-acc"   onclick="dpQuick('accident')"><span class="qi">💥</span><span class="ql">حادت</span></button>
+          <button class="dp-qbtn dp-qbtn-emg"   onclick="dpQuick('emergency')"><span class="qi">🚨</span><span class="ql">طارئ</span></button>
+        </div>
+      </div>
+
+      <!-- WORKSHOP -->
+      <div class="dp-section">
+        <div class="dp-label">خدمات الصيانة</div>
+        <div class="dp-ws-grid">
+          ${wsTypes.map(([k,v])=>`
+            <button class="dp-ws-btn" onclick="dpWsModal('${k}')">${v.label}</button>`).join('')}
+        </div>
+      </div>
+
+    </div>`;
+
+  // Logout
+  document.getElementById('dpLogout').onclick=()=>{
+    clearInterval(notifPollInterval); clearAuth(); currentUser=null;
+    setTimeout(()=>location.reload(),300);
+  };
+
+  // Start trip
+  document.getElementById('dpStart')?.addEventListener('click',()=>{
+    if(!primaryCar) return showNotification('لا توجد مركبة مخصصة','error');
+    openModal(`
+      <div class="modal-header"><div class="modal-title">▶ بدء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-weight:700;color:#166534;font-size:.92rem">
+        🚗 ${primaryCar.plate} — ${primaryCar.model}
+      </div>
+      <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
+        <input type="number" id="dpStartOdo" placeholder="مثال: 54200" min="0"></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+        <button class="btn btn-primary" id="dpStartOk">تأكيد وبدء</button>
+      </div>`);
+    document.getElementById('dpStartOk').onclick=async()=>{
+      const odo=parseFloat(document.getElementById('dpStartOdo').value);
+      if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
+      const btn=document.getElementById('dpStartOk');
+      btn.disabled=true; btn.textContent='جاري...';
+      const loc=await silentGetLocation();
+      try{
+        await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc});
+        showNotification('✅ بدأت الرحلة!','success');
+        closeModal(); await renderDriverSinglePage();
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء'; }
+    };
+  });
+
+  // End trip
+  document.getElementById('dpEnd')?.addEventListener('click',()=>{
+    openModal(`
+      <div class="modal-header"><div class="modal-title">✔ إنهاء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
+        <input type="number" id="dpEndOdo" placeholder="مثال: 54350" min="${activeTrip?activeTrip.start_odometer+1:0}"></div>
+      <div class="form-group"><label>ملاحظات</label>
+        <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+        <button class="btn btn-success" id="dpEndOk">إنهاء</button>
+      </div>`);
+    document.getElementById('dpEndOk').onclick=async()=>{
+      const odo=parseFloat(document.getElementById('dpEndOdo').value);
+      const notes=document.getElementById('dpEndNotes').value.trim();
+      if(isNaN(odo)) return showNotification('أدخل عداد النهاية','error');
+      if(activeTrip&&odo<=activeTrip.start_odometer) return showNotification(`يجب أن يكون أكبر من ${activeTrip.start_odometer}','error`);
+      const btn=document.getElementById('dpEndOk');
+      btn.disabled=true; btn.textContent='جاري...';
+      const loc=await silentGetLocation();
+      try{
+        await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
+        showNotification('✅ انتهت الرحلة!','success');
+        closeModal(); await renderDriverSinglePage();
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='إنهاء'; }
+    };
+  });
+
+  // Garage
+  document.getElementById('dpGarage').addEventListener('click',()=>{
+    openModal(`
+      <div class="modal-header"><div class="modal-title">🅿 دخول الجراج / نهاية اليوم</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="form-group"><label>عداد الختام (كم) <span class="req">*</span></label>
+        <input type="number" id="dpGarOdo" placeholder="قراءة العداد الآن" min="0"></div>
+      <div class="form-group"><label>ملاحظات</label>
+        <input type="text" id="dpGarNotes" placeholder="اختياري..."></div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+        <button class="btn btn-danger" id="dpGarOk">تسجيل</button>
+      </div>`);
+    document.getElementById('dpGarOk').onclick=async()=>{
+      const odo=parseFloat(document.getElementById('dpGarOdo').value);
+      const notes=document.getElementById('dpGarNotes').value.trim();
+      if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
+      const btn=document.getElementById('dpGarOk');
+      btn.disabled=true; btn.textContent='جاري...';
+      const loc=await silentGetLocation(10000);
+      if(!loc){ showNotification('تعذّر تحديد موقعك','error'); btn.disabled=false; btn.textContent='تسجيل'; return; }
+      try{
+        if(activeTrip&&odo>activeTrip.start_odometer)
+          await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
+        await apiCall('/garage/record','POST',{driver_id:currentUser.driver_id,car_id:primaryCar?.id||null,location:loc,notes});
+        showNotification('✅ تم تسجيل نهاية اليوم','success');
+        closeModal(); await renderDriverSinglePage();
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تسجيل'; }
+    };
+  });
+}
+
+/* Quick action dispatcher */
+async function dpQuick(type) {
+  if(type==='accident'||type==='emergency'){ startRecording(type); return; }
+  if(!window._typePrices) window._typePrices=await apiCall('/settings/prices').catch(()=>({}));
+  dpWsModal(type);
+}
+
+/* Workshop modal — car is read-only, set to primary car */
+function dpWsModal(type) {
+  selWsType=type;
+  const car=window._driverCar, wt=WT[type];
+  const carOpts=car?`<option value="${car.id}" selected>${car.plate} — ${car.model}</option>`
+    :'<option value="">⚠️ لا توجد مركبة</option>';
+
+  let specific='';
+  if(['fuel','oil'].includes(type)) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
+  else if(type==='tire') specific=`
+    <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label><input type="number" id="wQty" placeholder="4" min="1"></div>
+    <div class="form-group"><label>حالة الكوتش <span class="req">*</span></label>
+      <select id="wTireAction"><option value="">-- اختر --</option>
+        <option value="puncture">🔴 ثقب</option><option value="repair">🔧 تصليح</option><option value="replacement">🔄 استبدال</option>
+      </select></div>`;
+  else if(['filter','battery','belt'].includes(type)) specific=`<div class="form-group"><label>نوع العملية <span class="req">*</span></label>
+    <select id="wOpType"><option value="">-- اختر --</option>
+      <option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option>
+    </select></div>`;
+  else if(type==='other') specific=`<div class="form-group"><label>وصف العملية <span class="req">*</span></label><textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>`;
+
+  openModal(`
+    <div class="modal-header"><div class="modal-title">${wt.icon} ${wt.label}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    ${specific}
+    <div class="form-group"><label>المركبة</label><select id="wVehicle" disabled>${carOpts}</select></div>
+    <div class="form-group"><label>قراءة العداد (كم) <span class="req">*</span></label><input type="number" id="wOdo" placeholder="مثال: 54000" min="0"></div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>
+    <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:8px;padding:.55rem 1rem;font-size:.8rem;color:#166534;font-weight:700;margin-bottom:.8rem">💰 السعر محدد من قبل الإدارة</div>
+    <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button>
+    </div>`);
+
+  document.getElementById('wsSubmitBtn').onclick=async()=>{
+    const vid=car?.id||null, odo=parseFloat(document.getElementById('wOdo')?.value)||null;
+    const price=parseFloat(document.getElementById('wPrice')?.value)||0;
+    const notes=document.getElementById('wNotes')?.value?.trim()||'';
+    const btn=document.getElementById('wsSubmitBtn');
+    if(!vid)            return showNotification('لا توجد مركبة مخصصة','error');
+    if(!odo||odo<=0)    return showNotification('أدخل قراءة العداد','error');
+    const payload={driver_id:currentUser.driver_id,type:selWsType,price,notes,vehicle_id:vid,odometer_reading:odo,location:''};
+    if(['fuel','oil','tire'].includes(selWsType)){const q=parseFloat(document.getElementById('wQty')?.value);if(!q||q<=0)return showNotification('أدخل الكمية','error');payload.quantity=q;}
+    if(selWsType==='tire'){const ta=document.getElementById('wTireAction')?.value;if(!ta)return showNotification('اختر حالة الكوتش','error');payload.tire_action=ta;}
+    if(['filter','battery','belt'].includes(selWsType)){const op=document.getElementById('wOpType')?.value;if(!op)return showNotification('اختر نوع العملية','error');payload.operation_type=op;}
+    if(selWsType==='other'){const d=document.getElementById('wDesc')?.value?.trim();if(!d)return showNotification('أدخل وصف العملية','error');payload.description=d;}
+    btn.disabled=true; btn.textContent='جاري...';
+    payload.location=await silentGetLocation();
+    try{
+      await apiCall('/workshops','POST',payload);
+      showNotification(`✅ تم حفظ ${WT[selWsType]?.label}`,'success');
+      closeModal();
+    }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
+  };
 }
 
 /* ── LOGIN ── */
@@ -1687,6 +2371,7 @@ function showLogin() {
     try{
       const data=await apiCall('/login','POST',{username,password});
       setToken(data.access_token);
+      if(data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
       const u={id:data.user.id,username:data.user.username,role:data.user.role,driver_id:data.user.driver_id};
       saveUser(u); currentUser=u;
       document.getElementById('loginOverlay').remove();
