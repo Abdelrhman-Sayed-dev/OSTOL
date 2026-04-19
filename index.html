@@ -1261,15 +1261,28 @@ async function renderPermissionsSection() {
 
 /* ── SILENT GPS — runs in background, no UI feedback ── */
 function silentGetLocation(timeoutMs=10000) {
-  return new Promise(resolve=>{
+  return new Promise(resolve => {
     if(!navigator.geolocation){ resolve(''); return; }
+
+    let done = false;
+    const finish = val => { if(!done){ done=true; resolve(val); } };
+
+    // المرحلة الأولى: دقة منخفضة (سريعة — تعمل على WiFi/شبكة بدون GPS)
     navigator.geolocation.getCurrentPosition(
-      p=>resolve(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
-      ()=>resolve(''),
-      {enableHighAccuracy:true,timeout:timeoutMs,maximumAge:0}
+      p => finish(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
+      () => {
+        // المرحلة الثانية: لو فشلت المنخفضة، جرّب الدقة العالية مع مهلة أقصر
+        navigator.geolocation.getCurrentPosition(
+          p => finish(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
+          () => finish(''),
+          { enableHighAccuracy:true, timeout: Math.min(timeoutMs, 8000), maximumAge:0 }
+        );
+      },
+      { enableHighAccuracy:false, timeout: Math.min(timeoutMs, 5000), maximumAge:30000 }
     );
-    // Always resolve within timeout
-    setTimeout(()=>resolve(''),timeoutMs+500);
+
+    // ضمان الانتهاء قبل انتهاء المهلة الكلية
+    setTimeout(() => finish(''), timeoutMs);
   });
 }
 
@@ -1445,37 +1458,56 @@ function captureGPS(fieldId) {
   coords.style.display='none';
   picker.className='gps-picker';
 
+  // المرحلة 1: دقة منخفضة (سريعة — WiFi/شبكة)
   navigator.geolocation.getCurrentPosition(
     pos => {
       const lat=pos.coords.latitude.toFixed(6);
       const lng=pos.coords.longitude.toFixed(6);
       const acc=Math.round(pos.coords.accuracy);
       const val=`${lat},${lng}`;
-
       hidden.value=val;
       picker.className='gps-picker gps-ok';
       btn.className='gps-capture-btn gps-btn-ok';
       btn.innerHTML='✅ تم تسجيل الموقع — اضغط لتحديثه';
       btn.disabled=false;
-
       result.className='gps-result ok';
       result.innerHTML=`✅ الموقع مسجّل (دقة: ${acc} متر)`;
       result.style.display='flex';
-
       coords.textContent=`${lat}, ${lng}`;
       coords.style.display='block';
     },
-    err => {
-      const msgs={1:'رُفض الإذن — فعّل صلاحية الموقع في المتصفح',2:'الإشارة ضعيفة — تأكد من تشغيل GPS',3:'انتهت المهلة — حاول مجدداً'};
-      picker.className='gps-picker gps-err';
-      btn.className='gps-capture-btn';
-      btn.innerHTML='📍 تسجيل موقعي الآن';
-      btn.disabled=false;
-      result.className='gps-result err';
-      result.innerHTML='❌ '+(msgs[err.code]||err.message);
-      result.style.display='flex';
+    () => {
+      // المرحلة 2: دقة عالية (GPS — fallback إذا فشلت الشبكة)
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lat=pos.coords.latitude.toFixed(6);
+          const lng=pos.coords.longitude.toFixed(6);
+          const acc=Math.round(pos.coords.accuracy);
+          hidden.value=`${lat},${lng}`;
+          picker.className='gps-picker gps-ok';
+          btn.className='gps-capture-btn gps-btn-ok';
+          btn.innerHTML='✅ تم تسجيل الموقع — اضغط لتحديثه';
+          btn.disabled=false;
+          result.className='gps-result ok';
+          result.innerHTML=`✅ الموقع مسجّل (دقة: ${acc} متر)`;
+          result.style.display='flex';
+          coords.textContent=`${lat}, ${lng}`;
+          coords.style.display='block';
+        },
+        err => {
+          const msgs={1:'رُفض الإذن — فعّل صلاحية الموقع في المتصفح',2:'الإشارة ضعيفة — تأكد من تشغيل GPS',3:'انتهت المهلة — حاول مجدداً'};
+          picker.className='gps-picker gps-err';
+          btn.className='gps-capture-btn';
+          btn.innerHTML='📍 تسجيل موقعي الآن';
+          btn.disabled=false;
+          result.className='gps-result err';
+          result.innerHTML='❌ '+(msgs[err.code]||err.message);
+          result.style.display='flex';
+        },
+        {enableHighAccuracy:true, timeout:12000, maximumAge:0}
+      );
     },
-    {enableHighAccuracy:true, timeout:12000, maximumAge:0}
+    {enableHighAccuracy:false, timeout:5000, maximumAge:30000}
   );
 }
 
