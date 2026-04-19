@@ -1576,7 +1576,6 @@ async function openEndTripModal(activeTrips) {
 
 
 /* ── DRIVER EMERGENCY / ACCIDENT ── */
-let mediaRecorder=null, audioChunks=[], recInterval=null, recSeconds=0, currentRecordingType=null;
 
 async function renderDriverEmergency() {
   const [allowedCars,allTrips]=await Promise.all([loadAllowedCars(),loadTrips()]);
