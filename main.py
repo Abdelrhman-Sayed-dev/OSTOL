@@ -227,7 +227,7 @@ def migrate_db():
         # Seed admin if missing
         c.execute("SELECT id FROM users WHERE username='admin'")
         if not c.fetchone():
-            pw = bcrypt.hashpw("Admin123".encode(), bcrypt.gensalt()).decode()
+            pw = bcrypt.hashpw("ChangeMe123!".encode(), bcrypt.gensalt()).decode()
             c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", ("admin", pw, "admin"))
             log.warning("⚠️  Created default admin — CHANGE PASSWORD IMMEDIATELY")
 
@@ -493,6 +493,17 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup():
     migrate_db()
+    # If RESET_ADMIN_PW env var is set → update admin password then clear it
+    reset_pw = os.environ.get("RESET_ADMIN_PW", "").strip()
+    if reset_pw:
+        try:
+            with get_db() as conn:
+                c = conn.cursor()
+                new_hash = bcrypt.hashpw(reset_pw.encode(), bcrypt.gensalt()).decode()
+                c.execute("UPDATE users SET password=? WHERE username='admin'", (new_hash,))
+                log.info("✅ Admin password updated from RESET_ADMIN_PW env var")
+        except Exception as e:
+            log.error(f"Failed to reset admin password: {e}")
     log.info("🚀 Fleet Management API started")
 
 # Rate limiter
