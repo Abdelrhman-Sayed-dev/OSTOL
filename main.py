@@ -227,7 +227,7 @@ def migrate_db():
         # Seed admin if missing
         c.execute("SELECT id FROM users WHERE username='admin'")
         if not c.fetchone():
-            pw = bcrypt.hashpw("ChangeMe123!".encode(), bcrypt.gensalt()).decode()
+            pw = bcrypt.hashpw("Admin123".encode(), bcrypt.gensalt()).decode()
             c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", ("admin", pw, "admin"))
             log.warning("⚠️  Created default admin — CHANGE PASSWORD IMMEDIATELY")
 
