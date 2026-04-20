@@ -1080,6 +1080,19 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
+        # Auto-end active trip using garage location & odometer
+        c.execute("SELECT id,start_odometer FROM trips WHERE driver_id=? AND end_time IS NULL",
+                  (rec.driver_id,))
+        active = c.fetchone()
+        trip_auto_ended = False
+        if active and rec.odometer and rec.odometer > (active["start_odometer"] or 0):
+            c.execute(
+                "UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
+                (now, rec.odometer, rec.location, rec.location, active["id"])
+            )
+            trip_auto_ended = True
+            log_event("trip_auto_ended_by_garage", trip_id=active["id"], driver_id=rec.driver_id)
+        # Save garage record
         c.execute("INSERT INTO garage_records(driver_id,car_id,location,recorded_at,notes) VALUES(?,?,?,?,?)",
                   (rec.driver_id, rec.car_id, rec.location, now, rec.notes or ""))
         rid = c.lastrowid
@@ -1091,7 +1104,7 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
         dr = c.fetchone(); dn = dr["name"] if dr else None
         return {"id":rid,"driver_id":rec.driver_id,"car_id":rec.car_id,
                 "location":rec.location,"recorded_at":now,"notes":rec.notes or "",
-                "driver_name":dn,"car_plate":plate}
+                "driver_name":dn,"car_plate":plate,"trip_auto_ended":trip_auto_ended}
 
 @app.get("/garage/records")
 async def get_garage_records(cu: dict = Depends(get_user)):
