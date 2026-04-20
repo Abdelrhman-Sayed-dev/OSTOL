@@ -202,13 +202,46 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
 /* ── MOBILE ── */
 .sidebar-toggle{display:none}
 @media(max-width:900px){
+  /* Sidebar */
   .sidebar{transform:translateX(100%)}
   .sidebar.open{transform:translateX(0)}
-  .main-content{margin-right:0}
   .sidebar-toggle{display:flex}
-  .page-content{padding:1rem}
+
+  /* Layout */
+  .main-content{margin-right:0;min-width:0;width:100%}
+  .page-content{padding:.8rem;overflow-x:hidden}
+  #appShell{overflow-x:hidden}
+
+  /* Tables — scroll horizontally inside their box */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:calc(100vw - 1.6rem)}
+  table{min-width:600px}
+  th,td{padding:.5rem .6rem;font-size:.75rem;white-space:nowrap}
+
+  /* Cards & grids */
+  .two-col{grid-template-columns:1fr}
+  .stats-row{grid-template-columns:1fr 1fr}
+  .stat-card{padding:.9rem 1rem}
+  .stat-value{font-size:1.4rem}
   .workshop-items{grid-template-columns:repeat(2,1fr)}
   .emergency-grid{grid-template-columns:1fr}
+
+  /* Topbar */
+  .topbar{padding:0 .8rem}
+  .topbar-title{font-size:1rem}
+
+  /* Buttons in header */
+  .card-header{flex-wrap:wrap;gap:.4rem}
+  .card-header .btn{font-size:.72rem;padding:.35rem .65rem}
+
+  /* Modal */
+  .modal-box{width:95vw;max-height:90vh;overflow-y:auto}
+}
+
+@media(max-width:480px){
+  .stats-row{grid-template-columns:1fr 1fr}
+  th,td{padding:.4rem .5rem;font-size:.72rem}
+  .btn{font-size:.8rem}
+  .page-content{padding:.6rem}
 }
 .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
 .sidebar-overlay.show{display:block}
