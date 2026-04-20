@@ -177,29 +177,26 @@ def create_database():
             (f"price_{ws_type}", "0", datetime.now().isoformat())
         )
 
-    # ── إنشاء حساب admin ───────────────────────────────────────
-    # يُفضَّل تعيين ADMIN_PASSWORD كمتغير بيئة
-    admin_password = os.environ.get("ADMIN_PASSWORD", "")
-    if not admin_password:
-        print("⚠️  ADMIN_PASSWORD غير محدد — سيتم استخدام كلمة مرور افتراضية مؤقتة")
-        print("    يجب تغييرها فوراً بعد أول تسجيل دخول!")
-        admin_password = "ChangeMe@2024!"
+    # ── حذف كل الأدمنز القديمين وإنشاء الأدمنز الجدد ──────────
+    ADMINS = [
+        ("Eng mohamed mansour", "mo@mansour241"),
+        ("Eng mohamed sayed",   "mo@sayed11214123"),
+        ("Eng abdelrhman sayed","abdo@11214123"),
+    ]
+    # Delete old admins (keep drivers)
+    cursor.execute("SELECT id FROM users WHERE role='admin'")
+    old_admin_ids = [r[0] for r in cursor.fetchall()]
+    for aid in old_admin_ids:
+        cursor.execute("DELETE FROM users WHERE id=?", (aid,))
 
-    if len(admin_password) < 8:
-        print("❌ ADMIN_PASSWORD قصيرة جداً (8 أحرف على الأقل)")
-        exit(1)
-
-    cursor.execute("SELECT id FROM users WHERE username = 'admin'")
-    if not cursor.fetchone():
-        hashed_pw = hash_password(admin_password)
-        cursor.execute(
-            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-            ("admin", hashed_pw, "admin")
-        )
-        print(f"✅ تم إنشاء حساب admin")
-        if not os.environ.get("ADMIN_PASSWORD"):
-            print(f"   ⚠️  كلمة المرور المؤقتة: {admin_password}")
-            print("   يرجى تغييرها فوراً من لوحة الإدارة!")
+    # Create new admins
+    for uname, pw in ADMINS:
+        cursor.execute("SELECT id FROM users WHERE username=?", (uname,))
+        if not cursor.fetchone():
+            hashed_pw = hash_password(pw)
+            cursor.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+                           (uname, hashed_pw, "admin"))
+            print(f"✅ Admin: {uname}")
 
     conn.commit()
     conn.close()
