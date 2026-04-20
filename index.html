@@ -592,7 +592,10 @@ async function renderOverview() {
   const garageRecs = await loadLatestGarage().catch(()=>[]);
   // Count parked: latest garage record exists AND car has NO active trip
   const activeTripCarIds = trips.filter(t=>!t.end_time).map(t=>t.car_id);
-  const garageCount = garageRecs.filter(g => g.car_id && !activeTripCarIds.includes(g.car_id)).length;
+  const parkedCarIds = new Set();
+  garageRecs.forEach(g=>{if(g.car_id&&!activeTripCarIds.includes(g.car_id))parkedCarIds.add(g.car_id);});
+  trips.filter(t=>t.end_time&&t.garage_location&&!activeTripCarIds.includes(t.car_id)).forEach(t=>parkedCarIds.add(t.car_id));
+  const garageCount = parkedCarIds.size;
   const unread = emgs.filter(e=>!e.is_read).length;
   document.getElementById('pageContent').innerHTML = `
     <div class="stats-row">
@@ -1048,7 +1051,52 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
 async function renderTripsSection() {
   const [trips,drivers,cars,garageLatest]=await Promise.all([loadTrips(),loadDrivers(),loadCars(),loadLatestGarage()]);
   window._tripsData=trips; window._driversData=drivers; window._carsData=cars; window._garageLatest=garageLatest;
-  document.getElementById('pageContent').innerHTML=`<div class="card"><div class="card-header"><div class="card-title">🗺️ جميع الرحلات (${trips.length})</div><button class="btn btn-success btn-sm" onclick="exportCSV()">⬇️ تصدير CSV</button></div><div class="table-wrap">${buildTripsTable(trips,drivers,cars,garageLatest)}</div></div>`;
+  document.getElementById('pageContent').innerHTML=`
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🗺️ جميع الرحلات (<span id="tripCount">${trips.length}</span>)</div>
+        <button class="btn btn-success btn-sm" onclick="exportCSV()">⬇️ تصدير CSV</button>
+      </div>
+      <div class="filters-bar" style="margin-bottom:1rem">
+        <select id="ftDriver" onchange="filterTrips()">
+          <option value="">👨‍✈️ كل السائقين</option>
+          ${drivers.map(d=>'<option value="'+d.id+'">'+d.name+'</option>').join('')}
+        </select>
+        <select id="ftCar" onchange="filterTrips()">
+          <option value="">🚗 كل المركبات</option>
+          ${cars.map(c=>'<option value="'+c.id+'">'+c.plate+'</option>').join('')}
+        </select>
+        <input type="date" id="ftDate" onchange="filterTrips()">
+        <select id="ftStatus" onchange="filterTrips()">
+          <option value="">📋 كل الحالات</option>
+          <option value="active">● جارية</option>
+          <option value="done">✓ منتهية</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="clearTripFilters()">✕ مسح</button>
+      </div>
+      <div class="table-wrap" id="tripsTable">${buildTripsTable(trips,drivers,cars,garageLatest)}</div>
+    </div>`;
+}
+function filterTrips() {
+  const dId=document.getElementById('ftDriver')?.value;
+  const cId=document.getElementById('ftCar')?.value;
+  const date=document.getElementById('ftDate')?.value;
+  const status=document.getElementById('ftStatus')?.value;
+  let f=(window._tripsData||[]).filter(t=>{
+    if(dId && String(t.driver_id)!==dId) return false;
+    if(cId && String(t.car_id)!==cId)    return false;
+    if(date && !t.start_time?.startsWith(date)) return false;
+    if(status==='active' && t.end_time)   return false;
+    if(status==='done'   && !t.end_time)  return false;
+    return true;
+  });
+  document.getElementById('tripsTable').innerHTML=buildTripsTable(f,window._driversData,window._carsData,window._garageLatest);
+  document.getElementById('tripCount').textContent=f.length;
+}
+function clearTripFilters(){
+  ['ftDriver','ftCar','ftStatus'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const fd=document.getElementById('ftDate');if(fd)fd.value='';
+  filterTrips();
 }
 function exportCSV(){
   const trips=window._tripsData||[],drivers=window._driversData||[],cars=window._carsData||[];
@@ -1086,7 +1134,7 @@ async function renderAdminWorkshops() {
     loadWorkshops(), loadCars(),
     apiCall('/settings/prices').catch(()=>({}))
   ]);
-  const total = records.reduce((s,r)=>s+(r.price||0),0).toFixed(2);
+  const total = records.reduce((s,r)=>s+((r.quantity||1)*(r.price||0)),0).toFixed(2);
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
   document.getElementById('pageContent').innerHTML=`
@@ -1131,7 +1179,7 @@ async function renderAdminWorkshops() {
 
 function buildWSTable(records) {
   if(!records.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد سجلات</p></div>';
-  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>السعر</th><th>موقع الورشة</th><th>الوصف</th><th>ملاحظات</th><th>التاريخ</th></tr></thead><tbody>
+  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>ملاحظات</th><th>التاريخ</th></tr></thead><tbody>
   ${records.map(r=>{
     const wt=WT[r.type]||{icon:'🔨',label:r.type};
     const opLabel=r.operation_type?(r.operation_type==='maintenance'?'صيانة':'استبدال'):'—';
@@ -1141,10 +1189,10 @@ function buildWSTable(records) {
       <td>${r.operation_type?`<span class="badge badge-blue">${opLabel}</span>`:'—'}</td>
       <td>${r.type==='tire'?taLabel:'—'}</td>
       <td dir="ltr">${r.vehicle_plate||'—'}</td><td>${r.odometer_reading?r.odometer_reading+' كم':'—'}</td>
-      <td>${r.quantity||'—'}</td><td>${r.price}</td>
-      <td>${formatLocation(r.location)}</td>
-      <td style="max-width:100px;font-size:.8rem">${r.description||'—'}</td>
-      <td style="max-width:100px;font-size:.8rem">${r.notes||'—'}</td>
+      <td>${r.quantity||'—'}</td>
+      <td style="font-size:.82rem">${r.price} جنيه</td>
+      <td><strong>${r.quantity&&r.price?((r.quantity||1)*(r.price||0)).toFixed(2)+' جنيه':'—'}</strong></td>
+      <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -1266,7 +1314,7 @@ function buildMapSummaryTable(trips,drivers,cars,garageLatest){
     const lastLoc=activeTrip?activeTrip.start_location:(lastTrip?.end_location);
     // Garage from standalone garage_records table
     const garageRec=(garageLatest||[]).find(g=>g.car_id===car.id);
-    const garageLoc=garageRec?.location;
+    const garageLoc=hasActiveTrip?"":garageRec?.location;
     const hasActiveTrip=!!activeTrip; const statusBadge=hasActiveTrip?'<span class="badge badge-blue">● نشطة</span>':(garageLoc?'<span class="badge badge-red">🅿️ جراج</span>':'<span class="badge badge-green">✓ متاحة</span>');
     return `<tr><td dir="ltr"><strong>${car.plate}</strong></td><td>${car.model}</td><td>${drv?.name||'—'}</td><td>${statusBadge}</td><td>${formatLocation(lastLoc)}</td><td>${formatLocation(garageLoc)}</td></tr>`;
   }).join('')}</tbody></table>`;
@@ -1315,6 +1363,59 @@ async function renderEmergenciesSection() {
         </td>
       </tr>`).join('')}
       </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
+    </div>`;
+}
+
+/* ── ODOMETER WARNINGS ── */
+async function renderWarningsSection() {
+  const [trips,drivers,cars]=await Promise.all([loadTrips(),loadDrivers(),loadCars()]);
+  const warnings=[];
+  cars.forEach(car=>{
+    const carTrips=trips.filter(t=>t.car_id===car.id&&t.end_time&&t.end_odometer)
+      .sort((a,b)=>new Date(a.end_time)-new Date(b.end_time));
+    for(let i=0;i<carTrips.length-1;i++){
+      const a=carTrips[i],b=carTrips[i+1];
+      if(!b.start_odometer) continue;
+      const diff=parseFloat(b.start_odometer)-parseFloat(a.end_odometer);
+      if(Math.abs(diff)>0){
+        const sev=diff<0?'critical':diff>50?'high':'medium';
+        warnings.push({car,tripA:a,tripB:b,
+          dA:drivers.find(d=>d.id===a.driver_id),
+          dB:drivers.find(d=>d.id===b.driver_id),
+          endOdo:parseFloat(a.end_odometer),startOdo:parseFloat(b.start_odometer),diff,sev});
+      }
+    }
+  });
+  const sevC=s=>s==='critical'?'#dc2626':s==='high'?'#d97706':'#ca8a04';
+  const sevL=s=>s==='critical'?'🔴 عداد رجع للخلف':s==='high'?'🟠 فارق كبير':'🟡 فارق بسيط';
+  document.getElementById('pageContent').innerHTML=`
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-icon">🔴</div><div class="stat-value" style="color:#dc2626">${warnings.filter(w=>w.sev==='critical').length}</div><div class="stat-label">شك في التلاعب</div></div>
+      <div class="stat-card"><div class="stat-icon">🟠</div><div class="stat-value" style="color:#d97706">${warnings.filter(w=>w.sev==='high').length}</div><div class="stat-label">فارق كبير</div></div>
+      <div class="stat-card"><div class="stat-icon">🟡</div><div class="stat-value" style="color:#ca8a04">${warnings.filter(w=>w.sev==='medium').length}</div><div class="stat-label">فارق بسيط</div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" style="color:#16a34a">${cars.length-new Set(warnings.map(w=>w.car.id)).size}</div><div class="stat-label">مركبة نظيفة</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">⚠️ تحذيرات العداد</div><button class="btn btn-ghost btn-sm" onclick="renderWarningsSection()">🔄</button></div>
+      <div style="background:#fef9c3;border:1.5px solid #fde047;border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.82rem;color:#713f12">
+        <b>كيف يعمل:</b> يقارن عداد نهاية كل رحلة مع عداد بداية الرحلة التالية. أي فارق = المركبة تحركت بدون تسجيل.
+      </div>
+      ${warnings.length===0
+        ?'<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد تحذيرات — العدادات متطابقة</p></div>'
+        :'<div class="table-wrap"><table><thead><tr><th>المركبة</th><th>رحلة سابقة</th><th>السائق</th><th>عداد النهاية</th><th>رحلة تالية</th><th>السائق</th><th>عداد البداية</th><th>الفارق</th><th>التقييم</th></tr></thead><tbody>'+
+        warnings.map(w=>'<tr style="background:'+(w.sev==='critical'?'#fef2f2':w.sev==='high'?'#fff7ed':'#fefce8')+'">'+
+          '<td dir="ltr"><strong>'+w.car.plate+'</strong><br><small>'+w.car.model+'</small></td>'+
+          '<td style="font-size:.78rem">#'+w.tripA.id+'<br>'+fmtDT(w.tripA.end_time)+'</td>'+
+          '<td>'+(w.dA?.name||'—')+'</td>'+
+          '<td><strong>'+w.endOdo+' كم</strong></td>'+
+          '<td style="font-size:.78rem">#'+w.tripB.id+'<br>'+fmtDT(w.tripB.start_time)+'</td>'+
+          '<td>'+(w.dB?.name||'—')+'</td>'+
+          '<td><strong>'+w.startOdo+' كم</strong></td>'+
+          '<td style="font-weight:800;color:'+sevC(w.sev)+'">'+
+            (w.diff>0?'+':'')+w.diff.toFixed(1)+' كم</td>'+
+          '<td><span class="badge" style="background:'+sevC(w.sev)+'20;color:'+sevC(w.sev)+'">'+sevL(w.sev)+'</span></td>'+
+          '</tr>').join('')+
+        '</tbody></table></div>'}
     </div>`;
 }
 
@@ -2231,33 +2332,30 @@ async function renderDriverSinglePage() {
 
   // Garage
   document.getElementById('dpGarage').addEventListener('click',()=>{
-    openModal(`
-      <div class="modal-header"><div class="modal-title">🅿 دخول الجراج / نهاية اليوم</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div class="form-group"><label>عداد الختام (كم) <span class="req">*</span></label>
-        <input type="number" id="dpGarOdo" placeholder="قراءة العداد الآن" min="0"></div>
-      <div class="form-group"><label>ملاحظات</label>
-        <input type="text" id="dpGarNotes" placeholder="اختياري..."></div>
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-danger" id="dpGarOk">تسجيل</button>
-      </div>`);
+    const minOdo=activeTrip?activeTrip.start_odometer+1:0;
+    openModal(
+      '<div class="modal-header"><div class="modal-title">🅿 دخول الجراج / نهاية اليوم</div><button class="modal-close" onclick="closeModal()">✕</button></div>'+
+      (activeTrip?'<div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;padding:.7rem 1rem;margin-bottom:.8rem;font-size:.84rem;color:#92400e">⚡ يوجد رحلة نشطة #'+activeTrip.id+' — سيتم إنهاؤها تلقائياً بنفس عداد ووقت الجراج</div>':'')+
+      '<div class="form-group"><label>عداد الختام (كم) <span class="req">*</span></label><input type="number" id="dpGarOdo" placeholder="قراءة العداد الآن" min="'+minOdo+'"></div>'+
+      '<div class="form-group"><label>ملاحظات</label><input type="text" id="dpGarNotes" placeholder="اختياري..."></div>'+
+      '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-danger" id="dpGarOk">🅿 تسجيل الجراج</button></div>');
     document.getElementById('dpGarOk').onclick=async()=>{
       const odo=parseFloat(document.getElementById('dpGarOdo').value);
       const notes=document.getElementById('dpGarNotes').value.trim();
       if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
+      if(activeTrip&&odo<=activeTrip.start_odometer)
+        return showNotification('العداد يجب أن يكون أكبر من '+activeTrip.start_odometer+' كم','error');
       const btn=document.getElementById('dpGarOk');
       btn.disabled=true; btn.textContent='جاري...';
       const loc=await silentGetLocation(10000);
-      if(!loc){ showNotification('تعذّر تحديد موقعك','error'); btn.disabled=false; btn.textContent='تسجيل'; return; }
+      if(!loc){showNotification('تعذّر تحديد موقعك — تأكد من GPS','error');btn.disabled=false;btn.textContent='🅿 تسجيل الجراج';return;}
       try{
-        if(activeTrip&&odo>activeTrip.start_odometer)
-          await apiCall('/trips/end','POST',{trip_id:activeTrip.id,end_odometer:odo,end_location:loc,notes});
-        await apiCall('/garage/record','POST',{driver_id:currentUser.driver_id,car_id:primaryCar?.id||null,location:loc,notes});
-        showNotification('✅ تم تسجيل نهاية اليوم','success');
+        const res=await apiCall('/garage/record','POST',{driver_id:currentUser.driver_id,car_id:primaryCar?.id||null,location:loc,notes,odometer:odo});
+        showNotification(res.trip_auto_ended?'✅ تم إنهاء الرحلة وتسجيل الجراج':'✅ تم تسجيل موقع الجراج','success');
         closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تسجيل'; }
+      }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='🅿 تسجيل الجراج';}
     };
-  });
+  }));
 
   // اطلب الأذونات مرة واحدة بعد أول تسجيل دخول
   showPermissionsModal();
