@@ -1112,9 +1112,16 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
         c.execute("SELECT id,start_odometer FROM trips WHERE driver_id=? AND end_time IS NULL", (rec.driver_id,))
         active = c.fetchone()
         auto_ended = False
-        if active and rec.odometer and rec.odometer > (active["start_odometer"] or 0):
-            c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
-                      (now, rec.odometer, rec.location, rec.location, active["id"]))
+        if active:
+            # Use garage odometer if provided, else use start_odometer as fallback
+            end_odo = rec.odometer if (rec.odometer and rec.odometer > (active["start_odometer"] or 0)) else None
+            if end_odo is None and active["start_odometer"]:
+                # No odometer given — still end the trip with same location, odometer stays blank
+                c.execute("UPDATE trips SET end_time=?,end_location=?,garage_location=? WHERE id=?",
+                          (now, rec.location, rec.location, active["id"]))
+            elif end_odo:
+                c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
+                          (now, end_odo, rec.location, rec.location, active["id"]))
             auto_ended = True
         c.execute("INSERT INTO garage_records(driver_id,car_id,location,recorded_at,notes) VALUES(?,?,?,?,?)",
                   (rec.driver_id, rec.car_id, rec.location, now, rec.notes or ""))
