@@ -1313,9 +1313,9 @@ function buildMapSummaryTable(trips,drivers,cars,garageLatest){
     const drv=trip?drivers.find(d=>d.id===trip.driver_id):null;
     const lastLoc=activeTrip?activeTrip.start_location:(lastTrip?.end_location);
     // Garage from standalone garage_records table
+    const hasActiveTrip=!!activeTrip;
     const garageRec=(garageLatest||[]).find(g=>g.car_id===car.id);
-    const garageLoc=hasActiveTrip?"":garageRec?.location;
-    const hasActiveTrip=!!activeTrip; const statusBadge=hasActiveTrip?'<span class="badge badge-blue">● نشطة</span>':(garageLoc?'<span class="badge badge-red">🅿️ جراج</span>':'<span class="badge badge-green">✓ متاحة</span>');
+    const garageLoc=hasActiveTrip?'':garageRec?.location; const statusBadge=hasActiveTrip?'<span class="badge badge-blue">● نشطة</span>':(garageLoc?'<span class="badge badge-red">🅿️ جراج</span>':'<span class="badge badge-green">✓ متاحة</span>');
     return `<tr><td dir="ltr"><strong>${car.plate}</strong></td><td>${car.model}</td><td>${drv?.name||'—'}</td><td>${statusBadge}</td><td>${formatLocation(lastLoc)}</td><td>${formatLocation(garageLoc)}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
