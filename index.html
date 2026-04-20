@@ -2355,7 +2355,7 @@ async function renderDriverSinglePage() {
         closeModal(); await renderDriverSinglePage();
       }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='🅿 تسجيل الجراج';}
     };
-  }));
+  });
 
   // اطلب الأذونات مرة واحدة بعد أول تسجيل دخول
   showPermissionsModal();
