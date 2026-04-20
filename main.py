@@ -284,9 +284,13 @@ def _verify(plain: str, hashed: str) -> bool:
         return False
 
 def validate_password(pw: str):
-    """No restrictions — any password accepted."""
-    if not pw:
-        raise HTTPException(400, "كلمة المرور مطلوبة")
+    """Enforce: ≥8 chars, 1 uppercase, 1 digit."""
+    if len(pw) < 8:
+        raise HTTPException(400, "كلمة المرور يجب أن تكون 8 أحرف على الأقل")
+    if not re.search(r"[A-Z]", pw):
+        raise HTTPException(400, "يجب أن تحتوي كلمة المرور على حرف كبير")
+    if not re.search(r"\d", pw):
+        raise HTTPException(400, "يجب أن تحتوي كلمة المرور على رقم")
 
 def create_access_token(payload: dict) -> str:
     d = payload.copy()
@@ -393,7 +397,11 @@ class DriverCreate(BaseModel):
     driver_license_expiry: Optional[str] = ""
     vehicle_license_expiry: Optional[str] = ""
 
-
+    @validator("password")
+    def pw_policy(cls, v):
+        if len(v) < 8 or not re.search(r"[A-Z]", v) or not re.search(r"\d", v):
+            raise ValueError("كلمة المرور: 8 أحرف على الأقل، حرف كبير، ورقم")
+        return v
 
 class DriverUpdate(BaseModel):
     name: str; phone: str; status: str
@@ -444,7 +452,11 @@ class TripResp(BaseModel):
 class UserCreate(BaseModel):
     username: str; password: str; role: str
 
-
+    @validator("password")
+    def pw_policy(cls, v):
+        if len(v) < 8 or not re.search(r"[A-Z]", v) or not re.search(r"\d", v):
+            raise ValueError("كلمة المرور: 8 أحرف على الأقل، حرف كبير، ورقم")
+        return v
 
 class WorkshopCreate(BaseModel):
     driver_id: int; type: str; quantity: Optional[float] = None
@@ -465,6 +477,7 @@ class EmergencyAction(BaseModel):
 class GarageRecordCreate(BaseModel):
     driver_id: int; car_id: Optional[int] = None
     location: str; notes: Optional[str] = ""
+    odometer: Optional[float] = None
 
 class PaginationParams(BaseModel):
     page: int = 1; limit: int = 50
@@ -485,20 +498,35 @@ app = FastAPI(
 )
 
 # Startup
+ADMINS = [
+    ("Eng mohamed mansour", "mo@mansour241"),
+    ("Eng mohamed sayed",   "mo@sayed11214123"),
+    ("Eng abdelrhman sayed","abdo@11214123"),
+]
+
 @app.on_event("startup")
 async def startup():
     migrate_db()
-    # If RESET_ADMIN_PW env var is set → update admin password then clear it
-    reset_pw = os.environ.get("RESET_ADMIN_PW", "").strip()
-    if reset_pw:
-        try:
-            with get_db() as conn:
-                c = conn.cursor()
-                new_hash = bcrypt.hashpw(reset_pw.encode(), bcrypt.gensalt()).decode()
-                c.execute("UPDATE users SET password=? WHERE username='admin'", (new_hash,))
-                log.info("✅ Admin password updated from RESET_ADMIN_PW env var")
-        except Exception as e:
-            log.error(f"Failed to reset admin password: {e}")
+    # Ensure correct admin accounts exist
+    with get_db() as conn:
+        c = conn.cursor()
+        # Remove old admins not in the list
+        c.execute("SELECT id,username FROM users WHERE role='admin'")
+        existing = {r['username']:r['id'] for r in c.fetchall()}
+        allowed  = {u for u,_ in ADMINS}
+        for uname, uid in existing.items():
+            if uname not in allowed:
+                c.execute("DELETE FROM users WHERE id=?", (uid,))
+                log.info(f"Removed old admin: {uname}")
+        # Add/update new admins
+        for uname, pw in ADMINS:
+            pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+            c.execute("SELECT id FROM users WHERE username=?", (uname,))
+            if c.fetchone():
+                c.execute("UPDATE users SET password=? WHERE username=?", (pw_hash, uname))
+            else:
+                c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", (uname, pw_hash, "admin"))
+        log.info("✅ Admin accounts synced")
     log.info("🚀 Fleet Management API started")
 
 # Rate limiter
@@ -1080,19 +1108,14 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
-        # Auto-end active trip using garage location & odometer
-        c.execute("SELECT id,start_odometer FROM trips WHERE driver_id=? AND end_time IS NULL",
-                  (rec.driver_id,))
+        # Auto-end active trip with garage data
+        c.execute("SELECT id,start_odometer FROM trips WHERE driver_id=? AND end_time IS NULL", (rec.driver_id,))
         active = c.fetchone()
-        trip_auto_ended = False
+        auto_ended = False
         if active and rec.odometer and rec.odometer > (active["start_odometer"] or 0):
-            c.execute(
-                "UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
-                (now, rec.odometer, rec.location, rec.location, active["id"])
-            )
-            trip_auto_ended = True
-            log_event("trip_auto_ended_by_garage", trip_id=active["id"], driver_id=rec.driver_id)
-        # Save garage record
+            c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
+                      (now, rec.odometer, rec.location, rec.location, active["id"]))
+            auto_ended = True
         c.execute("INSERT INTO garage_records(driver_id,car_id,location,recorded_at,notes) VALUES(?,?,?,?,?)",
                   (rec.driver_id, rec.car_id, rec.location, now, rec.notes or ""))
         rid = c.lastrowid
@@ -1104,7 +1127,7 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
         dr = c.fetchone(); dn = dr["name"] if dr else None
         return {"id":rid,"driver_id":rec.driver_id,"car_id":rec.car_id,
                 "location":rec.location,"recorded_at":now,"notes":rec.notes or "",
-                "driver_name":dn,"car_plate":plate,"trip_auto_ended":trip_auto_ended}
+                "driver_name":dn,"car_plate":plate,"trip_auto_ended":auto_ended}
 
 @app.get("/garage/records")
 async def get_garage_records(cu: dict = Depends(get_user)):
