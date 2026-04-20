@@ -202,13 +202,53 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
 /* ── MOBILE ── */
 .sidebar-toggle{display:none}
 @media(max-width:900px){
+  /* Sidebar */
   .sidebar{transform:translateX(100%)}
   .sidebar.open{transform:translateX(0)}
-  .main-content{margin-right:0}
   .sidebar-toggle{display:flex}
-  .page-content{padding:1rem}
+
+  /* Layout — prevent horizontal scroll */
+  .main-content{margin-right:0 !important; width:100vw; max-width:100vw; overflow-x:hidden}
+  #appShell{overflow-x:hidden; width:100vw}
+  .page-content{padding:.7rem; overflow-x:hidden}
+
+  /* Tables — horizontal scroll inside box only */
+  .table-wrap{
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    max-width:calc(100vw - 1.4rem);
+  }
+  table{min-width:520px; font-size:.75rem}
+  th,td{padding:.45rem .5rem; white-space:nowrap}
+
+  /* Cards */
+  .two-col{grid-template-columns:1fr}
+  .stats-row{grid-template-columns:1fr 1fr}
+  .card{padding:1rem}
+  .card-header{flex-wrap:wrap; gap:.4rem}
+  .card-header .btn{font-size:.72rem; padding:.3rem .6rem}
+
+  /* Topbar */
+  .topbar{padding:0 .8rem}
+  .topbar-title{font-size:.95rem}
+
+  /* Filters */
+  .filters-bar{flex-wrap:wrap}
+  .filters-bar select,.filters-bar input{min-width:120px; flex:1}
+
+  /* Misc */
   .workshop-items{grid-template-columns:repeat(2,1fr)}
   .emergency-grid{grid-template-columns:1fr}
+  .stat-value{font-size:1.4rem}
+  .badge{font-size:.65rem}
+}
+
+@media(max-width:480px){
+  .page-content{padding:.5rem}
+  .stats-row{grid-template-columns:1fr 1fr}
+  th,td{padding:.35rem .4rem; font-size:.7rem}
+  .btn{font-size:.78rem}
+  .topbar-title{font-size:.85rem}
 }
 .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
 .sidebar-overlay.show{display:block}
