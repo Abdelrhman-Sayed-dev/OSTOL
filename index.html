@@ -709,8 +709,8 @@ async function renderDriversSection() {
       <div class="card-header">
         <div class="card-title">👥 السائقون والمشغّلون (${drivers.length})</div>
         <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-          <button class="btn btn-outline btn-sm" onclick="exportDriversCSV()">⬇️ تصدير CSV</button>
-          <button class="btn btn-outline btn-sm" onclick="openAssignPermModal()">🔗 تعيين صلاحية</button>
+          ${!isReporter() ? `<button class="btn btn-outline btn-sm" onclick="exportDriversCSV()">⬇️ تصدير CSV</button>` : ''}
+          ${!isReporter() ? `<button class="btn btn-outline btn-sm" onclick="openAssignPermModal()">🔗 تعيين صلاحية</button>` : ''}
           ${!isReporter() ? `<button class="btn btn-primary btn-sm" onclick="openAddDriverModal()">➕ إضافة سائق</button>` : ''}
         </div>
       </div>
@@ -958,7 +958,7 @@ async function renderCarsSection() {
       <div class="card-header">
         <div class="card-title">🚘 قائمة المركبات (${cars.length})</div>
         <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-          <button class="btn btn-outline btn-sm" onclick="exportCarsCSV()">⬇️ تصدير CSV</button>
+          ${!isReporter() ? `<button class="btn btn-outline btn-sm" onclick="exportCarsCSV()">⬇️ تصدير CSV</button>` : ''}
           ${!isReporter() ? `<button class="btn btn-primary btn-sm" onclick="openAddCarModal()">➕ إضافة مركبة</button>` : ''}
         </div>
       </div>
@@ -1123,7 +1123,7 @@ async function renderTripsSection() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🗺️ جميع الرحلات (<span id="tripCount">${trips.length}</span>)</div>
-        <button class="btn btn-success btn-sm" onclick="exportCSV()">⬇️ تصدير CSV</button>
+        <button class="btn btn-success btn-sm" onclick="exportCSV()" ${isReporter()?'style="display:none"':''}>⬇️ تصدير CSV</button>
       </div>
       <div class="filters-bar" style="margin-bottom:1rem">
         <select id="ftDriver" onchange="filterTrips()">
