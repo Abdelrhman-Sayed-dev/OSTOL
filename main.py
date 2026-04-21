@@ -1101,7 +1101,7 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
         if active:
             start_odo = float(active["start_odometer"] or 0)
             # Use garage odometer if valid, else None
-            end_odo = float(rec.odometer) if (rec.odometer and float(rec.odometer) > start_odo) else None
+            end_odo = float(rec.odometer) if (rec.odometer and float(rec.odometer or 0) > start_odo) else None
             # ALWAYS end the trip with garage time + location
             c.execute(
                 "UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
@@ -1292,7 +1292,7 @@ def analyze_trips(trips: list) -> list:
             driver_id = trip.get("driver_id")
 
             # ── Rule 1: Odometer reverse ──────────────────────
-            if e_odo is not None and float(e_odo) < float(s_odo):
+            if e_odo is not None and s_odo is not None and float(e_odo or 0) < float(s_odo or 0):
                 warnings.append({
                     "type": "odometer_reverse",
                     "message": f"عداد النهاية ({e_odo}) أقل من عداد البداية ({s_odo}) — تلاعب واضح",
@@ -1304,8 +1304,11 @@ def analyze_trips(trips: list) -> list:
             if i > 0:
                 prev = sorted_trips[i - 1]
                 prev_end = prev.get("end_odometer")
-                if prev_end is not None and s_odo:
-                    gap = float(s_odo) - float(prev_end)
+                if prev_end is not None and s_odo is not None:
+                    try:
+                        gap = float(s_odo) - float(prev_end)
+                    except (TypeError, ValueError):
+                        gap = 0
                     if gap > ODO_TOLERANCE:
                         sev = "critical" if gap < 0 else "high" if gap > 50 else "medium"
                         sc  = 40 if gap < 0 else 20 if gap > 50 else 8
@@ -1422,22 +1425,25 @@ def analyze_trips(trips: list) -> list:
 @app.get("/analysis/fraud-detection")
 async def fraud_detection(cu: dict = Depends(get_user)):
     """Run tampering detection engine on all trips."""
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT t.id, t.driver_id, t.car_id,
-                   t.start_time, t.end_time,
-                   t.start_odometer, t.end_odometer,
-                   d.name as driver_name,
-                   ca.plate as car_plate
-            FROM trips t
-            LEFT JOIN drivers d  ON d.id = t.driver_id
-            LEFT JOIN cars    ca ON ca.id = t.car_id
-            ORDER BY t.car_id, t.start_time
-        """)
-        trips = [dict(r) for r in c.fetchall()]
-
-    results = analyze_trips(trips)
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT t.id, t.driver_id, t.car_id,
+                       t.start_time, t.end_time,
+                       t.start_odometer, t.end_odometer,
+                       d.name as driver_name,
+                       ca.plate as car_plate
+                FROM trips t
+                LEFT JOIN drivers d  ON d.id = t.driver_id
+                LEFT JOIN cars    ca ON ca.id = t.car_id
+                ORDER BY t.car_id, t.start_time
+            """)
+            trips = [dict(r) for r in c.fetchall()]
+        results = analyze_trips(trips)
+    except Exception as e:
+        log.error(f"fraud-detection error: {e}")
+        return {"total_flagged":0,"critical":0,"high":0,"medium":0,"total_score":0,"results":[]}
 
     # Summary
     total_score = sum(r["risk_score"] for r in results)
