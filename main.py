@@ -501,18 +501,17 @@ async def startup():
         c.execute("SELECT id,username FROM users WHERE role='admin'")
         existing = {r['username']:r['id'] for r in c.fetchall()}
         allowed  = {u for u,_ in ADMINS}
-        for uname, uid in existing.items():
+        for uname, uid in list(existing.items()):
             if uname not in allowed:
                 c.execute("DELETE FROM users WHERE id=?", (uid,))
                 log.info(f"Removed old admin: {uname}")
-        # Add/update new admins
+        # Add new admins only (don't rehash on every restart = faster)
         for uname, pw in ADMINS:
-            pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
-            c.execute("SELECT id FROM users WHERE username=?", (uname,))
-            if c.fetchone():
-                c.execute("UPDATE users SET password=? WHERE username=?", (pw_hash, uname))
-            else:
-                c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)", (uname, pw_hash, "admin"))
+            if uname not in existing:
+                pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+                c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
+                          (uname, pw_hash, "admin"))
+                log.info(f"Created admin: {uname}")
         log.info("✅ Admin accounts synced")
     log.info("🚀 Fleet Management API started")
 
