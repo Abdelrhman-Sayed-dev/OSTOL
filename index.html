@@ -504,6 +504,8 @@ const API = (window.location.hostname === '127.0.0.1' || window.location.hostnam
   ? "http://127.0.0.1:8000"
   : "";
 let currentUser = null;
+const isReporter  = () => currentUser?.role === 'reporter';
+const isAdminLike = () => ['admin','reporter'].includes(currentUser?.role);
 let notifPollInterval = null;
 let lastUnreadCount = 0;
 
@@ -618,7 +620,7 @@ function renderNav(items) {
 
 function switchSection(id) {
   currentSection=id;
-  const items = currentUser.role==='admin' ? buildAdminNav() : buildDriverNav();
+  const items = isAdminLike() ? buildAdminNav() : buildDriverNav();
   renderNav(items);
   const item = items.find(i=>i.id===id);
   document.getElementById('topbarTitle').textContent = item?.label||'';
@@ -709,7 +711,7 @@ async function renderDriversSection() {
         <div style="display:flex;gap:.6rem;flex-wrap:wrap">
           <button class="btn btn-outline btn-sm" onclick="exportDriversCSV()">⬇️ تصدير CSV</button>
           <button class="btn btn-outline btn-sm" onclick="openAssignPermModal()">🔗 تعيين صلاحية</button>
-          <button class="btn btn-primary btn-sm" onclick="openAddDriverModal()">➕ إضافة سائق</button>
+          ${!isReporter() ? `<button class="btn btn-primary btn-sm" onclick="openAddDriverModal()">➕ إضافة سائق</button>` : ''}
         </div>
       </div>
       <div class="table-wrap" id="driversList">
@@ -737,13 +739,13 @@ async function renderDriversSection() {
             <td>${licBadge(d.vehicle_license_expiry)}</td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
-              <button class="btn btn-ghost btn-sm edit-driver"
+              ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
                 data-id="${d.id}" data-name="${d.name}" data-phone="${d.phone||''}"
                 data-status="${d.status}" data-nid="${d.national_id||''}"
                 data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
                 data-clic="${d.vehicle_license_expiry||''}"
                 data-username="${d.username||''}">✏️</button>
-              <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>
+              <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
         }).join('') : '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
@@ -957,7 +959,7 @@ async function renderCarsSection() {
         <div class="card-title">🚘 قائمة المركبات (${cars.length})</div>
         <div style="display:flex;gap:.6rem;flex-wrap:wrap">
           <button class="btn btn-outline btn-sm" onclick="exportCarsCSV()">⬇️ تصدير CSV</button>
-          <button class="btn btn-primary btn-sm" onclick="openAddCarModal()">➕ إضافة مركبة</button>
+          ${!isReporter() ? `<button class="btn btn-primary btn-sm" onclick="openAddCarModal()">➕ إضافة مركبة</button>` : ''}
         </div>
       </div>
       <div class="stats-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:1rem">
@@ -968,8 +970,8 @@ async function renderCarsSection() {
         <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
         ${cars.map(c=>`<tr><td>${c.id}</td><td dir="ltr"><strong>${c.plate}</strong></td><td>${c.model}</td>
           <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
-          <td><button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}" data-plate="${c.plate}" data-model="${c.model}" data-status="${c.status}">✏️</button>
-          <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button></td></tr>`).join('')}
+          <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}" data-plate="${c.plate}" data-model="${c.model}" data-status="${c.status}">✏️</button>
+          <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td></tr>`).join('')}
         </tbody></table>
       </div>
     </div>`;
@@ -1223,10 +1225,11 @@ async function renderAdminWorkshops() {
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
   document.getElementById('pageContent').innerHTML=`
+    <div class="stats-row" style="margin-bottom:1.4rem">${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}<div class="stat-card" style="border:2px solid #10b981;background:linear-gradient(135deg,#f0fdf9,#dcfce7);grid-column:span 2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.4rem"><div style="font-size:2rem;margin-bottom:.3rem">💰</div><div style="font-size:2.8rem;font-weight:900;color:#065f46;line-height:1">${total}</div><div style="font-size:.9rem;font-weight:700;color:#059669;margin-top:.4rem">إجمالي التكاليف (جنيه)</div></div></div>
     <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1.2rem">
       <div class="card-header">
         <div class="card-title" style="color:#065f46">💰 أسعار الصيانة لكل نوع (يُطبَّق تلقائياً على السائقين)</div>
-        <button class="btn btn-success btn-sm" onclick="saveTypePrices()">💾 حفظ الأسعار</button>
+        ${!isReporter() ? `<button class="btn btn-success btn-sm" onclick="saveTypePrices()">💾 حفظ الأسعار</button>` : ''}
       </div>
       <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:12px;padding:.9rem;margin-bottom:.8rem">
         <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.7rem">⛽ أنواع الوقود — سعر اللتر (جنيه)</div>
@@ -1236,7 +1239,7 @@ async function renderAdminWorkshops() {
               <div style="font-size:.77rem;font-weight:700;color:#b45309;margin-bottom:.3rem">⛽ ${f.label}</div>
               <div style="display:flex;align-items:center;gap:.3rem">
                 <input type="number" id="typePrice_${f.key}" value="${currentPrices[f.key]||0}"
-                  placeholder="0" min="0" step="0.01"
+                  placeholder="0" min="0" step="0.01" ${isReporter()?'disabled':''}
                   style="width:100%;padding:.4rem .6rem;border:1.5px solid #f59e0b;border-radius:7px;font-size:.85rem">
                 <span style="font-size:.72rem;color:var(--muted)">جنيه</span>
               </div>
@@ -1248,7 +1251,7 @@ async function renderAdminWorkshops() {
           <div style="background:white;border-radius:10px;padding:.8rem;border:1px solid #e2e8f0">
             <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.4rem">${v.icon} ${v.label}</div>
             <div style="display:flex;align-items:center;gap:.4rem">
-              <input type="number" id="typePrice_${k}" value="${currentPrices[k]||0}" placeholder="0" min="0" step="0.01"
+              <input type="number" id="typePrice_${k}" value="${currentPrices[k]||0}" placeholder="0" min="0" step="0.01" ${isReporter()?'disabled':''}
                 style="width:100%;padding:.45rem .7rem;border:1.5px solid #10b981;border-radius:8px;font-size:.88rem">
               <span style="font-size:.78rem;color:var(--muted);white-space:nowrap">جنيه</span>
             </div>
@@ -1258,7 +1261,6 @@ async function renderAdminWorkshops() {
         ⚠️ السائق لا يرى المبلغ — فقط "السعر محدد من قبل الإدارة" • القيمة 0 = بدون سعر
       </div>
     </div>
-    <div class="stats-row">${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}<div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value">${total}</div><div class="stat-label">إجمالي التكاليف</div></div></div>
     <div class="card">
       <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
       <div class="filters-bar">
@@ -1460,8 +1462,8 @@ async function renderEmergenciesSection() {
         <td style="font-size:.8rem">${r.handled_by||'—'}</td>
         <td style="font-size:.78rem;color:var(--muted)">${r.action_time?fmtDT(r.action_time):'—'}</td>
         <td>
-          ${!r.is_handled?`<button class="btn btn-success btn-sm" onclick="openEmergencyActionModal(${r.id})">✍️ إجراء</button>`
-          :`<button class="btn btn-ghost btn-sm" onclick="openEmergencyActionModal(${r.id})">✏️ تعديل</button>`}
+          ${!isReporter() ? (!r.is_handled?`<button class="btn btn-success btn-sm" onclick="openEmergencyActionModal(${r.id})">✍️ إجراء</button>`
+          :`<button class="btn btn-ghost btn-sm" onclick="openEmergencyActionModal(${r.id})">✏️ تعديل</button>`) : '—'}
         </td>
       </tr>`).join('')}
       </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
@@ -1474,7 +1476,7 @@ async function renderEmergenciesSection() {
 /* ── PERMISSIONS ── *//* ── PERMISSIONS ── *//* ── PERMISSIONS ── */
 async function renderPermissionsSection() {
   const [perms,drivers,cars]=await Promise.all([loadPerms(),loadDrivers(),loadCars()]);
-  document.getElementById('pageContent').innerHTML=`<div class="card"><div class="card-header"><div class="card-title">🔐 الصلاحيات النشطة (${perms.length})</div><button class="btn btn-primary btn-sm" onclick="openAssignPermModal()">➕ تعيين</button></div><div class="table-wrap" id="permsTable">${perms.length?`<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>إجراء</th></tr></thead><tbody>${perms.map(p=>{const d=drivers.find(d=>d.id===p.driver_id),c=cars.find(c=>c.id===p.car_id);return`<tr><td>${p.id}</td><td>${d?.name||'—'}</td><td dir="ltr">${c?c.plate+' - '+c.model:'—'}</td><td><button class="btn btn-danger btn-sm del-perm" data-id="${p.id}">🗑️</button></td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد صلاحيات</p></div>'}</div></div>`;
+  document.getElementById('pageContent').innerHTML=`<div class="card"><div class="card-header"><div class="card-title">🔐 الصلاحيات النشطة (${perms.length})</div>${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openAssignPermModal()">➕ تعيين</button>`:''}</div><div class="table-wrap" id="permsTable">${perms.length?`<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>إجراء</th></tr></thead><tbody>${perms.map(p=>{const d=drivers.find(d=>d.id===p.driver_id),c=cars.find(c=>c.id===p.car_id);return`<tr><td>${p.id}</td><td>${d?.name||'—'}</td><td dir="ltr">${c?c.plate+' - '+c.model:'—'}</td><td>${!isReporter()?`<button class="btn btn-danger btn-sm del-perm" data-id="${p.id}">🗑️</button>`:'—'}</td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد صلاحيات</p></div>'}</div></div>`;
   document.getElementById('permsTable').addEventListener('click',async e=>{ if(e.target.closest('.del-perm')){const id=+e.target.closest('.del-perm').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/permissions/${id}`,'DELETE');showNotification('تم الحذف','success');await renderPermissionsSection();}catch(e){showNotification(e.message,'error');}} });
 }
 
@@ -2158,6 +2160,7 @@ function openEmergencyActionModal(reportId) {
 
 /* ── PER-TYPE PRICE MANAGEMENT ── */
 async function saveTypePrices() {
+  if(isReporter()){ showNotification('⛔ المراقب لا يملك صلاحية التعديل','error'); return; }
   const body={};
   Object.keys(WT).forEach(k=>{
     const el=document.getElementById('typePrice_'+k);
@@ -2172,7 +2175,7 @@ async function saveTypePrices() {
 
 /* ── NOTIFICATION POLLING ── */
 async function pollNotifications() {
-  if(currentUser?.role!=='admin') return;
+  if(!isAdminLike()) return;
   try{
     const r=await apiCall('/emergency/unread-count');
     const count=r.count||0;
@@ -2189,8 +2192,8 @@ function initUI() {
   document.getElementById('appShell').style.display='flex';
   document.getElementById('userAvatar').textContent=currentUser.username.charAt(0).toUpperCase();
   document.getElementById('sidebarUsername').textContent=currentUser.username;
-  document.getElementById('sidebarRole').textContent=currentUser.role==='admin'?'👑 مدير النظام':'🚗 سائق';
-  if(currentUser.role==='admin'){
+  document.getElementById('sidebarRole').textContent=currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':'🚗 سائق';
+  if(isAdminLike()){
     currentSection='overview'; renderNav(buildAdminNav()); renderSection('overview');
     notifPollInterval=setInterval(pollNotifications,20000);
     setTimeout(pollNotifications,3000);

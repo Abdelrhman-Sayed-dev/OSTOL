@@ -100,7 +100,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('admin','driver')),
+            role TEXT NOT NULL CHECK(role IN('admin','driver','reporter')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
@@ -242,6 +242,31 @@ def migrate_db():
 
 def _safe_add_columns(c):
     """Add columns that may not exist in older databases."""
+    # ── Migrate users role CHECK to include 'reporter' ─────────────
+    try:
+        c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+        row = c.fetchone()
+        if row and 'reporter' not in (row['sql'] or ''):
+            c.execute("PRAGMA foreign_keys=OFF")
+            c.execute("""CREATE TABLE IF NOT EXISTS users_migrated(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN('admin','driver','reporter')),
+                created_at TEXT DEFAULT(datetime('now')),
+                last_login TEXT,
+                refresh_token TEXT,
+                refresh_exp TEXT
+            )""")
+            c.execute("INSERT OR IGNORE INTO users_migrated SELECT id,username,password,role,created_at,last_login,refresh_token,refresh_exp FROM users")
+            c.execute("DROP TABLE users")
+            c.execute("ALTER TABLE users_migrated RENAME TO users")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+            c.execute("PRAGMA foreign_keys=ON")
+            log.info("✅ Migrated users role constraint to include 'reporter'")
+    except Exception as e:
+        log.warning(f"Role migration skipped: {e}")
+
     existing = {}
     for tbl in ["users","drivers","emergency_reports","trips","workshop_records"]:
         try:
@@ -338,6 +363,12 @@ async def get_user(
 def require_admin(cu: dict = Depends(get_user)):
     if cu["role"] != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات المدير مطلوبة")
+    return cu
+
+def require_admin_or_reporter(cu: dict = Depends(get_user)):
+    """Allows admin and reporter (read-only) roles."""
+    if cu["role"] not in ("admin", "reporter"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات غير كافية")
     return cu
 
 # ══════════════════════════════════════════════════════
@@ -491,6 +522,12 @@ ADMINS = [
     ("Eng abdelrhman sayed","abdo@11214123"),
 ]
 
+REPORTERS = [
+    ("admin1", "24681012"),
+    ("admin2", "11214123"),
+    ("admin3", "9853247"),
+]
+
 @app.on_event("startup")
 async def startup():
     migrate_db()
@@ -513,6 +550,23 @@ async def startup():
                           (uname, pw_hash, "admin"))
                 log.info(f"Created admin: {uname}")
         log.info("✅ Admin accounts synced")
+
+        # ── Reporter accounts ─────────────────────────────────────────
+        c.execute("SELECT username FROM users WHERE role='reporter'")
+        existing_reporters = {r['username'] for r in c.fetchall()}
+        allowed_reporters  = {u for u,_ in REPORTERS}
+        # Remove reporters not in list
+        for uname in list(existing_reporters - allowed_reporters):
+            c.execute("DELETE FROM users WHERE username=? AND role='reporter'", (uname,))
+            log.info(f"Removed old reporter: {uname}")
+        # Add missing reporters
+        for uname, pw in REPORTERS:
+            if uname not in existing_reporters:
+                pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+                c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
+                          (uname, pw_hash, "reporter"))
+                log.info(f"Created reporter: {uname}")
+        log.info("✅ Reporter accounts synced")
     log.info("🚀 Fleet Management API started")
 
 # Rate limiter
@@ -882,7 +936,7 @@ async def delete_permission(pid: int, cu: dict = Depends(require_admin)):
 async def get_trips(cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
-        if cu["role"] == "admin":
+        if cu["role"] in ("admin", "reporter"):
             c.execute("SELECT * FROM trips ORDER BY id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
@@ -996,7 +1050,7 @@ async def create_user(user: UserCreate, cu: dict = Depends(require_admin)):
             raise HTTPException(400, "اسم المستخدم موجود مسبقاً")
 
 @app.get("/users/list")
-async def list_users(cu: dict = Depends(require_admin)):
+async def list_users(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id,username,role FROM users ORDER BY id DESC LIMIT 200")
@@ -1066,7 +1120,7 @@ async def get_workshops(cu: dict = Depends(get_user)):
            LEFT JOIN cars c ON w.vehicle_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
-        if cu["role"] == "admin":
+        if cu["role"] in ("admin", "reporter"):
             c.execute(q + " ORDER BY w.id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
@@ -1129,7 +1183,7 @@ async def get_garage_records(cu: dict = Depends(get_user)):
                FROM garage_records g
                LEFT JOIN drivers d ON g.driver_id=d.id
                LEFT JOIN cars c ON g.car_id=c.id"""
-        if cu["role"] == "admin":
+        if cu["role"] in ("admin", "reporter"):
             c.execute(q + " ORDER BY g.id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
@@ -1138,7 +1192,7 @@ async def get_garage_records(cu: dict = Depends(get_user)):
         return [dict(r) for r in c.fetchall()]
 
 @app.get("/garage/latest")
-async def garage_latest(cu: dict = Depends(require_admin)):
+async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""SELECT g.*,d.name as driver_name,c.plate as car_plate
@@ -1193,7 +1247,7 @@ async def get_emergency_reports(cu: dict = Depends(get_user)):
            LEFT JOIN cars c ON e.car_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
-        if cu["role"] == "admin":
+        if cu["role"] in ("admin", "reporter"):
             c.execute(q + " ORDER BY e.id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
@@ -1231,7 +1285,7 @@ async def update_emergency_action(rid: int, body: EmergencyAction, cu: dict = De
 
 @app.get("/emergency/unread-count")
 async def unread_count(cu: dict = Depends(get_user)):
-    if cu["role"] != "admin":
+    if cu["role"] not in ("admin", "reporter"):
         return {"count": 0}
     with get_db() as conn:
         c = conn.cursor()
