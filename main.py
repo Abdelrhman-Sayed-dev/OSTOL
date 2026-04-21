@@ -1087,8 +1087,8 @@ async def get_workshops(cu: dict = Depends(get_user)):
 
 @app.post("/garage/record")
 async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_user)):
-    if not rec.location.strip():
-        raise HTTPException(400, "موقع الجراج مطلوب")
+    if not rec.location or not rec.location.strip():
+        raise HTTPException(400, "موقع الجراج مطلوب — يجب السماح بالوصول للموقع")
     if cu["role"] != "admin" and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
     now = datetime.utcnow().isoformat() + "Z"
@@ -1099,14 +1099,10 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
         active = c.fetchone()
         auto_ended = False
         if active:
-            start_odo = active["start_odometer"] or 0
-            # Validate odometer
-            end_odo = None
-            if rec.odometer and float(rec.odometer) > start_odo:
-                end_odo = float(rec.odometer)
-
-            # Always end the trip — location and time from garage
-            # odometer only if valid
+            start_odo = float(active["start_odometer"] or 0)
+            # Use garage odometer if valid, else None
+            end_odo = float(rec.odometer) if (rec.odometer and float(rec.odometer) > start_odo) else None
+            # ALWAYS end the trip with garage time + location
             c.execute(
                 "UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
                 (now, end_odo, rec.location, rec.location, active["id"])

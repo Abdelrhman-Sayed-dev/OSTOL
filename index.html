@@ -653,8 +653,14 @@ async function renderOverview() {
   // Count parked: latest garage record exists AND car has NO active trip
   const activeTripCarIds = trips.filter(t=>!t.end_time).map(t=>t.car_id);
   const parkedCarIds = new Set();
+  // From garage_records table
   garageRecs.forEach(g=>{if(g.car_id&&!activeTripCarIds.includes(g.car_id))parkedCarIds.add(g.car_id);});
-  trips.filter(t=>t.end_time&&t.garage_location&&!activeTripCarIds.includes(t.car_id)).forEach(t=>parkedCarIds.add(t.car_id));
+  // From trips with garage_location (ended via garage button)
+  trips.filter(t=>t.end_time&&t.garage_location&&!activeTripCarIds.includes(t.car_id))
+       .forEach(t=>parkedCarIds.add(t.car_id));
+  // From trips that have garage_location but somehow still "active" (edge case — count their car as parked)
+  trips.filter(t=>!t.end_time&&t.garage_location&&!activeTripCarIds.filter(id=>id!==t.car_id).includes(t.car_id))
+       .forEach(t=>parkedCarIds.add(t.car_id));
   const garageCount = parkedCarIds.size;
   const unread = emgs.filter(e=>!e.is_read).length;
   document.getElementById('pageContent').innerHTML = `
@@ -2542,12 +2548,26 @@ async function renderDriverSinglePage() {
       if(activeTrip&&odo<=activeTrip.start_odometer)
         return showNotification('العداد يجب أن يكون أكبر من '+activeTrip.start_odometer+' كم','error');
       const btn=document.getElementById('dpGarOk');
-      btn.disabled=true; btn.textContent='جاري...';
-      const loc=await silentGetLocation(10000);
-      if(!loc){showNotification('تعذّر تحديد موقعك — تأكد من GPS','error');btn.disabled=false;btn.textContent='🅿 تسجيل الجراج';return;}
+      btn.disabled=true; btn.textContent='جاري تحديد الموقع...';
+      // Get location — but don't block if GPS fails
+      const loc = await silentGetLocation(8000).catch(()=>'');
+      if(!loc){
+        showNotification('❌ تعذّر تحديد موقعك — يجب السماح بالموقع للمتابعة','error',5000);
+        btn.disabled=false; btn.textContent='🅿 تسجيل الجراج'; return;
+      }
+      btn.textContent='جاري الإرسال...';
       try{
-        const res=await apiCall('/garage/record','POST',{driver_id:currentUser.driver_id,car_id:primaryCar?.id||null,location:loc,notes,odometer:odo});
-        showNotification(res.trip_auto_ended?'✅ تم إنهاء الرحلة وتسجيل الجراج':'✅ تم تسجيل موقع الجراج','success');
+        const res=await apiCall('/garage/record','POST',{
+          driver_id:currentUser.driver_id,
+          car_id:primaryCar?.id||null,
+          location:loc,
+          notes,
+          odometer:odo
+        });
+        if(res.trip_auto_ended)
+          showNotification('✅ تم إنهاء الرحلة وتسجيل الجراج','success');
+        else
+          showNotification('✅ تم تسجيل موقع الجراج','success');
         closeModal(); await renderDriverSinglePage();
       }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='🅿 تسجيل الجراج';}
     };
