@@ -2369,10 +2369,11 @@ function showPermissionsModal() {
 async function renderDriverSinglePage() {
   document.body.classList.add('driver-mode');
 
-  const [primaryCar, allTrips, pricesData] = await Promise.all([
+  const [primaryCar, allTrips, pricesData, myReports] = await Promise.all([
     apiCall(`/drivers/${currentUser.driver_id}/primary-car`).catch(()=>null),
     loadTrips().catch(()=>[]),
-    apiCall('/settings/prices').catch(()=>({}))
+    apiCall('/settings/prices').catch(()=>({})),
+    apiCall('/emergency/reports').catch(()=>[])
   ]);
   window._typePrices = pricesData||{};
   window._driverCar  = primaryCar;
@@ -2383,6 +2384,87 @@ async function renderDriverSinglePage() {
   const dateStr = now.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
   const carLabel = primaryCar ? `${primaryCar.plate} — ${primaryCar.model}` : 'لا توجد مركبة مخصصة';
 
+  // ── بلاغات آخر 24 ساعة فقط ───────────────────────────
+  const cutoff = Date.now() - 24*60*60*1000;
+  const recentReports = myReports.filter(r=>{
+    if(!r.created_at) return false;
+    try{ return new Date(r.created_at).getTime() >= cutoff; }catch(e){ return false; }
+  });
+
+  // ── بناء كارد حالة البلاغ ────────────────────────────
+  function buildEmgCard(r) {
+    const isEmg   = r.type === 'emergency';
+    const handled = !!r.is_handled;
+    const hasMsg  = !!(r.driver_message && r.driver_message.trim());
+    const bdrColor = handled ? '#10b981' : '#f59e0b';
+    const hdBg     = isEmg  ? '#fef2f2' : '#fffbeb';
+    const hdBdr    = isEmg  ? '#fca5a5' : '#fde68a';
+    const hdColor  = isEmg  ? '#dc2626' : '#d97706';
+
+    return `<div style="border-radius:16px;overflow:hidden;margin-bottom:.8rem;
+                border:2px solid ${bdrColor};background:#fff;
+                box-shadow:0 3px 12px rgba(0,0,0,.08)">
+      <!-- هيدر -->
+      <div style="background:${hdBg};border-bottom:1.5px solid ${hdBdr};
+                  padding:.75rem 1rem;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-weight:800;font-size:.9rem;color:${hdColor}">
+          ${isEmg?'🚨 بلاغ طارئ':'💥 بلاغ حادث'}
+        </span>
+        <span style="font-size:.72rem;color:#64748b">${fmtDT(r.created_at)}</span>
+      </div>
+      ${r.notes?`<div style="padding:.55rem 1rem;font-size:.8rem;color:#475569;
+                             background:#f8fafc;border-bottom:1px solid #e2e8f0">
+        📝 ${r.notes}</div>`:''}
+      <!-- مراحل -->
+      <div style="padding:.75rem 1rem 1rem">
+        <!-- ١ تم الإرسال -->
+        <div style="display:flex;align-items:flex-start;gap:.65rem;margin-bottom:.5rem">
+          <div style="width:24px;height:24px;border-radius:50%;background:#10b981;
+                      color:white;font-size:.8rem;font-weight:800;display:flex;
+                      align-items:center;justify-content:center;flex-shrink:0;margin-top:.1rem">✓</div>
+          <div>
+            <div style="font-weight:700;font-size:.85rem;color:#059669">تم إرسال البلاغ للإدارة</div>
+            <div style="font-size:.73rem;color:#94a3b8;margin-top:.1rem">الإدارة استلمت البلاغ وستتواصل معك</div>
+          </div>
+        </div>
+        <!-- خط -->
+        <div style="width:2px;height:14px;background:${handled?'#10b981':'#e2e8f0'};margin-right:11px;margin-bottom:.5rem"></div>
+        <!-- ٢ إجراء الإدارة -->
+        <div style="display:flex;align-items:flex-start;gap:.65rem;${handled?'':'opacity:.4'}${hasMsg?';margin-bottom:.5rem':''}">
+          <div style="width:24px;height:24px;border-radius:50%;
+                      background:${handled?'#10b981':'#e2e8f0'};
+                      color:${handled?'white':'#94a3b8'};font-size:.8rem;font-weight:800;
+                      display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:.1rem">
+            ${handled?'✓':'2'}
+          </div>
+          <div style="padding-top:.1rem">
+            <div style="font-weight:700;font-size:.85rem;color:${handled?'#059669':'#94a3b8'}">
+              ${handled?'تم اتخاذ إجراء من قبل الإدارة':'في انتظار إجراء الإدارة'}
+            </div>
+            ${handled&&r.handled_by?`<div style="font-size:.73rem;color:#94a3b8;margin-top:.1rem">بواسطة: ${r.handled_by}</div>`:''}
+          </div>
+        </div>
+        ${hasMsg?`
+        <!-- خط -->
+        <div style="width:2px;height:14px;background:#10b981;margin-right:11px;margin-top:.5rem;margin-bottom:.5rem"></div>
+        <!-- ٣ رسالة الإدارة -->
+        <div style="display:flex;align-items:flex-start;gap:.65rem">
+          <div style="width:24px;height:24px;border-radius:50%;background:#10b981;
+                      color:white;font-size:.75rem;display:flex;align-items:center;
+                      justify-content:center;flex-shrink:0;margin-top:.1rem">💬</div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:.83rem;color:#059669;margin-bottom:.35rem">رسالة من الإدارة</div>
+            <div style="background:#f0fdf9;border:1.5px solid #6ee7b7;border-radius:10px;
+                        padding:.6rem .8rem;font-size:.85rem;color:#1e293b;line-height:1.6">
+              ${r.driver_message}
+            </div>
+          </div>
+        </div>`:''}
+      </div>
+    </div>`;
+  }
+
+  const emgCardsHtml = recentReports.map(r=>buildEmgCard(r)).join('');
 
   const wsTypes = Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')&&k!=='oil');
 
@@ -2409,6 +2491,12 @@ async function renderDriverSinglePage() {
           : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔  إنهاء الرحلة</button>`}
         <button class="dp-btn-garage" id="dpGarage">🅿  إنهاء رحلات اليوم / دخول الجراج</button>
       </div>
+
+      ${emgCardsHtml ? `<!-- بلاغات الـ 24 ساعة الأخيرة -->
+      <div class="dp-section">
+        <div class="dp-label">📋 حالة بلاغاتي</div>
+        ${emgCardsHtml}
+      </div>` : ''}
 
       <!-- 4 QUICK BUTTONS -->
       <div class="dp-section">
@@ -2741,6 +2829,8 @@ async function startEmergencyRecording(type) {
           if(sSending) sSending.style.display = 'none';
           if(sDone)    sDone.style.display    = 'block';
           else         closeModal();
+          // تحديث الصفحة عشان كارد الحالة يظهر
+          setTimeout(()=>{ closeModal(); renderDriverSinglePage(); }, 2000);
         } catch(err) {
           showNotification('فشل الإرسال: ' + err.message, 'error');
           document.getElementById('emgStepSending').style.display = 'none';
@@ -2831,6 +2921,8 @@ async function _sendEmergencyNoAudio() {
     if(sSending) sSending.style.display = 'none';
     if(sDone)    sDone.style.display    = 'block';
     else         closeModal();
+    // تحديث الصفحة عشان كارد الحالة يظهر
+    setTimeout(()=>{ closeModal(); renderDriverSinglePage(); }, 2000);
   } catch(err) {
     showNotification('فشل الإرسال: ' + err.message, 'error');
     document.getElementById('emgStepSending').style.display = 'none';
