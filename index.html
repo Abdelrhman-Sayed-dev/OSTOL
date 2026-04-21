@@ -1193,7 +1193,27 @@ function exportCarsCSV(){
 }
 
 /* ── WORKSHOPS ── */
-const WT = { fuel:{icon:'⛽',label:'وقود / بنزين'}, oil:{icon:'🛢️',label:'تغيير زيت'}, filter:{icon:'🔧',label:'فلتر'}, tire:{icon:'⚫',label:'كوتش'}, battery:{icon:'🔋',label:'بطارية'}, belt:{icon:'🔩',label:'سيور'}, other:{icon:'🔨',label:'أخرى'} };
+const WT = {
+  fuel_solar:{icon:'⛽',label:'سولار'},
+  fuel_92:   {icon:'⛽',label:'بنزين 92'},
+  fuel_95:   {icon:'⛽',label:'بنزين 95'},
+  fuel_80:   {icon:'⛽',label:'بنزين 80'},
+  fuel_cng:  {icon:'🔵',label:'غاز طبيعي'},
+  oil:       {icon:'🛢️',label:'تغيير زيت'},
+  filter:    {icon:'🔧',label:'فلتر'},
+  tire:      {icon:'⚫',label:'كوتش'},
+  battery:   {icon:'🔋',label:'بطارية'},
+  belt:      {icon:'🔩',label:'سيور'},
+  other:     {icon:'🔨',label:'أخرى'},
+};
+// Fuel subtypes list
+const FUEL_TYPES = [
+  {key:'fuel_solar', label:'سولار'},
+  {key:'fuel_92',    label:'بنزين 92'},
+  {key:'fuel_95',    label:'بنزين 95'},
+  {key:'fuel_80',    label:'بنزين 80'},
+  {key:'fuel_cng',   label:'غاز طبيعي'},
+];
 const TIRE_ACTIONS = { puncture:'ثقب', replacement:'استبدال', repair:'تصليح' };
 
 async function renderAdminWorkshops() {
@@ -1210,8 +1230,25 @@ async function renderAdminWorkshops() {
         <div class="card-title" style="color:#065f46">💰 أسعار الصيانة لكل نوع (يُطبَّق تلقائياً على السائقين)</div>
         <button class="btn btn-success btn-sm" onclick="saveTypePrices()">💾 حفظ الأسعار</button>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.8rem">
-        ${Object.entries(WT).map(([k,v])=>`
+      <!-- Fuel types group -->
+      <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:12px;padding:1rem;margin-bottom:.8rem">
+        <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.7rem">⛽ أنواع الوقود — سعر اللتر</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.6rem">
+          ${FUEL_TYPES.map(f=>`
+            <div style="background:white;border-radius:8px;padding:.7rem;border:1px solid #fde68a">
+              <div style="font-size:.78rem;font-weight:700;color:#b45309;margin-bottom:.35rem">⛽ ${f.label}</div>
+              <div style="display:flex;align-items:center;gap:.3rem">
+                <input type="number" id="typePrice_${f.key}" value="${currentPrices[f.key]||0}"
+                  placeholder="0" min="0" step="0.01"
+                  style="width:100%;padding:.4rem .6rem;border:1.5px solid #f59e0b;border-radius:7px;font-size:.85rem">
+                <span style="font-size:.75rem;color:var(--muted);white-space:nowrap">جنيه/لتر</span>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <!-- Other types -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.7rem">
+        ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`
           <div style="background:white;border-radius:10px;padding:.8rem;border:1px solid #e2e8f0">
             <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.4rem">${v.icon} ${v.label}</div>
             <div style="display:flex;align-items:center;gap:.4rem">
@@ -1225,7 +1262,11 @@ async function renderAdminWorkshops() {
         ⚠️ السائق لا يرى المبلغ — فقط "السعر محدد من قبل الإدارة" • القيمة 0 = بدون سعر
       </div>
     </div>
-    <div class="stats-row">${Object.entries(WT).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}<div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value">${total}</div><div class="stat-label">إجمالي التكاليف</div></div></div>
+    <div class="stats-row">
+      ${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}
+      ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}
+      <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value" style="font-size:1.1rem">${total}</div><div class="stat-label">إجمالي التكاليف</div></div>
+    </div>
     <div class="card">
       <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
       <div class="filters-bar">
@@ -1235,7 +1276,12 @@ async function renderAdminWorkshops() {
         </select>
         <select id="filterType" onchange="filterWS()">
           <option value="">📋 كل الأنواع</option>
-          ${Object.entries(WT).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}
+          <optgroup label="⛽ الوقود">
+            ${FUEL_TYPES.map(f=>`<option value="${f.key}">⛽ ${f.label}</option>`).join('')}
+          </optgroup>
+          <optgroup label="🛠️ الصيانة">
+            ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}
+          </optgroup>
         </select>
         <input type="date" id="filterDate" onchange="filterWS()" placeholder="تاريخ">
       </div>
@@ -2099,6 +2145,12 @@ function openWsModal(type) {
 
   let specific = '';
   if(type==='fuel') specific=`
+    <div class="form-group"><label>نوع الوقود <span class="req">*</span></label>
+      <select id="wFuelType">
+        <option value="">-- اختر نوع الوقود --</option>
+        ${FUEL_TYPES.map(f=>'<option value="'+f.key+'">⛽ '+f.label+'</option>').join('')}
+      </select>
+    </div>
     <div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label>
       <input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
   else if(type==='oil') specific=`
@@ -2363,7 +2415,7 @@ async function renderDriverSinglePage() {
   const carLabel = primaryCar ? `${primaryCar.plate} — ${primaryCar.model}` : 'لا توجد مركبة مخصصة';
 
 
-  const wsTypes = Object.entries(WT).filter(([k])=>!['fuel','oil'].includes(k));
+  const wsTypes = Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')&&k!=='oil');
 
   document.getElementById('appShell').innerHTML = `
     <button class="dp-logout" id="dpLogout">خروج</button>
@@ -2862,7 +2914,13 @@ function dpWsModal(type) {
     if(!vid)            return showNotification('لا توجد مركبة مخصصة','error');
     if(!odo||odo<=0)    return showNotification('أدخل قراءة العداد','error');
     const payload={driver_id:currentUser.driver_id,type:selWsType,price,notes,vehicle_id:vid,odometer_reading:odo,location:''};
-    if(['fuel','oil','tire'].includes(selWsType)){const q=parseFloat(document.getElementById('wQty')?.value);if(!q||q<=0)return showNotification('أدخل الكمية','error');payload.quantity=q;}
+    const isFuel = selWsType==='fuel' || selWsType?.startsWith('fuel_');
+    if(selWsType==='fuel'){
+      const ft=document.getElementById('wFuelType')?.value;
+      if(!ft) return showNotification('اختر نوع الوقود','error');
+      payload.type=ft;  // override type with fuel subtype
+    }
+    if(isFuel||['oil','tire'].includes(selWsType)){const q=parseFloat(document.getElementById('wQty')?.value);if(!q||q<=0)return showNotification('أدخل الكمية','error');payload.quantity=q;}
     if(selWsType==='tire'){const ta=document.getElementById('wTireAction')?.value;if(!ta)return showNotification('اختر حالة الكوتش','error');payload.tire_action=ta;}
     if(['filter','battery','belt'].includes(selWsType)){const op=document.getElementById('wOpType')?.value;if(!op)return showNotification('اختر نوع العملية','error');payload.operation_type=op;}
     if(selWsType==='other'){const d=document.getElementById('wDesc')?.value?.trim();if(!d)return showNotification('أدخل وصف العملية','error');payload.description=d;}
