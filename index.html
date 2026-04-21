@@ -528,15 +528,61 @@ function showNotification(msg, type='success', duration=3200) {
   setTimeout(() => el.remove(), duration);
 }
 
+/* ── SESSION STATE — prevents infinite logout loops ── */
+let _isLoggingOut = false;
+
+function triggerLogout(reason='انتهت الجلسة، يرجى تسجيل الدخول مجدداً') {
+  if (_isLoggingOut) return;   // prevent double-trigger
+  _isLoggingOut = true;
+  clearAuth();
+  currentUser = null;
+
+  // Show login modal directly — NO location.reload()
+  const pc = document.getElementById('pageContent');
+  if(pc) pc.innerHTML = '';
+  document.getElementById('appShell').style.display = 'none';
+
+  showNotification(reason, 'error', 5000);
+
+  // Show login form after short delay
+  setTimeout(() => {
+    _isLoggingOut = false;
+    showLogin();
+  }, 800);
+}
+
 async function apiCall(endpoint, method='GET', body=null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  // ── Token check before request (avoid unnecessary round-trip) ──
   const tok = getToken();
+  if (!tok && endpoint !== '/login') {
+    triggerLogout('لا توجد جلسة نشطة — يرجى تسجيل الدخول');
+    throw new Error('No token');
+  }
+
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (tok) opts.headers['Authorization'] = `Bearer ${tok}`;
   if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(`${API}${endpoint}`, opts);
-  if (res.status === 401) { clearAuth(); showNotification('انتهت الجلسة','error'); setTimeout(()=>location.reload(),1500); throw new Error('Unauthorized'); }
-  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || `خطأ ${res.status}`); }
-  if (method === 'DELETE') return {success:true};
+
+  let res;
+  try {
+    res = await fetch(`${API}${endpoint}`, opts);
+  } catch (networkErr) {
+    throw new Error('لا يمكن الوصول للسيرفر — تحقق من الاتصال');
+  }
+
+  // ── 401: session expired ──
+  if (res.status === 401) {
+    triggerLogout('انتهت الجلسة، يرجى تسجيل الدخول مجدداً');
+    throw new Error('Session expired');
+  }
+
+  // ── Other errors ──
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.detail || `خطأ ${res.status}`);
+  }
+
+  if (method === 'DELETE') return { success: true };
   return res.json();
 }
 
@@ -1492,8 +1538,15 @@ async function renderWarningsSection() {
   try {
     data = await apiCall('/analysis/fraud-detection','GET');
   } catch(e) {
+    // Don't show error if it was a 401 (triggerLogout already handled it)
+    if(e.message === 'Session expired' || e.message === 'No token') return;
     document.getElementById('pageContent').innerHTML =
       '<div class="empty-state"><div class="empty-icon">❌</div><p>'+e.message+'</p></div>';
+    return;
+  }
+  if(!data) {
+    document.getElementById('pageContent').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">❌</div><p>لم يتم استلام بيانات من السيرفر</p></div>';
     return;
   }
 
@@ -2449,7 +2502,7 @@ async function renderDriverSinglePage() {
   // Logout
   document.getElementById('dpLogout').onclick=()=>{
     clearInterval(notifPollInterval); clearAuth(); currentUser=null;
-    setTimeout(()=>location.reload(),300);
+    triggerLogout('تم تسجيل الخروج بنجاح');
   };
 
   // Start trip
@@ -2954,7 +3007,7 @@ function showLogin() {
 document.getElementById('logoutBtn').addEventListener('click',()=>{
   clearInterval(notifPollInterval); clearAuth(); currentUser=null;
   showNotification('تم تسجيل الخروج','info');
-  setTimeout(()=>location.reload(),600);
+  triggerLogout();
 });
 
 showLogin();
