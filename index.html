@@ -1221,7 +1221,8 @@ async function renderAdminWorkshops() {
     loadWorkshops(), loadCars(),
     apiCall('/settings/prices').catch(()=>({}))
   ]);
-  const total = records.reduce((s,r)=>s+((r.quantity||1)*(r.price||0)),0).toFixed(2);
+  const totalRaw = records.reduce((s,r)=>s+((r.quantity||1)*(r.price||0)),0);
+  const total = totalRaw.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
   document.getElementById('pageContent').innerHTML=`
