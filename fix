@@ -1,0 +1,34 @@
+"""fix_old_trips.py — Run once in Render Shell"""
+import sqlite3, os
+
+DB = os.environ.get("DATABASE_PATH", "trip_tracker.db")
+conn = sqlite3.connect(DB)
+conn.row_factory = sqlite3.Row
+c = conn.cursor()
+
+# Fix trips that have garage_location but empty end_location
+c.execute("""
+    UPDATE trips
+    SET end_location = garage_location
+    WHERE (end_location IS NULL OR end_location = '')
+      AND (garage_location IS NOT NULL AND garage_location != '')
+""")
+fixed1 = conn.total_changes
+print(f"✓ Fixed end_location in {fixed1} trips")
+
+# Fix trips that have garage_location but no end_time (stuck active)
+c.execute("""
+    UPDATE trips
+    SET end_time   = (SELECT recorded_at FROM garage_records
+                      WHERE garage_records.car_id = trips.car_id
+                      ORDER BY id DESC LIMIT 1),
+        end_location = garage_location
+    WHERE end_time IS NULL
+      AND (garage_location IS NOT NULL AND garage_location != '')
+""")
+fixed2 = conn.total_changes - fixed1
+print(f"✓ Ended {fixed2} stuck trips using garage time")
+
+conn.commit()
+conn.close()
+print(f"\n✅ Done! Total fixed: {fixed1 + fixed2} trips")
