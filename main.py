@@ -1022,7 +1022,7 @@ async def delete_user(uid: int, cu: dict = Depends(require_admin)):
 
 @app.post("/workshops")
 async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
-    if rec.type not in ["oil","filter","tire","battery","belt","other","fuel"]:
+    if rec.type not in ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng","oil","filter","tire","battery","belt","other"]:
         raise HTTPException(400, "نوع غير صالح")
     if cu["role"] != "admin" and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
