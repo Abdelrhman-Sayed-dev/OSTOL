@@ -182,6 +182,7 @@ def create_database():
         ("Eng mohamed mansour", "mo@mansour241"),
         ("Eng mohamed sayed",   "mo@sayed11214123"),
         ("Eng abdelrhman sayed","abdo@11214123"),
+        ("admin", "ad11228898"),
     ]
     # Delete old admins (keep drivers)
     cursor.execute("SELECT id FROM users WHERE role='admin'")
