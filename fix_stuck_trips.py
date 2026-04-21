@@ -1,44 +1,42 @@
-"""fix_stuck_trips.py — fixes trips that have garage_location but no end_time"""
+"""fix_stuck_trips.py — ends active trips that have a garage record"""
 import sqlite3, os
-from datetime import datetime
 
 DB = os.environ.get("DATABASE_PATH", "trip_tracker.db")
 conn = sqlite3.connect(DB)
 conn.row_factory = sqlite3.Row
 c = conn.cursor()
 
-# Find all active trips that have garage_location set
+# Find active trips where garage_records has an entry for the same car
 c.execute("""
-    SELECT id, driver_id, car_id, start_odometer, garage_location
-    FROM trips
-    WHERE end_time IS NULL
-    AND garage_location IS NOT NULL
-    AND garage_location != ''
+    SELECT t.id as trip_id, t.car_id, t.start_odometer,
+           g.location as garage_loc, g.recorded_at as garage_time
+    FROM trips t
+    INNER JOIN garage_records g ON g.car_id = t.car_id
+    WHERE t.end_time IS NULL
+    ORDER BY g.id DESC
 """)
-stuck = c.fetchall()
-print(f"Found {len(stuck)} stuck trips...")
+rows = c.fetchall()
 
-now = datetime.utcnow().isoformat() + "Z"
-fixed = 0
-for t in stuck:
-    # Try to get time from garage_records for this car
-    c.execute("""
-        SELECT recorded_at FROM garage_records
-        WHERE car_id = ?
-        ORDER BY id DESC LIMIT 1
-    """, (t['car_id'],))
-    gr = c.fetchone()
-    end_time = gr['recorded_at'] if gr else now
+# Keep only latest garage per trip
+seen = set()
+to_fix = []
+for r in rows:
+    if r['trip_id'] not in seen:
+        seen.add(r['trip_id'])
+        to_fix.append(r)
 
+print(f"Found {len(to_fix)} trips to fix...")
+
+for r in to_fix:
     c.execute("""
         UPDATE trips
-        SET end_time = ?,
-            end_location = garage_location
+        SET end_time     = ?,
+            end_location = ?,
+            garage_location = ?
         WHERE id = ?
-    """, (end_time, t['id']))
-    fixed += 1
-    print(f"  - Trip #{t['id']} ended at {end_time} | loc: {t['garage_location']}")
+    """, (r['garage_time'], r['garage_loc'], r['garage_loc'], r['trip_id']))
+    print(f"  ✓ Trip #{r['trip_id']} ended | loc:{r['garage_loc']} | time:{r['garage_time']}")
 
 conn.commit()
 conn.close()
-print(f"\nFixed {fixed} trips")
+print(f"\n✅ Fixed {len(to_fix)} trips")
