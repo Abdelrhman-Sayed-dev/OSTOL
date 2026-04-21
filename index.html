@@ -1833,55 +1833,122 @@ async function openEndTripModal(activeTrips) {
 /* ── DRIVER EMERGENCY / ACCIDENT ── */
 
 async function renderDriverEmergency() {
-  const [allowedCars,allTrips,myReports]=await Promise.all([
-    loadAllowedCars(),loadTrips(),
+  const [allowedCars, allTrips, myReports] = await Promise.all([
+    loadAllowedCars(), loadTrips(),
     apiCall('/emergency/reports').catch(()=>[])
   ]);
-  const activeTrip=allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
-  window._emergAllowedCars=allowedCars;
-  window._emergActiveTripId=activeTrip?.id||null;
-  window._emergActiveCarId=activeTrip?.car_id||null;
+  const activeTrip = allTrips.find(t=>t.driver_id==currentUser.driver_id && !t.end_time);
+  window._emergAllowedCars  = allowedCars;
+  window._emergActiveTripId = activeTrip?.id  || null;
+  window._emergActiveCarId  = activeTrip?.car_id || null;
 
-  // بطاقات حالة البلاغات السابقة
-  const myPrev = myReports.slice(0,5); // آخر 5 بلاغات
-  const statusCards = myPrev.length ? `
-    <div class="card" style="margin-bottom:1.2rem">
-      <div class="card-header" style="margin-bottom:.8rem">
-        <div class="card-title">📋 حالة بلاغاتي</div>
+  // ── بلاغات آخر 24 ساعة فقط ──────────────────────────────
+  const now24 = Date.now() - 24*60*60*1000;
+  const recentReports = myReports.filter(r => {
+    if(!r.created_at) return false;
+    return new Date(r.created_at).getTime() >= now24;
+  });
+
+  // ── كارد حالة البلاغ ──────────────────────────────────────
+  function buildReportCard(r) {
+    const isEmg    = r.type === 'emergency';
+    const handled  = r.is_handled;
+    const hasMsg   = r.driver_message && r.driver_message.trim();
+    const typeColor = isEmg ? '#dc2626' : '#d97706';
+    const typeBg    = isEmg ? '#fef2f2' : '#fffbeb';
+    const typeBorder= isEmg ? '#fca5a5' : '#fde68a';
+
+    // ── مراحل التتبع ─────────────────────────────────────────
+    const step1 = true;           // دايماً — تم الإرسال
+    const step2 = handled;        // الأدمن اتخد إجراء
+    const step3 = handled && hasMsg; // في رسالة
+
+    const stepStyle = (active, done) =>
+      `display:flex;align-items:flex-start;gap:.75rem;padding:.6rem 0;opacity:${active||done?1:.35}`;
+    const dotStyle = (active, done) =>
+      `width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;flex-shrink:0;
+       background:${done?'#10b981':active?'#f59e0b':'#e2e8f0'};color:white;font-weight:700`;
+
+    return `
+    <div style="border-radius:18px;overflow:hidden;margin-bottom:1rem;
+                border:2px solid ${handled ? '#10b981' : '#f59e0b'};
+                background:white;box-shadow:0 4px 16px rgba(0,0,0,.07)">
+
+      <!-- هيدر البطاقة -->
+      <div style="background:${typeBg};border-bottom:1.5px solid ${typeBorder};
+                  padding:.85rem 1.1rem;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-weight:800;font-size:.95rem;color:${typeColor}">
+          ${isEmg ? '🚨 بلاغ طارئ' : '💥 بلاغ حادث'}
+        </div>
+        <div style="font-size:.75rem;color:#64748b">📅 ${fmtDT(r.created_at)}</div>
       </div>
-      ${myPrev.map(r=>{
-        const isEmg = r.type==='emergency';
-        const handled = r.is_handled;
-        const hasMsg  = r.driver_message && r.driver_message.trim();
-        return `
-        <div style="border-radius:14px;padding:1rem 1.1rem;margin-bottom:.8rem;border:2px solid ${handled?'#10b981':'#f59e0b'};background:${handled?'#f0fdf9':'#fffbeb'}">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
-            <div style="font-weight:700;font-size:.9rem;color:${isEmg?'#dc2626':'#d97706'}">
-              ${isEmg?'🚨 طارئ':'💥 حادث'} — #${r.id}
+
+      <!-- ملاحظات السائق -->
+      ${r.notes ? `<div style="padding:.7rem 1.1rem;font-size:.83rem;color:#475569;
+                              background:#f8fafc;border-bottom:1px solid #e2e8f0">
+        📝 ${r.notes}
+      </div>` : ''}
+
+      <!-- مراحل الحالة -->
+      <div style="padding:.8rem 1.1rem 1rem">
+
+        <!-- المرحلة 1: تم الإرسال -->
+        <div style="${stepStyle(true, true)}">
+          <div style="${dotStyle(true, true)}">✓</div>
+          <div style="padding-top:.3rem">
+            <div style="font-weight:700;font-size:.88rem;color:#059669">تم إرسال البلاغ للإدارة</div>
+            <div style="font-size:.75rem;color:#64748b;margin-top:.1rem">استلمت الإدارة بلاغك وسيتم التعامل معه</div>
+          </div>
+        </div>
+
+        <!-- خط رابط -->
+        <div style="width:2px;height:18px;background:${step2?'#10b981':'#e2e8f0'};margin-right:13px;margin-bottom:0"></div>
+
+        <!-- المرحلة 2: إجراء الإدارة -->
+        <div style="${stepStyle(step2, step2)}">
+          <div style="${dotStyle(step2, step2)}">${step2?'✓':'2'}</div>
+          <div style="padding-top:.3rem">
+            <div style="font-weight:700;font-size:.88rem;color:${step2?'#059669':'#94a3b8'}">
+              ${step2 ? 'تم اتخاذ إجراء من قبل الإدارة' : 'في انتظار إجراء الإدارة'}
             </div>
-            <span style="font-size:.78rem;font-weight:700;padding:.2rem .7rem;border-radius:20px;background:${handled?'#dcfce7':'#fef9c3'};color:${handled?'#166534':'#854d0e'}">
-              ${handled ? '✅ تم التعامل معه' : '⏳ قيد المعالجة'}
-            </span>
+            ${step2 && r.handled_by ? `<div style="font-size:.75rem;color:#64748b;margin-top:.1rem">بواسطة: ${r.handled_by}</div>` : ''}
           </div>
-          <div style="font-size:.78rem;color:var(--muted);margin-bottom:${hasMsg?'.7rem':'0'}">
-            📅 ${fmtDT(r.created_at)}
+        </div>
+
+        ${step3 ? `
+        <!-- خط رابط -->
+        <div style="width:2px;height:18px;background:#10b981;margin-right:13px"></div>
+
+        <!-- المرحلة 3: رسالة الإدارة -->
+        <div style="${stepStyle(true, true)}">
+          <div style="${dotStyle(true, true)}">💬</div>
+          <div style="padding-top:.2rem;flex:1">
+            <div style="font-weight:700;font-size:.88rem;color:#059669;margin-bottom:.4rem">رسالة من الإدارة</div>
+            <div style="background:#f0fdf9;border:1.5px solid #6ee7b7;border-radius:10px;
+                        padding:.65rem .85rem;font-size:.88rem;color:#1e293b;line-height:1.6">
+              ${r.driver_message}
+            </div>
           </div>
-          ${hasMsg ? `
-          <div style="background:white;border-right:4px solid #10b981;border-radius:8px;padding:.7rem .9rem;margin-top:.3rem">
-            <div style="font-size:.75rem;font-weight:700;color:#059669;margin-bottom:.3rem">💬 رسالة من الإدارة</div>
-            <div style="font-size:.88rem;color:#1e293b;line-height:1.5">${r.driver_message}</div>
-          </div>` : ''}
-        </div>`;
-      }).join('')}
-    </div>` : '';
+        </div>` : ''}
+
+      </div>
+    </div>`;
+  }
+
+  const recentCard = recentReports.length
+    ? recentReports.map(r => buildReportCard(r)).join('')
+    : '';
 
   document.getElementById('pageContent').innerHTML=`
     <div class="driver-hero" style="background:linear-gradient(135deg,#7f1d1d,#dc2626)">
       <div class="driver-hero-icon">🚨</div>
       <div><h2>نظام الطوارئ والحوادث</h2><p>اضغط على الزر المناسب وسجّل رسالتك الصوتية</p></div>
     </div>
-    ${activeTrip?`<div class="card" style="background:#fff7ed;border:2px solid #f59e0b"><div class="card-header"><div class="card-title" style="color:#92400e">⚡ رحلة نشطة — سيتم ربط البلاغ بها تلقائياً</div></div><p style="font-size:.85rem;color:#78350f">رحلة #${activeTrip.id} | بداية: ${fmtDT(activeTrip.start_time)}</p></div>`:''}
-    ${statusCards}
+    ${activeTrip ? `<div class="card" style="background:#fff7ed;border:2px solid #f59e0b">
+      <div class="card-header"><div class="card-title" style="color:#92400e">⚡ رحلة نشطة — سيتم ربط البلاغ بها تلقائياً</div></div>
+      <p style="font-size:.85rem;color:#78350f">رحلة #${activeTrip.id} | بداية: ${fmtDT(activeTrip.start_time)}</p>
+    </div>` : ''}
+    ${recentCard}
     <div class="emergency-grid">
       <div class="emergency-btn-card emg" onclick="startRecording('emergency')">
         <span class="emg-icon">🚨</span>
@@ -1953,10 +2020,10 @@ async function startRecording(type) {
             notes,
             location:emgLocation
           });
-          showNotification(currentRecordingType==='emergency'?'🚨 تم إرسال بلاغ الطوارئ للإدارة!':'💥 تم إرسال تقرير الحادث للإدارة!','emergency',5000);
-          const panel=document.getElementById('recordingPanel');
-          if(panel) panel.style.display='none';
+          showNotification(currentRecordingType==='emergency'?'🚨 تم إرسال بلاغ الطوارئ للإدارة!':'💥 تم إرسال تقرير الحادث للإدارة!','emergency',4000);
           audioChunks=[]; mediaRecorder=null;
+          // إعادة تحميل الصفحة عشان كارد الحالة يظهر فوراً
+          setTimeout(()=>renderDriverEmergency(), 1200);
         }catch(err){
           showNotification('فشل الإرسال: '+err.message,'error');
           const btn=document.getElementById('stopRecBtn');
