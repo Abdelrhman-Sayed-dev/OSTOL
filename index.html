@@ -596,6 +596,7 @@ function buildAdminNav() {
     {id:'workshops',  icon:'🛠️', label:'الورش'},
     {id:'map',        icon:'📍', label:'خريطة الأسطول'},
     {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
+    {id:'warnings',   icon:'⚠️', label:'تحذيرات التلاعب'},
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
 
   ];
@@ -1280,7 +1281,7 @@ async function renderAdminWorkshops() {
 
 function buildWSTable(records) {
   if(!records.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد سجلات</p></div>';
-  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>ملاحظات</th><th>التاريخ</th></tr></thead><tbody>
+  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>ملاحظات</th><th>الموقع</th><th>التاريخ</th></tr></thead><tbody>
   ${records.map(r=>{
     const wt=WT[r.type]||{icon:'🔨',label:r.type};
     const opLabel=r.operation_type?(r.operation_type==='maintenance'?'صيانة':'استبدال'):'—';
@@ -1294,6 +1295,7 @@ function buildWSTable(records) {
       <td style="font-size:.82rem">${r.price} جنيه</td>
       <td><strong>${r.quantity&&r.price?((r.quantity||1)*(r.price||0)).toFixed(2)+' جنيه':'—'}</strong></td>
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
+      <td>${formatLocation(r.location)}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -1469,7 +1471,137 @@ async function renderEmergenciesSection() {
 
 /* ── FRAUD DETECTION & WARNINGS ── */
 
+const RULE_META = {
+  odometer_reverse:    {icon:'🔴', label:'عداد رجع للخلف'},
+  odometer_gap:        {icon:'🟠', label:'فارق عداد بين رحلتين'},
+  speed_exceeded:      {icon:'⚡', label:'سرعة مشبوهة'},
+  distance_abnormal:   {icon:'📏', label:'مسافة غير طبيعية'},
+  duration_too_long:   {icon:'⏳', label:'مدة طويلة جداً'},
+  trip_overlap:        {icon:'🔀', label:'تداخل زمني'},
+  repeated_violations: {icon:'🔁', label:'مخالفات متكررة'},
+};
 
+const SEV_COLOR = {critical:'#dc2626', high:'#d97706', medium:'#ca8a04', low:'#64748b'};
+const SEV_BG    = {critical:'#fef2f2', high:'#fff7ed', medium:'#fefce8', low:'#f8fafc'};
+const SEV_LABEL = {critical:'🔴 خطر عالي', high:'🟠 مرتفع', medium:'🟡 متوسط', low:'⚪ منخفض'};
+
+async function renderWarningsSection() {
+  document.getElementById('pageContent').innerHTML =
+    '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تحليل البيانات...</p></div>';
+
+  let data;
+  try {
+    data = await apiCall('/analysis/fraud-detection','GET');
+  } catch(e) {
+    document.getElementById('pageContent').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">❌</div><p>'+e.message+'</p></div>';
+    return;
+  }
+
+  const results     = data.results || [];
+  const drivers     = await loadDrivers();
+
+  // Driver risk scores aggregation
+  const driverRisk = {};
+  results.forEach(r => {
+    if(!r.driver_id) return;
+    if(!driverRisk[r.driver_id]) driverRisk[r.driver_id]={score:0, count:0, name:''};
+    driverRisk[r.driver_id].score += r.risk_score;
+    driverRisk[r.driver_id].count += r.warnings.length;
+    driverRisk[r.driver_id].name  = r.driver_name || drivers.find(d=>d.id===r.driver_id)?.name || '—';
+  });
+
+  const topDrivers = Object.entries(driverRisk)
+    .sort((a,b)=>b[1].score-a[1].score).slice(0,5);
+
+  document.getElementById('pageContent').innerHTML = `
+    <!-- Stats -->
+    <div class="stats-row" style="margin-bottom:1.2rem">
+      <div class="stat-card"><div class="stat-icon">🔴</div>
+        <div class="stat-value" style="color:#dc2626">${data.critical}</div>
+        <div class="stat-label">خطر عالي</div></div>
+      <div class="stat-card"><div class="stat-icon">🟠</div>
+        <div class="stat-value" style="color:#d97706">${data.high}</div>
+        <div class="stat-label">مرتفع</div></div>
+      <div class="stat-card"><div class="stat-icon">🟡</div>
+        <div class="stat-value" style="color:#ca8a04">${data.medium}</div>
+        <div class="stat-label">متوسط</div></div>
+      <div class="stat-card"><div class="stat-icon">📊</div>
+        <div class="stat-value" style="color:#7c3aed">${data.total_score}</div>
+        <div class="stat-label">مجموع نقاط الخطر</div></div>
+    </div>
+
+    <div class="two-col" style="margin-bottom:1.2rem">
+      <!-- Driver Risk Leaderboard -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">👨‍✈️ السائقون الأكثر خطراً</div></div>
+        ${topDrivers.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد مخالفات</p></div>'
+          : topDrivers.map(([did, info], idx) => {
+              const pct = Math.min(100, Math.round(info.score / Math.max(...topDrivers.map(d=>d[1].score)) * 100));
+              const col = info.score >= 40 ? '#dc2626' : info.score >= 20 ? '#d97706' : '#ca8a04';
+              return '<div style="margin-bottom:.9rem">'+
+                '<div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:.3rem">'+
+                  '<span><b>#'+(idx+1)+'</b> '+info.name+'</span>'+
+                  '<span style="font-weight:700;color:'+col+'">'+info.score+' نقطة</span>'+
+                '</div>'+
+                '<div style="background:#f1f5f9;border-radius:99px;height:8px">'+
+                  '<div style="background:'+col+';width:'+pct+'%;height:8px;border-radius:99px;transition:.3s"></div>'+
+                '</div>'+
+                '<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">'+info.count+' مخالفة</div>'+
+              '</div>';
+            }).join('')
+        }
+      </div>
+
+      <!-- Rule breakdown -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">📋 توزيع المخالفات بالنوع</div></div>
+        ${Object.entries(RULE_META).map(([type, meta]) => {
+            const cnt = results.reduce((s,r)=>s+r.warnings.filter(w=>w.type===type).length,0);
+            if(!cnt) return '';
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border)">'+
+              '<span style="font-size:.85rem">'+meta.icon+' '+meta.label+'</span>'+
+              '<span class="badge badge-red">'+cnt+'</span>'+
+            '</div>';
+          }).join('')
+        }
+      </div>
+    </div>
+
+    <!-- Detailed Results -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔍 تفاصيل المخالفات (${results.length} رحلة مشبوهة)</div>
+        <button class="btn btn-ghost btn-sm" onclick="renderWarningsSection()">🔄 تحديث</button>
+      </div>
+
+      ${results.length === 0
+        ? '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد مخالفات — كل البيانات سليمة</p></div>'
+        : results.map(r => `
+          <div style="border:1.5px solid ${SEV_COLOR[r.risk_level]};border-radius:12px;padding:1rem 1.2rem;margin-bottom:.8rem;background:${SEV_BG[r.risk_level]}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:.4rem">
+              <div>
+                <span style="font-weight:800;font-size:.95rem">رحلة #${r.trip_id}</span>
+                <span style="color:var(--muted);font-size:.82rem;margin-right:.5rem">| ${r.driver_name||'—'} | ${r.car_plate||'—'}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:.6rem">
+                <span style="font-weight:700;color:${SEV_COLOR[r.risk_level]}">${r.risk_score} نقطة</span>
+                <span class="badge" style="background:${SEV_COLOR[r.risk_level]}20;color:${SEV_COLOR[r.risk_level]};border:1px solid ${SEV_COLOR[r.risk_level]}40">${SEV_LABEL[r.risk_level]}</span>
+              </div>
+            </div>
+            ${r.warnings.map(w => `
+              <div style="display:flex;align-items:flex-start;gap:.6rem;padding:.4rem 0;border-top:1px solid ${SEV_COLOR[r.risk_level]}20">
+                <span style="font-size:1rem;flex-shrink:0">${RULE_META[w.type]?.icon||'⚠️'}</span>
+                <div>
+                  <div style="font-size:.78rem;font-weight:700;color:${SEV_COLOR[w.severity]||'#64748b'}">${RULE_META[w.type]?.label||w.type}</div>
+                  <div style="font-size:.82rem;color:var(--text)">${w.message}</div>
+                </div>
+              </div>`).join('')}
+          </div>`).join('')
+      }
+    </div>`;
+}
 
 /* ── PERMISSIONS ── *//* ── PERMISSIONS ── *//* ── PERMISSIONS ── */
 async function renderPermissionsSection() {
