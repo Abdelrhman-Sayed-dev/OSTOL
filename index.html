@@ -1432,196 +1432,141 @@ async function renderEmergenciesSection() {
     </div>`;
 }
 
-/* ── ODOMETER WARNINGS ── */
+/* ── FRAUD DETECTION & WARNINGS ── */
+
+const RULE_META = {
+  odometer_reverse:    {icon:'🔴', label:'عداد رجع للخلف'},
+  odometer_gap:        {icon:'🟠', label:'فارق عداد بين رحلتين'},
+  speed_exceeded:      {icon:'⚡', label:'سرعة مشبوهة'},
+  distance_abnormal:   {icon:'📏', label:'مسافة غير طبيعية'},
+  duration_too_long:   {icon:'⏳', label:'مدة طويلة جداً'},
+  trip_overlap:        {icon:'🔀', label:'تداخل زمني'},
+  repeated_violations: {icon:'🔁', label:'مخالفات متكررة'},
+};
+
+const SEV_COLOR = {critical:'#dc2626', high:'#d97706', medium:'#ca8a04', low:'#64748b'};
+const SEV_BG    = {critical:'#fef2f2', high:'#fff7ed', medium:'#fefce8', low:'#f8fafc'};
+const SEV_LABEL = {critical:'🔴 خطر عالي', high:'🟠 مرتفع', medium:'🟡 متوسط', low:'⚪ منخفض'};
+
 async function renderWarningsSection() {
-  const [trips, drivers, cars, mapsKeyData] = await Promise.all([
-    loadTrips(), loadDrivers(), loadCars(),
-    apiCall('/settings/maps-key').catch(()=>({key:''}))
-  ]);
-  window._mapsApiKey = mapsKeyData.key || '';
+  document.getElementById('pageContent').innerHTML =
+    '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تحليل البيانات...</p></div>';
 
-  // ── 1. Odometer discrepancy detection ──
-  const warnings = [];
-  cars.forEach(car => {
-    const carTrips = trips
-      .filter(t => t.car_id === car.id && t.end_time && t.end_odometer)
-      .sort((a,b) => new Date(a.end_time) - new Date(b.end_time));
-
-    for(let i = 0; i < carTrips.length - 1; i++){
-      const tA = carTrips[i], tB = carTrips[i+1];
-      if(!tB.start_odometer) continue;
-      const endOdo   = parseFloat(tA.end_odometer);
-      const startOdo = parseFloat(tB.start_odometer);
-      const diff     = startOdo - endOdo;
-      if(Math.abs(diff) > 0){
-        const sev = diff < 0 ? 'critical' : diff > 50 ? 'high' : 'medium';
-        warnings.push({
-          type:'odometer', car,
-          tripA:tA, tripB:tB,
-          dA:drivers.find(d=>d.id===tA.driver_id),
-          dB:drivers.find(d=>d.id===tB.driver_id),
-          endOdo, startOdo, diff, sev
-        });
-      }
-    }
-  });
-
-  // ── 2. Google Maps distance check ──
-  // Trips with both start & end coordinates + valid odometer
-  const gMapsWarnings = [];
-  if(window._mapsApiKey){
-    const tripsToCheck = trips.filter(t =>
-      t.end_time && t.start_odometer && t.end_odometer &&
-      t.start_location && t.end_location &&
-      parseCoords(t.start_location) && parseCoords(t.end_location) &&
-      (t.end_odometer - t.start_odometer) > 0
-    );
-
-    // Check up to 20 trips (API cost)
-    for(const trip of tripsToCheck.slice(0, 20)){
-      const sc = parseCoords(trip.start_location);
-      const ec = parseCoords(trip.end_location);
-      if(!sc || !ec) continue;
-
-      try {
-        const actualKm = parseFloat(trip.end_odometer) - parseFloat(trip.start_odometer);
-        const maxExpected = await getGoogleMapsMaxDistance(sc, ec, window._mapsApiKey);
-
-        if(maxExpected !== null && actualKm > maxExpected * 1.15){ // 15% tolerance
-          const driver = drivers.find(d => d.id === trip.driver_id);
-          const car    = cars.find(c => c.id === trip.car_id);
-          const excess = (actualKm - maxExpected).toFixed(1);
-          gMapsWarnings.push({
-            type:'distance', trip, driver, car,
-            actualKm: actualKm.toFixed(1),
-            expectedKm: maxExpected.toFixed(1),
-            excess, sev: excess > 30 ? 'high' : 'medium'
-          });
-        }
-      } catch(e){ console.warn('Maps check failed for trip', trip.id, e); }
-    }
+  let data;
+  try {
+    data = await apiCall('/analysis/fraud-detection','GET');
+  } catch(e) {
+    document.getElementById('pageContent').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">❌</div><p>'+e.message+'</p></div>';
+    return;
   }
 
-  const sevC = s => s==='critical'?'#dc2626':s==='high'?'#d97706':'#ca8a04';
-  const sevL = s => s==='critical'?'🔴 عداد رجع للخلف':s==='high'?'🟠 فارق كبير':'🟡 فارق بسيط';
+  const results     = data.results || [];
+  const drivers     = await loadDrivers();
+
+  // Driver risk scores aggregation
+  const driverRisk = {};
+  results.forEach(r => {
+    if(!r.driver_id) return;
+    if(!driverRisk[r.driver_id]) driverRisk[r.driver_id]={score:0, count:0, name:''};
+    driverRisk[r.driver_id].score += r.risk_score;
+    driverRisk[r.driver_id].count += r.warnings.length;
+    driverRisk[r.driver_id].name  = r.driver_name || drivers.find(d=>d.id===r.driver_id)?.name || '—';
+  });
+
+  const topDrivers = Object.entries(driverRisk)
+    .sort((a,b)=>b[1].score-a[1].score).slice(0,5);
 
   document.getElementById('pageContent').innerHTML = `
-    <!-- Google Maps API Key Setting -->
-    <div class="card" style="border:2px solid #3b82f6;background:#eff6ff;margin-bottom:1rem">
-      <div class="card-header">
-        <div class="card-title" style="color:#1d4ed8">🗺️ Google Maps API Key (لحساب المسافات المتوقعة)</div>
-      </div>
-      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
-        <input type="text" id="mapsApiKeyInput" value="${window._mapsApiKey||''}"
-          placeholder="أدخل Google Maps API Key"
-          style="flex:1;min-width:200px;padding:.55rem .9rem;border:1.5px solid #3b82f6;border-radius:8px;font-size:.85rem">
-        <button class="btn btn-primary btn-sm" onclick="saveMapsKey()">💾 حفظ</button>
-        ${!window._mapsApiKey ? '<span style="font-size:.75rem;color:#dc2626">⚠️ بدون API Key لن يتم حساب مسافات Google Maps</span>' : '<span style="font-size:.75rem;color:#16a34a">✅ API Key محفوظ</span>'}
-      </div>
-      <div style="font-size:.75rem;color:#64748b;margin-top:.5rem">
-        احصل على مفتاحك من: <a href="https://console.cloud.google.com" target="_blank" style="color:#2563eb">console.cloud.google.com</a>
-        — فعّل Directions API ثم أنشئ API Key
-      </div>
-    </div>
-
     <!-- Stats -->
-    <div class="stats-row">
-      <div class="stat-card"><div class="stat-icon">🔴</div><div class="stat-value" style="color:#dc2626">${warnings.filter(w=>w.sev==='critical').length}</div><div class="stat-label">عداد رجع للخلف</div></div>
-      <div class="stat-card"><div class="stat-icon">🟠</div><div class="stat-value" style="color:#d97706">${warnings.filter(w=>w.sev==='high'||w.sev==='medium').length}</div><div class="stat-label">فارق عداد</div></div>
-      <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value" style="color:#7c3aed">${gMapsWarnings.length}</div><div class="stat-label">تجاوز مسافة Google</div></div>
-      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" style="color:#16a34a">${cars.length - new Set([...warnings,...gMapsWarnings].map(w=>w.car?.id||w.car)).size}</div><div class="stat-label">مركبة نظيفة</div></div>
+    <div class="stats-row" style="margin-bottom:1.2rem">
+      <div class="stat-card"><div class="stat-icon">🔴</div>
+        <div class="stat-value" style="color:#dc2626">${data.critical}</div>
+        <div class="stat-label">خطر عالي</div></div>
+      <div class="stat-card"><div class="stat-icon">🟠</div>
+        <div class="stat-value" style="color:#d97706">${data.high}</div>
+        <div class="stat-label">مرتفع</div></div>
+      <div class="stat-card"><div class="stat-icon">🟡</div>
+        <div class="stat-value" style="color:#ca8a04">${data.medium}</div>
+        <div class="stat-label">متوسط</div></div>
+      <div class="stat-card"><div class="stat-icon">📊</div>
+        <div class="stat-value" style="color:#7c3aed">${data.total_score}</div>
+        <div class="stat-label">مجموع نقاط الخطر</div></div>
     </div>
 
-    <!-- Odometer Warnings Table -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">⚠️ تحذيرات العداد بين الرحلات</div>
-        <button class="btn btn-ghost btn-sm" onclick="renderWarningsSection()">🔄</button>
+    <div class="two-col" style="margin-bottom:1.2rem">
+      <!-- Driver Risk Leaderboard -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">👨‍✈️ السائقون الأكثر خطراً</div></div>
+        ${topDrivers.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد مخالفات</p></div>'
+          : topDrivers.map(([did, info], idx) => {
+              const pct = Math.min(100, Math.round(info.score / Math.max(...topDrivers.map(d=>d[1].score)) * 100));
+              const col = info.score >= 40 ? '#dc2626' : info.score >= 20 ? '#d97706' : '#ca8a04';
+              return '<div style="margin-bottom:.9rem">'+
+                '<div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:.3rem">'+
+                  '<span><b>#'+(idx+1)+'</b> '+info.name+'</span>'+
+                  '<span style="font-weight:700;color:'+col+'">'+info.score+' نقطة</span>'+
+                '</div>'+
+                '<div style="background:#f1f5f9;border-radius:99px;height:8px">'+
+                  '<div style="background:'+col+';width:'+pct+'%;height:8px;border-radius:99px;transition:.3s"></div>'+
+                '</div>'+
+                '<div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">'+info.count+' مخالفة</div>'+
+              '</div>';
+            }).join('')
+        }
       </div>
-      <div style="background:#fef9c3;border:1.5px solid #fde047;border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.8rem;color:#713f12">
-        <b>الفكرة:</b> عداد نهاية الرحلة السابقة ≠ عداد بداية التالية = المركبة تحركت بدون تسجيل.
+
+      <!-- Rule breakdown -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">📋 توزيع المخالفات بالنوع</div></div>
+        ${Object.entries(RULE_META).map(([type, meta]) => {
+            const cnt = results.reduce((s,r)=>s+r.warnings.filter(w=>w.type===type).length,0);
+            if(!cnt) return '';
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border)">'+
+              '<span style="font-size:.85rem">'+meta.icon+' '+meta.label+'</span>'+
+              '<span class="badge badge-red">'+cnt+'</span>'+
+            '</div>';
+          }).join('')
+        }
       </div>
-      ${warnings.length === 0
-        ? '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد تحذيرات عداد</p></div>'
-        : '<div class="table-wrap"><table><thead><tr><th>المركبة</th><th>رحلة سابقة</th><th>سائق</th><th>عداد النهاية</th><th>رحلة تالية</th><th>سائق</th><th>عداد البداية</th><th>الفارق</th><th>التقييم</th></tr></thead><tbody>' +
-          warnings.map(w =>
-            '<tr style="background:'+(w.sev==='critical'?'#fef2f2':w.sev==='high'?'#fff7ed':'#fefce8')+'">'+
-            '<td dir="ltr"><b>'+w.car.plate+'</b><br><small>'+w.car.model+'</small></td>'+
-            '<td style="font-size:.77rem">#'+w.tripA.id+'<br>'+fmtDT(w.tripA.end_time)+'</td>'+
-            '<td>'+(w.dA?.name||'—')+'</td>'+
-            '<td><b>'+w.endOdo+' كم</b></td>'+
-            '<td style="font-size:.77rem">#'+w.tripB.id+'<br>'+fmtDT(w.tripB.start_time)+'</td>'+
-            '<td>'+(w.dB?.name||'—')+'</td>'+
-            '<td><b>'+w.startOdo+' كم</b></td>'+
-            '<td style="font-weight:800;color:'+sevC(w.sev)+'">'+
-              (w.diff>0?'+':'')+w.diff.toFixed(1)+' كم</td>'+
-            '<td><span class="badge" style="background:'+sevC(w.sev)+'20;color:'+sevC(w.sev)+'">'+sevL(w.sev)+'</span></td>'+
-            '</tr>'
-          ).join('')+
-          '</tbody></table></div>'
-      }
     </div>
 
-    <!-- Google Maps Distance Warnings -->
+    <!-- Detailed Results -->
     <div class="card">
       <div class="card-header">
-        <div class="card-title">🗺️ تحذيرات المسافة (Google Maps)</div>
+        <div class="card-title">🔍 تفاصيل المخالفات (${results.length} رحلة مشبوهة)</div>
+        <button class="btn btn-ghost btn-sm" onclick="renderWarningsSection()">🔄 تحديث</button>
       </div>
-      ${!window._mapsApiKey
-        ? '<div class="empty-state"><div class="empty-icon">🔑</div><p>أدخل Google Maps API Key أعلاه لتفعيل هذه الميزة</p></div>'
-        : gMapsWarnings.length === 0
-          ? '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد تجاوزات في المسافات</p></div>'
-          : '<div style="background:#f3e8ff;border:1.5px solid #c084fc;border-radius:10px;padding:.7rem 1rem;margin-bottom:1rem;font-size:.8rem;color:#6b21a8">'+
-            '<b>الفكرة:</b> المسافة المتوقعة = أطول طريق ممكن من Google Maps + هامش 15%. لو السائق قطع أكتر = تحذير.'+
-            '</div>'+
-            '<div class="table-wrap"><table><thead><tr><th>المركبة</th><th>الرحلة</th><th>السائق</th><th>المسافة الفعلية</th><th>أقصى متوقع (Google)</th><th>الزيادة</th><th>التقييم</th></tr></thead><tbody>'+
-            gMapsWarnings.map(w =>
-              '<tr style="background:'+(w.sev==='high'?'#fff7ed':'#fefce8')+'">'+
-              '<td dir="ltr"><b>'+w.car?.plate+'</b></td>'+
-              '<td style="font-size:.77rem">#'+w.trip.id+'<br>'+fmtDT(w.trip.start_time)+' ← '+fmtDT(w.trip.end_time)+'</td>'+
-              '<td>'+(w.driver?.name||'—')+'</td>'+
-              '<td style="color:#dc2626;font-weight:700">'+w.actualKm+' كم</td>'+
-              '<td>'+w.expectedKm+' كم</td>'+
-              '<td style="font-weight:800;color:'+sevC(w.sev)+'">+'+w.excess+' كم زيادة</td>'+
-              '<td><span class="badge" style="background:'+sevC(w.sev)+'20;color:'+sevC(w.sev)+'">'+
-                (w.sev==='high'?'🟠 تجاوز كبير':'🟡 تجاوز بسيط')+'</span></td>'+
-              '</tr>'
-            ).join('')+
-            '</tbody></table></div>'
+
+      ${results.length === 0
+        ? '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد مخالفات — كل البيانات سليمة</p></div>'
+        : results.map(r => `
+          <div style="border:1.5px solid ${SEV_COLOR[r.risk_level]};border-radius:12px;padding:1rem 1.2rem;margin-bottom:.8rem;background:${SEV_BG[r.risk_level]}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:.4rem">
+              <div>
+                <span style="font-weight:800;font-size:.95rem">رحلة #${r.trip_id}</span>
+                <span style="color:var(--muted);font-size:.82rem;margin-right:.5rem">| ${r.driver_name||'—'} | ${r.car_plate||'—'}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:.6rem">
+                <span style="font-weight:700;color:${SEV_COLOR[r.risk_level]}">${r.risk_score} نقطة</span>
+                <span class="badge" style="background:${SEV_COLOR[r.risk_level]}20;color:${SEV_COLOR[r.risk_level]};border:1px solid ${SEV_COLOR[r.risk_level]}40">${SEV_LABEL[r.risk_level]}</span>
+              </div>
+            </div>
+            ${r.warnings.map(w => `
+              <div style="display:flex;align-items:flex-start;gap:.6rem;padding:.4rem 0;border-top:1px solid ${SEV_COLOR[r.risk_level]}20">
+                <span style="font-size:1rem;flex-shrink:0">${RULE_META[w.type]?.icon||'⚠️'}</span>
+                <div>
+                  <div style="font-size:.78rem;font-weight:700;color:${SEV_COLOR[w.severity]||'#64748b'}">${RULE_META[w.type]?.label||w.type}</div>
+                  <div style="font-size:.82rem;color:var(--text)">${w.message}</div>
+                </div>
+              </div>`).join('')}
+          </div>`).join('')
       }
     </div>`;
 }
 
-/* Get max (worst) route distance from Google Maps Directions API */
-async function getGoogleMapsMaxDistance(startCoords, endCoords, apiKey) {
-  const [slat, slng] = startCoords;
-  const [elat, elng] = endCoords;
-  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${slat},${slng}&destination=${elat},${elng}&alternatives=true&key=${apiKey}`;
-
-  // Use a CORS proxy since we're calling from browser
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-  const res = await fetch(proxyUrl);
-  const data = await res.json();
-
-  if(!data.routes || data.routes.length === 0) return null;
-
-  // Get longest (worst) route in km
-  const maxMeters = Math.max(...data.routes.map(r =>
-    r.legs.reduce((sum, leg) => sum + leg.distance.value, 0)
-  ));
-  return maxMeters / 1000;
-}
-
-async function saveMapsKey() {
-  const key = document.getElementById('mapsApiKeyInput')?.value.trim() || '';
-  try {
-    await apiCall('/settings/maps-key','PUT',{key});
-    showNotification('✅ تم حفظ Google Maps API Key','success');
-    await renderWarningsSection();
-  } catch(e){ showNotification(e.message,'error'); }
-}
-
-/* ── PERMISSIONS ── *//* ── PERMISSIONS ── */
+/* ── PERMISSIONS ── *//* ── PERMISSIONS ── *//* ── PERMISSIONS ── */
 async function renderPermissionsSection() {
   const [perms,drivers,cars]=await Promise.all([loadPerms(),loadDrivers(),loadCars()]);
   document.getElementById('pageContent').innerHTML=`<div class="card"><div class="card-header"><div class="card-title">🔐 الصلاحيات النشطة (${perms.length})</div><button class="btn btn-primary btn-sm" onclick="openAssignPermModal()">➕ تعيين</button></div><div class="table-wrap" id="permsTable">${perms.length?`<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>إجراء</th></tr></thead><tbody>${perms.map(p=>{const d=drivers.find(d=>d.id===p.driver_id),c=cars.find(c=>c.id===p.car_id);return`<tr><td>${p.id}</td><td>${d?.name||'—'}</td><td dir="ltr">${c?c.plate+' - '+c.model:'—'}</td><td><button class="btn btn-danger btn-sm del-perm" data-id="${p.id}">🗑️</button></td></tr>`;}).join('')}</tbody></table>`:'<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد صلاحيات</p></div>'}</div></div>`;
