@@ -284,13 +284,9 @@ def _verify(plain: str, hashed: str) -> bool:
         return False
 
 def validate_password(pw: str):
-    """Enforce: ≥8 chars, 1 uppercase, 1 digit."""
-    if len(pw) < 8:
-        raise HTTPException(400, "كلمة المرور يجب أن تكون 8 أحرف على الأقل")
-    if not re.search(r"[A-Z]", pw):
-        raise HTTPException(400, "يجب أن تحتوي كلمة المرور على حرف كبير")
-    if not re.search(r"\d", pw):
-        raise HTTPException(400, "يجب أن تحتوي كلمة المرور على رقم")
+    """No restrictions — any password accepted."""
+    if not pw:
+        raise HTTPException(400, "كلمة المرور مطلوبة")
 
 def create_access_token(payload: dict) -> str:
     d = payload.copy()
@@ -393,15 +389,9 @@ class DriverCreate(BaseModel):
     name: str; phone: str; username: str; password: str
     status: str = "active"
     national_id: Optional[str] = ""
-    birth_date: Optional[str] = ""
-    driver_license_expiry: Optional[str] = ""
-    vehicle_license_expiry: Optional[str] = ""
-
-    @validator("password")
-    def pw_policy(cls, v):
-        if len(v) < 8 or not re.search(r"[A-Z]", v) or not re.search(r"\d", v):
-            raise ValueError("كلمة المرور: 8 أحرف على الأقل، حرف كبير، ورقم")
-        return v
+    birth_date: Optional[str] = None
+    driver_license_expiry: Optional[str] = None
+    vehicle_license_expiry: Optional[str] = None
 
 class DriverUpdate(BaseModel):
     name: str; phone: str; status: str
@@ -452,11 +442,7 @@ class TripResp(BaseModel):
 class UserCreate(BaseModel):
     username: str; password: str; role: str
 
-    @validator("password")
-    def pw_policy(cls, v):
-        if len(v) < 8 or not re.search(r"[A-Z]", v) or not re.search(r"\d", v):
-            raise ValueError("كلمة المرور: 8 أحرف على الأقل، حرف كبير، ورقم")
-        return v
+    # No password restrictions
 
 class WorkshopCreate(BaseModel):
     driver_id: int; type: str; quantity: Optional[float] = None
