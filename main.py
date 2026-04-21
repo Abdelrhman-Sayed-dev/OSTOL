@@ -235,7 +235,8 @@ def migrate_db():
             log.warning("⚠️  Created default admin — CHANGE PASSWORD IMMEDIATELY")
 
         # Seed price settings
-        for ws_type in ["fuel","oil","filter","tire","battery","belt","other"]:
+        for ws_type in ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng",
+                           "oil","filter","tire","battery","belt","other"]:
             c.execute("INSERT OR IGNORE INTO app_settings(key,value,updated_at) VALUES(?,?,?)",
                       (f"price_{ws_type}", "0", datetime.utcnow().isoformat() + "Z"))
 
