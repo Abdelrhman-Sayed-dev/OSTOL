@@ -127,6 +127,7 @@ def create_database():
             action_taken TEXT DEFAULT '',
             handled_by   TEXT DEFAULT '',
             action_time  TEXT DEFAULT '',
+            driver_message TEXT DEFAULT '',
             FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
             FOREIGN KEY (car_id)    REFERENCES cars(id)    ON DELETE SET NULL
         )

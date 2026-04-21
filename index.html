@@ -1428,6 +1428,7 @@ function buildMapSummaryTable(trips,drivers,cars,garageLatest){
 /* ── EMERGENCIES SECTION (Admin) ── */
 async function renderEmergenciesSection() {
   const reports=await loadEmergencies();
+  window._emergencyReports = reports;
   const unread=reports.filter(r=>!r.is_read).length;
   // Mark all as read
   reports.filter(r=>!r.is_read).forEach(r=>{ apiCall(`/emergency/reports/${r.id}/read`,'PUT').catch(()=>{}); });
@@ -1445,7 +1446,7 @@ async function renderEmergenciesSection() {
       ${reports.length ? `<div class="table-wrap"><table><thead><tr>
         <th>#</th><th>النوع</th><th>السائق</th><th>المركبة</th><th>الوقت</th>
         <th>الموقع</th><th>ملاحظات</th><th>التسجيل الصوتي</th>
-        <th>الحالة</th><th>الإجراء المتخذ</th><th>بواسطة</th><th>وقت الإجراء</th><th>إجراء</th>
+        <th>الحالة</th><th>الإجراء المتخذ</th><th>رسالة للسائق</th><th>بواسطة</th><th>وقت الإجراء</th><th>إجراء</th>
       </tr></thead><tbody>
       ${reports.map(r=>`<tr class="report-row-${r.type}">
         <td>${r.id}</td>
@@ -1460,6 +1461,7 @@ async function renderEmergenciesSection() {
           ?'<span class="badge badge-green">✓ تم التعامل</span>'
           :'<span class="badge badge-red">⏳ لم يُعالج</span>'}</td>
         <td style="max-width:130px;font-size:.8rem">${r.action_taken||'—'}</td>
+        <td style="max-width:140px;font-size:.8rem">${r.driver_message?`<span style="color:#059669;font-weight:600">💬 ${r.driver_message}</span>`:'<span style="color:var(--muted)">—</span>'}</td>
         <td style="font-size:.8rem">${r.handled_by||'—'}</td>
         <td style="font-size:.78rem;color:var(--muted)">${r.action_time?fmtDT(r.action_time):'—'}</td>
         <td>
@@ -1831,11 +1833,47 @@ async function openEndTripModal(activeTrips) {
 /* ── DRIVER EMERGENCY / ACCIDENT ── */
 
 async function renderDriverEmergency() {
-  const [allowedCars,allTrips]=await Promise.all([loadAllowedCars(),loadTrips()]);
+  const [allowedCars,allTrips,myReports]=await Promise.all([
+    loadAllowedCars(),loadTrips(),
+    apiCall('/emergency/reports').catch(()=>[])
+  ]);
   const activeTrip=allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
   window._emergAllowedCars=allowedCars;
   window._emergActiveTripId=activeTrip?.id||null;
   window._emergActiveCarId=activeTrip?.car_id||null;
+
+  // بطاقات حالة البلاغات السابقة
+  const myPrev = myReports.slice(0,5); // آخر 5 بلاغات
+  const statusCards = myPrev.length ? `
+    <div class="card" style="margin-bottom:1.2rem">
+      <div class="card-header" style="margin-bottom:.8rem">
+        <div class="card-title">📋 حالة بلاغاتي</div>
+      </div>
+      ${myPrev.map(r=>{
+        const isEmg = r.type==='emergency';
+        const handled = r.is_handled;
+        const hasMsg  = r.driver_message && r.driver_message.trim();
+        return `
+        <div style="border-radius:14px;padding:1rem 1.1rem;margin-bottom:.8rem;border:2px solid ${handled?'#10b981':'#f59e0b'};background:${handled?'#f0fdf9':'#fffbeb'}">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+            <div style="font-weight:700;font-size:.9rem;color:${isEmg?'#dc2626':'#d97706'}">
+              ${isEmg?'🚨 طارئ':'💥 حادث'} — #${r.id}
+            </div>
+            <span style="font-size:.78rem;font-weight:700;padding:.2rem .7rem;border-radius:20px;background:${handled?'#dcfce7':'#fef9c3'};color:${handled?'#166534':'#854d0e'}">
+              ${handled ? '✅ تم التعامل معه' : '⏳ قيد المعالجة'}
+            </span>
+          </div>
+          <div style="font-size:.78rem;color:var(--muted);margin-bottom:${hasMsg?'.7rem':'0'}">
+            📅 ${fmtDT(r.created_at)}
+          </div>
+          ${hasMsg ? `
+          <div style="background:white;border-right:4px solid #10b981;border-radius:8px;padding:.7rem .9rem;margin-top:.3rem">
+            <div style="font-size:.75rem;font-weight:700;color:#059669;margin-bottom:.3rem">💬 رسالة من الإدارة</div>
+            <div style="font-size:.88rem;color:#1e293b;line-height:1.5">${r.driver_message}</div>
+          </div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>` : '';
 
   document.getElementById('pageContent').innerHTML=`
     <div class="driver-hero" style="background:linear-gradient(135deg,#7f1d1d,#dc2626)">
@@ -1843,6 +1881,7 @@ async function renderDriverEmergency() {
       <div><h2>نظام الطوارئ والحوادث</h2><p>اضغط على الزر المناسب وسجّل رسالتك الصوتية</p></div>
     </div>
     ${activeTrip?`<div class="card" style="background:#fff7ed;border:2px solid #f59e0b"><div class="card-header"><div class="card-title" style="color:#92400e">⚡ رحلة نشطة — سيتم ربط البلاغ بها تلقائياً</div></div><p style="font-size:.85rem;color:#78350f">رحلة #${activeTrip.id} | بداية: ${fmtDT(activeTrip.start_time)}</p></div>`:''}
+    ${statusCards}
     <div class="emergency-grid">
       <div class="emergency-btn-card emg" onclick="startRecording('emergency')">
         <span class="emg-icon">🚨</span>
@@ -2114,24 +2153,29 @@ function openWsModal(type) {
 
 /* ── EMERGENCY ACTION MODAL ── */
 function openEmergencyActionModal(reportId) {
+  const rep = (window._emergencyReports||[]).find(r=>r.id===reportId) || {};
   openModal(`
     <div class="modal-header">
       <div class="modal-title">✍️ تسجيل الإجراء المتخذ</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#92400e">
-      📋 البلاغ رقم #${reportId}
+      📋 البلاغ رقم #${reportId} — ${rep.driver_name||'سائق'}
     </div>
     <div class="form-group">
       <label>الإجراء المتخذ <span class="req">*</span></label>
-      <textarea id="eActionText" placeholder="مثال: تم التواصل مع السائق وإرسال طاقم إسعاف..." style="min-height:90px"></textarea>
+      <textarea id="eActionText" placeholder="مثال: تم التواصل مع السائق وإرسال طاقم إسعاف..." style="min-height:80px">${rep.action_taken||''}</textarea>
+    </div>
+    <div class="form-group">
+      <label>💬 رسالة للسائق <span style="font-size:.78rem;color:#10b981;font-weight:600">(تظهر للسائق مباشرة)</span></label>
+      <textarea id="eDriverMsg" placeholder="مثال: تم استلام بلاغك وفريقنا في الطريق إليك..." style="min-height:80px;border-color:#10b981">${rep.driver_message||''}</textarea>
     </div>
     <div class="form-group">
       <label>اسم المسؤول / الأدمن</label>
-      <input id="eHandledBy" value="${currentUser?.username||''}" placeholder="اسمك">
+      <input id="eHandledBy" value="${rep.handled_by||currentUser?.username||''}" placeholder="اسمك">
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:.8rem">
-      <input type="checkbox" id="eIsHandled" checked style="width:auto;margin:0">
+      <input type="checkbox" id="eIsHandled" ${rep.is_handled?'checked':''} style="width:auto;margin:0">
       <label style="text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--text);margin:0">تم التعامل مع البلاغ بالكامل</label>
     </div>
     <div class="modal-footer">
@@ -2140,9 +2184,10 @@ function openEmergencyActionModal(reportId) {
     </div>`);
 
   document.getElementById('saveActionBtn').onclick = async () => {
-    const action    = document.getElementById('eActionText').value.trim();
-    const handledBy = document.getElementById('eHandledBy').value.trim();
-    const isHandled = document.getElementById('eIsHandled').checked;
+    const action      = document.getElementById('eActionText').value.trim();
+    const driverMsg   = document.getElementById('eDriverMsg').value.trim();
+    const handledBy   = document.getElementById('eHandledBy').value.trim();
+    const isHandled   = document.getElementById('eIsHandled').checked;
     if(!action) return showNotification('أدخل الإجراء المتخذ','error');
     const btn = document.getElementById('saveActionBtn');
     btn.disabled=true; btn.textContent='جاري...';
@@ -2150,9 +2195,10 @@ function openEmergencyActionModal(reportId) {
       await apiCall(`/emergency/reports/${reportId}/action`,'PUT',{
         is_handled: isHandled,
         action_taken: action,
+        driver_message: driverMsg,
         handled_by: handledBy || currentUser?.username || 'admin'
       });
-      showNotification('✅ تم حفظ الإجراء','success');
+      showNotification('✅ تم حفظ الإجراء والرسالة','success');
       closeModal();
       await renderEmergenciesSection();
     }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ الإجراء'; }

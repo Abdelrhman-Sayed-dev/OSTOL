@@ -279,7 +279,8 @@ def _safe_add_columns(c):
         "users":              [("refresh_token","TEXT"),("refresh_exp","TEXT"),("last_login","TEXT")],
         "emergency_reports":  [("audio_url","TEXT DEFAULT ''"),("is_handled","INTEGER DEFAULT 0"),
                                ("action_taken","TEXT DEFAULT ''"),("handled_by","TEXT DEFAULT ''"),
-                               ("action_time","TEXT DEFAULT ''"),("location","TEXT DEFAULT ''")],
+                               ("action_time","TEXT DEFAULT ''"),("location","TEXT DEFAULT ''"),
+                               ("driver_message","TEXT DEFAULT ''")] ,
         "trips":              [("garage_location","TEXT DEFAULT ''")],
         "workshop_records":   [("location","TEXT DEFAULT ''"),("operation_type","TEXT DEFAULT ''"),
                                ("vehicle_id","INTEGER"),("odometer_reading","REAL"),
@@ -491,6 +492,7 @@ class EmergencyCreate(BaseModel):
 
 class EmergencyAction(BaseModel):
     is_handled: bool = True; action_taken: str = ""; handled_by: str = ""
+    driver_message: str = ""
 
 class GarageRecordCreate(BaseModel):
     driver_id: int; car_id: Optional[int] = None
@@ -1261,7 +1263,7 @@ async def get_emergency_reports(cu: dict = Depends(get_user)):
             d.setdefault("driver_name", None); d.setdefault("car_plate", None)
             d.setdefault("location", ""); d.setdefault("action_taken", "")
             d.setdefault("handled_by", ""); d.setdefault("action_time", "")
-            d.setdefault("audio_url", "")
+            d.setdefault("audio_url", ""); d.setdefault("driver_message", "")
             rows.append(d)
         return rows
 
@@ -1278,9 +1280,10 @@ async def update_emergency_action(rid: int, body: EmergencyAction, cu: dict = De
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""UPDATE emergency_reports
-                     SET is_handled=?,action_taken=?,handled_by=?,is_read=1,action_time=?
+                     SET is_handled=?,action_taken=?,handled_by=?,is_read=1,action_time=?,driver_message=?
                      WHERE id=?""",
-                  (1 if body.is_handled else 0, body.action_taken, admin_name, action_ts, rid))
+                  (1 if body.is_handled else 0, body.action_taken, admin_name,
+                   action_ts, body.driver_message or "", rid))
         return {"ok": True, "handled_by": admin_name, "action_time": action_ts}
 
 @app.get("/emergency/unread-count")
