@@ -1460,7 +1460,7 @@ async def get_prices(cu: dict = Depends(get_user)):
 
 @app.put("/settings/prices")
 async def set_prices(body: dict, cu: dict = Depends(require_admin)):
-    valid = ["fuel","oil","filter","tire","battery","belt","other"]
+    valid = ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng","oil","filter","tire","battery","belt","other"]
     now   = datetime.utcnow().isoformat() + "Z"
     saved = {}
     with get_db() as conn:

@@ -20,7 +20,9 @@ def create_database():
     db_path = os.environ.get("DATABASE_PATH", "trip_tracker.db")
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA journal_mode=WAL")# database.py — Fleet Management System
+    conn.execute("PRAGMA journal_mode=WAL")  # database.py — Fleet Management System
+
+
 # يُستخدم لإنشاء قاعدة البيانات لأول مرة فقط
 # التهجير (migration) يتم تلقائياً عبر main.py عند الإقلاع
 
@@ -202,9 +204,9 @@ def create_database():
     # ── حذف كل الأدمنز القديمين وإنشاء الأدمنز الجدد ──────────
     ADMINS = [
         ("Eng mohamed mansour", "mo@mansour241"),
-        ("Eng mohamed sayed",   "mo@sayed11214123"),
-        ("Eng abdelrhman sayed","abdo@11214123"),
-        
+        ("Eng mohamed sayed", "mo@sayed11214123"),
+        ("Eng abdelrhman sayed", "abdo@11214123"),
+
     ]
     # Delete old admins (keep drivers)
     cursor.execute("SELECT id FROM users WHERE role='admin'")
@@ -379,6 +381,7 @@ if __name__ == "__main__":
 
     # ── Seed أسعار افتراضية ────────────────────────────────────
     from datetime import datetime
+
     for ws_type in ['fuel', 'oil', 'filter', 'tire', 'battery', 'belt', 'other']:
         cursor.execute(
             "INSERT OR IGNORE INTO app_settings(key,value,updated_at) VALUES(?,?,?)",
@@ -388,8 +391,8 @@ if __name__ == "__main__":
     # ── حذف كل الأدمنز القديمين وإنشاء الأدمنز الجدد ──────────
     ADMINS = [
         ("Eng mohamed mansour", "mo@mansour241"),
-        ("Eng mohamed sayed",   "mo@sayed11214123"),
-        ("Eng abdelrhman sayed","abdo@11214123"),
+        ("Eng mohamed sayed", "mo@sayed11214123"),
+        ("Eng abdelrhman sayed", "abdo@11214123"),
         ("admin", "ad11228898"),
     ]
     # Delete old admins (keep drivers)
@@ -410,7 +413,6 @@ if __name__ == "__main__":
     conn.commit()
     conn.close()
     print(f"✅ تم إنشاء قاعدة البيانات: {db_path}")
-
 
 if __name__ == "__main__":
     create_database()
