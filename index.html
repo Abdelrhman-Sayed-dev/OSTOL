@@ -1281,7 +1281,7 @@ async function renderAdminWorkshops() {
 
 function buildWSTable(records) {
   if(!records.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد سجلات</p></div>';
-  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>ملاحظات</th><th>التاريخ</th></tr></thead><tbody>
+  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>ملاحظات</th><th>📍 الموقع</th><th>التاريخ</th></tr></thead><tbody>
   ${records.map(r=>{
     const wt=WT[r.type]||{icon:'🔨',label:r.type};
     const opLabel=r.operation_type?(r.operation_type==='maintenance'?'صيانة':'استبدال'):'—';
@@ -1295,6 +1295,7 @@ function buildWSTable(records) {
       <td style="font-size:.82rem">${r.price} جنيه</td>
       <td><strong>${r.quantity&&r.price?((r.quantity||1)*(r.price||0)).toFixed(2)+' جنيه':'—'}</strong></td>
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
+      <td>${r.location?formatLocation(r.location):'<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -1320,10 +1321,9 @@ async function renderMapSection() {
       <div class="card-header"><div class="card-title">📍 خريطة الأسطول الكاملة</div><button class="btn btn-ghost btn-sm" onclick="renderMapSection()">🔄 تحديث</button></div>
       <div id="fleetMap"></div>
       <div class="map-legend">
-        <span><span class="legend-dot" style="background:#10b981"></span> رحلة نشطة</span>
-        <span><span class="legend-dot" style="background:#dc2626"></span> في الجراج</span>
-        <span><span class="legend-dot" style="background:#3b82f6"></span> آخر موقع معروف</span>
-        <span><span class="legend-dot" style="background:#94a3b8"></span> موقع تقريبي</span>
+        <span><span class="legend-dot" style="background:#10b981"></span> رحلة نشطة (موقع البداية)</span>
+        <span><span class="legend-dot" style="background:#3b82f6"></span> آخر موقع معروف (نهاية رحلة)</span>
+        <span><span class="legend-dot" style="background:#dc2626"></span> موقع الجراج / وقوف</span>
       </div>
     </div>
     <div class="card">
@@ -1349,34 +1349,21 @@ async function renderMapSection() {
 
       let coords=null, color='#3b82f6', label='📍 آخر موقع معروف', isGarage=false;
 
-      // Priority 1: Active trip start_location → green
+      // Priority 1: Active trip → show start location (green)
       if(activeTrip){
-        const c=parseCoords(activeTrip.start_location||'');
-        if(c){ coords=c; color='#10b981'; label='● رحلة نشطة'; }
+        coords=parseCoords(activeTrip.start_location||'');
+        color='#10b981'; label='● رحلة نشطة';
       }
-      // Priority 2: Garage record (no active trip) → red
-      if(!coords && !activeTrip && garageRec){
-        const c=parseCoords(garageRec.location||'');
-        if(c){ coords=c; color='#dc2626'; label='🅿️ في الجراج'; isGarage=true; }
-      }
-      // Priority 3: Last completed trip end/start → blue
+      // Priority 2: No active trip → show last completed trip end location (blue)
       if(!coords && lastTrip){
-        const c=parseCoords(lastTrip.end_location||'')||parseCoords(lastTrip.start_location||'');
-        if(c){ coords=c; color='#3b82f6'; label='📍 آخر موقع معروف'; }
+        coords=parseCoords(lastTrip.end_location||'') || parseCoords(lastTrip.start_location||'');
+        color='#3b82f6'; label='📍 آخر موقع معروف';
       }
-      // Priority 4: Active trip but no start_location → fallback to garage or last trip (still green)
-      if(!coords && activeTrip){
-        const gc=garageRec?parseCoords(garageRec.location||''):null;
-        const lc=lastTrip?(parseCoords(lastTrip.end_location||'')||parseCoords(lastTrip.start_location||'')):null;
-        const c=gc||lc;
-        if(c){ coords=c; color='#10b981'; label='● رحلة نشطة (موقع تقريبي)'; }
-      }
-      // Priority 5: Any trip with any location data → grey
-      if(!coords){
-        const anyTrip=trips.filter(t=>t.car_id===car.id).sort((a,b)=>b.id-a.id)[0];
-        if(anyTrip){
-          const c=parseCoords(anyTrip.end_location||'')||parseCoords(anyTrip.start_location||'');
-          if(c){ coords=c; color='#94a3b8'; label='📍 آخر موقع مسجل'; }
+      // Priority 3: Garage record overrides if no active trip (red pin)
+      if(!activeTrip && garageRec){
+        const gc=parseCoords(garageRec.location);
+        if(gc){
+          coords=gc; color='#dc2626'; label='🅿️ في الجراج'; isGarage=true;
         }
       }
 
