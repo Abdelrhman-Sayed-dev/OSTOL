@@ -1335,6 +1335,7 @@ async def get_emergency_reports(cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
         if cu["role"] in ("admin", "reporter", "superuser"):
+            c.execute(q + " ORDER BY e.id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
             if not did: return []
