@@ -505,7 +505,9 @@ const API = (window.location.hostname === '127.0.0.1' || window.location.hostnam
   : "";
 let currentUser = null;
 const isReporter  = () => currentUser?.role === 'reporter';
-const isAdminLike = () => ['admin','reporter'].includes(currentUser?.role);
+const isAdminLike    = () => ['admin','reporter','superuser'].includes(currentUser?.role);
+const isSuperuser    = () => currentUser?.role === 'superuser';
+const isAdminOrSuper = () => ['admin','superuser'].includes(currentUser?.role);
 let notifPollInterval = null;
 let lastUnreadCount = 0;
 
@@ -590,7 +592,7 @@ function closeModal() { document.getElementById('activeModal')?.remove(); }
 /* ── NAV ── */
 let currentSection = '';
 function buildAdminNav() {
-  return [
+  const base = [
     {id:'overview',   icon:'📊', label:'نظرة عامة'},
     {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},
     {id:'cars',       icon:'🚙', label:'المركبات'},
@@ -599,8 +601,12 @@ function buildAdminNav() {
     {id:'map',        icon:'📍', label:'خريطة الأسطول'},
     {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
-
   ];
+  if(isSuperuser()) {
+    base.push({id:'super-admins', icon:'👑', label:'إدارة الأدمنز'});
+    base.push({id:'super-logs',   icon:'📋', label:'سجل الدخول'});
+  }
+  return base;
 }
 function buildDriverNav() {
   return [
@@ -640,6 +646,8 @@ async function renderSection(id) {
     case 'map':            await renderMapSection(); break;
     case 'emergencies':    await renderEmergenciesSection(); break;
     case 'permissions':    await renderPermissionsSection(); break;
+    case 'super-admins':   await renderSuperAdmins(); break;
+    case 'super-logs':     await renderSuperLogs(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -2378,7 +2386,7 @@ function initUI() {
   document.getElementById('appShell').style.display='flex';
   document.getElementById('userAvatar').textContent=currentUser.username.charAt(0).toUpperCase();
   document.getElementById('sidebarUsername').textContent=currentUser.username;
-  document.getElementById('sidebarRole').textContent=currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':'🚗 سائق';
+  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':'🚗 سائق';
   if(isAdminLike()){
     currentSection='overview'; renderNav(buildAdminNav()); renderSection('overview');
     notifPollInterval=setInterval(pollNotifications,20000);
@@ -3075,6 +3083,203 @@ function dpWsModal(type) {
       closeModal();
     }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
   };
+}
+
+
+/* ══════════════════════════════════════════════════════
+   SUPERUSER — إدارة الأدمنز
+   ══════════════════════════════════════════════════════ */
+async function renderSuperAdmins() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+  let admins = [];
+  try { admins = await apiCall('/superuser/admins'); } catch(e) { c.innerHTML=`<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`; return; }
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">👑 إدارة حسابات الأدمن</div>
+        <button class="btn btn-primary btn-sm" onclick="openAddAdminModal()">➕ إضافة أدمن</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>اسم المستخدم</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>الإجراءات</th>
+          </tr></thead>
+          <tbody>
+            ${admins.length===0?`<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا يوجد أدمنز</td></tr>`:
+              admins.map(a=>`
+                <tr>
+                  <td>${a.id}</td>
+                  <td><b>${a.username}</b></td>
+                  <td>${fmtDate(a.created_at)||'—'}</td>
+                  <td>${fmtDT(a.last_login)||'لم يدخل بعد'}</td>
+                  <td style="display:flex;gap:.5rem;flex-wrap:wrap">
+                    <button class="btn btn-outline btn-sm" onclick="openEditAdminModal(${a.id},'${a.username.replace(/'/g,"\\'")}')">✏️ تعديل</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteAdmin(${a.id},'${a.username.replace(/'/g,"\\'")}')">🗑️ حذف</button>
+                  </td>
+                </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function openAddAdminModal() {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">➕ إضافة أدمن جديد</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label>
+      <input type="text" id="newAdminUser" placeholder="اسم المستخدم"></div>
+    <div class="form-group"><label>كلمة المرور <span class="req">*</span></label>
+      <input type="password" id="newAdminPw" placeholder="كلمة المرور"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="addAdminSubmit">💾 إضافة</button>
+    </div>`);
+  document.getElementById('addAdminSubmit').onclick = async () => {
+    const username = document.getElementById('newAdminUser').value.trim();
+    const password = document.getElementById('newAdminPw').value;
+    if(!username || !password) return showNotification('يرجى ملء جميع الحقول','error');
+    const btn = document.getElementById('addAdminSubmit');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall('/superuser/admins','POST',{username,password});
+      showNotification(`✅ تم إنشاء الأدمن: ${username}`,'success');
+      closeModal(); renderSuperAdmins();
+    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 إضافة'; }
+  };
+}
+
+function openEditAdminModal(uid, oldUsername) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✏️ تعديل أدمن: ${oldUsername}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-group"><label>اسم المستخدم الجديد <span class="req">*</span></label>
+      <input type="text" id="editAdminUser" value="${oldUsername}"></div>
+    <div class="form-group"><label>كلمة المرور الجديدة <span style="font-size:.75rem;color:var(--muted)">(اتركها فارغة إن لم تريد التغيير)</span></label>
+      <input type="password" id="editAdminPw" placeholder="اتركها فارغة للإبقاء على الحالية"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="editAdminSubmit">💾 حفظ التعديلات</button>
+    </div>`);
+  document.getElementById('editAdminSubmit').onclick = async () => {
+    const username = document.getElementById('editAdminUser').value.trim();
+    const password = document.getElementById('editAdminPw').value || null;
+    if(!username) return showNotification('اسم المستخدم مطلوب','error');
+    const btn = document.getElementById('editAdminSubmit');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/superuser/admins/${uid}`,'PUT',{username,password});
+      showNotification('✅ تم تحديث بيانات الأدمن','success');
+      closeModal(); renderSuperAdmins();
+    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ التعديلات'; }
+  };
+}
+
+async function deleteAdmin(uid, username) {
+  if(!confirm(`⚠️ هل أنت متأكد من حذف الأدمن "${username}"؟\nلا يمكن التراجع عن هذا الإجراء.`)) return;
+  try {
+    await apiCall(`/superuser/admins/${uid}`,'DELETE');
+    showNotification(`✅ تم حذف الأدمن: ${username}`,'success');
+    renderSuperAdmins();
+  } catch(e) { showNotification(e.message,'error'); }
+}
+
+/* ══════════════════════════════════════════════════════
+   SUPERUSER — سجل الدخول والإجراءات
+   ══════════════════════════════════════════════════════ */
+async function renderSuperLogs() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+  let data = {total:0,items:[]}, summary = {by_role:{},top_actions:[],recent:[]};
+  try {
+    [data, summary] = await Promise.all([
+      apiCall('/superuser/audit-logs?limit=200'),
+      apiCall('/superuser/audit-logs/summary')
+    ]);
+  } catch(e) { c.innerHTML=`<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`; return; }
+
+  const roleColors  = {superuser:'badge-purple',admin:'badge-blue',driver:'badge-green',reporter:'badge-yellow'};
+  const roleLabels  = {superuser:'سوبر يوزر',admin:'أدمن',driver:'سائق',reporter:'مراقب'};
+  const actionLabels= {login:'تسجيل دخول',create_admin:'إنشاء أدمن',update_admin:'تعديل أدمن',delete_admin:'حذف أدمن',data_reset:'مسح بيانات'};
+
+  const byRole   = summary.by_role || {};
+  const statsHtml = Object.entries(byRole).map(([role,cnt])=>`
+    <div class="stat-card">
+      <div class="stat-icon">${role==='superuser'?'🛡️':role==='admin'?'👑':role==='driver'?'🚗':'👁️'}</div>
+      <div class="stat-value">${cnt}</div>
+      <div class="stat-label">عمليات ${roleLabels[role]||role}</div>
+    </div>`).join('');
+
+  window._allLogs = data.items || [];
+
+  const tableRows = (rows) => rows.length===0
+    ? `<tr><td colspan="6" style="text-align:center;color:var(--muted)">لا توجد سجلات</td></tr>`
+    : rows.map(r=>`
+        <tr>
+          <td style="font-family:monospace;font-size:.75rem;color:var(--muted)">${fmtDT(r.created_at)}</td>
+          <td><b>${r.username}</b></td>
+          <td><span class="badge ${roleColors[r.role]||'badge-blue'}">${roleLabels[r.role]||r.role}</span></td>
+          <td><span class="badge badge-green">${actionLabels[r.action]||r.action}</span></td>
+          <td style="font-size:.8rem;color:var(--muted)">${r.details||'—'}</td>
+          <td style="font-family:monospace;font-size:.72rem;color:var(--muted)">${r.ip_address||'—'}</td>
+        </tr>`).join('');
+
+  c.innerHTML = `
+    <div class="stats-row">${statsHtml}</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 سجل الدخول والإجراءات <span style="font-size:.78rem;font-weight:400;color:var(--muted)">(${data.total} إجمالي)</span></div>
+        <button class="btn btn-ghost btn-sm" onclick="renderSuperLogs()">🔄 تحديث</button>
+      </div>
+      <div class="filters-bar" style="margin-bottom:1rem">
+        <select id="logFilterRole" onchange="filterLogs()">
+          <option value="">كل الأدوار</option>
+          <option value="superuser">🛡️ سوبر يوزر</option>
+          <option value="admin">👑 أدمن</option>
+          <option value="driver">🚗 سائق</option>
+          <option value="reporter">👁️ مراقب</option>
+        </select>
+        <input type="text" id="logFilterUser" placeholder="🔍 بحث باسم المستخدم" oninput="filterLogs()">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>التاريخ والوقت</th><th>المستخدم</th><th>الدور</th><th>الإجراء</th><th>التفاصيل</th><th>IP</th>
+          </tr></thead>
+          <tbody id="logsTableBody">${tableRows(window._allLogs)}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function filterLogs() {
+  const role     = document.getElementById('logFilterRole')?.value || '';
+  const user     = (document.getElementById('logFilterUser')?.value || '').toLowerCase();
+  const logs     = window._allLogs || [];
+  const filtered = logs.filter(r=>(!role||r.role===role)&&(!user||r.username.toLowerCase().includes(user)));
+  const roleColors  = {superuser:'badge-purple',admin:'badge-blue',driver:'badge-green',reporter:'badge-yellow'};
+  const roleLabels  = {superuser:'سوبر يوزر',admin:'أدمن',driver:'سائق',reporter:'مراقب'};
+  const actionLabels= {login:'تسجيل دخول',create_admin:'إنشاء أدمن',update_admin:'تعديل أدمن',delete_admin:'حذف أدمن',data_reset:'مسح بيانات'};
+  const tbody = document.getElementById('logsTableBody');
+  if(!tbody) return;
+  tbody.innerHTML = filtered.length===0
+    ? `<tr><td colspan="6" style="text-align:center;color:var(--muted)">لا توجد نتائج</td></tr>`
+    : filtered.map(r=>`
+        <tr>
+          <td style="font-family:monospace;font-size:.75rem;color:var(--muted)">${fmtDT(r.created_at)}</td>
+          <td><b>${r.username}</b></td>
+          <td><span class="badge ${roleColors[r.role]||'badge-blue'}">${roleLabels[r.role]||r.role}</span></td>
+          <td><span class="badge badge-green">${actionLabels[r.action]||r.action}</span></td>
+          <td style="font-size:.8rem;color:var(--muted)">${r.details||'—'}</td>
+          <td style="font-family:monospace;font-size:.72rem;color:var(--muted)">${r.ip_address||'—'}</td>
+        </tr>`).join('');
 }
 
 
