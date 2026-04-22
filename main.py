@@ -1010,6 +1010,31 @@ async def set_garage(tid: int, body: dict, cu: dict = Depends(get_user)):
         c.execute("UPDATE trips SET garage_location=? WHERE id=?", (loc, tid))
         return {"ok": True}
 
+@app.put("/trips/{tid}/odometer")
+async def edit_trip_odometer(tid: int, body: dict, cu: dict = Depends(require_admin)):
+    """Admin-only: edit start/end odometer for a trip."""
+    start_odo = body.get("start_odometer")
+    end_odo   = body.get("end_odometer")
+    if start_odo is None and end_odo is None:
+        raise HTTPException(400, "يجب إدخال عداد البداية أو النهاية على الأقل")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, start_odometer, end_odometer FROM trips WHERE id=?", (tid,))
+        trip = c.fetchone()
+        if not trip:
+            raise HTTPException(404, "الرحلة غير موجودة")
+        new_start = float(start_odo) if start_odo is not None else trip["start_odometer"]
+        new_end   = float(end_odo)   if end_odo   is not None else trip["end_odometer"]
+        if new_start is not None and new_start < 0:
+            raise HTTPException(400, "عداد البداية يجب أن يكون موجباً")
+        if new_end is not None and new_start is not None and new_end <= new_start:
+            raise HTTPException(400, "عداد النهاية يجب أن يكون أكبر من عداد البداية")
+        c.execute("UPDATE trips SET start_odometer=?, end_odometer=? WHERE id=?",
+                  (new_start, new_end, tid))
+        log_event("trip_odometer_edited", admin=cu["username"], trip_id=tid,
+                  start_odometer=new_start, end_odometer=new_end)
+        return {"ok": True, "trip_id": tid, "start_odometer": new_start, "end_odometer": new_end}
+
 @app.post("/trips/end-current", response_model=TripResp)
 async def end_current(body: dict, cu: dict = Depends(get_user)):
     did = cu.get("driver_id") if cu["role"] == "driver" else body.get("driver_id")

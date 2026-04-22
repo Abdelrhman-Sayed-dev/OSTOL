@@ -1099,7 +1099,7 @@ function formatLocation(loc, asGarage=false) {
 /* ── TRIPS TABLE ── */
 function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
   if(!trips.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات</p></div>';
-  return `<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>عداد البداية</th><th>عداد النهاية</th><th>موقع البداية</th><th>موقع النهاية</th><th>موقع الجراج</th><th>ملاحظات</th><th>الحالة</th></tr></thead><tbody>
+  return `<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>عداد البداية</th><th>عداد النهاية</th><th>موقع البداية</th><th>موقع النهاية</th><th>موقع الجراج</th><th>ملاحظات</th><th>الحالة</th><th>تعديل</th></tr></thead><tbody>
   ${trips.map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
@@ -1112,7 +1112,14 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
       <td><strong>${t.end_odometer!=null?t.end_odometer+' كم':'—'}</strong></td>
       <td>${formatLocation(t.start_location)}</td><td>${formatLocation(t.end_location)}</td><td>${formatLocation(garageLoc, true)}</td>
       <td style="font-size:.8rem;max-width:110px">${t.notes||'—'}</td>
-      <td>${!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>'}</td></tr>`;
+      <td>${!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>'}</td>
+      <td>${!isReporter()?`<button class="btn btn-ghost btn-sm edit-odo"
+        data-id="${t.id}"
+        data-start="${t.start_odometer??''}"
+        data-end="${t.end_odometer??''}"
+        data-driver="${dName}"
+        data-active="${!t.end_time?'1':'0'}"
+        title="تعديل العداد">✏️ عداد</button>`:'—'}</td></tr>`;
   }).join('')}</tbody></table>`;
 }
 
@@ -1165,6 +1172,71 @@ function clearTripFilters(){
   ['ftDriver','ftCar','ftStatus'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const fd=document.getElementById('ftDate');if(fd)fd.value='';
   filterTrips();
+}
+
+/* ── تعديل عداد الرحلة ── */
+document.addEventListener('click', async e=>{
+  const btn = e.target.closest('.edit-odo');
+  if(!btn) return;
+  const tid      = +btn.dataset.id;
+  const curStart = btn.dataset.start;
+  const curEnd   = btn.dataset.end;
+  const dName    = btn.dataset.driver;
+  const isActive = btn.dataset.active === '1';
+  openEditOdoModal(tid, curStart, curEnd, dName, isActive);
+});
+
+function openEditOdoModal(tid, curStart, curEnd, dName, isActive) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✏️ تعديل عداد الرحلة #${tid}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;
+                padding:.8rem 1rem;margin-bottom:1.1rem;font-size:.85rem;color:#92400e">
+      ⚠️ هذا التعديل يؤثر على بيانات الرحلة ويظهر للسائق فوراً — تأكد من الأرقام قبل الحفظ
+    </div>
+    <div style="background:#f0fdf9;border:1px solid #86efac;border-radius:8px;
+                padding:.65rem 1rem;margin-bottom:1rem;font-size:.83rem;color:#166534">
+      👤 السائق: <strong>${dName}</strong>
+    </div>
+    <div class="form-group">
+      <label>عداد البداية (كم)</label>
+      <input type="number" id="odoStart" value="${curStart}" min="0" step="0.1"
+             placeholder="مثال: 54200">
+    </div>
+    <div class="form-group">
+      <label>عداد النهاية (كم) ${isActive?'<span style="font-size:.75rem;color:#94a3b8">(الرحلة جارية — اختياري)</span>':''}</label>
+      <input type="number" id="odoEnd" value="${curEnd}" min="0" step="0.1"
+             placeholder="${isActive?'لم تنته بعد':'مثال: 54500'}"
+             ${isActive&&!curEnd?'':''}>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="odoSaveBtn">💾 حفظ التعديل</button>
+    </div>`);
+
+  document.getElementById('odoSaveBtn').onclick = async () => {
+    const startVal = document.getElementById('odoStart').value.trim();
+    const endVal   = document.getElementById('odoEnd').value.trim();
+    if(!startVal) return showNotification('عداد البداية مطلوب','error');
+    const body = { start_odometer: parseFloat(startVal) };
+    if(endVal !== '') body.end_odometer = parseFloat(endVal);
+    if(isNaN(body.start_odometer)) return showNotification('قيمة عداد البداية غير صحيحة','error');
+    if(body.end_odometer !== undefined && isNaN(body.end_odometer))
+      return showNotification('قيمة عداد النهاية غير صحيحة','error');
+    const btn = document.getElementById('odoSaveBtn');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/trips/${tid}/odometer`,'PUT', body);
+      showNotification(`✅ تم تعديل عداد الرحلة #${tid} بنجاح`,'success');
+      closeModal();
+      await renderTripsSection();
+    } catch(err) {
+      showNotification(err.message,'error');
+      btn.disabled=false; btn.textContent='💾 حفظ التعديل';
+    }
+  };
 }
 function exportCSV(){
   const trips=window._tripsData||[],drivers=window._driversData||[],cars=window._carsData||[];
