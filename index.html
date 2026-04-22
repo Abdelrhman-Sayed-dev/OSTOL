@@ -1566,6 +1566,7 @@ async function renderPermissionsSection() {
 }
 
 /* ── SILENT GPS — runs in background, no UI feedback ── */
+// maximumAge=0 دايماً عشان نضمن موقع جديد وليس من الكاش
 function silentGetLocation(timeoutMs=10000) {
   return new Promise(resolve => {
     if(!navigator.geolocation){ resolve(''); return; }
@@ -1573,18 +1574,18 @@ function silentGetLocation(timeoutMs=10000) {
     let done = false;
     const finish = val => { if(!done){ done=true; resolve(val); } };
 
-    // المرحلة الأولى: دقة منخفضة (سريعة — تعمل على WiFi/شبكة بدون GPS)
+    // المرحلة الأولى: دقة منخفضة — maximumAge=0 لضمان موقع حديث
     navigator.geolocation.getCurrentPosition(
       p => finish(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
       () => {
-        // المرحلة الثانية: لو فشلت المنخفضة، جرّب الدقة العالية مع مهلة أقصر
+        // المرحلة الثانية: دقة عالية مع maximumAge=0
         navigator.geolocation.getCurrentPosition(
           p => finish(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
           () => finish(''),
           { enableHighAccuracy:true, timeout: Math.min(timeoutMs, 8000), maximumAge:0 }
         );
       },
-      { enableHighAccuracy:false, timeout: Math.min(timeoutMs, 5000), maximumAge:30000 }
+      { enableHighAccuracy:false, timeout: Math.min(timeoutMs, 5000), maximumAge:0 }
     );
 
     // ضمان الانتهاء قبل انتهاء المهلة الكلية
@@ -1813,7 +1814,7 @@ function captureGPS(fieldId) {
         {enableHighAccuracy:true, timeout:12000, maximumAge:0}
       );
     },
-    {enableHighAccuracy:false, timeout:5000, maximumAge:30000}
+    {enableHighAccuracy:false, timeout:5000, maximumAge:0}
   );
 }
 

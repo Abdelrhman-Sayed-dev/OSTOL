@@ -216,6 +216,7 @@ def migrate_db():
             notes TEXT DEFAULT ''
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_garage_driver ON garage_records(driver_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_garage_driver_loc ON garage_records(driver_id, location, recorded_at)")
 
         # SETTINGS
         c.execute("""CREATE TABLE IF NOT EXISTS app_settings(
@@ -676,6 +677,23 @@ def enrich(d: dict) -> dict:
         d.setdefault(k, None)
     return d
 
+def validate_coordinates(loc: str) -> bool:
+    """
+    تتحقق إن الموقع على شكل 'lat,lon' وإن القيم في النطاق الصحيح.
+    مثال صحيح: '30.355400,31.304600'
+    """
+    if not loc or not loc.strip():
+        return False
+    parts = loc.strip().split(",")
+    if len(parts) != 2:
+        return False
+    try:
+        lat = float(parts[0].strip())
+        lon = float(parts[1].strip())
+        return -90 <= lat <= 90 and -180 <= lon <= 180
+    except (ValueError, TypeError):
+        return False
+
 def paginate(query_result: list, page: int, limit: int) -> dict:
     total = len(query_result)
     start = (page - 1) * limit
@@ -1031,24 +1049,37 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         if c.fetchone():
             raise HTTPException(400, "لديك رحلة نشطة — أنهها أولاً")
 
-        # ── جيب آخر موقع جراج للسائق دا ──
-        # لو الـ frontend مبعتش start_location، نستخدم آخر موقع جراج مسجّل
-        effective_start_location = (trip.start_location or "").strip()
+        # ── حدد موقع البداية الفعلي ──
+        # الأولوية: (1) موقع صحيح من الـ frontend، (2) آخر موقع جراج مسجّل
+        raw_start = (trip.start_location or "").strip()
+        effective_start_location = raw_start if validate_coordinates(raw_start) else ""
+
         if not effective_start_location:
             c.execute(
-                "SELECT location FROM garage_records WHERE driver_id=? ORDER BY id DESC LIMIT 1",
+                "SELECT id, location FROM garage_records WHERE driver_id=? ORDER BY id DESC LIMIT 1",
                 (trip.driver_id,)
             )
             last_garage = c.fetchone()
             if last_garage:
                 effective_start_location = last_garage["location"]
+                log_event("trip_start_location_from_garage",
+                          driver_id=trip.driver_id,
+                          garage_record_id=last_garage["id"],
+                          location=effective_start_location)
+            else:
+                log_event("trip_start_location_missing", driver_id=trip.driver_id,
+                          raw_sent=raw_start)
+        else:
+            log_event("trip_start_location_from_gps", driver_id=trip.driver_id,
+                      location=effective_start_location)
 
         now = datetime.utcnow().isoformat() + "Z"
         c.execute("""INSERT INTO trips(driver_id,car_id,start_time,start_odometer,start_location,garage_location)
                      VALUES(?,?,?,?,?,'')""",
                   (trip.driver_id, trip.car_id, now, trip.start_odometer, effective_start_location))
         tid = c.lastrowid
-        log_event("trip_started", trip_id=tid, driver_id=trip.driver_id)
+        log_event("trip_started", trip_id=tid, driver_id=trip.driver_id,
+                  car_id=trip.car_id, start_location=effective_start_location)
         return {"id":tid,"driver_id":trip.driver_id,"car_id":trip.car_id,
                 "start_time":now,"end_time":None,"start_odometer":trip.start_odometer,
                 "end_odometer":None,"start_location":effective_start_location,
@@ -1248,38 +1279,101 @@ async def get_workshops(cu: dict = Depends(get_user)):
 
 @app.post("/garage/record")
 async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_user)):
-    if not rec.location or not rec.location.strip():
+    # ── التحقق من الموقع — يجب أن يكون إحداثيات صحيحة ──
+    loc = (rec.location or "").strip()
+    if not loc:
         raise HTTPException(400, "موقع الجراج مطلوب — يجب السماح بالوصول للموقع")
+    if not validate_coordinates(loc):
+        log_event("garage_invalid_coordinates", driver_id=rec.driver_id, raw=loc)
+        raise HTTPException(400, f"إحداثيات الموقع غير صالحة: '{loc}' — تأكد من تفعيل GPS")
     if cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
+
     now = datetime.utcnow().isoformat() + "Z"
+    log_event("garage_record_attempt", driver_id=rec.driver_id,
+              car_id=rec.car_id, location=loc, odometer=rec.odometer)
+
     with get_db() as conn:
         c = conn.cursor()
-        # Auto-end active trip with garage data
-        c.execute("SELECT id,start_odometer FROM trips WHERE driver_id=? AND end_time IS NULL", (rec.driver_id,))
+
+        # ── Anti-duplicate: امنع إدخال نفس الموقع خلال 60 ثانية ──
+        # يحمي من double-tap أو إعادة إرسال من الـ frontend
+        c.execute("""
+            SELECT id, recorded_at FROM garage_records
+            WHERE driver_id=? AND location=?
+            ORDER BY id DESC LIMIT 1
+        """, (rec.driver_id, loc))
+        last_same = c.fetchone()
+        if last_same:
+            try:
+                last_time = datetime.fromisoformat(last_same["recorded_at"].replace("Z", "+00:00"))
+                diff_seconds = (datetime.now(last_time.tzinfo) - last_time).total_seconds()
+                if diff_seconds < 60:
+                    log_event("garage_duplicate_blocked", driver_id=rec.driver_id,
+                              location=loc, seconds_ago=diff_seconds,
+                              existing_id=last_same["id"])
+                    raise HTTPException(429, "تم تسجيل نفس الموقع مؤخراً — انتظر دقيقة قبل إعادة المحاولة")
+            except HTTPException:
+                raise
+            except Exception:
+                pass  # لو التحليل فشل نكمل عادي
+
+        # ── جيب الرحلة النشطة لهذا السائق ──
+        c.execute("""
+            SELECT id, start_odometer, start_location
+            FROM trips
+            WHERE driver_id=? AND end_time IS NULL
+            ORDER BY id DESC LIMIT 1
+        """, (rec.driver_id,))
         active = c.fetchone()
         auto_ended = False
+
         if active:
             start_odo = float(active["start_odometer"] or 0)
-            # Use garage odometer if valid, else None
-            end_odo = float(rec.odometer) if (rec.odometer and float(rec.odometer or 0) > start_odo) else None
-            # ALWAYS end the trip with garage time + location
+            # استخدم العداد المرسل لو أكبر من البداية، وإلا اتركه NULL
+            end_odo = None
+            if rec.odometer is not None:
+                try:
+                    end_odo_val = float(rec.odometer)
+                    if end_odo_val > start_odo:
+                        end_odo = end_odo_val
+                    else:
+                        log_event("garage_odometer_ignored",
+                                  driver_id=rec.driver_id, trip_id=active["id"],
+                                  sent=rec.odometer, start_odo=start_odo)
+                except (TypeError, ValueError):
+                    pass
+
+            # أنهي الرحلة النشطة بموقع + وقت الجراج
             c.execute(
                 "UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
-                (now, end_odo, rec.location, rec.location, active["id"])
+                (now, end_odo, loc, loc, active["id"])
             )
             auto_ended = True
-        c.execute("INSERT INTO garage_records(driver_id,car_id,location,recorded_at,notes) VALUES(?,?,?,?,?)",
-                  (rec.driver_id, rec.car_id, rec.location, now, rec.notes or ""))
+            log_event("garage_trip_auto_ended",
+                      trip_id=active["id"], driver_id=rec.driver_id,
+                      garage_location=loc, end_odometer=end_odo)
+        else:
+            log_event("garage_no_active_trip", driver_id=rec.driver_id)
+
+        # ── أدرج سجل الجراج الجديد ──
+        c.execute(
+            "INSERT INTO garage_records(driver_id,car_id,location,recorded_at,notes) VALUES(?,?,?,?,?)",
+            (rec.driver_id, rec.car_id, loc, now, rec.notes or "")
+        )
         rid = c.lastrowid
+        log_event("garage_record_inserted", garage_record_id=rid,
+                  driver_id=rec.driver_id, location=loc)
+
         plate = dn = None
         if rec.car_id:
             c.execute("SELECT plate FROM cars WHERE id=?", (rec.car_id,))
             r = c.fetchone(); plate = r["plate"] if r else None
         c.execute("SELECT name FROM drivers WHERE id=?", (rec.driver_id,))
         dr = c.fetchone(); dn = dr["name"] if dr else None
+
         return {"id":rid,"driver_id":rec.driver_id,"car_id":rec.car_id,
-                "location":rec.location,"recorded_at":now,"notes":rec.notes or "",
+                "location":loc,"recorded_at":now,"notes":rec.notes or "",
                 "driver_name":dn,"car_plate":plate,"trip_auto_ended":auto_ended}
 
 @app.get("/garage/records")
