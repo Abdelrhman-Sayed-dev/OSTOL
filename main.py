@@ -392,16 +392,22 @@ def require_admin_or_reporter(cu: dict = Depends(get_user)):
     return cu
 
 def write_audit_log(user_id: int, username: str, role: str,
-                    action: str, details: str = "", ip: str = ""):
-    """Write an audit log entry — fire and forget (non-blocking)."""
+                    action: str, details: str = "", ip: str = "",
+                    cursor=None):
+    """Write an audit log entry.
+    Pass an existing cursor to reuse the same transaction,
+    or leave None to open a new connection.
+    """
     try:
         now = datetime.utcnow().isoformat() + "Z"
-        with get_db() as conn:
-            conn.cursor().execute(
-                """INSERT INTO audit_logs(user_id,username,role,action,details,ip_address,created_at)
-                   VALUES(?,?,?,?,?,?,?)""",
-                (user_id, username, role, action, details, ip, now)
-            )
+        sql = """INSERT INTO audit_logs(user_id,username,role,action,details,ip_address,created_at)
+                 VALUES(?,?,?,?,?,?,?)"""
+        params = (user_id, username, role, action, details, ip, now)
+        if cursor is not None:
+            cursor.execute(sql, params)
+        else:
+            with get_db() as conn:
+                conn.cursor().execute(sql, params)
     except Exception as e:
         log.warning(f"audit_log write failed: {e}")
 
@@ -713,11 +719,12 @@ async def login(request: Request, data: LoginReq):
                   (refresh_token, refresh_exp, datetime.utcnow().isoformat() + "Z", u["id"]))
 
         log_event("login_success", user_id=u["id"], role=u["role"])
-        # ── Audit log ──
+        # ── Audit log — pass cursor to avoid nested get_db() conflict ──
         write_audit_log(
             user_id=u["id"], username=u["username"], role=u["role"],
             action="login", details="تسجيل دخول ناجح",
-            ip=request.client.host if request.client else ""
+            ip=request.client.host if request.client else "",
+            cursor=c
         )
         return LoginResp(
             access_token=access_token,
@@ -1442,7 +1449,7 @@ async def reset_data(
                 c.execute(f"DELETE FROM sqlite_sequence WHERE name='{tbl}'")
             except Exception:
                 pass
-        c.execute("DELETE FROM users WHERE role NOT IN ('admin','superuser')")
+        c.execute("DELETE FROM users WHERE role NOT IN ('admin','superuser','reporter')")
         log_event("data_reset", admin=cu["username"])
         write_audit_log(cu["user_id"], cu["username"], cu["role"],
                         "data_reset", "تم مسح جميع البيانات التشغيلية",
@@ -1558,7 +1565,108 @@ async def superuser_delete_admin(
     write_audit_log(cu["user_id"], cu["username"], cu["role"],
                     "delete_admin", f"حذف أدمن: {deleted_username} (id={uid})",
                     request.client.host if request.client else "")
+
     return {"message": f"تم حذف الأدمن: {deleted_username}"}
+
+
+# ── Reporters management ─────────────────────────────────────────────────────
+
+@app.get("/superuser/reporters")
+async def superuser_list_reporters(cu: dict = Depends(require_superuser)):
+    """عرض جميع حسابات المراقبين."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT id, username, role, created_at, last_login
+                     FROM users WHERE role='reporter' ORDER BY id""")
+        return [dict(r) for r in c.fetchall()]
+
+
+@app.post("/superuser/reporters", status_code=201)
+async def superuser_create_reporter(
+    request: Request,
+    body: AdminCreate,
+    cu: dict = Depends(require_superuser)
+):
+    """إضافة مراقب جديد."""
+    username = body.username.strip()
+    if len(username) < 2:
+        raise HTTPException(400, "اسم المستخدم قصير جداً")
+    validate_password(body.password)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE username=?", (username,))
+        if c.fetchone():
+            raise HTTPException(400, "اسم المستخدم موجود مسبقاً")
+        c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+                  (username, _hash(body.password), "reporter"))
+        new_id = c.lastrowid
+    log_event("reporter_created_by_super", new_username=username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "create_reporter", f"إنشاء مراقب جديد: {username}",
+                    request.client.host if request.client else "")
+    return {"id": new_id, "username": username, "role": "reporter"}
+
+
+@app.put("/superuser/reporters/{uid}")
+async def superuser_update_reporter(
+    request: Request,
+    uid: int,
+    body: AdminUpdate,
+    cu: dict = Depends(require_superuser)
+):
+    """تعديل اسم المستخدم أو كلمة مرور مراقب."""
+    new_username = body.username.strip()
+    if len(new_username) < 2:
+        raise HTTPException(400, "اسم المستخدم قصير جداً")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, role FROM users WHERE id=?", (uid,))
+        target = c.fetchone()
+        if not target:
+            raise HTTPException(404, "المستخدم غير موجود")
+        if target["role"] != "reporter":
+            raise HTTPException(403, "لا يمكن تعديل إلا حسابات المراقبين من هنا")
+        c.execute("SELECT id FROM users WHERE username=? AND id!=?", (new_username, uid))
+        if c.fetchone():
+            raise HTTPException(400, "اسم المستخدم مستخدم من قِبل شخص آخر")
+        old_username = target["username"]
+        if body.password:
+            validate_password(body.password)
+            c.execute("UPDATE users SET username=?,password=? WHERE id=?",
+                      (new_username, _hash(body.password), uid))
+        else:
+            c.execute("UPDATE users SET username=? WHERE id=?", (new_username, uid))
+    log_event("reporter_updated_by_super", uid=uid, new_username=new_username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "update_reporter",
+                    f"تعديل مراقب #{uid} من '{old_username}' إلى '{new_username}'"
+                    + (" (مع تغيير كلمة المرور)" if body.password else ""),
+                    request.client.host if request.client else "")
+    return {"message": "تم التحديث", "id": uid, "username": new_username}
+
+
+@app.delete("/superuser/reporters/{uid}")
+async def superuser_delete_reporter(
+    request: Request,
+    uid: int,
+    cu: dict = Depends(require_superuser)
+):
+    """حذف حساب مراقب."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, role FROM users WHERE id=?", (uid,))
+        target = c.fetchone()
+        if not target:
+            raise HTTPException(404, "المستخدم غير موجود")
+        if target["role"] != "reporter":
+            raise HTTPException(403, "لا يمكن حذف إلا حسابات المراقبين من هنا")
+        deleted_username = target["username"]
+        c.execute("DELETE FROM users WHERE id=?", (uid,))
+    log_event("reporter_deleted_by_super", uid=uid, username=deleted_username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "delete_reporter", f"حذف مراقب: {deleted_username} (id={uid})",
+                    request.client.host if request.client else "")
+    return {"message": f"تم حذف المراقب: {deleted_username}"}
 
 
 @app.get("/superuser/audit-logs")
