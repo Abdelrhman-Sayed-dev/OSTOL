@@ -1836,7 +1836,6 @@ async function openStartTripModal() {
     const start_location=document.getElementById('stLoc').value.trim();
     if(!car_id) return showNotification('اختر المركبة','error');
     if(isNaN(start_odometer)||start_odometer<0) return showNotification('عداد البداية غير صحيح','error');
-    if(!start_location) return showNotification('⚠️ سجّل موقع البداية أولاً','error');
     const btn=document.getElementById('stBtn'); btn.disabled=true; btn.textContent='جاري...';
     try{
       await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:+car_id,start_odometer,start_location});

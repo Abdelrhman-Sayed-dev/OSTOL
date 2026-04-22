@@ -1030,15 +1030,28 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         c.execute("SELECT id FROM trips WHERE driver_id=? AND end_time IS NULL", (trip.driver_id,))
         if c.fetchone():
             raise HTTPException(400, "لديك رحلة نشطة — أنهها أولاً")
+
+        # ── جيب آخر موقع جراج للسائق دا ──
+        # لو الـ frontend مبعتش start_location، نستخدم آخر موقع جراج مسجّل
+        effective_start_location = (trip.start_location or "").strip()
+        if not effective_start_location:
+            c.execute(
+                "SELECT location FROM garage_records WHERE driver_id=? ORDER BY id DESC LIMIT 1",
+                (trip.driver_id,)
+            )
+            last_garage = c.fetchone()
+            if last_garage:
+                effective_start_location = last_garage["location"]
+
         now = datetime.utcnow().isoformat() + "Z"
         c.execute("""INSERT INTO trips(driver_id,car_id,start_time,start_odometer,start_location,garage_location)
                      VALUES(?,?,?,?,?,'')""",
-                  (trip.driver_id, trip.car_id, now, trip.start_odometer, trip.start_location))
+                  (trip.driver_id, trip.car_id, now, trip.start_odometer, effective_start_location))
         tid = c.lastrowid
         log_event("trip_started", trip_id=tid, driver_id=trip.driver_id)
         return {"id":tid,"driver_id":trip.driver_id,"car_id":trip.car_id,
                 "start_time":now,"end_time":None,"start_odometer":trip.start_odometer,
-                "end_odometer":None,"start_location":trip.start_location,
+                "end_odometer":None,"start_location":effective_start_location,
                 "end_location":None,"garage_location":None,"notes":None}
 
 @app.post("/trips/end", response_model=TripResp)
