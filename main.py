@@ -211,6 +211,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             driver_id INTEGER NOT NULL,
             car_id INTEGER,
+            trip_id INTEGER,
             location TEXT NOT NULL,
             recorded_at TEXT NOT NULL,
             notes TEXT DEFAULT ''
@@ -302,6 +303,7 @@ def _safe_add_columns(c):
         "drivers":            [("national_id","TEXT DEFAULT ''"),("birth_date","TEXT DEFAULT ''"),
                                ("driver_license_expiry","TEXT DEFAULT ''"),
                                ("vehicle_license_expiry","TEXT DEFAULT ''")],
+        "garage_records":     [("trip_id","INTEGER")],
     }
     for tbl, cols in additions.items():
         for col, col_type in cols:
@@ -1246,18 +1248,20 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
         c.execute("SELECT id,start_odometer FROM trips WHERE driver_id=? AND end_time IS NULL", (rec.driver_id,))
         active = c.fetchone()
         auto_ended = False
+        active_trip_id = None
         if active:
+            active_trip_id = active["id"]
             start_odo = float(active["start_odometer"] or 0)
             # Use garage odometer if valid, else None
             end_odo = float(rec.odometer) if (rec.odometer and float(rec.odometer or 0) > start_odo) else None
             # ALWAYS end the trip with garage time + location
             c.execute(
                 "UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
-                (now, end_odo, rec.location, rec.location, active["id"])
+                (now, end_odo, rec.location, rec.location, active_trip_id)
             )
             auto_ended = True
-        c.execute("INSERT INTO garage_records(driver_id,car_id,location,recorded_at,notes) VALUES(?,?,?,?,?)",
-                  (rec.driver_id, rec.car_id, rec.location, now, rec.notes or ""))
+        c.execute("INSERT INTO garage_records(driver_id,car_id,trip_id,location,recorded_at,notes) VALUES(?,?,?,?,?,?)",
+                  (rec.driver_id, rec.car_id, active_trip_id, rec.location, now, rec.notes or ""))
         rid = c.lastrowid
         plate = dn = None
         if rec.car_id:
@@ -1289,10 +1293,14 @@ async def get_garage_records(cu: dict = Depends(get_user)):
 async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
+        # Group by car_id so each vehicle gets its own latest garage location
+        # (not driver_id, which caused the same location to repeat across trips)
         c.execute("""SELECT g.*,d.name as driver_name,c.plate as car_plate
                      FROM garage_records g
-                     INNER JOIN(SELECT driver_id,MAX(id) as max_id
-                                FROM garage_records GROUP BY driver_id) latest
+                     INNER JOIN(SELECT car_id,MAX(id) as max_id
+                                FROM garage_records
+                                WHERE car_id IS NOT NULL
+                                GROUP BY car_id) latest
                        ON g.id=latest.max_id
                      LEFT JOIN drivers d ON g.driver_id=d.id
                      LEFT JOIN cars c ON g.car_id=c.id

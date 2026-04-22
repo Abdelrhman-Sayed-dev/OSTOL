@@ -1113,8 +1113,9 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
   ${trips.map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
-    const gRec=garageLatest.find(g=>g.car_id===t.car_id);
-    const garageLoc=t.end_time?(t.garage_location||gRec?.location||''):'';
+    // FIXED: use only trip's own garage_location — never fall back to latest garage record
+    // to avoid showing stale/repeated location from a previous trip
+    const garageLoc=t.end_time?(t.garage_location||''):'';
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
       <td>${t.start_time?fmtDT(t.start_time):'—'}</td>
       <td>${t.end_time?fmtDT(t.end_time):'—'}</td>
@@ -1251,7 +1252,7 @@ function openEditOdoModal(tid, curStart, curEnd, dName, isActive) {
 function exportCSV(){
   const trips=window._tripsData||[],drivers=window._driversData||[],cars=window._carsData||[];
   const rows=[['#','السائق','المركبة','وقت البداية','وقت النهاية','عداد البداية','عداد النهاية','موقع البداية','موقع النهاية','موقع الجراج','ملاحظات','الحالة']];
-  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const garageLoc=t.garage_location||gRec?.location||''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer||'',t.end_odometer||'',t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
+  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const garageLoc=t.end_time?(t.garage_location||''):''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer||'',t.end_odometer||'',t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`رحلات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير الرحلات ✅','success');
