@@ -26,10 +26,14 @@ def create_database():
     # ── جدول المستخدمين ──
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT    UNIQUE NOT NULL,
-            password TEXT    NOT NULL,
-            role     TEXT    NOT NULL CHECK(role IN ('admin', 'driver', 'reporter'))
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            username   TEXT    UNIQUE NOT NULL,
+            password   TEXT    NOT NULL,
+            role       TEXT    NOT NULL CHECK(role IN ('superuser', 'admin', 'driver', 'reporter')),
+            created_at TEXT    DEFAULT(datetime('now')),
+            last_login TEXT,
+            refresh_token TEXT,
+            refresh_exp   TEXT
         )
     """)
 
@@ -145,6 +149,20 @@ def create_database():
         )
     """)
 
+    # ── جدول سجلات التدقيق (Audit Log) ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER,
+            username    TEXT NOT NULL,
+            role        TEXT NOT NULL,
+            action      TEXT NOT NULL,
+            details     TEXT DEFAULT '',
+            ip_address  TEXT DEFAULT '',
+            created_at  TEXT NOT NULL
+        )
+    """)
+
     # ── جدول الإعدادات ──
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS app_settings (
@@ -166,6 +184,8 @@ def create_database():
         "CREATE INDEX IF NOT EXISTS idx_dcp_car        ON driver_car_permissions(car_id)",
         "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
         "CREATE INDEX IF NOT EXISTS idx_drivers_user   ON drivers(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_user     ON audit_logs(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_logs(created_at)",
     ]
     for idx in indexes:
         cursor.execute(idx)
@@ -192,6 +212,19 @@ def create_database():
             cursor.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
                            (uname, hash_password(pw), "admin"))
             print(f"✅ Admin: {uname}")
+
+    # ── حسابات السوبر يوزر ──
+    SUPERUSERS = [
+        ("supre mohamed sayed",    "sup@mosayed3904"),
+        ("super abdelrhman sayed", "sup@abdo1414"),
+        ("super mohamed mansour",  "sup@momansour84329"),
+    ]
+    for uname, pw in SUPERUSERS:
+        cursor.execute("SELECT id FROM users WHERE username=?", (uname,))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+                           (uname, hash_password(pw), "superuser"))
+            print(f"✅ Superuser: {uname}")
 
     # ── حسابات الريبورتر (قراءة فقط) ──
     REPORTERS = [

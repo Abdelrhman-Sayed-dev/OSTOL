@@ -100,7 +100,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('admin','driver','reporter')),
+            role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
@@ -224,6 +224,20 @@ def migrate_db():
             updated_at TEXT NOT NULL
         )""")
 
+        # AUDIT LOGS
+        c.execute("""CREATE TABLE IF NOT EXISTS audit_logs(
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER,
+            username   TEXT NOT NULL,
+            role       TEXT NOT NULL,
+            action     TEXT NOT NULL,
+            details    TEXT DEFAULT '',
+            ip_address TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_logs(user_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)")
+
         # Safe migrations for existing columns
         _safe_add_columns(c)
 
@@ -242,17 +256,17 @@ def migrate_db():
 
 def _safe_add_columns(c):
     """Add columns that may not exist in older databases."""
-    # ── Migrate users role CHECK to include 'reporter' ─────────────
+    # ── Migrate users role CHECK to include 'reporter' and 'superuser' ──
     try:
         c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
         row = c.fetchone()
-        if row and 'reporter' not in (row['sql'] or ''):
+        if row and 'superuser' not in (row['sql'] or ''):
             c.execute("PRAGMA foreign_keys=OFF")
             c.execute("""CREATE TABLE IF NOT EXISTS users_migrated(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN('admin','driver','reporter')),
+                role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter')),
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
                 refresh_token TEXT,
@@ -263,7 +277,7 @@ def _safe_add_columns(c):
             c.execute("ALTER TABLE users_migrated RENAME TO users")
             c.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
             c.execute("PRAGMA foreign_keys=ON")
-            log.info("✅ Migrated users role constraint to include 'reporter'")
+            log.info("✅ Migrated users role constraint to include 'superuser'")
     except Exception as e:
         log.warning(f"Role migration skipped: {e}")
 
@@ -362,15 +376,34 @@ async def get_user(
     return result
 
 def require_admin(cu: dict = Depends(get_user)):
-    if cu["role"] != "admin":
+    if cu["role"] not in ("admin", "superuser"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات المدير مطلوبة")
     return cu
 
+def require_superuser(cu: dict = Depends(get_user)):
+    if cu["role"] != "superuser":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات السوبر يوزر مطلوبة")
+    return cu
+
 def require_admin_or_reporter(cu: dict = Depends(get_user)):
-    """Allows admin and reporter (read-only) roles."""
-    if cu["role"] not in ("admin", "reporter"):
+    """Allows superuser, admin and reporter (read-only) roles."""
+    if cu["role"] not in ("superuser", "admin", "reporter"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات غير كافية")
     return cu
+
+def write_audit_log(user_id: int, username: str, role: str,
+                    action: str, details: str = "", ip: str = ""):
+    """Write an audit log entry — fire and forget (non-blocking)."""
+    try:
+        now = datetime.utcnow().isoformat() + "Z"
+        with get_db() as conn:
+            conn.cursor().execute(
+                """INSERT INTO audit_logs(user_id,username,role,action,details,ip_address,created_at)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (user_id, username, role, action, details, ip, now)
+            )
+    except Exception as e:
+        log.warning(f"audit_log write failed: {e}")
 
 # ══════════════════════════════════════════════════════
 # 5. RATE LIMITER
@@ -530,6 +563,12 @@ REPORTERS = [
     ("admin3", "9853247"),
 ]
 
+SUPERUSERS = [
+    ("supre mohamed sayed",    "sup@mosayed3904"),
+    ("super abdelrhman sayed", "sup@abdo1414"),
+    ("super mohamed mansour",  "sup@momansour84329"),
+]
+
 @app.on_event("startup")
 async def startup():
     migrate_db()
@@ -569,6 +608,21 @@ async def startup():
                           (uname, pw_hash, "reporter"))
                 log.info(f"Created reporter: {uname}")
         log.info("✅ Reporter accounts synced")
+
+        # ── Superuser accounts ────────────────────────────────────────
+        c.execute("SELECT username FROM users WHERE role='superuser'")
+        existing_supers = {r['username'] for r in c.fetchall()}
+        allowed_supers  = {u for u,_ in SUPERUSERS}
+        for uname in list(existing_supers - allowed_supers):
+            c.execute("DELETE FROM users WHERE username=? AND role='superuser'", (uname,))
+            log.info(f"Removed old superuser: {uname}")
+        for uname, pw in SUPERUSERS:
+            if uname not in existing_supers:
+                pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+                c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
+                          (uname, pw_hash, "superuser"))
+                log.info(f"Created superuser: {uname}")
+        log.info("✅ Superuser accounts synced")
     log.info("🚀 Fleet Management API started")
 
 # Rate limiter
@@ -659,6 +713,12 @@ async def login(request: Request, data: LoginReq):
                   (refresh_token, refresh_exp, datetime.utcnow().isoformat() + "Z", u["id"]))
 
         log_event("login_success", user_id=u["id"], role=u["role"])
+        # ── Audit log ──
+        write_audit_log(
+            user_id=u["id"], username=u["username"], role=u["role"],
+            action="login", details="تسجيل دخول ناجح",
+            ip=request.client.host if request.client else ""
+        )
         return LoginResp(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -834,7 +894,7 @@ async def update_credentials(did: int, body: dict, cu: dict = Depends(require_ad
 
 @app.get("/drivers/{did}/primary-car")
 async def primary_car(did: int, cu: dict = Depends(get_user)):
-    if cu["role"] != "admin" and cu.get("driver_id") != did:
+    if cu["role"] not in ("admin","superuser") and cu.get("driver_id") != did:
         raise HTTPException(403, "غير مصرح")
     with get_db() as conn:
         c = conn.cursor()
@@ -846,7 +906,7 @@ async def primary_car(did: int, cu: dict = Depends(get_user)):
 
 @app.get("/drivers/{did}/allowed-cars")
 async def allowed_cars(did: int, cu: dict = Depends(get_user)):
-    if cu["role"] != "admin" and cu.get("driver_id") != did:
+    if cu["role"] not in ("admin","superuser") and cu.get("driver_id") != did:
         raise HTTPException(403, "غير مصرح")
     with get_db() as conn:
         c = conn.cursor()
@@ -938,7 +998,7 @@ async def delete_permission(pid: int, cu: dict = Depends(require_admin)):
 async def get_trips(cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
-        if cu["role"] in ("admin", "reporter"):
+        if cu["role"] in ("admin", "reporter", "superuser"):
             c.execute("SELECT * FROM trips ORDER BY id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
@@ -952,7 +1012,7 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         raise HTTPException(400, "العداد يجب أن يكون موجباً")
     with get_db() as conn:
         c = conn.cursor()
-        if cu["role"] != "admin":
+        if cu["role"] not in ("admin", "superuser"):
             did = cu.get("driver_id")
             if trip.driver_id != did:
                 raise HTTPException(403, "لا يمكنك بدء رحلة لسائق آخر")
@@ -983,7 +1043,7 @@ async def end_trip(te: TripEnd, cu: dict = Depends(get_user)):
         trip = c.fetchone()
         if not trip:
             raise HTTPException(404, "الرحلة غير موجودة أو منتهية بالفعل")
-        if cu["role"] != "admin" and trip["driver_id"] != cu.get("driver_id"):
+        if cu["role"] not in ("admin","superuser") and trip["driver_id"] != cu.get("driver_id"):
             raise HTTPException(403, "لا يمكنك إنهاء رحلة سائق آخر")
         if te.end_odometer <= trip["start_odometer"]:
             raise HTTPException(400, f"عداد النهاية يجب أن يكون أكبر من {trip['start_odometer']}")
@@ -1005,7 +1065,7 @@ async def set_garage(tid: int, body: dict, cu: dict = Depends(get_user)):
         trip = c.fetchone()
         if not trip:
             raise HTTPException(404, "الرحلة غير موجودة")
-        if cu["role"] != "admin" and trip["driver_id"] != cu.get("driver_id"):
+        if cu["role"] not in ("admin","superuser") and trip["driver_id"] != cu.get("driver_id"):
             raise HTTPException(403, "غير مصرح")
         c.execute("UPDATE trips SET garage_location=? WHERE id=?", (loc, tid))
         return {"ok": True}
@@ -1105,7 +1165,7 @@ async def delete_user(uid: int, cu: dict = Depends(require_admin)):
 async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     if rec.type not in ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng","oil","filter","tire","battery","belt","other"]:
         raise HTTPException(400, "نوع غير صالح")
-    if cu["role"] != "admin" and rec.driver_id != cu.get("driver_id"):
+    if cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
     # Enforce admin price for drivers
     final_price = rec.price if cu["role"] == "admin" else 0.0
@@ -1147,7 +1207,7 @@ async def get_workshops(cu: dict = Depends(get_user)):
            LEFT JOIN cars c ON w.vehicle_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
-        if cu["role"] in ("admin", "reporter"):
+        if cu["role"] in ("admin", "reporter", "superuser"):
             c.execute(q + " ORDER BY w.id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
@@ -1170,7 +1230,7 @@ async def get_workshops(cu: dict = Depends(get_user)):
 async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_user)):
     if not rec.location or not rec.location.strip():
         raise HTTPException(400, "موقع الجراج مطلوب — يجب السماح بالوصول للموقع")
-    if cu["role"] != "admin" and rec.driver_id != cu.get("driver_id"):
+    if cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
@@ -1210,7 +1270,7 @@ async def get_garage_records(cu: dict = Depends(get_user)):
                FROM garage_records g
                LEFT JOIN drivers d ON g.driver_id=d.id
                LEFT JOIN cars c ON g.car_id=c.id"""
-        if cu["role"] in ("admin", "reporter"):
+        if cu["role"] in ("admin", "reporter", "superuser"):
             c.execute(q + " ORDER BY g.id DESC LIMIT 500")
         else:
             did = cu.get("driver_id")
@@ -1241,7 +1301,7 @@ async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
 async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = Depends(get_user)):
     if rep.type not in ("emergency", "accident"):
         raise HTTPException(400, "نوع البلاغ غير صالح")
-    if cu["role"] != "admin" and rep.driver_id != cu.get("driver_id"):
+    if cu["role"] not in ("admin","superuser") and rep.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
@@ -1274,8 +1334,7 @@ async def get_emergency_reports(cu: dict = Depends(get_user)):
            LEFT JOIN cars c ON e.car_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
-        if cu["role"] in ("admin", "reporter"):
-            c.execute(q + " ORDER BY e.id DESC LIMIT 500")
+        if cu["role"] in ("admin", "reporter", "superuser"):
         else:
             did = cu.get("driver_id")
             if not did: return []
@@ -1313,7 +1372,7 @@ async def update_emergency_action(rid: int, body: EmergencyAction, cu: dict = De
 
 @app.get("/emergency/unread-count")
 async def unread_count(cu: dict = Depends(get_user)):
-    if cu["role"] not in ("admin", "reporter"):
+    if cu["role"] not in ("admin", "reporter", "superuser"):
         return {"count": 0}
     with get_db() as conn:
         c = conn.cursor()
@@ -1382,12 +1441,180 @@ async def reset_data(
                 c.execute(f"DELETE FROM sqlite_sequence WHERE name='{tbl}'")
             except Exception:
                 pass
-        c.execute("DELETE FROM users WHERE role != 'admin'")
+        c.execute("DELETE FROM users WHERE role NOT IN ('admin','superuser')")
         log_event("data_reset", admin=cu["username"])
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "data_reset", "تم مسح جميع البيانات التشغيلية",
+                        request.client.host if request.client else "")
         return {"message": "تم مسح جميع البيانات التشغيلية"}
 
 # ══════════════════════════════════════════════════════
-# 23. ENTRY POINT
+# 23. SUPERUSER — Admin Management + Audit Logs
+# ══════════════════════════════════════════════════════
+
+class AdminCreate(BaseModel):
+    username: str
+    password: str
+
+class AdminUpdate(BaseModel):
+    username: str
+    password: Optional[str] = None   # اختياري — لو فارغ مش هيتغير
+
+
+@app.get("/superuser/admins")
+async def superuser_list_admins(cu: dict = Depends(require_superuser)):
+    """عرض جميع حسابات الأدمن."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT id, username, role, created_at, last_login
+                     FROM users WHERE role='admin' ORDER BY id""")
+        return [dict(r) for r in c.fetchall()]
+
+
+@app.post("/superuser/admins", status_code=201)
+async def superuser_create_admin(
+    request: Request,
+    body: AdminCreate,
+    cu: dict = Depends(require_superuser)
+):
+    """إضافة أدمن جديد."""
+    username = body.username.strip()
+    if len(username) < 2:
+        raise HTTPException(400, "اسم المستخدم قصير جداً")
+    validate_password(body.password)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE username=?", (username,))
+        if c.fetchone():
+            raise HTTPException(400, "اسم المستخدم موجود مسبقاً")
+        c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+                  (username, _hash(body.password), "admin"))
+        new_id = c.lastrowid
+    log_event("admin_created_by_super", new_username=username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "create_admin", f"إنشاء أدمن جديد: {username}",
+                    request.client.host if request.client else "")
+    return {"id": new_id, "username": username, "role": "admin"}
+
+
+@app.put("/superuser/admins/{uid}")
+async def superuser_update_admin(
+    request: Request,
+    uid: int,
+    body: AdminUpdate,
+    cu: dict = Depends(require_superuser)
+):
+    """تعديل اسم المستخدم أو كلمة مرور أدمن."""
+    new_username = body.username.strip()
+    if len(new_username) < 2:
+        raise HTTPException(400, "اسم المستخدم قصير جداً")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, role FROM users WHERE id=?", (uid,))
+        target = c.fetchone()
+        if not target:
+            raise HTTPException(404, "المستخدم غير موجود")
+        if target["role"] != "admin":
+            raise HTTPException(403, "لا يمكن تعديل إلا حسابات الأدمن من هنا")
+        # تأكد من عدم تكرار اسم المستخدم
+        c.execute("SELECT id FROM users WHERE username=? AND id!=?", (new_username, uid))
+        if c.fetchone():
+            raise HTTPException(400, "اسم المستخدم مستخدم من قِبل شخص آخر")
+        old_username = target["username"]
+        if body.password:
+            validate_password(body.password)
+            c.execute("UPDATE users SET username=?,password=? WHERE id=?",
+                      (new_username, _hash(body.password), uid))
+        else:
+            c.execute("UPDATE users SET username=? WHERE id=?", (new_username, uid))
+    log_event("admin_updated_by_super", uid=uid, new_username=new_username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "update_admin",
+                    f"تعديل أدمن #{uid} من '{old_username}' إلى '{new_username}'"
+                    + (" (مع تغيير كلمة المرور)" if body.password else ""),
+                    request.client.host if request.client else "")
+    return {"message": "تم التحديث", "id": uid, "username": new_username}
+
+
+@app.delete("/superuser/admins/{uid}")
+async def superuser_delete_admin(
+    request: Request,
+    uid: int,
+    cu: dict = Depends(require_superuser)
+):
+    """حذف حساب أدمن."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, role FROM users WHERE id=?", (uid,))
+        target = c.fetchone()
+        if not target:
+            raise HTTPException(404, "المستخدم غير موجود")
+        if target["role"] != "admin":
+            raise HTTPException(403, "لا يمكن حذف إلا حسابات الأدمن من هنا")
+        deleted_username = target["username"]
+        c.execute("DELETE FROM users WHERE id=?", (uid,))
+    log_event("admin_deleted_by_super", uid=uid, username=deleted_username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "delete_admin", f"حذف أدمن: {deleted_username} (id={uid})",
+                    request.client.host if request.client else "")
+    return {"message": f"تم حذف الأدمن: {deleted_username}"}
+
+
+@app.get("/superuser/audit-logs")
+async def superuser_audit_logs(
+    cu: dict = Depends(require_superuser),
+    limit: int = 200,
+    offset: int = 0,
+    role: Optional[str] = None,
+    username: Optional[str] = None,
+):
+    """
+    عرض سجل التدقيق الكامل.
+    يمكن الفلترة بـ ?role=admin أو ?username=xyz
+    """
+    limit = min(limit, 500)
+    base  = "SELECT * FROM audit_logs"
+    conditions: list[str] = []
+    params: list           = []
+    if role:
+        conditions.append("role=?"); params.append(role)
+    if username:
+        conditions.append("username LIKE ?"); params.append(f"%{username}%")
+    if conditions:
+        base += " WHERE " + " AND ".join(conditions)
+    base += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params += [limit, offset]
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(base, params)
+        rows = [dict(r) for r in c.fetchall()]
+        # total count
+        count_q = "SELECT COUNT(*) as cnt FROM audit_logs"
+        if conditions:
+            count_q += " WHERE " + " AND ".join(conditions)
+        c.execute(count_q, params[:-2])
+        total = c.fetchone()["cnt"]
+    return {"total": total, "limit": limit, "offset": offset, "items": rows}
+
+
+@app.get("/superuser/audit-logs/summary")
+async def audit_logs_summary(cu: dict = Depends(require_superuser)):
+    """ملخص إحصائي سريع لسجل التدقيق."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT role, COUNT(*) as count FROM audit_logs GROUP BY role""")
+        by_role = {r["role"]: r["count"] for r in c.fetchall()}
+        c.execute("""SELECT action, COUNT(*) as count FROM audit_logs
+                     GROUP BY action ORDER BY count DESC LIMIT 10""")
+        top_actions = [dict(r) for r in c.fetchall()]
+        c.execute("""SELECT username, role, action, created_at
+                     FROM audit_logs ORDER BY id DESC LIMIT 20""")
+        recent = [dict(r) for r in c.fetchall()]
+    return {"by_role": by_role, "top_actions": top_actions, "recent": recent}
+
+
+# ══════════════════════════════════════════════════════
+# 24. ENTRY POINT
 # ══════════════════════════════════════════════════════
 
 if __name__ == "__main__":
