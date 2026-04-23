@@ -2061,39 +2061,29 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
 
 @app.get("/reports/operational")
 async def operational_report(
-    car_id:       Optional[int] = None,
-    period_type:  str = "month",   # day | month | year
-    period_value: Optional[str] = None,   # 2026-04-23 | 2026-04 | 2026
+    car_id:      Optional[int] = None,
+    date_from:   Optional[str] = None,
+    date_to:     Optional[str] = None,
+    report_type: str = "summary",   # summary | detailed
+    group_by:    str = "day",       # day | month | year  (used only when detailed)
     cu: dict = Depends(require_admin_or_reporter)
 ):
     """
-    period_type=day   + period_value=2026-04-23 → individual trips for that day
-    period_type=month + period_value=2026-04    → km per day within that month
-    period_type=year  + period_value=2026       → km per month within that year
+    report_type=summary  → one total row for the entire period
+    report_type=detailed:
+        group_by=day   → one row per day   (with day name)
+        group_by=month → one row per month
+        group_by=year  → one row per year
     """
-    import calendar as cal_mod
-
-    # Derive date_from / date_to from period_type + period_value
-    date_from = date_to = None
-    if period_value:
-        if period_type == "day":
-            date_from = date_to = period_value          # e.g. 2026-04-23
-        elif period_type == "month":
-            y, m = int(period_value[:4]), int(period_value[5:7])
-            last = cal_mod.monthrange(y, m)[1]
-            date_from = f"{y:04d}-{m:02d}-01"
-            date_to   = f"{y:04d}-{m:02d}-{last:02d}"
-        elif period_type == "year":
-            y = period_value[:4]
-            date_from = f"{y}-01-01"
-            date_to   = f"{y}-12-31"
-
     with get_db() as conn:
         c = conn.cursor()
 
-        base_where = ["t.start_odometer IS NOT NULL",
-                      "t.end_odometer   IS NOT NULL",
-                      "t.end_odometer > t.start_odometer"]
+        base_where = [
+            "t.end_time IS NOT NULL",
+            "t.start_odometer IS NOT NULL",
+            "t.end_odometer   IS NOT NULL",
+            "t.end_odometer    > t.start_odometer",
+        ]
         params = []
 
         if car_id:
@@ -2106,56 +2096,49 @@ async def operational_report(
             base_where.append("date(t.start_time) <= ?")
             params.append(date_to)
 
-        # For day-level: include active trips too (no end_time filter)
-        # For month/year: only completed trips
-        if period_type != "day":
-            base_where.append("t.end_time IS NOT NULL")
-
         where_sql = " AND ".join(base_where)
 
-        if period_type == "day":
-            # Individual trips with driver name
-            sql = f"""
-                SELECT t.id, t.start_time, t.end_time,
-                       t.start_odometer, t.end_odometer,
-                       ROUND(t.end_odometer - t.start_odometer, 1) AS km,
-                       d.name AS driver_name
-                FROM trips t
-                LEFT JOIN drivers d ON t.driver_id = d.id
-                WHERE {where_sql}
-                ORDER BY t.start_time
-            """
-            c.execute(sql, params)
-            rows = [dict(r) for r in c.fetchall()]
-        elif period_type == "month":
-            # Group by day
-            sql = f"""
-                SELECT strftime('%Y-%m-%d', t.start_time) AS period,
-                       COUNT(t.id)                         AS trip_count,
-                       ROUND(SUM(t.end_odometer - t.start_odometer),1) AS total_km,
-                       MIN(t.start_odometer) AS min_odo,
-                       MAX(t.end_odometer)   AS max_odo
+        if report_type == "summary":
+            # Single summary row
+            c.execute(f"""
+                SELECT
+                    COUNT(t.id)                              AS trip_count,
+                    ROUND(SUM(t.end_odometer - t.start_odometer), 1) AS total_km,
+                    MIN(t.start_odometer)                    AS min_odo,
+                    MAX(t.end_odometer)                      AS max_odo
                 FROM trips t
                 WHERE {where_sql}
-                GROUP BY strftime('%Y-%m-%d', t.start_time)
-                ORDER BY period
-            """
-            c.execute(sql, params)
-            rows = [dict(r) for r in c.fetchall()]
-        else:  # year
-            # Group by month
-            sql = f"""
-                SELECT strftime('%Y-%m', t.start_time) AS period,
-                       COUNT(t.id)                      AS trip_count,
-                       ROUND(SUM(t.end_odometer - t.start_odometer),1) AS total_km,
-                       MIN(t.start_odometer) AS min_odo,
-                       MAX(t.end_odometer)   AS max_odo
+            """, params)
+            row = dict(c.fetchone())
+            rows = [{
+                "period":     "إجمالي الفترة",
+                "trip_count": row["trip_count"],
+                "total_km":   row["total_km"] or 0,
+                "min_odo":    row["min_odo"],
+                "max_odo":    row["max_odo"],
+            }]
+
+        else:
+            # Detailed — group by day / month / year
+            if group_by == "day":
+                grp = "strftime('%Y-%m-%d', t.start_time)"
+            elif group_by == "month":
+                grp = "strftime('%Y-%m', t.start_time)"
+            else:  # year
+                grp = "strftime('%Y', t.start_time)"
+
+            c.execute(f"""
+                SELECT
+                    {grp}                                        AS period,
+                    COUNT(t.id)                                  AS trip_count,
+                    ROUND(SUM(t.end_odometer - t.start_odometer),1) AS total_km,
+                    MIN(t.start_odometer)                        AS min_odo,
+                    MAX(t.end_odometer)                          AS max_odo
                 FROM trips t
                 WHERE {where_sql}
-                GROUP BY strftime('%Y-%m', t.start_time)
-                ORDER BY period
-            """
-            c.execute(sql, params)
+                GROUP BY {grp}
+                ORDER BY {grp}
+            """, params)
             rows = [dict(r) for r in c.fetchall()]
 
         # Car info
@@ -2167,25 +2150,24 @@ async def operational_report(
                 car_info = dict(row)
 
         # Grand totals
-        tot_where = " AND ".join([w for w in base_where])
         c.execute(f"""
             SELECT COUNT(t.id) as tc,
                    ROUND(SUM(t.end_odometer - t.start_odometer),1) as tkm,
                    MIN(t.start_odometer) as min_odo,
                    MAX(t.end_odometer)   as max_odo
-            FROM trips t WHERE {tot_where}
+            FROM trips t WHERE {where_sql}
         """, params)
         tot = dict(c.fetchone())
 
         return {
             "rows":        rows,
             "car_info":    car_info,
-            "total_km":    tot["tkm"] or 0,
-            "total_trips": tot["tc"]  or 0,
+            "total_km":    tot["tkm"]  or 0,
+            "total_trips": tot["tc"]   or 0,
             "min_odo":     tot["min_odo"],
             "max_odo":     tot["max_odo"],
-            "period_type": period_type,
-            "period_value": period_value,
+            "report_type": report_type,
+            "group_by":    group_by,
         }
 
 
