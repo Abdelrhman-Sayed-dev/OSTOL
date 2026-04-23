@@ -1487,15 +1487,31 @@ async def get_garage_records(cu: dict = Depends(get_user)):
 async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
+        # Group by car_id to always return the latest garage record PER CAR
+        # (not per driver, so that the map pin reflects the actual current parking spot)
         c.execute("""SELECT g.*,d.name as driver_name,c.plate as car_plate
                      FROM garage_records g
-                     INNER JOIN(SELECT driver_id,MAX(id) as max_id
-                                FROM garage_records GROUP BY driver_id) latest
+                     INNER JOIN(SELECT car_id, MAX(id) as max_id
+                                FROM garage_records
+                                WHERE car_id IS NOT NULL
+                                GROUP BY car_id) latest
                        ON g.id=latest.max_id
                      LEFT JOIN drivers d ON g.driver_id=d.id
                      LEFT JOIN cars c ON g.car_id=c.id
                      ORDER BY g.recorded_at DESC""")
-        return [dict(r) for r in c.fetchall()]
+        rows = [dict(r) for r in c.fetchall()]
+        # Also include records without car_id grouped by driver (fallback)
+        c.execute("""SELECT g.*,d.name as driver_name,NULL as car_plate
+                     FROM garage_records g
+                     INNER JOIN(SELECT driver_id, MAX(id) as max_id
+                                FROM garage_records
+                                WHERE car_id IS NULL
+                                GROUP BY driver_id) latest
+                       ON g.id=latest.max_id
+                     LEFT JOIN drivers d ON g.driver_id=d.id
+                     ORDER BY g.recorded_at DESC""")
+        rows += [dict(r) for r in c.fetchall()]
+        return rows
 
 # ══════════════════════════════════════════════════════
 # 20. EMERGENCY — Audio stored as file, not base64

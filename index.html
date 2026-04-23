@@ -811,6 +811,11 @@ function openAddDriverModal() {
 
     <div class="form-group"><label>الحالة</label><select id="mDrvStatus"><option value="active">نشط</option><option value="inactive">غير نشط</option></select></div>
 
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>الرقم الثابت</label><input id="mDrvFixed" placeholder="مثال: 206338"></div>
+      <div class="form-group"><label>الفرع / الإدارة</label><input id="mDrvBranch" placeholder="مثال: فرع القاهرة"></div>
+    </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mDrvSave">➕ إضافة السائق</button>
@@ -826,6 +831,8 @@ function openAddDriverModal() {
     const birth_date             = document.getElementById('mDrvBirth').value;
     const driver_license_expiry  = document.getElementById('mDrvLic').value;
     const vehicle_license_expiry = document.getElementById('mCarLic').value;
+    const fixed_number           = document.getElementById('mDrvFixed').value.trim();
+    const branch                 = document.getElementById('mDrvBranch').value.trim();
 
     if(!name)     return showNotification('اسم السائق مطلوب','error');
     if(!phone)    return showNotification('رقم الهاتف مطلوب','error');
@@ -836,7 +843,8 @@ function openAddDriverModal() {
     try{
       await apiCall('/drivers','POST',{
         name, phone, username, password, status,
-        national_id, birth_date, driver_license_expiry, vehicle_license_expiry
+        national_id, birth_date, driver_license_expiry, vehicle_license_expiry,
+        fixed_number, branch
       });
       showNotification(`✅ تم إضافة السائق "${name}" — يمكنه الدخول بـ: ${username}`,'success');
       closeModal();
@@ -877,6 +885,11 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
       </select>
     </div>
 
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>الرقم الثابت</label><input id="mEditFixed" value="${arguments[9]||''}"></div>
+      <div class="form-group"><label>الفرع / الإدارة</label><input id="mEditBranch" value="${arguments[10]||''}"></div>
+    </div>
+
     <hr style="margin:1rem 0;border:none;border-top:1px solid var(--border)">
     <div style="background:#f0fdf9;border:1.5px solid #10b981;border-radius:12px;padding:1rem;margin-bottom:.5rem">
       <div style="font-size:.82rem;font-weight:700;color:#065f46;margin-bottom:.7rem">🔐 تعديل بيانات تسجيل الدخول</div>
@@ -908,6 +921,8 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
     const cl   = document.getElementById('mEditCarLic').value;
     const uname= document.getElementById('mEditUser').value.trim();
     const upass= document.getElementById('mEditPass').value.trim();
+    const fixedNum = document.getElementById('mEditFixed').value.trim();
+    const branchVal= document.getElementById('mEditBranch').value.trim();
 
     if(!n||!p)   return showNotification('الاسم والهاتف مطلوبان','error');
     if(!uname)   return showNotification('اسم المستخدم مطلوب','error');
@@ -920,7 +935,8 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
       await apiCall(`/drivers/${id}`,'PUT',{
         name:n, phone:p, status:s,
         national_id:nid, birth_date:bd,
-        driver_license_expiry:dl, vehicle_license_expiry:cl
+        driver_license_expiry:dl, vehicle_license_expiry:cl,
+        fixed_number:fixedNum, branch:branchVal
       });
 
       // Update credentials if username changed or password provided
@@ -993,60 +1009,128 @@ async function renderCarsSection() {
 
 function openAddCarModal(editId='', editCar={}) {
   const isEdit = !!editId;
+  const eqTypes = [
+    {v:'',l:'— اختر التصنيف —'},
+    {v:'وسائل انتقال',l:'🚗 وسائل انتقال'},
+    {v:'معدات نقل',l:'🚛 معدات نقل'},
+    {v:'معدات رفع',l:'🏗️ معدات رفع'},
+    {v:'معدات تحريك تربة',l:'🚜 معدات تحريك تربة'},
+    {v:'معدات ثابتة',l:'⚙️ معدات ثابتة'},
+    {v:'معدات إنتاجية',l:'🏭 معدات إنتاجية'},
+    {v:'معدات مساعدة',l:'🔧 معدات مساعدة'},
+    {v:'معدات وآلات ورش',l:'🛠️ معدات وآلات ورش'},
+    {v:'أخرى',l:'📦 أخرى'},
+  ];
+  const eqOpts = eqTypes.map(t=>`<option value="${t.v}" ${editCar.equipment_type===t.v?'selected':''}>${t.l}</option>`).join('');
   openModal(`
     <div class="modal-header">
       <div class="modal-title">${isEdit?'✏️ تعديل مركبة':'➕ إضافة مركبة جديدة'}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    <div class="two-col" style="gap:.8rem;margin-bottom:0">
-      <div class="form-group">
-        <label>نوع / موديل المركبة <span class="req">*</span></label>
-        <input id="mCarModel" placeholder="سيارة بيك اب كابينة مزدوجة (تويوتا)" value="${editCar.model||''}">
+
+    <div style="background:#f0f9ff;border:1.5px solid #38bdf8;border-radius:10px;padding:.8rem 1rem;margin-bottom:.8rem">
+      <div style="font-size:.8rem;font-weight:700;color:#0369a1;margin-bottom:.6rem">🚘 البيانات الأساسية</div>
+      <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
+        <div class="form-group" style="margin-bottom:0">
+          <label>اسم المركبة</label>
+          <input id="mCarName" placeholder="مثال: التويوتا البيضاء" value="${editCar.car_name||''}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>نوع / موديل المركبة <span class="req">*</span></label>
+          <input id="mCarModel" placeholder="سيارة بيك اب كابينة مزدوجة (تويوتا)" value="${editCar.model||''}">
+        </div>
       </div>
-      <div class="form-group">
-        <label>رقم اللوحة <span class="req">*</span></label>
-        <input id="mCarPlate" placeholder="528 ي ج ص" value="${editCar.plate||''}">
+      <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
+        <div class="form-group" style="margin-bottom:0">
+          <label>رقم اللوحة <span class="req">*</span></label>
+          <input id="mCarPlate" placeholder="ر ق د/856" value="${editCar.plate||''}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>الكود</label>
+          <input id="mCarCode" placeholder="مثال: 3306/11/28/07" value="${editCar.car_code||''}">
+        </div>
+      </div>
+      <div class="two-col" style="gap:.8rem;margin-bottom:0">
+        <div class="form-group" style="margin-bottom:0">
+          <label>رقم الشاسيه</label>
+          <input id="mCarChassis" placeholder="مثال: 400585799" value="${editCar.chassis||''}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>رقم المحرك</label>
+          <input id="mCarEngine" placeholder="مثال: ENG123456" value="${editCar.engine_number||''}">
+        </div>
       </div>
     </div>
-    <div class="form-group">
-      <label>رقم الشاسيه</label>
-      <input id="mCarChassis" placeholder="مثال: MROES12G903025849" value="${editCar.chassis||''}">
-    </div>
-    <div class="two-col" style="gap:.8rem;margin-bottom:0">
-      <div class="form-group">
+
+    <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
+      <div class="form-group" style="margin-bottom:0">
+        <label>سنة الصنع</label>
+        <input id="mCarYear" type="number" placeholder="مثال: 2011" min="1980" max="2030" value="${editCar.year||''}">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
         <label>تاريخ انتهاء رخصة السيارة</label>
         <input type="date" id="mCarLicExp" value="${editCar.car_license_expiry||''}">
       </div>
-      <div class="form-group">
-        <label>القطاع</label>
-        <input id="mCarSector" placeholder="مثال: القطاع" value="${editCar.sector||''}">
+    </div>
+
+    <div class="form-group">
+      <label>تصنيف المعدة / المركبة <span class="req">*</span></label>
+      <select id="mCarEquipType">${eqOpts}</select>
+    </div>
+
+    <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
+      <div class="form-group" style="margin-bottom:0">
+        <label>المشروع</label>
+        <input id="mCarProject" placeholder="مثال: القطار السريع" value="${editCar.project||''}">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>الفرع / الإدارة</label>
+        <input id="mCarBranch" placeholder="مثال: فرع القاهرة" value="${editCar.branch||''}">
       </div>
     </div>
-    <div class="form-group">
-      <label>الحالة</label>
-      <select id="mCarStatus">
-        <option value="available" ${(editCar.status||'available')==='available'?'selected':''}>● متاحة</option>
-        <option value="maintenance" ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
-      </select>
+
+    <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
+      <div class="form-group" style="margin-bottom:0">
+        <label>القطاع</label>
+        <input id="mCarSector" placeholder="مثال: القطاع الشمالي" value="${editCar.sector||''}">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>الحالة</label>
+        <select id="mCarStatus">
+          <option value="available" ${(editCar.status||'available')==='available'?'selected':''}>● متاحة</option>
+          <option value="maintenance" ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
+        </select>
+      </div>
     </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mCarSave">${isEdit?'💾 حفظ التعديلات':'➕ إضافة'}</button>
     </div>`);
 
   document.getElementById('mCarSave').onclick = async () => {
-    const plate   = document.getElementById('mCarPlate').value.trim();
-    const model   = document.getElementById('mCarModel').value.trim();
-    const status  = document.getElementById('mCarStatus').value;
-    const chassis = document.getElementById('mCarChassis').value.trim();
+    const plate          = document.getElementById('mCarPlate').value.trim();
+    const model          = document.getElementById('mCarModel').value.trim();
+    const status         = document.getElementById('mCarStatus').value;
+    const chassis        = document.getElementById('mCarChassis').value.trim();
     const car_license_expiry = document.getElementById('mCarLicExp').value;
-    const sector  = document.getElementById('mCarSector').value.trim();
+    const sector         = document.getElementById('mCarSector').value.trim();
+    const car_name       = document.getElementById('mCarName').value.trim();
+    const car_code       = document.getElementById('mCarCode').value.trim();
+    const engine_number  = document.getElementById('mCarEngine').value.trim();
+    const year           = document.getElementById('mCarYear').value.trim();
+    const equipment_type = document.getElementById('mCarEquipType').value;
+    const project        = document.getElementById('mCarProject').value.trim();
+    const branch         = document.getElementById('mCarBranch').value.trim();
     if(!plate||!model) return showNotification('اللوحة والموديل مطلوبان','error');
+    if(!equipment_type) return showNotification('يرجى اختيار تصنيف المركبة','error');
     const btn = document.getElementById('mCarSave');
     btn.disabled=true; btn.textContent='جاري...';
     try{
-      if(isEdit) await apiCall(`/cars/${editId}`,'PUT',{plate,model,status,chassis,car_license_expiry,sector});
-      else       await apiCall('/cars','POST',{plate,model,status,chassis,car_license_expiry,sector});
+      const payload = {plate,model,status,chassis,car_license_expiry,sector,
+                       car_name,car_code,engine_number,year,equipment_type,project,branch};
+      if(isEdit) await apiCall(`/cars/${editId}`,'PUT',payload);
+      else       await apiCall('/cars','POST',payload);
       showNotification(isEdit?'✅ تم التحديث':'✅ تمت الإضافة','success');
       closeModal(); await renderCarsSection();
     }catch(e){
