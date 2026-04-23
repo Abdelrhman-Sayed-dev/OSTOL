@@ -299,6 +299,25 @@ def _safe_add_columns(c):
         except Exception:
             existing[tbl] = set()
 
+    # Create driver_requests table if not exists
+    c.execute("""CREATE TABLE IF NOT EXISTS driver_requests (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        driver_id     INTEGER NOT NULL,
+        type          TEXT NOT NULL,
+        notes         TEXT DEFAULT '',
+        new_odometer  REAL,
+        trip_id       INTEGER,
+        status        TEXT DEFAULT 'pending',
+        admin_notes   TEXT DEFAULT '',
+        admin_message TEXT DEFAULT '',
+        handled_by    TEXT DEFAULT '',
+        handled_at    TEXT DEFAULT '',
+        created_at    TEXT NOT NULL,
+        FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
+
     additions = {
         "users":              [("refresh_token","TEXT"),("refresh_exp","TEXT"),("last_login","TEXT")],
         "emergency_reports":  [("audio_url","TEXT DEFAULT ''"),("is_handled","INTEGER DEFAULT 0"),
@@ -1934,6 +1953,105 @@ async def audit_logs_summary(cu: dict = Depends(require_superuser)):
                      FROM audit_logs ORDER BY id DESC LIMIT 20""")
         recent = [dict(r) for r in c.fetchall()]
     return {"by_role": by_role, "top_actions": top_actions, "recent": recent}
+
+
+# ══════════════════════════════════════════════════════
+# 23. DRIVER REQUESTS
+# ══════════════════════════════════════════════════════
+
+REQUEST_TYPES = {
+    "odometer_change": "تغيير قراءة العداد",
+    "permission":      "طلب إذن",
+    "leave":           "طلب إجازة",
+    "other":           "طلب آخر",
+}
+
+@app.post("/requests", status_code=201)
+async def create_request(body: dict, cu: dict = Depends(get_user)):
+    req_type     = (body.get("type") or "").strip()
+    notes        = (body.get("notes") or "").strip()
+    new_odometer = body.get("new_odometer")
+    trip_id      = body.get("trip_id")
+
+    if req_type not in REQUEST_TYPES:
+        raise HTTPException(400, "نوع الطلب غير صالح")
+
+    driver_id = cu.get("driver_id")
+    if not driver_id:
+        raise HTTPException(403, "فقط السائقون يمكنهم تقديم الطلبات")
+
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""INSERT INTO driver_requests
+                     (driver_id,type,notes,new_odometer,trip_id,status,created_at)
+                     VALUES(?,?,?,?,?,'pending',?)""",
+                  (driver_id, req_type, notes,
+                   float(new_odometer) if new_odometer else None,
+                   int(trip_id) if trip_id else None, now))
+        rid = c.lastrowid
+        conn.commit()
+    log_event("request_created", driver_id=driver_id, request_id=rid, type=req_type)
+    return {"id": rid, "status": "pending"}
+
+
+@app.get("/requests")
+async def get_requests(cu: dict = Depends(get_user)):
+    with get_db() as conn:
+        c = conn.cursor()
+        # Driver sees only their own requests
+        if cu["role"] == "driver":
+            driver_id = cu.get("driver_id")
+            c.execute("""SELECT r.*, d.name as driver_name
+                         FROM driver_requests r
+                         LEFT JOIN drivers d ON r.driver_id=d.id
+                         WHERE r.driver_id=?
+                         ORDER BY r.id DESC""", (driver_id,))
+        else:
+            # Admin/superuser/reporter see all
+            c.execute("""SELECT r.*, d.name as driver_name
+                         FROM driver_requests r
+                         LEFT JOIN drivers d ON r.driver_id=d.id
+                         ORDER BY r.id DESC""")
+        return [dict(row) for row in c.fetchall()]
+
+
+@app.get("/requests/pending-count")
+async def requests_pending_count(cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) as cnt FROM driver_requests WHERE status='pending'")
+        row = c.fetchone()
+        return {"count": row["cnt"] if row else 0}
+
+
+@app.put("/requests/{rid}")
+async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
+    if cu["role"] not in ("admin", "superuser"):
+        raise HTTPException(403, "غير مصرح")
+
+    status        = (body.get("status") or "").strip()
+    admin_notes   = (body.get("admin_notes") or "").strip()
+    admin_message = (body.get("admin_message") or "").strip()
+
+    if status not in ("approved", "rejected"):
+        raise HTTPException(400, "الحالة يجب أن تكون approved أو rejected")
+
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM driver_requests WHERE id=?", (rid,))
+        req = c.fetchone()
+        if not req:
+            raise HTTPException(404, "الطلب غير موجود")
+        c.execute("""UPDATE driver_requests
+                     SET status=?, admin_notes=?, admin_message=?,
+                         handled_by=?, handled_at=?
+                     WHERE id=?""",
+                  (status, admin_notes, admin_message, cu["username"], now, rid))
+        conn.commit()
+    log_event("request_handled", request_id=rid, status=status, handled_by=cu["username"])
+    return {"ok": True}
 
 
 # ══════════════════════════════════════════════════════

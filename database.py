@@ -161,6 +161,25 @@ def create_database():
         )
     """)
 
+    # ── جدول طلبات السائقين ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS driver_requests (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id       INTEGER NOT NULL,
+            type            TEXT NOT NULL CHECK(type IN ('odometer_change','permission','leave','other')),
+            notes           TEXT DEFAULT '',
+            new_odometer    REAL,
+            trip_id         INTEGER,
+            status          TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+            admin_notes     TEXT DEFAULT '',
+            admin_message   TEXT DEFAULT '',
+            handled_by      TEXT DEFAULT '',
+            handled_at      TEXT DEFAULT '',
+            created_at      TEXT NOT NULL,
+            FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
+        )
+    """)
+
     # ── جدول سجلات التدقيق (Audit Log) ──
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS audit_logs (

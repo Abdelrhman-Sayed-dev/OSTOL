@@ -600,6 +600,7 @@ function buildAdminNav() {
     {id:'workshops',  icon:'🛠️', label:'الورش'},
     {id:'map',        icon:'📍', label:'خريطة الأسطول'},
     {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
+    {id:'requests',   icon:'📋', label:'طلبات السائقين'},
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
   ];
   if(isSuperuser()) {
@@ -622,6 +623,7 @@ function renderNav(items) {
     <button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
       <span class="nav-icon">${item.icon}</span> ${item.label}
       ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
+      ${item.id==='requests' && window._pendingRequestsCount>0 ? `<span class="nav-badge">${window._pendingRequestsCount}</span>` : ''}
     </button>`).join('');
 }
 
@@ -646,6 +648,7 @@ async function renderSection(id) {
     case 'workshops':      await renderAdminWorkshops(); break;
     case 'map':            await renderMapSection(); break;
     case 'emergencies':    await renderEmergenciesSection(); break;
+    case 'requests':       await renderRequestsSection(); break;
     case 'permissions':    await renderPermissionsSection(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
@@ -1591,6 +1594,149 @@ function buildMapSummaryTable(trips,drivers,cars,garageLatest){
   }).join('')}</tbody></table>`;
 }
 
+/* ── REQUESTS SECTION (Admin) ── */
+async function renderRequestsSection() {
+  const c = document.getElementById('pageContent');
+  let reqs = [];
+  try {
+    reqs = await apiCall('/requests');
+    window._pendingRequestsCount = reqs.filter(r=>r.status==='pending').length;
+  } catch(e) { reqs = []; }
+
+  const TYPE_LABELS = {
+    odometer_change:'🔢 تغيير العداد',
+    permission:'🙋 طلب إذن',
+    leave:'🏖️ طلب إجازة',
+    other:'📝 طلب آخر',
+  };
+  const STATUS_STYLE = {
+    pending:  {bg:'#fff7ed',border:'#fde68a',badge:'#f59e0b',txt:'⏳ بانتظار الرد'},
+    approved: {bg:'#f0fdf9',border:'#6ee7b7',badge:'#10b981',txt:'✅ مقبول'},
+    rejected: {bg:'#fef2f2',border:'#fca5a5',badge:'#ef4444',txt:'❌ مرفوض'},
+  };
+
+  const filterBtns = `
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+      <button class="btn btn-ghost btn-sm req-filter-btn active" data-filter="all" onclick="filterRequests('all',this)">الكل (${reqs.length})</button>
+      <button class="btn btn-ghost btn-sm req-filter-btn" data-filter="pending" onclick="filterRequests('pending',this)">⏳ بانتظار الرد (${reqs.filter(r=>r.status==='pending').length})</button>
+      <button class="btn btn-ghost btn-sm req-filter-btn" data-filter="approved" onclick="filterRequests('approved',this)">✅ مقبولة</button>
+      <button class="btn btn-ghost btn-sm req-filter-btn" data-filter="rejected" onclick="filterRequests('rejected',this)">❌ مرفوضة</button>
+    </div>`;
+
+  const rows = reqs.map(r => {
+    const st = STATUS_STYLE[r.status] || STATUS_STYLE.pending;
+    const tl = TYPE_LABELS[r.type] || r.type;
+    const isPending = r.status === 'pending';
+    return `
+      <div class="req-card" data-status="${r.status}"
+           style="border:1.5px solid ${st.border};border-radius:14px;background:${st.bg};
+                  margin-bottom:.8rem;overflow:hidden">
+        <!-- Header -->
+        <div style="padding:.7rem 1rem;display:flex;justify-content:space-between;align-items:center;
+                    border-bottom:1px solid ${st.border}">
+          <div style="display:flex;align-items:center;gap:.7rem">
+            <span style="font-weight:800;font-size:.9rem;color:#1e293b">${tl}</span>
+            <span style="background:${st.badge};color:white;border-radius:20px;
+                         font-size:.68rem;font-weight:700;padding:.15rem .55rem">${st.txt}</span>
+          </div>
+          <span style="font-size:.72rem;color:#64748b">${fmtDT(r.created_at)}</span>
+        </div>
+        <!-- Body -->
+        <div style="padding:.8rem 1rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem">
+            <div style="font-size:.82rem"><span style="color:#64748b">السائق: </span><strong>${r.driver_name||'—'}</strong></div>
+            ${r.type==='odometer_change'&&r.new_odometer?`<div style="font-size:.82rem"><span style="color:#64748b">العداد المطلوب: </span><strong style="color:#3b82f6">${r.new_odometer} كم</strong></div>`:'<div></div>'}
+          </div>
+          ${r.notes?`<div style="font-size:.82rem;color:#475569;background:white;border-radius:8px;
+                                  padding:.45rem .7rem;margin-bottom:.6rem;border:1px solid #e2e8f0">
+            📝 ${r.notes}</div>`:''}
+          ${!isPending&&r.admin_notes?`<div style="font-size:.82rem;color:#475569;background:white;border-radius:8px;
+                                          padding:.45rem .7rem;margin-bottom:.6rem;border:1px solid #e2e8f0">
+            🗒️ ملاحظات الإدارة: ${r.admin_notes}</div>`:''}
+          ${!isPending&&r.admin_message?`<div style="font-size:.82rem;background:#f0fdf9;border-radius:8px;
+                                              padding:.45rem .7rem;margin-bottom:.6rem;border:1.5px solid #6ee7b7">
+            💬 رسالة للسائق: ${r.admin_message}</div>`:''}
+          ${!isPending?`<div style="font-size:.75rem;color:#94a3b8">بواسطة: ${r.handled_by} — ${fmtDT(r.handled_at)}</div>`:''}
+          ${isPending&&!isReporter()?`
+          <div style="display:flex;gap:.5rem;margin-top:.6rem">
+            <button class="btn btn-primary btn-sm" onclick="openHandleRequestModal(${r.id},'approved')"
+                    style="background:#10b981;border-color:#10b981">✅ قبول</button>
+            <button class="btn btn-sm" onclick="openHandleRequestModal(${r.id},'rejected')"
+                    style="background:#ef4444;color:white;border:none">❌ رفض</button>
+          </div>`:''}
+        </div>
+      </div>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 طلبات السائقين</div>
+        <button class="btn btn-ghost btn-sm" onclick="renderRequestsSection()">🔄 تحديث</button>
+      </div>
+      <div style="padding:0 1.2rem 1rem">
+        ${filterBtns}
+        ${reqs.length===0
+          ? '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد طلبات بعد</p></div>'
+          : `<div id="reqCardsList">${rows}</div>`}
+      </div>
+    </div>`;
+}
+
+function filterRequests(status, btn) {
+  document.querySelectorAll('.req-filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.req-card').forEach(card=>{
+    card.style.display = (status==='all' || card.dataset.status===status) ? 'block' : 'none';
+  });
+}
+
+function openHandleRequestModal(rid, defaultStatus) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${defaultStatus==='approved'?'✅ قبول الطلب':'❌ رفض الطلب'}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>الإجراء</label>
+      <select id="hReqStatus">
+        <option value="approved" ${defaultStatus==='approved'?'selected':''}>✅ قبول الطلب</option>
+        <option value="rejected" ${defaultStatus==='rejected'?'selected':''}>❌ رفض الطلب</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>ملاحظات داخلية (للإدارة فقط)</label>
+      <input id="hReqNotes" placeholder="ملاحظات اختيارية...">
+    </div>
+    <div class="form-group">
+      <label>رسالة للسائق</label>
+      <textarea id="hReqMsg" rows="3" placeholder="اكتب رسالة ستظهر للسائق في صفحته..."
+                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);
+                       border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="hReqSave">💾 حفظ الإجراء</button>
+    </div>`);
+
+  document.getElementById('hReqSave').onclick = async () => {
+    const status        = document.getElementById('hReqStatus').value;
+    const admin_notes   = document.getElementById('hReqNotes').value.trim();
+    const admin_message = document.getElementById('hReqMsg').value.trim();
+    const btn = document.getElementById('hReqSave');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/requests/${rid}`,'PUT',{status,admin_notes,admin_message});
+      showNotification('✅ تم تسجيل الإجراء','success');
+      closeModal();
+      await renderRequestsSection();
+    } catch(e) {
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent='💾 حفظ الإجراء';
+    }
+  };
+}
+
 /* ── EMERGENCIES SECTION (Admin) ── */
 async function renderEmergenciesSection() {
   const reports=await loadEmergencies();
@@ -2463,8 +2609,17 @@ async function pollNotifications() {
       showNotification(`🚨 ${count} بلاغ طوارئ/حوادث جديد — <a href="#" onclick="switchSection('emergencies');return false;" style="color:white;text-decoration:underline">عرض</a>`,'emergency',6000);
     }
     lastUnreadCount=count;
-    renderNav(buildAdminNav());
   }catch(e){}
+  try{
+    const rr=await apiCall('/requests/pending-count');
+    const prev=window._pendingRequestsCount||0;
+    const newCount=rr.count||0;
+    if(newCount>prev && prev>=0 && newCount>0){
+      showNotification(`📋 ${newCount} طلب جديد من السائقين — <a href="#" onclick="switchSection('requests');return false;" style="color:white;text-decoration:underline">عرض</a>`,'info',6000);
+    }
+    window._pendingRequestsCount=newCount;
+  }catch(e){}
+  renderNav(buildAdminNav());
 }
 
 /* ── INIT ── */
@@ -2675,6 +2830,17 @@ async function renderDriverSinglePage() {
         </div>
       </div>
 
+      <!-- REQUESTS -->
+      <div class="dp-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+          <div class="dp-label" style="margin-bottom:0">📋 طلباتي</div>
+          <button class="btn btn-primary btn-sm" onclick="openSubmitRequestModal()" style="font-size:.78rem;padding:.35rem .8rem">➕ تقديم طلب جديد</button>
+        </div>
+        <div id="dpRequestsList">
+          <div style="text-align:center;color:var(--muted);font-size:.82rem;padding:.8rem">جاري التحميل...</div>
+        </div>
+      </div>
+
       <!-- WORKSHOP -->
       <div class="dp-section">
         <div class="dp-label">خدمات الصيانة</div>
@@ -2796,6 +2962,150 @@ async function renderDriverSinglePage() {
 
   // اطلب الأذونات مرة واحدة بعد أول تسجيل دخول
   showPermissionsModal();
+
+  // تحميل طلبات السائق
+  loadDriverRequests();
+}
+
+/* ── DRIVER REQUESTS ── */
+const REQUEST_TYPE_LABELS = {
+  odometer_change: '🔢 تغيير قراءة العداد',
+  permission:      '🙋 طلب إذن',
+  leave:           '🏖️ طلب إجازة',
+  other:           '📝 طلب آخر',
+};
+const REQUEST_STATUS_MAP = {
+  pending:  { label:'تم إرسال طلبك للإدارة', color:'#f59e0b', icon:'⏳' },
+  approved: { label:'تم قبول طلبك', color:'#10b981', icon:'✅' },
+  rejected: { label:'تم رفض الطلب', color:'#ef4444', icon:'❌' },
+};
+
+async function loadDriverRequests() {
+  const el = document.getElementById('dpRequestsList');
+  if(!el) return;
+  try {
+    const reqs = await apiCall('/requests');
+    if(!reqs || reqs.length === 0) {
+      el.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:.8rem">لا توجد طلبات مقدمة بعد</div>`;
+      return;
+    }
+    el.innerHTML = reqs.map(r => buildDriverRequestCard(r)).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:#ef4444;font-size:.8rem;padding:.5rem">تعذّر تحميل الطلبات</div>`;
+  }
+}
+
+function buildDriverRequestCard(r) {
+  const st = REQUEST_STATUS_MAP[r.status] || REQUEST_STATUS_MAP.pending;
+  const typeLabel = REQUEST_TYPE_LABELS[r.type] || r.type;
+  const hasMsg = !!(r.admin_message && r.admin_message.trim());
+  return `
+    <div style="border:1.5px solid ${st.color}33;border-radius:14px;background:#fff;
+                margin-bottom:.7rem;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)">
+      <div style="background:${st.color}11;border-bottom:1.5px solid ${st.color}33;
+                  padding:.6rem 1rem;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700;font-size:.88rem;color:#1e293b">${typeLabel}</span>
+        <span style="font-size:.72rem;color:#64748b">${fmtDT(r.created_at)}</span>
+      </div>
+      <div style="padding:.75rem 1rem">
+        <!-- مراحل الطلب -->
+        <div style="display:flex;align-items:flex-start;gap:.65rem;margin-bottom:.5rem">
+          <div style="width:22px;height:22px;border-radius:50%;background:#10b981;color:white;
+                      font-size:.75rem;font-weight:800;display:flex;align-items:center;
+                      justify-content:center;flex-shrink:0">✓</div>
+          <div style="font-size:.83rem;color:#059669;font-weight:700;padding-top:.15rem">تم إرسال الطلب للإدارة</div>
+        </div>
+        <div style="width:2px;height:12px;background:${r.status!=='pending'?st.color:'#e2e8f0'};margin-right:10px;margin-bottom:.5rem"></div>
+        <div style="display:flex;align-items:flex-start;gap:.65rem;${r.status==='pending'?'opacity:.4':''}">
+          <div style="width:22px;height:22px;border-radius:50%;
+                      background:${r.status!=='pending'?st.color:'#e2e8f0'};
+                      color:${r.status!=='pending'?'white':'#94a3b8'};
+                      font-size:.75rem;font-weight:800;display:flex;align-items:center;
+                      justify-content:center;flex-shrink:0">${st.icon}</div>
+          <div style="padding-top:.1rem">
+            <div style="font-weight:700;font-size:.85rem;color:${r.status!=='pending'?st.color:'#94a3b8'}">${st.label}</div>
+            ${r.handled_by&&r.status!=='pending'?`<div style="font-size:.72rem;color:#94a3b8">بواسطة: ${r.handled_by}</div>`:''}
+          </div>
+        </div>
+        ${r.notes?`<div style="margin-top:.6rem;font-size:.8rem;color:#64748b;
+                               background:#f8fafc;border-radius:8px;padding:.5rem .7rem">
+          📝 ملاحظاتك: ${r.notes}</div>`:''}
+        ${r.type==='odometer_change'&&r.new_odometer?`<div style="margin-top:.4rem;font-size:.8rem;color:#3b82f6;font-weight:600">
+          العداد المطلوب: ${r.new_odometer} كم</div>`:''}
+        ${hasMsg?`
+        <div style="width:2px;height:12px;background:#10b981;margin-right:10px;margin-top:.5rem;margin-bottom:.5rem"></div>
+        <div style="display:flex;align-items:flex-start;gap:.65rem">
+          <div style="width:22px;height:22px;border-radius:50%;background:#10b981;color:white;
+                      font-size:.72rem;display:flex;align-items:center;justify-content:center;flex-shrink:0">💬</div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:.82rem;color:#059669;margin-bottom:.3rem">رسالة من الإدارة</div>
+            <div style="background:#f0fdf9;border:1.5px solid #6ee7b7;border-radius:10px;
+                        padding:.5rem .8rem;font-size:.83rem;color:#1e293b;line-height:1.6">
+              ${r.admin_message}
+            </div>
+          </div>
+        </div>`:''}
+      </div>
+    </div>`;
+}
+
+function openSubmitRequestModal() {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📋 تقديم طلب جديد</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>نوع الطلب <span class="req">*</span></label>
+      <select id="reqType" onchange="toggleOdometerField()">
+        <option value="">— اختر نوع الطلب —</option>
+        <option value="odometer_change">🔢 تغيير قراءة العداد</option>
+        <option value="permission">🙋 طلب إذن</option>
+        <option value="leave">🏖️ طلب إجازة</option>
+        <option value="other">📝 طلب آخر</option>
+      </select>
+    </div>
+    <div class="form-group" id="odometerField" style="display:none">
+      <label>قراءة العداد الصحيحة (كم) <span class="req">*</span></label>
+      <input type="number" id="reqOdometer" placeholder="أدخل الرقم الصحيح للعداد" min="0">
+    </div>
+    <div class="form-group">
+      <label>ملاحظات / تفاصيل</label>
+      <textarea id="reqNotes" rows="3" placeholder="اكتب تفاصيل طلبك هنا..." style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="reqSubmitBtn">📤 إرسال الطلب</button>
+    </div>`);
+
+  document.getElementById('reqSubmitBtn').onclick = async () => {
+    const type        = document.getElementById('reqType').value;
+    const notes       = document.getElementById('reqNotes').value.trim();
+    const newOdometer = document.getElementById('reqOdometer')?.value;
+    if(!type) return showNotification('يرجى اختيار نوع الطلب','error');
+    if(type==='odometer_change' && !newOdometer)
+      return showNotification('يرجى إدخال قراءة العداد الصحيحة','error');
+    const btn = document.getElementById('reqSubmitBtn');
+    btn.disabled=true; btn.textContent='جاري الإرسال...';
+    try {
+      await apiCall('/requests','POST',{
+        type, notes,
+        new_odometer: newOdometer ? parseFloat(newOdometer) : null,
+      });
+      showNotification('✅ تم إرسال طلبك للإدارة بنجاح','success');
+      closeModal();
+      await loadDriverRequests();
+    } catch(e) {
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent='📤 إرسال الطلب';
+    }
+  };
+}
+
+function toggleOdometerField() {
+  const t = document.getElementById('reqType').value;
+  const f = document.getElementById('odometerField');
+  if(f) f.style.display = t==='odometer_change' ? 'block' : 'none';
 }
 
 /* Quick action dispatcher */
