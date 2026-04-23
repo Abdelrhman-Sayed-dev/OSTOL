@@ -2083,6 +2083,8 @@ async def operational_report(
             "t.start_odometer IS NOT NULL",
             "t.end_odometer   IS NOT NULL",
             "t.end_odometer    > t.start_odometer",
+            # ✅ تصفية الرحلات الشاذة: المسافة الواحدة يجب أن تكون أقل من 2000 كم
+            "(t.end_odometer - t.start_odometer) < 2000",
         ]
         params = []
 
@@ -2187,6 +2189,50 @@ async def operational_report(
             "group_by":    group_by,
         }
 
+
+
+# ══════════════════════════════════════════════════════
+# 26. ANOMALOUS TRIPS DIAGNOSTIC
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/anomalous-trips")
+async def anomalous_trips(
+    car_id:    Optional[int] = None,
+    threshold: float = 2000.0,          # كم — أي رحلة أكبر من كده تُعتبر شاذة
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """
+    يُرجع الرحلات التي تجاوزت حدّ المسافة المنطقية (default 2000 كم للرحلة الواحدة).
+    يُستخدم لاكتشاف قراءات العداد الخاطئة.
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+        q = """
+            SELECT
+                t.id,
+                t.start_time,
+                t.end_time,
+                t.start_odometer,
+                t.end_odometer,
+                ROUND(t.end_odometer - t.start_odometer, 1) AS trip_km,
+                d.name  AS driver_name,
+                ca.plate AS car_plate
+            FROM trips t
+            LEFT JOIN drivers d  ON t.driver_id = d.id
+            LEFT JOIN cars    ca ON t.car_id    = ca.id
+            WHERE t.end_time IS NOT NULL
+              AND t.start_odometer IS NOT NULL
+              AND t.end_odometer   IS NOT NULL
+              AND (t.end_odometer - t.start_odometer) >= ?
+        """
+        p = [threshold]
+        if car_id:
+            q += " AND t.car_id = ?"
+            p.append(car_id)
+        q += " ORDER BY trip_km DESC"
+        c.execute(q, p)
+        rows = [dict(r) for r in c.fetchall()]
+    return {"count": len(rows), "threshold_km": threshold, "trips": rows}
 
 
 # ══════════════════════════════════════════════════════
