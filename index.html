@@ -1672,7 +1672,19 @@ async function renderOperationalCard() {
       </div>
     </div>
 
-    <div id="opCardResult" style="margin-top:1rem"></div>`;
+    <div id="opCardResult" style="margin-top:1rem"></div>
+    <div id="anomalyResult" style="margin-top:1rem"></div>`;
+
+  // Add anomaly check button
+  setTimeout(() => {
+    const filterDiv = document.querySelector('.filter-grid');
+    if (filterDiv) {
+      const btn = document.createElement('div');
+      btn.style.cssText = 'display:flex;align-items:flex-end;gap:.4rem';
+      btn.innerHTML = `<button class="btn btn-warning btn-sm" onclick="checkAnomalousTrips()" title="كشف الرحلات ذات قراءات العداد الخاطئة" style="height:38px;white-space:nowrap">⚠️ رحلات شاذة</button>`;
+      filterDiv.appendChild(btn);
+    }
+  }, 50);
 
   // Set sensible defaults: current year
   const now = new Date();
@@ -1833,6 +1845,104 @@ async function generateOpCard() {
         </div>
       </div>
     </div>`;
+}
+
+async function checkAnomalousTrips() {
+  const car_id  = document.getElementById('opCar').value;
+  const res_el  = document.getElementById('anomalyResult');
+  res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري البحث عن رحلات شاذة...</p></div>';
+
+  let url = '/reports/anomalous-trips?threshold=500';
+  if (car_id) url += `&car_id=${car_id}`;
+
+  let data;
+  try { data = await apiCall(url); }
+  catch(e) { res_el.innerHTML = `<div style="color:#ef4444;padding:1rem">${e.message}</div>`; return; }
+
+  if (!data.trips || data.trips.length === 0) {
+    res_el.innerHTML = `<div class="card" style="border:2px solid #059669">
+      <div style="padding:1.2rem;text-align:center;color:#059669;font-weight:700;font-size:1.1rem">
+        ✅ لا توجد رحلات شاذة — جميع قراءات العداد منطقية
+      </div></div>`;
+    return;
+  }
+
+  function fmt(n) { return n!=null ? (+n).toLocaleString('ar-EG',{maximumFractionDigits:1}) : '—'; }
+
+  const rows = data.trips.map((t,i) => `<tr>
+    <td style="text-align:center">${i+1}</td>
+    <td style="font-weight:700;color:#dc2626">${fmt(t.trip_km)} كم</td>
+    <td>${t.driver_name||'—'}</td>
+    <td>${t.car_plate||'—'}</td>
+    <td style="font-size:.8rem">${t.start_odometer!=null?fmt(t.start_odometer)+' كم':'—'}</td>
+    <td style="font-size:.8rem">${t.end_odometer!=null?fmt(t.end_odometer)+' كم':'—'}</td>
+    <td style="font-size:.78rem;color:#64748b">${t.start_time?t.start_time.slice(0,10):'—'}</td>
+    <td style="text-align:center">
+      <button class="btn btn-danger btn-sm" onclick="fixAnomalousTrip(${t.id})">🛠️ تصحيح</button>
+    </td>
+  </tr>`).join('');
+
+  res_el.innerHTML = `<div class="card" style="border:2px solid #f59e0b">
+    <div class="card-header" style="background:#fef3c7;border-radius:12px 12px 0 0;margin:-1.4rem -1.6rem 1rem">
+      <div style="padding:.8rem 1.2rem">
+        <div class="card-title" style="color:#92400e">
+          ⚠️ رحلات بقراءات عداد مشبوهة (أكثر من 500 كم في رحلة واحدة) — ${data.count} رحلة
+        </div>
+        <div style="font-size:.78rem;color:#b45309;margin-top:.2rem">
+          هذه الرحلات تُؤثر على دقة التقارير — يُرجى مراجعتها وتصحيحها
+        </div>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="op-table">
+        <thead><tr>
+          <th style="width:35px">#</th>
+          <th>المسافة</th>
+          <th>السائق</th>
+          <th>المركبة</th>
+          <th>عداد البداية</th>
+          <th>عداد النهاية</th>
+          <th>التاريخ</th>
+          <th>إجراء</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+async function fixAnomalousTrip(tripId) {
+  showModal('تصحيح رحلة #' + tripId, `
+    <p style="color:#64748b;margin-bottom:1rem;font-size:.88rem">
+      أدخل القراءات الصحيحة للعداد لهذه الرحلة:
+    </p>
+    <div class="form-group">
+      <label>عداد البداية الصحيح (كم)</label>
+      <input type="number" id="fixStart" placeholder="مثال: 52000" min="0">
+    </div>
+    <div class="form-group">
+      <label>عداد النهاية الصحيح (كم)</label>
+      <input type="number" id="fixEnd" placeholder="مثال: 52150" min="0">
+    </div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" onclick="submitTripFix(${tripId})">✅ حفظ التصحيح</button>
+    </div>
+  `);
+}
+
+async function submitTripFix(tripId) {
+  const startV = parseFloat(document.getElementById('fixStart').value);
+  const endV   = parseFloat(document.getElementById('fixEnd').value);
+  if (isNaN(startV)||isNaN(endV)) return showNotification('يرجى إدخال القيمتين','error');
+  if (endV <= startV) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية','error');
+  if ((endV - startV) >= 2000) return showNotification('المسافة لا تزال كبيرة جداً — تحقق من القراءات','error');
+  try {
+    await apiCall(`/trips/${tripId}`, 'PUT', { start_odometer: startV, end_odometer: endV });
+    closeModal();
+    showNotification('تم تصحيح الرحلة بنجاح ✅','success');
+    checkAnomalousTrips();
+  } catch(e) { showNotification(e.message,'error'); }
 }
 
 async function downloadOpPDF() {
