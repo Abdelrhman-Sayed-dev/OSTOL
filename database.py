@@ -49,6 +49,8 @@ def create_database():
             birth_date             TEXT DEFAULT '',
             driver_license_expiry  TEXT DEFAULT '',
             vehicle_license_expiry TEXT DEFAULT '',
+            branch                 TEXT DEFAULT '',
+            fixed_number           TEXT DEFAULT '',
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         )
     """)
@@ -56,10 +58,20 @@ def create_database():
     # ── جدول المركبات ──
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS cars (
-            id     INTEGER PRIMARY KEY AUTOINCREMENT,
-            plate  TEXT NOT NULL UNIQUE,
-            model  TEXT NOT NULL,
-            status TEXT DEFAULT 'available'
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            plate              TEXT NOT NULL UNIQUE,
+            model              TEXT NOT NULL,
+            status             TEXT DEFAULT 'available',
+            car_name           TEXT DEFAULT '',
+            car_code           TEXT DEFAULT '',
+            chassis            TEXT DEFAULT '',
+            engine_number      TEXT DEFAULT '',
+            year               TEXT DEFAULT '',
+            project            TEXT DEFAULT '',
+            branch             TEXT DEFAULT '',
+            car_license_expiry TEXT DEFAULT '',
+            equipment_type     TEXT DEFAULT '',
+            sector             TEXT DEFAULT ''
         )
     """)
 

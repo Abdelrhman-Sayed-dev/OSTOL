@@ -119,6 +119,8 @@ def migrate_db():
             birth_date TEXT DEFAULT '',
             driver_license_expiry TEXT DEFAULT '',
             vehicle_license_expiry TEXT DEFAULT '',
+            branch TEXT DEFAULT '',
+            fixed_number TEXT DEFAULT '',
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id)")
@@ -130,8 +132,15 @@ def migrate_db():
             plate TEXT UNIQUE NOT NULL,
             model TEXT NOT NULL,
             status TEXT DEFAULT 'available',
+            car_name TEXT DEFAULT '',
+            car_code TEXT DEFAULT '',
             chassis TEXT DEFAULT '',
+            engine_number TEXT DEFAULT '',
+            year TEXT DEFAULT '',
+            project TEXT DEFAULT '',
+            branch TEXT DEFAULT '',
             car_license_expiry TEXT DEFAULT '',
+            equipment_type TEXT DEFAULT '',
             sector TEXT DEFAULT ''
         )""")
 
@@ -283,7 +292,7 @@ def _safe_add_columns(c):
         log.warning(f"Role migration skipped: {e}")
 
     existing = {}
-    for tbl in ["users","drivers","emergency_reports","trips","workshop_records"]:
+    for tbl in ["users","drivers","cars","emergency_reports","trips","workshop_records"]:
         try:
             c.execute(f"PRAGMA table_info({tbl})")
             existing[tbl] = {row["name"] for row in c.fetchall()}
@@ -302,7 +311,14 @@ def _safe_add_columns(c):
                                ("description","TEXT DEFAULT ''"),("tire_action","TEXT DEFAULT ''")],
         "drivers":            [("national_id","TEXT DEFAULT ''"),("birth_date","TEXT DEFAULT ''"),
                                ("driver_license_expiry","TEXT DEFAULT ''"),
-                               ("vehicle_license_expiry","TEXT DEFAULT ''")],
+                               ("vehicle_license_expiry","TEXT DEFAULT ''"),
+                               ("branch","TEXT DEFAULT ''"),
+                               ("fixed_number","TEXT DEFAULT ''")],
+        "cars":               [("chassis","TEXT DEFAULT ''"),("car_license_expiry","TEXT DEFAULT ''"),
+                               ("sector","TEXT DEFAULT ''"),("car_name","TEXT DEFAULT ''"),
+                               ("car_code","TEXT DEFAULT ''"),("engine_number","TEXT DEFAULT ''"),
+                               ("year","TEXT DEFAULT ''"),("project","TEXT DEFAULT ''"),
+                               ("branch","TEXT DEFAULT ''"),("equipment_type","TEXT DEFAULT ''")],
     }
     for tbl, cols in additions.items():
         for col, col_type in cols:
@@ -465,6 +481,8 @@ class DriverCreate(BaseModel):
     birth_date: Optional[str] = None
     driver_license_expiry: Optional[str] = None
     vehicle_license_expiry: Optional[str] = None
+    branch: Optional[str] = ""
+    fixed_number: Optional[str] = ""
 
 class DriverUpdate(BaseModel):
     name: str; phone: str; status: str
@@ -472,24 +490,60 @@ class DriverUpdate(BaseModel):
     birth_date: Optional[str] = ""
     driver_license_expiry: Optional[str] = ""
     vehicle_license_expiry: Optional[str] = ""
+    branch: Optional[str] = ""
+    fixed_number: Optional[str] = ""
 
 class DriverResp(BaseModel):
     id: int; name: str; phone: str; status: str
     user_id: Optional[int] = None; username: Optional[str] = None
     national_id: Optional[str] = None; birth_date: Optional[str] = None
     driver_license_expiry: Optional[str] = None; vehicle_license_expiry: Optional[str] = None
+    branch: Optional[str] = None; fixed_number: Optional[str] = None
+
+EQUIPMENT_TYPES = {
+    "معدات نقل", "معدات رفع", "معدات تحريك تربة",
+    "معدات ثابتة", "وسائل انتقال", "معدات إنتاجية",
+    "معدات مساعدة", "معدات وآلات ورش", "أخرى"
+}
 
 class CarCreate(BaseModel):
     plate: str; model: str; status: str = "available"
-    chassis: Optional[str] = ""; car_license_expiry: Optional[str] = ""; sector: Optional[str] = ""
+    car_name: Optional[str] = ""
+    car_code: Optional[str] = ""
+    chassis: Optional[str] = ""
+    engine_number: Optional[str] = ""
+    year: Optional[str] = ""
+    project: Optional[str] = ""
+    branch: Optional[str] = ""
+    car_license_expiry: Optional[str] = ""
+    equipment_type: Optional[str] = ""
+    sector: Optional[str] = ""
 
 class CarUpdate(BaseModel):
     plate: str; model: str; status: str
-    chassis: Optional[str] = ""; car_license_expiry: Optional[str] = ""; sector: Optional[str] = ""
+    car_name: Optional[str] = ""
+    car_code: Optional[str] = ""
+    chassis: Optional[str] = ""
+    engine_number: Optional[str] = ""
+    year: Optional[str] = ""
+    project: Optional[str] = ""
+    branch: Optional[str] = ""
+    car_license_expiry: Optional[str] = ""
+    equipment_type: Optional[str] = ""
+    sector: Optional[str] = ""
 
 class CarResp(BaseModel):
     id: int; plate: str; model: str; status: str
-    chassis: Optional[str] = None; car_license_expiry: Optional[str] = None; sector: Optional[str] = None
+    car_name: Optional[str] = None
+    car_code: Optional[str] = None
+    chassis: Optional[str] = None
+    engine_number: Optional[str] = None
+    year: Optional[str] = None
+    project: Optional[str] = None
+    branch: Optional[str] = None
+    car_license_expiry: Optional[str] = None
+    equipment_type: Optional[str] = None
+    sector: Optional[str] = None
 
 class PermCreate(BaseModel):
     driver_id: int; car_id: int
@@ -845,29 +899,33 @@ async def create_driver(driver: DriverCreate, cu: dict = Depends(require_admin))
                   (driver.username, _hash(driver.password), "driver"))
         uid = c.lastrowid
         c.execute("""INSERT INTO drivers(name,phone,status,user_id,national_id,
-                     birth_date,driver_license_expiry,vehicle_license_expiry)
-                     VALUES(?,?,?,?,?,?,?,?)""",
+                     birth_date,driver_license_expiry,vehicle_license_expiry,branch,fixed_number)
+                     VALUES(?,?,?,?,?,?,?,?,?,?)""",
                   (driver.name, driver.phone, driver.status, uid,
                    driver.national_id or "", driver.birth_date or "",
-                   driver.driver_license_expiry or "", driver.vehicle_license_expiry or ""))
+                   driver.driver_license_expiry or "", driver.vehicle_license_expiry or "",
+                   driver.branch or "", driver.fixed_number or ""))
         did = c.lastrowid
         log_event("driver_created", driver_id=did, admin=cu["username"])
         return {"id":did,"name":driver.name,"phone":driver.phone,"status":driver.status,
                 "user_id":uid,"username":driver.username,
                 "national_id":driver.national_id,"birth_date":driver.birth_date,
                 "driver_license_expiry":driver.driver_license_expiry,
-                "vehicle_license_expiry":driver.vehicle_license_expiry}
+                "vehicle_license_expiry":driver.vehicle_license_expiry,
+                "branch":driver.branch or "","fixed_number":driver.fixed_number or ""}
 
 @app.put("/drivers/{did}", response_model=DriverResp)
 async def update_driver(did: int, driver: DriverUpdate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""UPDATE drivers SET name=?,phone=?,status=?,national_id=?,
-                     birth_date=?,driver_license_expiry=?,vehicle_license_expiry=?
+                     birth_date=?,driver_license_expiry=?,vehicle_license_expiry=?,
+                     branch=?,fixed_number=?
                      WHERE id=?""",
                   (driver.name,driver.phone,driver.status,
                    driver.national_id or "",driver.birth_date or "",
-                   driver.driver_license_expiry or "",driver.vehicle_license_expiry or "",did))
+                   driver.driver_license_expiry or "",driver.vehicle_license_expiry or "",
+                   driver.branch or "",driver.fixed_number or "",did))
         if c.rowcount == 0:
             raise HTTPException(404, "السائق غير موجود")
         c.execute("SELECT user_id FROM drivers WHERE id=?", (did,))
@@ -876,7 +934,8 @@ async def update_driver(did: int, driver: DriverUpdate, cu: dict = Depends(requi
                 "user_id":r["user_id"] if r else None,
                 "national_id":driver.national_id,"birth_date":driver.birth_date,
                 "driver_license_expiry":driver.driver_license_expiry,
-                "vehicle_license_expiry":driver.vehicle_license_expiry}
+                "vehicle_license_expiry":driver.vehicle_license_expiry,
+                "branch":driver.branch or "","fixed_number":driver.fixed_number or ""}
 
 @app.delete("/drivers/{did}")
 async def delete_driver(did: int, cu: dict = Depends(require_admin)):
@@ -948,10 +1007,15 @@ async def allowed_cars(did: int, cu: dict = Depends(get_user)):
 async def get_cars(cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id,plate,model,status,chassis,car_license_expiry,sector FROM cars ORDER BY id DESC LIMIT 500")
-        rows=[]
+        c.execute("""SELECT id,plate,model,status,car_name,car_code,chassis,engine_number,
+                            year,project,branch,car_license_expiry,equipment_type,sector
+                     FROM cars ORDER BY id DESC LIMIT 500""")
+        rows = []
         for r in c.fetchall():
-            d=dict(r); d.setdefault("chassis",""); d.setdefault("car_license_expiry",""); d.setdefault("sector","")
+            d = dict(r)
+            for f in ("car_name","car_code","chassis","engine_number","year","project",
+                      "branch","car_license_expiry","equipment_type","sector"):
+                d.setdefault(f, "")
             rows.append(d)
         return rows
 
@@ -960,10 +1024,21 @@ async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
         try:
-            c.execute("INSERT INTO cars(plate,model,status,chassis,car_license_expiry,sector) VALUES(?,?,?,?,?,?)",
-                      (car.plate, car.model, car.status, car.chassis or "", car.car_license_expiry or "", car.sector or ""))
+            c.execute("""INSERT INTO cars(plate,model,status,car_name,car_code,chassis,
+                                          engine_number,year,project,branch,
+                                          car_license_expiry,equipment_type,sector)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (car.plate, car.model, car.status,
+                       car.car_name or "", car.car_code or "", car.chassis or "",
+                       car.engine_number or "", car.year or "", car.project or "",
+                       car.branch or "", car.car_license_expiry or "",
+                       car.equipment_type or "", car.sector or ""))
             return {"id": c.lastrowid, "plate": car.plate, "model": car.model, "status": car.status,
-                    "chassis": car.chassis or "", "car_license_expiry": car.car_license_expiry or "", "sector": car.sector or ""}
+                    "car_name": car.car_name or "", "car_code": car.car_code or "",
+                    "chassis": car.chassis or "", "engine_number": car.engine_number or "",
+                    "year": car.year or "", "project": car.project or "",
+                    "branch": car.branch or "", "car_license_expiry": car.car_license_expiry or "",
+                    "equipment_type": car.equipment_type or "", "sector": car.sector or ""}
         except sqlite3.IntegrityError:
             raise HTTPException(400, "رقم اللوحة موجود مسبقاً")
 
@@ -971,12 +1046,23 @@ async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
 async def update_car(cid: int, car: CarUpdate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("UPDATE cars SET plate=?,model=?,status=?,chassis=?,car_license_expiry=?,sector=? WHERE id=?",
-                  (car.plate, car.model, car.status, car.chassis or "", car.car_license_expiry or "", car.sector or "", cid))
+        c.execute("""UPDATE cars SET plate=?,model=?,status=?,car_name=?,car_code=?,
+                                     chassis=?,engine_number=?,year=?,project=?,branch=?,
+                                     car_license_expiry=?,equipment_type=?,sector=?
+                     WHERE id=?""",
+                  (car.plate, car.model, car.status,
+                   car.car_name or "", car.car_code or "", car.chassis or "",
+                   car.engine_number or "", car.year or "", car.project or "",
+                   car.branch or "", car.car_license_expiry or "",
+                   car.equipment_type or "", car.sector or "", cid))
         if c.rowcount == 0:
             raise HTTPException(404, "المركبة غير موجودة")
         return {"id": cid, "plate": car.plate, "model": car.model, "status": car.status,
-                "chassis": car.chassis or "", "car_license_expiry": car.car_license_expiry or "", "sector": car.sector or ""}
+                "car_name": car.car_name or "", "car_code": car.car_code or "",
+                "chassis": car.chassis or "", "engine_number": car.engine_number or "",
+                "year": car.year or "", "project": car.project or "",
+                "branch": car.branch or "", "car_license_expiry": car.car_license_expiry or "",
+                "equipment_type": car.equipment_type or "", "sector": car.sector or ""}
 
 @app.delete("/cars/{cid}")
 async def delete_car(cid: int, cu: dict = Depends(require_admin)):
@@ -985,6 +1071,11 @@ async def delete_car(cid: int, cu: dict = Depends(require_admin)):
         c.execute("DELETE FROM driver_car_permissions WHERE car_id=?", (cid,))
         c.execute("DELETE FROM cars WHERE id=?", (cid,))
         return {"message": "تم الحذف"}
+
+@app.get("/cars/equipment-types")
+async def get_equipment_types(cu: dict = Depends(get_user)):
+    """قائمة أنواع تصنيف المعدات والمركبات."""
+    return {"equipment_types": sorted(EQUIPMENT_TYPES)}
 
 # ══════════════════════════════════════════════════════
 # 15. PERMISSIONS
