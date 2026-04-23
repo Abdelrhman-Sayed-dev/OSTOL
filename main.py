@@ -2102,20 +2102,26 @@ async def operational_report(
             # Single summary row
             c.execute(f"""
                 SELECT
-                    COUNT(t.id)                              AS trip_count,
-                    ROUND(SUM(t.end_odometer - t.start_odometer), 1) AS total_km,
-                    MIN(t.start_odometer)                    AS min_odo,
-                    MAX(t.end_odometer)                      AS max_odo
+                    COUNT(t.id)                                          AS trip_count,
+                    ROUND(SUM(t.end_odometer - t.start_odometer), 1)    AS total_km,
+                    MIN(t.start_time)                                    AS first_date,
+                    (SELECT t2.start_odometer FROM trips t2
+                     WHERE {where_sql.replace('t.', 't2.')}
+                     ORDER BY t2.start_time ASC  LIMIT 1)               AS first_odo,
+                    (SELECT t2.end_odometer   FROM trips t2
+                     WHERE {where_sql.replace('t.', 't2.')}
+                     ORDER BY t2.end_time   DESC LIMIT 1)               AS last_odo
                 FROM trips t
                 WHERE {where_sql}
-            """, params)
+            """, params * 3)
             row = dict(c.fetchone())
             rows = [{
                 "period":     "إجمالي الفترة",
                 "trip_count": row["trip_count"],
                 "total_km":   row["total_km"] or 0,
-                "min_odo":    row["min_odo"],
-                "max_odo":    row["max_odo"],
+                "first_date": (row["first_date"] or "")[:10],
+                "min_odo":    row["first_odo"],
+                "max_odo":    row["last_odo"],
             }]
 
         else:
@@ -2129,17 +2135,22 @@ async def operational_report(
 
             c.execute(f"""
                 SELECT
-                    {grp}                                        AS period,
-                    COUNT(t.id)                                  AS trip_count,
-                    ROUND(SUM(t.end_odometer - t.start_odometer),1) AS total_km,
-                    MIN(t.start_odometer)                        AS min_odo,
-                    MAX(t.end_odometer)                          AS max_odo
+                    {grp}                                               AS period,
+                    COUNT(t.id)                                         AS trip_count,
+                    ROUND(SUM(t.end_odometer - t.start_odometer), 1)   AS total_km,
+                    MIN(t.start_time)                                   AS first_date,
+                    MIN(t.start_odometer)                               AS min_odo,
+                    MAX(t.end_odometer)                                 AS max_odo
                 FROM trips t
                 WHERE {where_sql}
                 GROUP BY {grp}
                 ORDER BY {grp}
             """, params)
             rows = [dict(r) for r in c.fetchall()]
+            # For each row, first_date already reflects the earliest trip in that period
+            for r in rows:
+                if r.get("first_date"):
+                    r["first_date"] = r["first_date"][:10]
 
         # Car info
         car_info = None
@@ -2149,23 +2160,29 @@ async def operational_report(
             if row:
                 car_info = dict(row)
 
-        # Grand totals
+        # Grand totals — first_odo = start_odometer of earliest trip,
+        #                last_odo  = end_odometer   of latest  trip
         c.execute(f"""
-            SELECT COUNT(t.id) as tc,
-                   ROUND(SUM(t.end_odometer - t.start_odometer),1) as tkm,
-                   MIN(t.start_odometer) as min_odo,
-                   MAX(t.end_odometer)   as max_odo
+            SELECT
+                COUNT(t.id)                                       AS tc,
+                ROUND(SUM(t.end_odometer - t.start_odometer), 1) AS tkm,
+                (SELECT t2.start_odometer FROM trips t2
+                 WHERE {where_sql.replace('t.', 't2.')}
+                 ORDER BY t2.start_time ASC  LIMIT 1)             AS first_odo,
+                (SELECT t2.end_odometer   FROM trips t2
+                 WHERE {where_sql.replace('t.', 't2.')}
+                 ORDER BY t2.end_time   DESC LIMIT 1)             AS last_odo
             FROM trips t WHERE {where_sql}
-        """, params)
+        """, params * 3)
         tot = dict(c.fetchone())
 
         return {
             "rows":        rows,
             "car_info":    car_info,
-            "total_km":    tot["tkm"]  or 0,
-            "total_trips": tot["tc"]   or 0,
-            "min_odo":     tot["min_odo"],
-            "max_odo":     tot["max_odo"],
+            "total_km":    tot["tkm"]    or 0,
+            "total_trips": tot["tc"]     or 0,
+            "min_odo":     tot["first_odo"],
+            "max_odo":     tot["last_odo"],
             "report_type": report_type,
             "group_by":    group_by,
         }

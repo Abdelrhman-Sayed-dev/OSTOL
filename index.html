@@ -1747,7 +1747,7 @@ async function generateOpCard() {
       </td>
       <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(r.min_odo)}</td>
       <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(r.max_odo)}</td>
-      <td style="text-align:center;font-size:.8rem;color:#94a3b8">${fmtDate(r.first_date)}</td>
+      <td style="text-align:center;font-size:.8rem;color:#94a3b8">${r.first_date ? fmtDate(r.first_date) : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -1818,7 +1818,7 @@ async function generateOpCard() {
                 <td><span class="op-km-badge" style="background:#bfdbfe;color:#1e40af">${fmt(data.total_km)} كم</span></td>
                 <td style="text-align:center">${fmt(data.min_odo)}</td>
                 <td style="text-align:center">${fmt(data.max_odo)}</td>
-                <td style="text-align:center">—</td>
+                <td style="text-align:center;font-size:.8rem;color:#94a3b8">—</td>
               </tr>
             </tfoot>
           </table>
