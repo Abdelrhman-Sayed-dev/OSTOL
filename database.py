@@ -1,4 +1,7 @@
 # database.py — Fleet Management System
+# يُستخدم لإنشاء قاعدة البيانات لأول مرة فقط
+# التهجير (migration) يتم تلقائياً عبر main.py عند الإقلاع
+
 import os
 import sqlite3
 
@@ -46,7 +49,6 @@ def create_database():
             birth_date             TEXT DEFAULT '',
             driver_license_expiry  TEXT DEFAULT '',
             vehicle_license_expiry TEXT DEFAULT '',
-            staff_number           TEXT DEFAULT '',
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         )
     """)
@@ -54,19 +56,10 @@ def create_database():
     # ── جدول المركبات ──
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS cars (
-            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
-            plate                  TEXT NOT NULL UNIQUE,
-            model                  TEXT NOT NULL,
-            status                 TEXT DEFAULT 'available',
-            car_type               TEXT DEFAULT '',
-            code                   TEXT DEFAULT '',
-            chassis_number         TEXT DEFAULT '',
-            brand                  TEXT DEFAULT '',
-            manufacture_year       TEXT DEFAULT '',
-            vehicle_license_expiry TEXT DEFAULT '',
-            project                TEXT DEFAULT '',
-            branch                 TEXT DEFAULT '',
-            equipment_category     TEXT DEFAULT ''
+            id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            plate  TEXT NOT NULL UNIQUE,
+            model  TEXT NOT NULL,
+            status TEXT DEFAULT 'available'
         )
     """)
 
@@ -156,7 +149,7 @@ def create_database():
         )
     """)
 
-    # ── جدول سجلات التدقيق ──
+    # ── جدول سجلات التدقيق (Audit Log) ──
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS audit_logs (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,6 +190,7 @@ def create_database():
     for idx in indexes:
         cursor.execute(idx)
 
+    # ── Seed أسعار ──
     from datetime import datetime
     for ws_type in ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng",
                     "oil","filter","tire","battery","belt","other"]:
@@ -205,6 +199,7 @@ def create_database():
             (f"price_{ws_type}", "0", datetime.now().isoformat())
         )
 
+    # ── حسابات الأدمن ──
     ADMINS = [
         ("Eng mohamed mansour",  "mo@mansour241"),
         ("Eng mohamed sayed",    "mo@sayed11214123"),
@@ -218,6 +213,7 @@ def create_database():
                            (uname, hash_password(pw), "admin"))
             print(f"✅ Admin: {uname}")
 
+    # ── حسابات السوبر يوزر ──
     SUPERUSERS = [
         ("supre mohamed sayed",    "sup@mosayed3904"),
         ("super abdelrhman sayed", "sup@abdo1414"),
@@ -230,6 +226,7 @@ def create_database():
                            (uname, hash_password(pw), "superuser"))
             print(f"✅ Superuser: {uname}")
 
+    # ── حسابات الريبورتر (قراءة فقط) ──
     REPORTERS = [
         ("admin1", "24681012"),
         ("admin2", "11214123"),
