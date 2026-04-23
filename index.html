@@ -727,7 +727,7 @@ async function renderDriversSection() {
       <div class="table-wrap" id="driversList">
         <table><thead><tr>
           <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم التعريفي</th>
-          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th><th>انتهاء رخصة العربة</th>
+          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th><th>الرقم الثابت</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody>
         ${drivers.length ? drivers.map(d=>{
@@ -746,7 +746,7 @@ async function renderDriversSection() {
             <td><code>${d.national_id||'—'}</code></td>
             <td style="font-size:.82rem">${d.birth_date||'—'}</td>
             <td>${licBadge(d.driver_license_expiry)}</td>
-            <td>${licBadge(d.vehicle_license_expiry)}</td>
+            <td><code>${d.staff_number||'—'}</code></td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
               ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
@@ -754,7 +754,8 @@ async function renderDriversSection() {
                 data-status="${d.status}" data-nid="${d.national_id||''}"
                 data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
                 data-clic="${d.vehicle_license_expiry||''}"
-                data-username="${d.username||''}">✏️</button>
+                data-username="${d.username||''}"
+                data-staff="${d.staff_number||''}">✏️</button>
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
@@ -763,7 +764,7 @@ async function renderDriversSection() {
       </div>
     </div>`;
   document.getElementById('driversList').addEventListener('click', async e=>{
-    if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username); }
+    if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username,b.dataset.staff); }
     if(e.target.closest('.del-driver')){ const id=+e.target.closest('.del-driver').dataset.id; if(!confirm('حذف هذا السائق؟')) return; try{ await apiCall(`/drivers/${id}`,'DELETE'); showNotification('تم الحذف','success'); await renderDriversSection(); }catch(e){showNotification(e.message,'error');} }
   });
 }
@@ -795,18 +796,12 @@ function openAddDriverModal() {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group"><label>الرقم التعريفي (قومي)</label><input id="mDrvNid" placeholder="مثال: 29801011234567" maxlength="14"></div>
-      <div class="form-group"><label>تاريخ الميلاد</label><input type="date" id="mDrvBirth"></div>
+      <div class="form-group"><label>الرقم الثابت (Staff No.)</label><input id="mDrvStaff" placeholder="مثال: 791812"></div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>انتهاء رخصة السائق</label>
-        <input type="date" id="mDrvLic">
-      </div>
-      <div class="form-group">
-        <label>انتهاء رخصة العربة</label>
-        <input type="date" id="mCarLic">
-      </div>
+      <div class="form-group"><label>تاريخ الميلاد</label><input type="date" id="mDrvBirth"></div>
+      <div class="form-group"><label>انتهاء رخصة السائق</label><input type="date" id="mDrvLic"></div>
     </div>
 
     <div class="form-group"><label>الحالة</label><select id="mDrvStatus"><option value="active">نشط</option><option value="inactive">غير نشط</option></select></div>
@@ -823,9 +818,9 @@ function openAddDriverModal() {
     const password = document.getElementById('mDrvPass').value.trim();
     const status   = document.getElementById('mDrvStatus').value;
     const national_id            = document.getElementById('mDrvNid').value.trim();
+    const staff_number           = document.getElementById('mDrvStaff').value.trim();
     const birth_date             = document.getElementById('mDrvBirth').value;
     const driver_license_expiry  = document.getElementById('mDrvLic').value;
-    const vehicle_license_expiry = document.getElementById('mCarLic').value;
 
     if(!name)     return showNotification('اسم السائق مطلوب','error');
     if(!phone)    return showNotification('رقم الهاتف مطلوب','error');
@@ -836,7 +831,7 @@ function openAddDriverModal() {
     try{
       await apiCall('/drivers','POST',{
         name, phone, username, password, status,
-        national_id, birth_date, driver_license_expiry, vehicle_license_expiry
+        national_id, staff_number, birth_date, driver_license_expiry
       });
       showNotification(`✅ تم إضافة السائق "${name}" — يمكنه الدخول بـ: ${username}`,'success');
       closeModal();
@@ -845,7 +840,7 @@ function openAddDriverModal() {
   };
 }
 
-function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_license_expiry,vehicle_license_expiry,currentUsername) {
+function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_license_expiry,vehicle_license_expiry,currentUsername,staff_number) {
   openModal(`
     <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات السائق</div><button class="modal-close" onclick="closeModal()">✕</button></div>
 
@@ -856,17 +851,14 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group"><label>الرقم التعريفي</label><input id="mEditNid" value="${national_id||''}" maxlength="14"></div>
-      <div class="form-group"><label>تاريخ الميلاد</label><input type="date" id="mEditBirth" value="${birth_date||''}"></div>
+      <div class="form-group"><label>الرقم الثابت (Staff No.)</label><input id="mEditStaff" value="${staff_number||''}" placeholder="مثال: 791812"></div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>تاريخ الميلاد</label><input type="date" id="mEditBirth" value="${birth_date||''}"></div>
       <div class="form-group">
         <label>انتهاء رخصة السائق</label>
         <input type="date" id="mEditLic" value="${driver_license_expiry||''}">
-      </div>
-      <div class="form-group">
-        <label>انتهاء رخصة العربة</label>
-        <input type="date" id="mEditCarLic" value="${vehicle_license_expiry||''}">
       </div>
     </div>
 
@@ -903,9 +895,9 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
     const p    = document.getElementById('mEditPhone').value.trim();
     const s    = document.getElementById('mEditStatus').value;
     const nid  = document.getElementById('mEditNid').value.trim();
+    const stf  = document.getElementById('mEditStaff').value.trim();
     const bd   = document.getElementById('mEditBirth').value;
     const dl   = document.getElementById('mEditLic').value;
-    const cl   = document.getElementById('mEditCarLic').value;
     const uname= document.getElementById('mEditUser').value.trim();
     const upass= document.getElementById('mEditPass').value.trim();
 
@@ -919,8 +911,8 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
       // Update driver profile
       await apiCall(`/drivers/${id}`,'PUT',{
         name:n, phone:p, status:s,
-        national_id:nid, birth_date:bd,
-        driver_license_expiry:dl, vehicle_license_expiry:cl
+        national_id:nid, staff_number:stf,
+        birth_date:bd, driver_license_expiry:dl
       });
 
       // Update credentials if username changed or password provided
@@ -977,11 +969,37 @@ async function renderCarsSection() {
         <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status!=='available').length}</div><div class="stat-label">صيانة</div></div>
       </div>
       <div class="table-wrap" id="carsList">
-        <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
-        ${cars.map(c=>`<tr><td>${c.id}</td><td dir="ltr"><strong>${c.plate}</strong></td><td>${c.model}</td>
-          <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
-          <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}" data-plate="${c.plate}" data-model="${c.model}" data-status="${c.status}">✏️</button>
-          <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td></tr>`).join('')}
+        <table><thead><tr>
+          <th>#</th><th>اللوحة</th><th>الموديل</th><th>الكود</th><th>الشاسيه</th>
+          <th>الماركة</th><th>سنة الصنع</th><th>نوع المعدة</th>
+          <th>الفرع/الإدارة</th><th>المشروع</th>
+          <th>انتهاء الرخصة</th><th>الحالة</th><th>إجراءات</th>
+        </tr></thead><tbody>
+        ${cars.map(c=>{
+          const expiry = c.vehicle_license_expiry ? new Date(c.vehicle_license_expiry) : null;
+          const today = new Date();
+          const soon = expiry && (expiry - today) < 30*24*3600*1000;
+          const expired = expiry && expiry < today;
+          const expiryCell = expiry
+            ? `<span class="badge ${expired?'badge-red':soon?'badge-yellow':'badge-green'}">${expired?'⚠️ منتهية':soon?'⏰ قريباً':'✓'} ${c.vehicle_license_expiry}</span>`
+            : '—';
+          return `<tr>
+            <td>${c.id}</td>
+            <td dir="ltr"><strong>${c.plate}</strong></td>
+            <td>${c.model}</td>
+            <td><code>${c.code||'—'}</code></td>
+            <td dir="ltr" style="font-size:.78rem">${c.chassis_number||'—'}</td>
+            <td>${c.brand||'—'}</td>
+            <td>${c.manufacture_year||'—'}</td>
+            <td>${c.equipment_category?`<span class="badge badge-purple">${c.equipment_category}</span>`:'—'}</td>
+            <td>${c.branch||'—'}</td>
+            <td>${c.project||'—'}</td>
+            <td style="min-width:120px">${expiryCell}</td>
+            <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
+            <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
+            <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
+          </tr>`;
+        }).join('')}
         </tbody></table>
       </div>
     </div>`;
@@ -993,60 +1011,104 @@ async function renderCarsSection() {
 
 function openAddCarModal(editId='', editCar={}) {
   const isEdit = !!editId;
+  const eqCats = ['معدات نقل','معدات رفع','معدات تحريك تربة','معدات ثابتة','وسائل انتقال','معدات إنتاجية','معدات مساعدة','معدات والات ورش','أخرى'];
   openModal(`
     <div class="modal-header">
       <div class="modal-title">${isEdit?'✏️ تعديل مركبة':'➕ إضافة مركبة جديدة'}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    <div class="two-col" style="gap:.8rem;margin-bottom:0">
-      <div class="form-group">
-        <label>نوع / موديل المركبة <span class="req">*</span></label>
-        <input id="mCarModel" placeholder="سيارة بيك اب كابينة مزدوجة (تويوتا)" value="${editCar.model||''}">
-      </div>
-      <div class="form-group">
-        <label>رقم اللوحة <span class="req">*</span></label>
-        <input id="mCarPlate" placeholder="528 ي ج ص" value="${editCar.plate||''}">
+
+    <div style="background:#f0fdf9;border:1.5px solid #10b981;border-radius:12px;padding:1rem;margin-bottom:.9rem">
+      <div style="font-size:.82rem;font-weight:700;color:#065f46;margin-bottom:.7rem">🚗 البيانات الأساسية</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+        <div class="form-group" style="margin-bottom:0">
+          <label>نوع السيارة / الموديل <span class="req">*</span></label>
+          <input id="mCarModel" placeholder="مثال: سيارة بيك اب كابينة مزدوجة" value="${editCar.model||''}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>رقم اللوحة (المرور) <span class="req">*</span></label>
+          <input id="mCarPlate" placeholder="مثال: ر ق د / 856" value="${editCar.plate||''}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>الماركة (Brand)</label>
+          <input id="mCarBrand" placeholder="مثال: تويوتا / MITSUBISHI" value="${editCar.brand||''}">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>سنة الصنع</label>
+          <input id="mCarYear" placeholder="مثال: 2018" maxlength="4" value="${editCar.manufacture_year||''}">
+        </div>
       </div>
     </div>
-    <div class="form-group">
-      <label>رقم الشاسيه</label>
-      <input id="mCarChassis" placeholder="مثال: MROES12G903025849" value="${editCar.chassis||''}">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.9rem">
+      <div class="form-group" style="margin-bottom:0">
+        <label>رقم الكود</label>
+        <input id="mCarCode" placeholder="مثال: 3306/11/28/07" value="${editCar.code||''}">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>رقم الشاسيه</label>
+        <input id="mCarChassis" placeholder="مثال: 400585799" value="${editCar.chassis_number||''}">
+      </div>
     </div>
-    <div class="two-col" style="gap:.8rem;margin-bottom:0">
-      <div class="form-group">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.9rem">
+      <div class="form-group" style="margin-bottom:0">
+        <label>الفرع / الإدارة</label>
+        <input id="mCarBranch" placeholder="مثال: المنشآت المتميزة" value="${editCar.branch||''}">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>المشروع</label>
+        <input id="mCarProject" placeholder="مثال: القطار السريع" value="${editCar.project||''}">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.9rem">
+      <div class="form-group" style="margin-bottom:0">
+        <label>تصنيف المعدة / السيارة</label>
+        <select id="mCarCategory">
+          <option value="">-- اختر التصنيف --</option>
+          ${eqCats.map(c=>`<option value="${c}" ${editCar.equipment_category===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
         <label>تاريخ انتهاء رخصة السيارة</label>
-        <input type="date" id="mCarLicExp" value="${editCar.car_license_expiry||''}">
-      </div>
-      <div class="form-group">
-        <label>القطاع</label>
-        <input id="mCarSector" placeholder="مثال: القطاع" value="${editCar.sector||''}">
+        <input type="date" id="mCarLicExp" value="${editCar.vehicle_license_expiry||''}">
       </div>
     </div>
+
     <div class="form-group">
       <label>الحالة</label>
       <select id="mCarStatus">
-        <option value="available" ${(editCar.status||'available')==='available'?'selected':''}>● متاحة</option>
+        <option value="available" ${(editCar.status||'available')==='available'?'selected':''}>🟢 متاحة</option>
         <option value="maintenance" ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
       </select>
     </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mCarSave">${isEdit?'💾 حفظ التعديلات':'➕ إضافة'}</button>
     </div>`);
 
   document.getElementById('mCarSave').onclick = async () => {
-    const plate   = document.getElementById('mCarPlate').value.trim();
-    const model   = document.getElementById('mCarModel').value.trim();
-    const status  = document.getElementById('mCarStatus').value;
-    const chassis = document.getElementById('mCarChassis').value.trim();
-    const car_license_expiry = document.getElementById('mCarLicExp').value;
-    const sector  = document.getElementById('mCarSector').value.trim();
+    const plate                = document.getElementById('mCarPlate').value.trim();
+    const model                = document.getElementById('mCarModel').value.trim();
+    const status               = document.getElementById('mCarStatus').value;
+    const brand                = document.getElementById('mCarBrand').value.trim();
+    const manufacture_year     = document.getElementById('mCarYear').value.trim();
+    const code                 = document.getElementById('mCarCode').value.trim();
+    const chassis_number       = document.getElementById('mCarChassis').value.trim();
+    const branch               = document.getElementById('mCarBranch').value.trim();
+    const project              = document.getElementById('mCarProject').value.trim();
+    const equipment_category   = document.getElementById('mCarCategory').value;
+    const vehicle_license_expiry = document.getElementById('mCarLicExp').value;
     if(!plate||!model) return showNotification('اللوحة والموديل مطلوبان','error');
     const btn = document.getElementById('mCarSave');
     btn.disabled=true; btn.textContent='جاري...';
+    const payload = {plate,model,status,brand,manufacture_year,code,chassis_number,
+                     branch,project,equipment_category,vehicle_license_expiry};
     try{
-      if(isEdit) await apiCall(`/cars/${editId}`,'PUT',{plate,model,status,chassis,car_license_expiry,sector});
-      else       await apiCall('/cars','POST',{plate,model,status,chassis,car_license_expiry,sector});
+      if(isEdit) await apiCall(`/cars/${editId}`,'PUT',payload);
+      else       await apiCall('/cars','POST',payload);
       showNotification(isEdit?'✅ تم التحديث':'✅ تمت الإضافة','success');
       closeModal(); await renderCarsSection();
     }catch(e){
@@ -1113,7 +1175,8 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
   ${trips.map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
-    const garageLoc=t.end_time?(t.garage_location||''):'';
+    const gRec=garageLatest.find(g=>g.car_id===t.car_id);
+    const garageLoc=t.end_time?(t.garage_location||gRec?.location||''):'';
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
       <td>${t.start_time?fmtDT(t.start_time):'—'}</td>
       <td>${t.end_time?fmtDT(t.end_time):'—'}</td>
@@ -1250,7 +1313,7 @@ function openEditOdoModal(tid, curStart, curEnd, dName, isActive) {
 function exportCSV(){
   const trips=window._tripsData||[],drivers=window._driversData||[],cars=window._carsData||[];
   const rows=[['#','السائق','المركبة','وقت البداية','وقت النهاية','عداد البداية','عداد النهاية','موقع البداية','موقع النهاية','موقع الجراج','ملاحظات','الحالة']];
-  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const garageLoc=t.garage_location||''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer||'',t.end_odometer||'',t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
+  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const garageLoc=t.garage_location||gRec?.location||''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer||'',t.end_odometer||'',t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`رحلات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير الرحلات ✅','success');
