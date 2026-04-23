@@ -1752,15 +1752,19 @@ async function generateOpCard() {
   }).join('');
 
   // Summary cards
+  const avgKm = data.total_trips > 0
+    ? fmt(+(data.total_km / data.total_trips).toFixed(1))
+    : '—';
   const summaryCards = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:1rem">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:.8rem">
       ${[
-        {icon:'🛣️', label:'إجمالي المسافة', val:fmt(data.total_km)+' كم', color:'#3b82f6'},
-        {icon:'🗺️', label:'عدد الرحلات',    val:data.total_trips,          color:'#8b5cf6'},
-        {icon:'📅', label:'من تاريخ',        val:fmtDate(date_from),        color:'#0ea5e9'},
-        {icon:'📅', label:'إلى تاريخ',       val:fmtDate(date_to),          color:'#06b6d4'},
-        {icon:'📟', label:'عداد البداية',    val:fmt(data.min_odo)+' كم',   color:'#10b981'},
-        {icon:'📟', label:'عداد النهاية',    val:fmt(data.max_odo)+' كم',   color:'#f59e0b'},
+        {icon:'🛣️', label:'إجمالي المسافة',           val:fmt(data.total_km)+' كم', color:'#3b82f6'},
+        {icon:'🗺️', label:'عدد الرحلات',               val:data.total_trips,          color:'#8b5cf6'},
+        {icon:'📅', label:'من تاريخ',                   val:fmtDate(date_from),        color:'#0ea5e9'},
+        {icon:'📅', label:'إلى تاريخ',                  val:fmtDate(date_to),          color:'#06b6d4'},
+        {icon:'📟', label:'عداد البداية (أول رحلة)',   val:fmt(data.min_odo)+' كم',  color:'#10b981'},
+        {icon:'📟', label:'عداد النهاية (آخر رحلة)',   val:fmt(data.max_odo)+' كم',  color:'#f59e0b'},
+        {icon:'📊', label:'متوسط المسافة / رحلة',       val:avgKm+' كم',               color:'#6366f1'},
       ].map(s=>`
         <div style="background:#fff;border:1.5px solid ${s.color}22;border-radius:14px;
                     padding:.8rem 1rem;text-align:center">
@@ -1768,6 +1772,10 @@ async function generateOpCard() {
           <div style="font-size:.72rem;color:#64748b;margin:.2rem 0">${s.label}</div>
           <div style="font-weight:800;color:${s.color};font-size:.95rem">${s.val}</div>
         </div>`).join('')}
+    </div>
+    <div style="background:#fef3c7;border:1.5px solid #f59e0b44;border-radius:10px;
+                padding:.55rem 1rem;margin-bottom:.8rem;font-size:.78rem;color:#92400e">
+      ℹ️ <strong>ملاحظة:</strong> إجمالي المسافة = مجموع كل الرحلات (${data.total_trips} رحلة) — وليس الفرق بين العدادين.
     </div>`;
 
   res_el.innerHTML = `
