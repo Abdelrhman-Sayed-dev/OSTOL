@@ -601,6 +601,7 @@ function buildAdminNav() {
     {id:'map',        icon:'📍', label:'خريطة الأسطول'},
     {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
     {id:'requests',   icon:'📋', label:'طلبات السائقين'},
+    {id:'op-card',    icon:'📊', label:'البطاقة التشغيلية'},
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
   ];
   if(isSuperuser()) {
@@ -649,6 +650,7 @@ async function renderSection(id) {
     case 'map':            await renderMapSection(); break;
     case 'emergencies':    await renderEmergenciesSection(); break;
     case 'requests':       await renderRequestsSection(); break;
+    case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
@@ -1592,6 +1594,243 @@ function buildMapSummaryTable(trips,drivers,cars,garageLatest){
     const garageLoc=hasActiveTrip?'':garageRec?.location; const statusBadge=hasActiveTrip?'<span class="badge badge-blue">● نشطة</span>':(garageLoc?'<span class="badge badge-red">🅿️ جراج</span>':'<span class="badge badge-green">✓ متاحة</span>');
     return `<tr><td dir="ltr"><strong>${car.plate}</strong></td><td>${car.model}</td><td>${drv?.name||'—'}</td><td>${statusBadge}</td><td>${formatLocation(lastLoc)}</td><td>${formatLocation(garageLoc)}</td></tr>`;
   }).join('')}</tbody></table>`;
+}
+
+/* ── OPERATIONAL CARD ── */
+async function renderOperationalCard() {
+  const c = document.getElementById('pageContent');
+
+  // Load cars for filter dropdown
+  let cars = [];
+  try { cars = await apiCall('/cars'); } catch(e) {}
+
+  const carOpts = `<option value="">— كل المركبات —</option>` +
+    cars.map(car => `<option value="${car.id}">${car.plate} — ${car.model}${car.car_name?' ('+car.car_name+')':''}</option>`).join('');
+
+  c.innerHTML = `
+    <style>
+      @media print {
+        body > *:not(#appShell) { display:none!important }
+        .sidebar,.topbar,.no-print { display:none!important }
+        .main-content { margin:0!important }
+        #opCardResult { padding:0!important }
+        .op-print-header { display:block!important }
+        .card { box-shadow:none!important;border:1px solid #ccc!important }
+        .op-table th,
+        .op-table td { font-size:10pt!important;padding:5px 8px!important }
+        .op-bar-wrap { display:none!important }
+      }
+      .op-print-header { display:none }
+      .op-table { width:100%;border-collapse:collapse;font-size:.88rem }
+      .op-table th { background:#0f2027;color:white;padding:.6rem .9rem;text-align:right;font-weight:700 }
+      .op-table td { padding:.55rem .9rem;border-bottom:1px solid #e2e8f0;text-align:right }
+      .op-table tr:nth-child(even) td { background:#f8fafc }
+      .op-table tr:hover td { background:#f0f9ff }
+      .op-table tfoot td { background:#e0f2fe;font-weight:800;color:#0369a1 }
+      .op-bar-wrap { margin-top:.3rem }
+      .op-bar { height:10px;border-radius:6px;background:linear-gradient(90deg,#3b82f6,#06b6d4);min-width:4px;transition:.4s }
+      .op-km-badge { display:inline-block;background:#dbeafe;color:#1d4ed8;border-radius:20px;
+                     font-size:.78rem;font-weight:700;padding:.1rem .5rem;margin-right:.4rem }
+      .filter-grid { display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:.8rem;align-items:end }
+      @media(max-width:768px){ .filter-grid { grid-template-columns:1fr 1fr } }
+    </style>
+
+    <div class="card no-print">
+      <div class="card-header">
+        <div class="card-title">📊 البطاقة التشغيلية للمركبات</div>
+      </div>
+      <div style="padding:1rem 1.2rem 1.4rem">
+        <div class="filter-grid">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">المركبة</label>
+            <select id="opCar" style="width:100%">${carOpts}</select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">من تاريخ</label>
+            <input type="date" id="opFrom" style="width:100%">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">إلى تاريخ</label>
+            <input type="date" id="opTo" style="width:100%">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">نوع التقرير</label>
+            <select id="opType" style="width:100%">
+              <option value="summary">📦 إجمالي</option>
+              <option value="detailed">🔍 تفصيلي</option>
+            </select>
+          </div>
+          <div>
+            <button class="btn btn-primary" onclick="generateOpCard()" style="white-space:nowrap;height:38px">
+              ⚙️ إنشاء التقرير
+            </button>
+          </div>
+        </div>
+        <div style="margin-top:.7rem;font-size:.78rem;color:#94a3b8">
+          💡 إجمالي = مجموع الكيلومترات لكل فترة &nbsp;|&nbsp; تفصيلي = تفصيل شهري أو يومي
+        </div>
+      </div>
+    </div>
+
+    <div id="opCardResult" style="margin-top:1rem"></div>`;
+
+  // Set sensible defaults: current year
+  const now = new Date();
+  document.getElementById('opFrom').value = `${now.getFullYear()}-01-01`;
+  document.getElementById('opTo').value   = now.toISOString().slice(0,10);
+}
+
+async function generateOpCard() {
+  const car_id      = document.getElementById('opCar').value;
+  const date_from   = document.getElementById('opFrom').value;
+  const date_to     = document.getElementById('opTo').value;
+  const report_type = document.getElementById('opType').value;
+  const res_el      = document.getElementById('opCardResult');
+
+  if(!date_from||!date_to) { showNotification('يرجى تحديد الفترة الزمنية','error'); return; }
+  if(date_from > date_to)  { showNotification('تاريخ البداية يجب أن يسبق تاريخ النهاية','error'); return; }
+
+  res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري إنشاء التقرير...</p></div>';
+
+  let params = `date_from=${date_from}&date_to=${date_to}&report_type=${report_type}`;
+  if(car_id) params += `&car_id=${car_id}`;
+
+  let data;
+  try { data = await apiCall(`/reports/operational?${params}`); }
+  catch(e) { res_el.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; return; }
+
+  if(!data.rows || data.rows.length===0) {
+    res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات في هذه الفترة</p></div>';
+    return;
+  }
+
+  // Determine column labels
+  const isMonthly = !data.single_month && !data.multi_year && report_type==='detailed';
+  const isDaily   = data.single_month  && report_type==='detailed';
+  const isYearly  = data.multi_year;
+
+  function periodLabel(p) {
+    if(isDaily)   { // 2026-04-01 → 1 أبريل
+      const d = new Date(p + 'T00:00:00');
+      return d.toLocaleDateString('ar-EG',{weekday:'short',day:'numeric',month:'long'});
+    }
+    if(isMonthly) { // 2026-04 → أبريل 2026
+      const [y,m] = p.split('-');
+      return new Date(+y,+m-1,1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+    }
+    if(isYearly) return `عام ${p}`;
+    return p;
+  }
+
+  const maxKm = Math.max(...data.rows.map(r=>r.total_km||0));
+
+  const car    = data.car_info;
+  const carStr = car
+    ? `${car.plate} — ${car.model}${car.car_name?' ('+car.car_name+')':''}`
+    : 'جميع المركبات';
+
+  function fmt(n) { return n!=null ? (+n).toLocaleString('ar-EG',{maximumFractionDigits:1}) : '—'; }
+  function fmtDate(d) { return d ? new Date(d+'T00:00:00').toLocaleDateString('ar-EG') : '—'; }
+
+  const periodHeader = isDaily?'اليوم' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
+
+  const tableRows = data.rows.map((r,i)=>{
+    const km  = r.total_km||0;
+    const pct = maxKm>0 ? (km/maxKm*100).toFixed(1) : 0;
+    return `<tr>
+      <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
+      <td style="font-weight:700;white-space:nowrap">${periodLabel(r.period)}</td>
+      <td style="text-align:center">${r.trip_count}</td>
+      <td>
+        <span class="op-km-badge">${fmt(km)} كم</span>
+        <div class="op-bar-wrap"><div class="op-bar" style="width:${pct}%"></div></div>
+      </td>
+      <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(r.min_odo)}</td>
+      <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(r.max_odo)}</td>
+      <td style="text-align:center;font-size:.8rem;color:#94a3b8">${fmtDate(r.first_date)}</td>
+    </tr>`;
+  }).join('');
+
+  // Summary cards
+  const summaryCards = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:1rem">
+      ${[
+        {icon:'🛣️', label:'إجمالي المسافة', val:fmt(data.total_km)+' كم', color:'#3b82f6'},
+        {icon:'🗺️', label:'عدد الرحلات',    val:data.total_trips,          color:'#8b5cf6'},
+        {icon:'📅', label:'من تاريخ',        val:fmtDate(date_from),        color:'#0ea5e9'},
+        {icon:'📅', label:'إلى تاريخ',       val:fmtDate(date_to),          color:'#06b6d4'},
+        {icon:'📟', label:'عداد البداية',    val:fmt(data.min_odo)+' كم',   color:'#10b981'},
+        {icon:'📟', label:'عداد النهاية',    val:fmt(data.max_odo)+' كم',   color:'#f59e0b'},
+      ].map(s=>`
+        <div style="background:#fff;border:1.5px solid ${s.color}22;border-radius:14px;
+                    padding:.8rem 1rem;text-align:center">
+          <div style="font-size:1.4rem">${s.icon}</div>
+          <div style="font-size:.72rem;color:#64748b;margin:.2rem 0">${s.label}</div>
+          <div style="font-weight:800;color:${s.color};font-size:.95rem">${s.val}</div>
+        </div>`).join('')}
+    </div>`;
+
+  res_el.innerHTML = `
+    <!-- Print Header (hidden on screen) -->
+    <div class="op-print-header" style="text-align:center;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #0f2027">
+      <div style="font-size:16pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
+      <div style="font-size:13pt;font-weight:700;margin-top:.3rem">البطاقة التشغيلية للمركبات</div>
+      <div style="font-size:10pt;color:#64748b;margin-top:.2rem">
+        المركبة: ${carStr} &nbsp;|&nbsp; الفترة: ${fmtDate(date_from)} — ${fmtDate(date_to)}
+        &nbsp;|&nbsp; نوع التقرير: ${report_type==='detailed'?'تفصيلي':'إجمالي'}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
+        <div>
+          <div class="card-title">📊 ${carStr}</div>
+          <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">
+            ${fmtDate(date_from)} — ${fmtDate(date_to)} &nbsp;|&nbsp;
+            ${report_type==='detailed'?'تقرير تفصيلي':'تقرير إجمالي'}
+          </div>
+        </div>
+        <div style="display:flex;gap:.5rem" class="no-print">
+          <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ طباعة</button>
+          <button class="btn btn-primary btn-sm" onclick="downloadOpPDF()">📄 تحميل PDF</button>
+        </div>
+      </div>
+      <div style="padding:0 1.2rem 1.4rem">
+        ${summaryCards}
+        <div style="overflow-x:auto">
+          <table class="op-table">
+            <thead>
+              <tr>
+                <th style="width:40px">#</th>
+                <th>${periodHeader}</th>
+                <th style="text-align:center">عدد الرحلات</th>
+                <th>المسافة المقطوعة</th>
+                <th style="text-align:center">عداد البداية</th>
+                <th style="text-align:center">عداد النهاية</th>
+                <th style="text-align:center">أول رحلة</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" style="font-weight:800">🏁 الإجمالي</td>
+                <td style="text-align:center">${data.total_trips}</td>
+                <td><span class="op-km-badge" style="background:#bfdbfe;color:#1e40af">${fmt(data.total_km)} كم</span></td>
+                <td style="text-align:center">${fmt(data.min_odo)}</td>
+                <td style="text-align:center">${fmt(data.max_odo)}</td>
+                <td style="text-align:center">—</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function downloadOpPDF() {
+  showNotification('جاري تجهيز PDF...','info',3000);
+  // Use browser print with PDF destination
+  window.print();
 }
 
 /* ── REQUESTS SECTION (Admin) ── */

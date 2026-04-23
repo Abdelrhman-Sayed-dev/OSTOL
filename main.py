@@ -2054,6 +2054,126 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
     return {"ok": True}
 
 
+
+# ══════════════════════════════════════════════════════
+# 25. OPERATIONAL CARD REPORT
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/operational")
+async def operational_report(
+    car_id:      Optional[int] = None,
+    date_from:   Optional[str] = None,
+    date_to:     Optional[str] = None,
+    report_type: str = "summary",   # summary | detailed
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """
+    Returns km aggregation for the operational card.
+    - report_type=summary + multi-year  → one row per year
+    - report_type=summary + single-year → one total row
+    - report_type=detailed + single-year → one row per month
+    - report_type=detailed + single-month → one row per day
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # ── Base query: completed trips with odometer data ──
+        base_where = ["t.end_time IS NOT NULL",
+                      "t.start_odometer IS NOT NULL",
+                      "t.end_odometer   IS NOT NULL",
+                      "t.end_odometer > t.start_odometer"]
+        params = []
+
+        if car_id:
+            base_where.append("t.car_id = ?")
+            params.append(car_id)
+        if date_from:
+            base_where.append("date(t.start_time) >= ?")
+            params.append(date_from)
+        if date_to:
+            base_where.append("date(t.start_time) <= ?")
+            params.append(date_to)
+
+        where_sql = " AND ".join(base_where)
+
+        # Determine grouping
+        # Parse year/month range
+        from_year  = int(date_from[:4]) if date_from else None
+        to_year    = int(date_to[:4])   if date_to   else None
+        from_month = int(date_from[5:7]) if date_from and len(date_from)>=7 else None
+        to_month   = int(date_to[5:7])   if date_to   and len(date_to)>=7   else None
+
+        multi_year   = from_year and to_year and (to_year - from_year) >= 1
+        single_year  = from_year and to_year and from_year == to_year
+        single_month = single_year and from_month and to_month and from_month == to_month
+
+        if single_month and report_type == "detailed":
+            # Group by day
+            group_expr = "strftime('%Y-%m-%d', t.start_time)"
+            label_expr = "strftime('%Y-%m-%d', t.start_time)"
+        elif (single_year or multi_year) and report_type == "detailed":
+            # Group by month
+            group_expr = "strftime('%Y-%m', t.start_time)"
+            label_expr = "strftime('%Y-%m', t.start_time)"
+        elif multi_year:
+            # Group by year
+            group_expr = "strftime('%Y', t.start_time)"
+            label_expr = "strftime('%Y', t.start_time)"
+        else:
+            # Single summary row
+            group_expr = "'total'"
+            label_expr = "'إجمالي الفترة'"
+
+        sql = f"""
+            SELECT
+                {label_expr}                            AS period,
+                COUNT(t.id)                             AS trip_count,
+                SUM(t.end_odometer - t.start_odometer)  AS total_km,
+                MIN(t.start_odometer)                   AS min_odo,
+                MAX(t.end_odometer)                     AS max_odo,
+                MIN(date(t.start_time))                 AS first_date,
+                MAX(date(t.start_time))                 AS last_date
+            FROM trips t
+            WHERE {where_sql}
+            GROUP BY {group_expr}
+            ORDER BY {group_expr}
+        """
+        c.execute(sql, params)
+        rows = [dict(r) for r in c.fetchall()]
+
+        # ── Car info ──
+        car_info = None
+        if car_id:
+            c.execute("SELECT * FROM cars WHERE id=?", (car_id,))
+            row = c.fetchone()
+            if row:
+                car_info = dict(row)
+
+        # ── Grand total ──
+        c.execute(f"""
+            SELECT COUNT(t.id) as tc,
+                   SUM(t.end_odometer - t.start_odometer) as tkm,
+                   MIN(t.start_odometer) as min_odo,
+                   MAX(t.end_odometer)   as max_odo
+            FROM trips t WHERE {where_sql}
+        """, params)
+        tot = dict(c.fetchone())
+
+        return {
+            "rows":        rows,
+            "car_info":    car_info,
+            "total_km":    round(tot["tkm"] or 0, 1),
+            "total_trips": tot["tc"] or 0,
+            "min_odo":     tot["min_odo"],
+            "max_odo":     tot["max_odo"],
+            "report_type": report_type,
+            "date_from":   date_from,
+            "date_to":     date_to,
+            "multi_year":  multi_year,
+            "single_month": single_month,
+        }
+
+
 # ══════════════════════════════════════════════════════
 # 24. ENTRY POINT
 # ══════════════════════════════════════════════════════
