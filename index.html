@@ -1664,6 +1664,9 @@ async function renderOperationalCard() {
             <button class="btn btn-primary" onclick="generateOpCard()" style="white-space:nowrap;height:38px">
               ⚙️ إنشاء التقرير
             </button>
+            <button class="btn btn-secondary" onclick="generateDriversReport()" style="white-space:nowrap;height:38px;background:#6366f1;color:#fff;border-color:#6366f1" title="تقرير مقسّم بالسائق لمركبة واحدة">
+              👤 تقرير بالسائق
+            </button>
           </div>
         </div>
         <div style="margin-top:.7rem;font-size:.78rem;color:#94a3b8">
@@ -1673,7 +1676,8 @@ async function renderOperationalCard() {
     </div>
 
     <div id="opCardResult" style="margin-top:1rem"></div>
-    <div id="anomalyResult" style="margin-top:1rem"></div>`;
+    <div id="anomalyResult"  style="margin-top:1rem"></div>
+    <div id="driversReport" style="margin-top:1rem"></div>`;
 
   // Add anomaly check button
   setTimeout(() => {
@@ -1847,6 +1851,155 @@ async function generateOpCard() {
     </div>`;
 }
 
+// ══════════════════════════════════════════════════════
+// تقرير البطاقة التشغيلية مقسّم بالسائق
+// ══════════════════════════════════════════════════════
+const FUEL_LABEL = {
+  fuel_solar:'سولار', fuel_92:'بنزين 92', fuel_95:'بنزين 95',
+  fuel_80:'بنزين 80', fuel_cng:'غاز طبيعي (CNG)',
+};
+
+async function generateDriversReport() {
+  const car_id    = document.getElementById('opCar').value;
+  const date_from = document.getElementById('opFrom').value;
+  const date_to   = document.getElementById('opTo').value;
+  const res_el    = document.getElementById('driversReport');
+
+  if (!car_id)    { showNotification('يرجى اختيار مركبة محددة أولاً','error'); return; }
+  if (!date_from||!date_to) { showNotification('يرجى تحديد الفترة الزمنية','error'); return; }
+
+  res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تحليل بيانات السائقين...</p></div>';
+
+  let url = `/reports/operational-by-driver?car_id=${car_id}&date_from=${date_from}&date_to=${date_to}`;
+  let data;
+  try { data = await apiCall(url); }
+  catch(e) { res_el.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; return; }
+
+  if (!data.drivers || data.drivers.length === 0) {
+    res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات في هذه الفترة للمركبة المحددة</p></div>';
+    return;
+  }
+
+  const car  = data.car_info;
+  const fmt  = n => n != null ? (+n).toLocaleString('ar-EG',{maximumFractionDigits:1}) : '—';
+  const fmtD = d => d ? new Date(d+'T00:00:00').toLocaleDateString('ar-EG') : '—';
+
+  // ── Fuel summary ──
+  const fuelHtml = data.fuel_records.length ? `
+    <div style="display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:.8rem">
+      ${data.fuel_records.map(f=>`
+        <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:10px;
+                    padding:.5rem .9rem;font-size:.82rem;display:flex;align-items:center;gap:.5rem">
+          <span style="font-size:1.1rem">⛽</span>
+          <span style="font-weight:700;color:#059669">${FUEL_LABEL[f.type]||f.type}</span>
+          <span style="color:#475569">${fmt(f.total_qty)} لتر</span>
+          <span style="color:#94a3b8">|</span>
+          <span style="color:#d97706;font-weight:700">${fmt(f.total_price)} جنيه</span>
+          <span style="color:#94a3b8;font-size:.75rem">(${f.count} مرة)</span>
+        </div>`).join('')}
+    </div>` : '<div style="color:#94a3b8;font-size:.8rem;margin-bottom:.8rem">⛽ لا توجد سجلات وقود في هذه الفترة</div>';
+
+  // ── Per-driver sections ──
+  const DRIVER_COLORS = ['#3b82f6','#8b5cf6','#10b981','#f59e0b','#ef4444','#06b6d4','#6366f1'];
+  const maxKm = Math.max(...data.drivers.map(d=>d.total_km||0));
+
+  const driverSections = data.drivers.map((d, idx) => {
+    const color = DRIVER_COLORS[idx % DRIVER_COLORS.length];
+    const pct   = maxKm > 0 ? (d.total_km / maxKm * 100).toFixed(1) : 0;
+    return `
+      <div style="border:2px solid ${color}33;border-radius:14px;padding:1.1rem 1.3rem;
+                  margin-bottom:1rem;background:linear-gradient(135deg,#fff,${color}08)">
+        <!-- Driver header -->
+        <div style="display:flex;align-items:center;gap:.7rem;margin-bottom:.9rem;flex-wrap:wrap">
+          <div style="width:38px;height:38px;border-radius:50%;background:${color};
+                      display:flex;align-items:center;justify-content:center;
+                      color:#fff;font-weight:800;font-size:1rem;flex-shrink:0">
+            ${idx+1}
+          </div>
+          <div>
+            <div style="font-weight:800;font-size:1rem;color:#1e293b">${d.driver_name}</div>
+            <div style="font-size:.75rem;color:#64748b">السائق ${idx+1} من ${data.drivers.length}</div>
+          </div>
+          <div style="margin-right:auto;background:${color}18;border-radius:8px;
+                      padding:.3rem .8rem;font-size:.8rem;font-weight:700;color:${color}">
+            ${d.trip_count} رحلة
+          </div>
+        </div>
+
+        <!-- Stats row -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.6rem;margin-bottom:.8rem">
+          ${[
+            {label:'إجمالي المسافة', val:fmt(d.total_km)+' كم', color},
+            {label:'عداد البداية',   val:fmt(d.first_odo)+' كم', color:'#10b981'},
+            {label:'عداد النهاية',   val:fmt(d.last_odo)+' كم',  color:'#f59e0b'},
+            {label:'أول رحلة',       val:fmtD(d.first_date),     color:'#0ea5e9'},
+          ].map(s=>`
+            <div style="background:#fff;border:1px solid ${s.color}33;border-radius:10px;
+                        padding:.6rem .8rem;text-align:center">
+              <div style="font-size:.7rem;color:#64748b;margin-bottom:.2rem">${s.label}</div>
+              <div style="font-weight:800;color:${s.color};font-size:.88rem">${s.val}</div>
+            </div>`).join('')}
+        </div>
+
+        <!-- Distance bar -->
+        <div style="display:flex;align-items:center;gap:.7rem">
+          <div style="flex:1;background:#f1f5f9;border-radius:999px;height:10px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:${color};border-radius:999px;
+                        transition:width .6s ease"></div>
+          </div>
+          <span style="font-size:.75rem;color:#94a3b8;white-space:nowrap">${pct}% من الأعلى</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // ── Main card ──
+  res_el.innerHTML = `
+    <div class="card" style="border:2px solid #6366f133">
+      <div class="card-header" style="background:linear-gradient(135deg,#f8fafc,#eef2ff);
+           border-radius:12px 12px 0 0;margin:-1.4rem -1.6rem 1.2rem">
+        <div style="padding:.9rem 1.3rem">
+          <div class="card-title" style="color:#4338ca">
+            👤 تقرير البطاقة التشغيلية — بحسب السائق
+          </div>
+          <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">
+            المركبة: <strong>${car.plate} — ${car.model}${car.car_name?' ('+car.car_name+')':''}</strong>
+            &nbsp;|&nbsp; ${fmtD(date_from)} — ${fmtD(date_to)}
+            ${car.equipment_type?`&nbsp;|&nbsp; 🏷️ <strong>${car.equipment_type}</strong>`:''}
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary bar -->
+      <div style="display:flex;flex-wrap:wrap;gap:.8rem;margin-bottom:1rem">
+        ${[
+          {icon:'🛣️', label:'إجمالي المسافة', val:fmt(data.total_km)+' كم', color:'#3b82f6'},
+          {icon:'🗺️', label:'إجمالي الرحلات', val:data.total_trips,         color:'#8b5cf6'},
+          {icon:'👥', label:'عدد السائقين',    val:data.drivers.length,       color:'#10b981'},
+        ].map(s=>`
+          <div style="flex:1;min-width:100px;background:#fff;border:1.5px solid ${s.color}22;
+                      border-radius:12px;padding:.7rem 1rem;text-align:center">
+            <div style="font-size:1.2rem">${s.icon}</div>
+            <div style="font-size:.7rem;color:#64748b">${s.label}</div>
+            <div style="font-weight:800;color:${s.color};font-size:.95rem">${s.val}</div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Fuel -->
+      <div style="margin-bottom:.5rem">
+        <div style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.5rem">⛽ سجلات الوقود في الفترة</div>
+        ${fuelHtml}
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1.5px dashed #e2e8f0;margin:.8rem 0 1rem"></div>
+      <div style="font-size:.82rem;font-weight:700;color:#475569;margin-bottom:.8rem">
+        📋 تفاصيل كل سائق (${data.drivers.length} سائق)
+      </div>
+
+      ${driverSections}
+    </div>`;
+}
+
 async function checkAnomalousTrips() {
   const car_id  = document.getElementById('opCar').value;
   const res_el  = document.getElementById('anomalyResult');
@@ -1922,8 +2075,8 @@ async function fixAnomalousTrip(tripId, currentStart, currentEnd) {
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div style="background:#fef3c7;border-radius:8px;padding:.6rem .9rem;margin-bottom:1rem;font-size:.82rem;color:#92400e">
-      ⚠️ القراءات الحالية: بداية <strong>${(currentStart||0).toLocaleString('ar-EG')}</strong> كم 
-      ← نهاية <strong>${(currentEnd||0).toLocaleString('ar-EG')}</strong> كم 
+      ⚠️ القراءات الحالية: بداية <strong>${(currentStart||0).toLocaleString('ar-EG')}</strong> كم
+      ← نهاية <strong>${(currentEnd||0).toLocaleString('ar-EG')}</strong> كم
       = <strong>${curKm}</strong> كم (مشبوه)
     </div>
     <p style="color:#64748b;margin-bottom:1rem;font-size:.88rem">
