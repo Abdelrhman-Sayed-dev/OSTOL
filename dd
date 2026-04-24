@@ -1,0 +1,267 @@
+"""
+seed_data.py — استيراد بيانات السائقين والمركبات من ملفات Excel
+يُشغَّل مرة واحدة بجانب ملف قاعدة البيانات trip_tracker.db
+"""
+
+import os
+import sqlite3
+import pandas as pd
+import bcrypt
+from datetime import datetime
+
+# ──────────────────────────────────────────────
+# إعدادات
+# ──────────────────────────────────────────────
+DB_PATH   = os.environ.get("DATABASE_PATH", "trip_tracker.db")
+SKIP_NAMES = {"عمرة محرك", "محرك إستيراد", ""}   # أسماء وهمية / بدون سائق
+
+# ──────────────────────────────────────────────
+# مساعدات
+# ──────────────────────────────────────────────
+def hash_pw(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+def s(val) -> str:
+    """تحويل آمن لـ string"""
+    if pd.isna(val) if not isinstance(val, str) else False:
+        return ""
+    return str(val).strip()
+
+def parse_date(val) -> str:
+    """تحويل أي صيغة تاريخ إلى YYYY-MM-DD"""
+    raw = s(val)
+    if not raw or raw in ("NaT", "nan"):
+        return ""
+    raw = raw.split(" ")[0]          # إزالة وقت من Timestamp
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return raw   # إذا مش عارف يحللها، يرجعها كما هي
+
+# ──────────────────────────────────────────────
+# اتصال بقاعدة البيانات
+# ──────────────────────────────────────────────
+conn = sqlite3.connect(DB_PATH)
+conn.execute("PRAGMA foreign_keys=ON")
+cur = conn.cursor()
+
+# جمع الـ usernames الموجودة مسبقاً لتجنب التكرار
+cur.execute("SELECT username FROM users")
+used_usernames: set = {r[0] for r in cur.fetchall()}
+
+# جمع أسماء السائقين الموجودة مسبقاً
+cur.execute("SELECT name FROM drivers")
+existing_driver_names: set = {r[0] for r in cur.fetchall()}
+
+# ──────────────────────────────────────────────
+# دوال الإدراج
+# ──────────────────────────────────────────────
+def make_username(full_name: str) -> str:
+    """أول كلمة من الاسم، وإذا مكررة نضيف رقم"""
+    base = full_name.strip().split()[0]
+    username = base
+    i = 1
+    while username in used_usernames:
+        username = f"{base}{i}"
+        i += 1
+    used_usernames.add(username)
+    return username
+
+
+def upsert_car(plate, model, car_name, car_code, chassis, year,
+               branch, car_license_expiry, equipment_type="") -> int | None:
+    plate = s(plate)
+    if not plate:
+        return None
+    cur.execute("SELECT id FROM cars WHERE plate=?", (plate,))
+    row = cur.fetchone()
+    if row:
+        return row[0]
+    cur.execute(
+        """INSERT INTO cars(plate, model, car_name, car_code, chassis, year,
+                            branch, car_license_expiry, equipment_type)
+           VALUES(?,?,?,?,?,?,?,?,?)""",
+        (plate, s(model), s(car_name), s(car_code), s(chassis),
+         s(year), s(branch), parse_date(car_license_expiry), s(equipment_type)),
+    )
+    return cur.lastrowid
+
+
+def insert_driver(name: str, fixed_number: str, phone: str,
+                  branch: str, driver_license_expiry, car_id: int | None):
+    name = s(name)
+    if not name or name in SKIP_NAMES:
+        return
+
+    # تجنب تكرار السائق بنفس الاسم
+    if name in existing_driver_names:
+        # نربط العربية بالسائق الموجود فقط
+        if car_id:
+            cur.execute("SELECT id FROM drivers WHERE name=?", (name,))
+            driver_row = cur.fetchone()
+            if driver_row:
+                cur.execute(
+                    "INSERT OR IGNORE INTO driver_car_permissions(driver_id,car_id) VALUES(?,?)",
+                    (driver_row[0], car_id),
+                )
+        return
+
+    existing_driver_names.add(name)
+
+    fixed_number = s(fixed_number)
+    phone        = s(phone)
+    password     = fixed_number or phone or "123456"
+    username     = make_username(name)
+
+    # إدراج مستخدم
+    cur.execute(
+        "INSERT INTO users(username, password, role) VALUES(?,?,?)",
+        (username, hash_pw(password), "driver"),
+    )
+    user_id = cur.lastrowid
+
+    # إدراج سائق
+    cur.execute(
+        """INSERT INTO drivers(name, phone, status, user_id,
+                               driver_license_expiry, branch, fixed_number)
+           VALUES(?,?,?,?,?,?,?)""",
+        (name, phone, "active", user_id,
+         parse_date(driver_license_expiry), s(branch), fixed_number),
+    )
+    driver_id = cur.lastrowid
+
+    # صلاحية العربية
+    if car_id:
+        cur.execute(
+            "INSERT OR IGNORE INTO driver_car_permissions(driver_id,car_id) VALUES(?,?)",
+            (driver_id, car_id),
+        )
+
+    print(f"  ✅  {name:<30}  user={username:<25}  pass={password}")
+
+
+# ══════════════════════════════════════════════
+# ملف 1 — المنشآت المتميزة (إدراج الشاسية)
+# ══════════════════════════════════════════════
+print("\n📂 ملف 1 — المنشآت المتميزة")
+df1 = pd.read_excel(
+    "إدراج_الشاسية_رخصة_السير_ورخصة_القيادة_المنشات_المتميزة_شهر4-2026.xlsx",
+    header=None,
+)
+# البيانات من صف 4 (index 4)
+for _, row in df1.iloc[4:].iterrows():
+    # تخطي صفوف العناوين أو الفارغة
+    if pd.isna(row[0]) or not str(row[0]).strip().lstrip("0123456789").strip() == "":
+        # إذا العمود الأول مش رقم → عنوان قسم
+        try:
+            int(float(row[0]))
+        except (ValueError, TypeError):
+            continue
+
+    # --- بيانات العربية ---
+    car_id = upsert_car(
+        plate              = row[7],          # رقم المرور
+        model              = row[2],          # نوع السيارة
+        car_name           = row[5],          # الماركة
+        car_code           = row[3],          # رقم الكود
+        chassis            = row[4],          # رقم الشاسية
+        year               = row[6],          # سنة الصنع
+        branch             = row[1],          # الفرع
+        car_license_expiry = row[8],
+    )
+
+    # --- بيانات السائق ---
+    insert_driver(
+        name                 = row[9],        # اسم السائق
+        fixed_number         = row[10],       # الرقم الثابت
+        phone                = row[11],       # رقم التليفون
+        branch               = row[1],
+        driver_license_expiry= row[12],
+        car_id               = car_id,
+    )
+
+
+# ══════════════════════════════════════════════
+# ملف 2 — بيان سيارات الركوب — فرع القاهرة
+# ══════════════════════════════════════════════
+print("\n📂 ملف 2 — فرع القاهرة")
+df2 = pd.read_excel(
+    "بيان_بسيارات_الركوب_التابعة_لفرع_القاهرة_١٠٥٣٣٧.xlsx",
+    sheet_name="Sheet1",
+    header=None,
+)
+# البيانات من صف 5 (index 5)
+for _, row in df2.iloc[5:].iterrows():
+    try:
+        int(float(row[0]))
+    except (ValueError, TypeError):
+        continue
+
+    car_id = upsert_car(
+        plate              = row[4],          # رقم اللوحة
+        model              = row[1],          # نوع السيارة
+        car_name           = row[2],          # الماركة
+        car_code           = row[3],          # الكود
+        chassis            = row[5],          # الشاسية
+        year               = "",
+        branch             = "فرع القاهرة",
+        car_license_expiry = row[9],
+    )
+
+    insert_driver(
+        name                 = row[6],        # اسم السائق
+        fixed_number         = row[7],        # الرقم الثابت
+        phone                = row[8],        # رقم التليفون
+        branch               = "فرع القاهرة",
+        driver_license_expiry= row[10],
+        car_id               = car_id,
+    )
+
+
+# ══════════════════════════════════════════════
+# ملف 3 — بيان تراخيص — صيانة القصور والآثار
+# ══════════════════════════════════════════════
+print("\n📂 ملف 3 — صيانة القصور")
+df3 = pd.read_excel(
+    "بيان_تراخيص_سيارات_وسائق.xlsx",
+    sheet_name="صبانة القصور",
+    header=None,
+)
+# البيانات من صف 4 (index 4)
+for _, row in df3.iloc[4:].iterrows():
+    try:
+        int(float(row[0]))
+    except (ValueError, TypeError):
+        continue
+
+    car_id = upsert_car(
+        plate              = row[6],          # رقم المرور
+        model              = row[2],          # نوع السيارة
+        car_name           = row[7],          # الماركة
+        car_code           = row[3],          # الكود
+        chassis            = row[4],          # شاسيه
+        year               = row[8],          # سنة الصنع
+        branch             = row[1],          # الإدارة/الفرع
+        car_license_expiry = row[12],
+    )
+
+    insert_driver(
+        name                 = row[9],        # اسم السائق
+        fixed_number         = row[10],       # رقم ثابت
+        phone                = row[11],       # تليفون السائق
+        branch               = row[1],
+        driver_license_expiry= row[13],
+        car_id               = car_id,
+    )
+
+# ──────────────────────────────────────────────
+# حفظ التغييرات
+# ──────────────────────────────────────────────
+conn.commit()
+conn.close()
+
+print("\n" + "="*55)
+print("✅  تم الاستيراد بنجاح!")
+print("="*55)
