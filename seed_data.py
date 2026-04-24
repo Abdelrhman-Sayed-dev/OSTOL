@@ -173,7 +173,7 @@ def read_file3(path, sector):
 
 # ══ ابحث عن الملفات في نفس مجلد السكريبت أو /mnt/user-data/uploads ══
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SEARCH_DIRS = [SCRIPT_DIR, "/mnt/user-data/uploads"]
+SEARCH_DIRS = [SCRIPT_DIR]
 
 def find_file(name):
     for d in SEARCH_DIRS:
