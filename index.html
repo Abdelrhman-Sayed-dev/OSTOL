@@ -1731,9 +1731,6 @@ async function renderOperationalCard() {
             <button class="btn btn-primary" onclick="generateOpCard()" style="white-space:nowrap;height:38px">
               ⚙️ إنشاء التقرير
             </button>
-            <button class="btn btn-secondary" onclick="generateDriversReport()" style="white-space:nowrap;height:38px;background:#6366f1;color:#fff;border-color:#6366f1" title="تقرير مقسّم بالسائق لمركبة واحدة">
-              👤 تقرير بالسائق
-            </button>
           </div>
         </div>
         <div style="margin-top:.7rem;font-size:.78rem;color:#94a3b8">
@@ -1805,7 +1802,7 @@ async function generateOpCard() {
     return p;
   }
 
-  const maxKm = Math.max(...data.rows.map(r=>(r.max_odo||0)-(r.min_odo||0)));
+  const maxKm = Math.max(...data.rows.map(r=>r.total_km||0));
 
   const car    = data.car_info;
   const carStr = car
@@ -1818,7 +1815,7 @@ async function generateOpCard() {
   const periodHeader = isDaily?'اليوم' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
 
   const tableRows = data.rows.map((r,i)=>{
-    const km  = (r.max_odo||0) - (r.min_odo||0);
+    const km  = r.total_km||0;
     const pct = maxKm>0 ? (km/maxKm*100).toFixed(1) : 0;
     return `<tr>
       <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
@@ -1834,8 +1831,8 @@ async function generateOpCard() {
     </tr>`;
   }).join('');
 
-  // Summary cards — المسافة الكلية = عداد نهاية آخر رحلة − عداد بداية أول رحلة
-  const realTotalKm = (data.max_odo||0) - (data.min_odo||0);
+  // Summary cards — المسافة الكلية = مجموع مسافات الرحلات الفعلية
+  const realTotalKm = data.total_km || 0;
   const summaryCards = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:.8rem">
       ${[
@@ -1852,11 +1849,79 @@ async function generateOpCard() {
           <div style="font-size:.72rem;color:#64748b;margin:.2rem 0">${s.label}</div>
           <div style="font-weight:800;color:${s.color};font-size:.95rem">${s.val}</div>
         </div>`).join('')}
-    </div>
-    <div style="background:#fef3c7;border:1.5px solid #f59e0b44;border-radius:10px;
-                padding:.55rem 1rem;margin-bottom:.8rem;font-size:.78rem;color:#92400e">
-      ℹ️ <strong>ملاحظة:</strong> إجمالي المسافة = عداد نهاية آخر رحلة − عداد بداية أول رحلة (${fmt(data.max_odo)} − ${fmt(data.min_odo)} = ${fmt(realTotalKm)} كم).
     </div>`;
+
+  // ── جلب بيانات السائقين ونوع الوقود ──
+  let driversHtml = '';
+  let fuelTypeHtml = '';
+  if(car_id) {
+    try {
+      const dData = await apiCall(`/reports/operational-by-driver?car_id=${car_id}&date_from=${date_from}&date_to=${date_to}`);
+
+      // نوع الوقود
+      if(dData.fuel_records && dData.fuel_records.length > 0) {
+        const topFuel = dData.fuel_records.sort((a,b)=>b.count-a.count)[0];
+        const fuelLabel = WT[topFuel.type]?.label || topFuel.type;
+        const fuelIcon  = WT[topFuel.type]?.icon  || '⛽';
+        const allFuels  = dData.fuel_records.map(f=>`${WT[f.type]?.icon||'⛽'} ${WT[f.type]?.label||f.type} (${f.count} مرة)`).join(' &nbsp;·&nbsp; ');
+        fuelTypeHtml = `
+          <div style="display:flex;align-items:center;gap:.6rem;background:#f0fdf4;
+                      border:1.5px solid #86efac;border-radius:10px;padding:.55rem 1rem;
+                      margin-bottom:.8rem;font-size:.82rem">
+            <span style="font-size:1.2rem">${fuelIcon}</span>
+            <span><strong style="color:#166534">نوع الوقود:</strong>
+            <span style="color:#15803d">${allFuels}</span></span>
+          </div>`;
+      } else {
+        fuelTypeHtml = `
+          <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;
+                      padding:.55rem 1rem;margin-bottom:.8rem;font-size:.78rem;color:#94a3b8">
+            ⛽ لا توجد سجلات وقود لهذه المركبة في الفترة المحددة
+          </div>`;
+      }
+
+      // السائقون
+      if(dData.drivers && dData.drivers.length > 0) {
+        const dRows = dData.drivers.map((d,i)=>`
+          <tr>
+            <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
+            <td style="font-weight:700">${d.driver_name}</td>
+            <td style="text-align:center">${d.trip_count}</td>
+            <td><span style="background:#bfdbfe;color:#1e40af;padding:.2rem .7rem;
+                             border-radius:20px;font-weight:700;font-size:.85rem">
+              ${fmt(d.total_km)} كم
+            </span></td>
+            <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(d.min_odo)}</td>
+            <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(d.max_odo)}</td>
+            <td style="text-align:center;font-size:.8rem;color:#94a3b8">${d.first_date||'—'}</td>
+          </tr>`).join('');
+        driversHtml = `
+          <div style="margin-top:1rem">
+            <div style="font-weight:800;font-size:.88rem;color:#334155;margin-bottom:.6rem">
+              👤 السائقون في هذه الفترة (${dData.drivers.length})
+            </div>
+            <div style="overflow-x:auto">
+              <table class="op-table">
+                <thead>
+                  <tr>
+                    <th style="width:36px">#</th>
+                    <th>السائق</th>
+                    <th style="text-align:center">الرحلات</th>
+                    <th>المسافة</th>
+                    <th style="text-align:center">عداد البداية</th>
+                    <th style="text-align:center">عداد النهاية</th>
+                    <th style="text-align:center">أول رحلة</th>
+                  </tr>
+                </thead>
+                <tbody>${dRows}</tbody>
+              </table>
+            </div>
+          </div>`;
+      } else {
+        driversHtml = `<div style="font-size:.8rem;color:#94a3b8;margin-top:.8rem">لا توجد رحلات مسجلة بسائقين في هذه الفترة</div>`;
+      }
+    } catch(e) { /* تجاهل لو فشل */ }
+  }
 
   res_el.innerHTML = `
     <!-- Print Header (hidden on screen) -->
@@ -1885,6 +1950,7 @@ async function generateOpCard() {
       </div>
       <div style="padding:0 1.2rem 1.4rem">
         ${summaryCards}
+        ${fuelTypeHtml}
         <div style="overflow-x:auto">
           <table class="op-table">
             <thead>
@@ -1911,6 +1977,7 @@ async function generateOpCard() {
             </tfoot>
           </table>
         </div>
+        ${driversHtml}
       </div>
     </div>`;
 }
