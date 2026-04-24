@@ -277,34 +277,54 @@ body.driver-mode { background:#f5f5f5; }
   padding:0 0 40px;
   display:flex;
   flex-direction:column;
+  background:#f0ede8;
 }
 
 /* ── TOP SECTION: greeting + date + car ── */
 .dp-top {
   background:#fff;
-  padding:1.6rem 1.4rem 1.2rem;
-  border-bottom:1px solid #e8e8e8;
+  padding:1.8rem 1.4rem 1.4rem;
+  border-bottom:1px solid #e8e4df;
   text-align:center;
 }
+/* ── DRIVER INTERFACE REDESIGN ── */
 .dp-greeting {
-  font-size:1.7rem;
+  font-size:1.2rem;
   font-weight:800;
-  color:#1e293b;
-  margin-bottom:.3rem;
+  color:#1a1a2e;
+  margin-bottom:.25rem;
 }
 .dp-date {
-  font-size:.9rem;
-  color:#94a3b8;
-  font-weight:500;
-  margin-bottom:.9rem;
+  font-size:.82rem;
+  color:#8a8a9a;
+  font-weight:400;
 }
-.dp-divider { border:none; border-top:1px solid #f1f5f9; margin:.8rem 0; }
+.dp-divider { display:none; }
+.dp-avatar {
+  width:56px; height:56px;
+  border-radius:50%;
+  background:#f59e0b;
+  color:#fff;
+  font-size:22px;
+  font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+  margin:0 auto .75rem;
+  box-shadow:0 4px 14px rgba(245,158,11,.35);
+}
 .dp-car {
-  font-size:1rem;
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  border:1.5px solid #e8e4df;
+  border-radius:50px;
+  padding:.55rem 1.2rem;
+  font-size:.95rem;
   font-weight:700;
-  color:#334155;
+  color:#1a1a2e;
+  background:#fff;
+  margin-top:.75rem;
 }
-.dp-car span { color:var(--primary); }
+.dp-car span { color:#8a8a9a; font-weight:400; }
 .dp-logout {
   position:fixed;
   top:.75rem;
@@ -326,130 +346,177 @@ body.driver-mode { background:#f5f5f5; }
 
 /* ── TRIP STATUS ── */
 .dp-status {
-  margin:1rem 1.2rem 0;
+  margin:0 1rem;
   border-radius:12px;
-  padding:.85rem 1.1rem;
+  padding:.75rem 1rem;
   display:flex;
   align-items:center;
   gap:.75rem;
   font-weight:700;
-  font-size:.88rem;
+  font-size:.85rem;
 }
 .dp-status.active { background:#dcfce7; color:#166534; border:1.5px solid #86efac; }
 .dp-status.idle   { background:#f1f5f9; color:#94a3b8; border:1.5px solid #e2e8f0; }
-.dp-status .ds-icon { font-size:1.3rem; flex-shrink:0; }
-.dp-status .ds-sub  { font-size:.75rem; font-weight:400; margin-top:.1rem; }
+.dp-status .ds-icon { font-size:1.2rem; flex-shrink:0; }
+.dp-status .ds-sub  { font-size:.73rem; font-weight:400; margin-top:.1rem; }
 
-/* ── TRIP BUTTONS section ── */
+/* ── CARD SECTIONS ── */
 .dp-section {
-  padding:1rem 1.2rem 0;
+  background:#fff;
+  margin:.65rem .85rem 0;
+  border-radius:16px;
+  padding:1rem;
   display:flex;
   flex-direction:column;
   gap:.55rem;
+  box-shadow:0 2px 10px rgba(0,0,0,.05);
 }
 .dp-label {
   font-size:.68rem;
-  font-weight:800;
-  color:#94a3b8;
+  font-weight:700;
+  color:#8a8a9a;
   text-transform:uppercase;
-  letter-spacing:1.3px;
+  letter-spacing:.8px;
   margin-bottom:.1rem;
 }
 
-/* Main trip button */
+/* Main trip button — GOLDEN */
 .dp-btn-main {
   width:100%;
   padding:1rem 1rem;
   border:none;
   border-radius:14px;
-  font-size:1.1rem;
+  font-size:1.05rem;
   font-weight:800;
   cursor:pointer;
   font-family:inherit;
   transition:.15s;
+  box-shadow:0 4px 14px rgba(184,134,11,.3);
 }
 .dp-btn-main:active { transform:scale(.98); }
-.dp-btn-start  { background:#2563eb; color:#fff; }
-.dp-btn-start:hover  { background:#1d4ed8; }
-.dp-btn-end    { background:#16a34a; color:#fff; }
-.dp-btn-end:hover    { background:#15803d; }
+.dp-btn-start { background:linear-gradient(135deg,#b8860b,#c99a1a); color:#fff; }
+.dp-btn-start:hover { box-shadow:0 6px 18px rgba(184,134,11,.45); }
+.dp-btn-end   { background:linear-gradient(135deg,#16a34a,#15803d); color:#fff; box-shadow:0 4px 14px rgba(22,163,74,.3); }
+.dp-btn-end:hover { box-shadow:0 6px 18px rgba(22,163,74,.45); }
+
+/* Garage button — outlined */
 .dp-btn-garage {
   width:100%;
-  padding:.75rem 1rem;
-  border:none;
-  border-radius:10px;
+  padding:.8rem 1rem;
+  border:1.5px solid #e8e4df;
+  border-radius:12px;
   font-size:.88rem;
-  font-weight:700;
+  font-weight:600;
   cursor:pointer;
   font-family:inherit;
-  background:#475569;
-  color:#fff;
+  background:#fff;
+  color:#1a1a2e;
   transition:.15s;
+  box-shadow:none;
 }
-.dp-btn-garage:hover { background:#334155; }
+.dp-btn-garage:hover { border-color:#1e3a5f; background:#f7f8ff; }
 .dp-btn-garage:active { transform:scale(.98); }
 
-/* ── 4 QUICK BUTTONS ── */
+/* ── 4 QUICK BUTTONS — 2x2 grid ── */
 .dp-quick {
   display:grid;
-  grid-template-columns:repeat(4,1fr);
+  grid-template-columns:1fr 1fr;
   gap:.6rem;
-  padding:0 1.2rem;
 }
 .dp-qbtn {
   border:none;
   border-radius:14px;
-  padding:.85rem .3rem;
+  padding:1rem .5rem .85rem;
   cursor:pointer;
   font-family:inherit;
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:.3rem;
+  gap:.5rem;
   transition:.15s;
 }
-.dp-qbtn:active { transform:scale(.94); }
-.dp-qbtn .qi   { font-size:1.7rem; }
-.dp-qbtn .ql   { font-size:.72rem; font-weight:800; color:#fff; }
-.dp-qbtn-fuel  { background:#e53e3e; }
-.dp-qbtn-oil   { background:#dd6b20; }
-.dp-qbtn-acc   { background:#c53030; }
-.dp-qbtn-emg   { background:#d69e2e; }
-/* Emergency subtle pulse */
-.dp-qbtn-emg {
-  background:#d97706;
-  animation:emgBlink 2.5s ease-in-out infinite;
+.dp-qbtn:active { transform:scale(.95); }
+.dp-qbtn .qi-wrap {
+  width:40px; height:40px;
+  border-radius:11px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.2rem;
 }
-@keyframes emgBlink{0%,100%{opacity:1}50%{opacity:.82}}
+.dp-qbtn .qi   { font-size:1.4rem; }
+.dp-qbtn .ql   { font-size:.82rem; font-weight:700; color:#1a1a2e; }
+.dp-qbtn-fuel  { background:#eef3ff; }
+.dp-qbtn-fuel  .qi-wrap { background:rgba(59,95,192,.12); }
+.dp-qbtn-oil   { background:#edfaf5; }
+.dp-qbtn-oil   .qi-wrap { background:rgba(16,185,129,.12); }
+.dp-qbtn-acc   { background:#fff0f0; }
+.dp-qbtn-acc   .qi-wrap { background:rgba(229,57,53,.1); }
+.dp-qbtn-emg   { background:#fff8e8; }
+.dp-qbtn-emg   .qi-wrap { background:rgba(245,158,11,.14); }
+@keyframes emgBlink{0%,100%{opacity:1}50%{opacity:.78}}
+.dp-qbtn-emg { animation:emgBlink 2.8s ease-in-out infinite; }
 
-/* ── WORKSHOP SERVICES ── */
+/* ── WORKSHOP SERVICES — pill style ── */
 .dp-ws-grid {
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:.55rem;
-  padding:0 1.2rem;
+  display:flex;
+  flex-wrap:wrap;
+  gap:.5rem;
 }
 .dp-ws-btn {
-  padding:.85rem .6rem;
-  border:1.5px solid #e2e8f0;
-  border-radius:12px;
+  padding:.5rem 1rem;
+  border:1.5px solid #e8e4df;
+  border-radius:50px;
   background:#fff;
   cursor:pointer;
   font-family:inherit;
+  font-size:.85rem;
+  font-weight:600;
+  color:#1a1a2e;
+  transition:.15s;
+  white-space:nowrap;
+}
+.dp-ws-btn:hover  { border-color:#b8860b; color:#b8860b; background:#fff8e8; }
+.dp-ws-btn:active { background:#b8860b; color:#fff; border-color:#b8860b; }
+
+/* ── REQUESTS BUTTONS ── */
+.dp-req-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:.6rem;
+}
+.dp-btn-new-req {
+  padding:.85rem;
+  border-radius:12px;
+  border:none;
+  background:#1e3a5f;
+  color:#fff;
+  font-family:inherit;
   font-size:.88rem;
   font-weight:700;
-  color:#334155;
+  cursor:pointer;
+  display:flex; align-items:center; justify-content:center; gap:.4rem;
   transition:.15s;
-  text-align:center;
 }
-.dp-ws-btn:hover  { border-color:var(--primary); background:#f0fdf9; color:var(--primary); }
-.dp-ws-btn:active { transform:scale(.97); }
+.dp-btn-new-req:hover { background:#264870; transform:translateY(-1px); }
+.dp-btn-my-req {
+  padding:.85rem;
+  border-radius:12px;
+  border:1.5px solid #e8e4df;
+  background:#fff;
+  color:#1a1a2e;
+  font-family:inherit;
+  font-size:.88rem;
+  font-weight:600;
+  cursor:pointer;
+  display:flex; align-items:center; justify-content:center; gap:.4rem;
+  transition:.15s;
+}
+.dp-btn-my-req:hover { border-color:#1e3a5f; }
 
-/* Responsive: desktop side-by-side panels */
+/* Responsive */
 @media(min-width:700px){
   .dp-wrap { box-shadow:0 0 40px rgba(0,0,0,.08); }
   .dp-quick { grid-template-columns:repeat(4,1fr); }
-  .dp-ws-grid { grid-template-columns:repeat(3,1fr); }
+  .dp-ws-grid { gap:.55rem; }
 }
 
 </style>
@@ -1767,20 +1834,17 @@ async function generateOpCard() {
     </tr>`;
   }).join('');
 
-  // Summary cards
-  const avgKm = data.total_trips > 0
-    ? fmt(+(data.total_km / data.total_trips).toFixed(1))
-    : '—';
+  // Summary cards — المسافة الكلية = عداد نهاية آخر رحلة − عداد بداية أول رحلة
+  const realTotalKm = (data.max_odo||0) - (data.min_odo||0);
   const summaryCards = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:.8rem">
       ${[
-        {icon:'🛣️', label:'إجمالي المسافة',           val:fmt(data.total_km)+' كم', color:'#3b82f6'},
+        {icon:'🛣️', label:'إجمالي المسافة',           val:fmt(realTotalKm)+' كم',   color:'#3b82f6'},
         {icon:'🗺️', label:'عدد الرحلات',               val:data.total_trips,          color:'#8b5cf6'},
         {icon:'📅', label:'من تاريخ',                   val:fmtDate(date_from),        color:'#0ea5e9'},
         {icon:'📅', label:'إلى تاريخ',                  val:fmtDate(date_to),          color:'#06b6d4'},
         {icon:'📟', label:'عداد البداية (أول رحلة)',   val:fmt(data.min_odo)+' كم',  color:'#10b981'},
         {icon:'📟', label:'عداد النهاية (آخر رحلة)',   val:fmt(data.max_odo)+' كم',  color:'#f59e0b'},
-        {icon:'📊', label:'متوسط المسافة / رحلة',       val:avgKm+' كم',               color:'#6366f1'},
       ].map(s=>`
         <div style="background:#fff;border:1.5px solid ${s.color}22;border-radius:14px;
                     padding:.8rem 1rem;text-align:center">
@@ -1791,7 +1855,7 @@ async function generateOpCard() {
     </div>
     <div style="background:#fef3c7;border:1.5px solid #f59e0b44;border-radius:10px;
                 padding:.55rem 1rem;margin-bottom:.8rem;font-size:.78rem;color:#92400e">
-      ℹ️ <strong>ملاحظة:</strong> إجمالي المسافة = مجموع كل الرحلات (${data.total_trips} رحلة) — وليس الفرق بين العدادين.
+      ℹ️ <strong>ملاحظة:</strong> إجمالي المسافة = عداد نهاية آخر رحلة − عداد بداية أول رحلة (${fmt(data.max_odo)} − ${fmt(data.min_odo)} = ${fmt(realTotalKm)} كم).
     </div>`;
 
   res_el.innerHTML = `
@@ -1972,7 +2036,7 @@ async function generateDriversReport() {
       <!-- Summary bar -->
       <div style="display:flex;flex-wrap:wrap;gap:.8rem;margin-bottom:1rem">
         ${[
-          {icon:'🛣️', label:'إجمالي المسافة', val:fmt(data.total_km)+' كم', color:'#3b82f6'},
+          {icon:'🛣️', label:'إجمالي المسافة', val:fmt((data.max_odo||0)-(data.min_odo||0))+' كم', color:'#3b82f6'},
           {icon:'🗺️', label:'إجمالي الرحلات', val:data.total_trips,         color:'#8b5cf6'},
           {icon:'👥', label:'عدد السائقين',    val:data.drivers.length,       color:'#10b981'},
         ].map(s=>`
@@ -3330,13 +3394,16 @@ async function renderDriverSinglePage() {
 
       <!-- GREETING -->
       <div class="dp-top">
+        <div class="dp-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
         <div class="dp-greeting">مرحباً، ${currentUser.username}</div>
         <div class="dp-date">${dayName}، ${dateStr}</div>
-        <hr class="dp-divider">
-        <div class="dp-car">السيارة: <span>${carLabel}</span></div>
+        <div class="dp-car">
+          <span>${primaryCar ? primaryCar.plate : '—'}</span>
+          <span>—</span>
+          <span style="color:#1a1a2e">${primaryCar ? primaryCar.model : 'لا توجد مركبة'}</span>
+          🚛
+        </div>
       </div>
-
-      <!-- TRIP STATUS -->
 
       <!-- TRIP BUTTONS -->
       <div class="dp-section">
@@ -3344,7 +3411,7 @@ async function renderDriverSinglePage() {
         ${!activeTrip
           ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶  بدء الرحلة</button>`
           : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔  إنهاء الرحلة</button>`}
-        <button class="dp-btn-garage" id="dpGarage">🅿  إنهاء رحلات اليوم / دخول الجراج</button>
+        <button class="dp-btn-garage" id="dpGarage">🏠  إنهاء رحلات اليوم / دخول الجراج</button>
       </div>
 
       ${emgCardsHtml ? `<!-- بلاغات الـ 24 ساعة الأخيرة -->
@@ -3353,31 +3420,31 @@ async function renderDriverSinglePage() {
         ${emgCardsHtml}
       </div>` : ''}
 
-      <!-- 4 QUICK BUTTONS -->
+      <!-- 4 QUICK BUTTONS — 2x2 -->
       <div class="dp-section">
         <div class="dp-label">إجراء سريع</div>
         <div class="dp-quick">
-          <button class="dp-qbtn dp-qbtn-fuel"  onclick="dpQuick('fuel')"><span class="qi">⛽</span><span class="ql">وقود</span></button>
-          <button class="dp-qbtn dp-qbtn-oil"   onclick="dpQuick('oil')"><span class="qi">🛢️</span><span class="ql">زيت</span></button>
-          <button class="dp-qbtn dp-qbtn-acc"   onclick="dpQuick('accident')"><span class="qi">💥</span><span class="ql">حادت</span></button>
-          <button class="dp-qbtn dp-qbtn-emg"   onclick="dpQuick('emergency')"><span class="qi">🚨</span><span class="ql">طارئ</span></button>
+          <button class="dp-qbtn dp-qbtn-acc"  onclick="dpQuick('accident')">
+            <div class="qi-wrap">⚠️</div><span class="ql">حادث</span>
+          </button>
+          <button class="dp-qbtn dp-qbtn-emg"  onclick="dpQuick('emergency')">
+            <div class="qi-wrap">🚨</div><span class="ql">طارئ</span>
+          </button>
+          <button class="dp-qbtn dp-qbtn-fuel" onclick="dpQuick('fuel')">
+            <div class="qi-wrap">⛽</div><span class="ql">وقود</span>
+          </button>
+          <button class="dp-qbtn dp-qbtn-oil"  onclick="dpQuick('oil')">
+            <div class="qi-wrap">🛢️</div><span class="ql">زيت</span>
+          </button>
         </div>
       </div>
 
-      <!-- REQUESTS — زراران بدل العرض الثابت -->
+      <!-- REQUESTS -->
       <div class="dp-section">
         <div class="dp-label">الطلبات</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem">
-          <button class="dp-btn-garage" onclick="openSubmitRequestModal()"
-                  style="background:#1d4ed8;border:none;color:white;font-weight:700;
-                         display:flex;align-items:center;justify-content:center;gap:.5rem">
-            ➕ تقديم طلب جديد
-          </button>
-          <button class="dp-btn-garage" onclick="openMyRequestsModal()"
-                  style="background:#0f172a;border:none;color:white;font-weight:700;
-                         display:flex;align-items:center;justify-content:center;gap:.5rem">
-            📋 طلباتي
-          </button>
+        <div class="dp-req-grid">
+          <button class="dp-btn-new-req" onclick="openSubmitRequestModal()">+ تقديم طلب جديد</button>
+          <button class="dp-btn-my-req"  onclick="openMyRequestsModal()">📋 طلباتي</button>
         </div>
       </div>
 
