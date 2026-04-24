@@ -2192,6 +2192,124 @@ async def operational_report(
 
 
 # ══════════════════════════════════════════════════════
+# 26-B. OPERATIONAL REPORT — PER DRIVER BREAKDOWN
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/operational-by-driver")
+async def operational_report_by_driver(
+    car_id:    int,
+    date_from: Optional[str] = None,
+    date_to:   Optional[str] = None,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """
+    نفس منطق التقرير التشغيلي لكن مقسّم بحسب السائق.
+    يُرجع:
+      - car_info : بيانات المركبة (تشمل نوع الوقود)
+      - fuel_records : سجلات الوقود للمركبة في الفترة
+      - drivers : قائمة مرتبة بالسائقين الذين قادوا المركبة
+                  كل سائق يحمل: name, trip_count, total_km, min_odo, max_odo, first_date
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # ── Car info ──
+        c.execute("SELECT * FROM cars WHERE id=?", (car_id,))
+        row = c.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="المركبة غير موجودة")
+        car_info = dict(row)
+
+        # ── Base WHERE filters (بدون driver_id — هنضيفه لاحقاً) ──
+        base_conds = [
+            "t.car_id = ?",
+            "t.end_time IS NOT NULL",
+            "t.start_odometer IS NOT NULL",
+            "t.end_odometer > t.start_odometer",
+            "(t.end_odometer - t.start_odometer) < 2000",
+        ]
+        base_params = [car_id]
+        if date_from:
+            base_conds.append("date(t.start_time) >= ?")
+            base_params.append(date_from)
+        if date_to:
+            base_conds.append("date(t.start_time) <= ?")
+            base_params.append(date_to)
+        where_sql = " AND ".join(base_conds)
+
+        # ── السائقون الذين قادوا المركبة في الفترة ──
+        c.execute(f"""
+            SELECT
+                d.id                                                    AS driver_id,
+                d.name                                                  AS driver_name,
+                COUNT(t.id)                                             AS trip_count,
+                ROUND(SUM(t.end_odometer - t.start_odometer), 1)       AS total_km,
+                MIN(t.start_time)                                       AS first_date,
+                MIN(t.start_odometer)                                   AS min_odo,
+                MAX(t.end_odometer)                                     AS max_odo
+            FROM trips t
+            JOIN drivers d ON t.driver_id = d.id
+            WHERE {where_sql}
+            GROUP BY d.id, d.name
+            ORDER BY total_km DESC
+        """, base_params)
+        drivers = []
+        for row in c.fetchall():
+            r = dict(row)
+            r["first_date"] = (r["first_date"] or "")[:10]
+            # أول وآخر عداد بالزمن لهذا السائق على هذه المركبة
+            c.execute(f"""
+                SELECT start_odometer FROM trips t
+                WHERE {where_sql} AND t.driver_id = ?
+                ORDER BY t.start_time ASC LIMIT 1
+            """, base_params + [r["driver_id"]])
+            fo = c.fetchone()
+            c.execute(f"""
+                SELECT end_odometer FROM trips t
+                WHERE {where_sql} AND t.driver_id = ?
+                ORDER BY t.end_time DESC LIMIT 1
+            """, base_params + [r["driver_id"]])
+            lo = c.fetchone()
+            r["first_odo"] = fo[0] if fo else None
+            r["last_odo"]  = lo[0] if lo else None
+            drivers.append(r)
+
+        # ── Fuel records للمركبة في الفترة ──
+        fuel_conds = ["w.vehicle_id = ?", "w.type LIKE 'fuel_%'"]
+        fuel_params = [car_id]
+        if date_from:
+            fuel_conds.append("date(w.created_at) >= ?")
+            fuel_params.append(date_from)
+        if date_to:
+            fuel_conds.append("date(w.created_at) <= ?")
+            fuel_params.append(date_to)
+        c.execute(f"""
+            SELECT w.type, SUM(w.quantity) AS total_qty, SUM(w.price) AS total_price,
+                   COUNT(*) AS count
+            FROM workshop_records w
+            WHERE {' AND '.join(fuel_conds)}
+            GROUP BY w.type
+        """, fuel_params)
+        fuel_records = [dict(r) for r in c.fetchall()]
+
+        # ── Grand totals ──
+        c.execute(f"""
+            SELECT COUNT(t.id) AS tc,
+                   ROUND(SUM(t.end_odometer - t.start_odometer),1) AS tkm
+            FROM trips t WHERE {where_sql}
+        """, base_params)
+        tot = dict(c.fetchone())
+
+    return {
+        "car_info":     car_info,
+        "drivers":      drivers,
+        "fuel_records": fuel_records,
+        "total_km":     tot["tkm"] or 0,
+        "total_trips":  tot["tc"]  or 0,
+    }
+
+
+# ══════════════════════════════════════════════════════
 # 26. ANOMALOUS TRIPS DIAGNOSTIC
 # ══════════════════════════════════════════════════════
 
