@@ -1802,7 +1802,7 @@ async function generateOpCard() {
     return p;
   }
 
-  const maxKm = Math.max(...data.rows.map(r=>r.total_km||0));
+  const maxKm = Math.max(...data.rows.map(r=>Math.max(0,(r.max_odo||0)-(r.min_odo||0))));
 
   const car    = data.car_info;
   const carStr = car
@@ -1815,7 +1815,7 @@ async function generateOpCard() {
   const periodHeader = isDaily?'اليوم' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
 
   const tableRows = data.rows.map((r,i)=>{
-    const km  = r.total_km||0;
+    const km  = Math.max(0, (r.max_odo||0) - (r.min_odo||0));
     const pct = maxKm>0 ? (km/maxKm*100).toFixed(1) : 0;
     return `<tr>
       <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
@@ -1831,8 +1831,8 @@ async function generateOpCard() {
     </tr>`;
   }).join('');
 
-  // Summary cards — المسافة الكلية = مجموع مسافات الرحلات الفعلية
-  const realTotalKm = data.total_km || 0;
+  // Summary cards — المسافة الكلية = عداد نهاية آخر رحلة − عداد بداية أول رحلة
+  const realTotalKm = Math.max(0, (data.max_odo||0) - (data.min_odo||0));
   const summaryCards = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:.8rem">
       ${[
