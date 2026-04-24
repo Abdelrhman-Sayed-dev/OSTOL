@@ -630,6 +630,21 @@ function fmtDT(isoStr) {
   return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Format a number in Arabic locale (1 decimal place); returns '—' for null/undefined. */
+function fmtNum(n) {
+  return n != null ? (+n).toLocaleString('ar-EG', { maximumFractionDigits: 1 }) : '—';
+}
+
+/** Return a colored license-expiry badge. showGreen adds a green ✓ badge for valid dates. */
+function licBadge(dt, showGreen = false) {
+  if (!dt) return '—';
+  const today = new Date().toISOString().split('T')[0];
+  const soon  = new Date(Date.now() + 30 * 864e5).toISOString().split('T')[0];
+  if (dt < today) return `<span class="badge badge-red">⚠️ منتهية ${dt}</span>`;
+  if (dt <= soon)  return `<span class="badge badge-yellow">⏰ ${dt}</span>`;
+  return showGreen ? `<span class="badge badge-green">✓ ${dt}</span>` : dt;
+}
+
 const loadDrivers = () => apiCall('/drivers').catch(()=>[]);
 const loadCars    = () => apiCall('/cars').catch(()=>[]);
 const loadPerms   = () => apiCall('/permissions').catch(()=>[]);
@@ -774,7 +789,6 @@ async function renderOverview() {
           <th>السائق</th><th>الرقم التعريفي</th><th>انتهاء رخصة السائق</th><th>انتهاء رخصة العربة</th>
         </tr></thead><tbody>
         ${expiring.map(d=>{
-          function licBadge(dt){ if(!dt) return '—'; if(dt<today) return '<span class="badge badge-red">⚠️ منتهية '+dt+'</span>'; return '<span class="badge badge-yellow">⏰ '+dt+'</span>'; }
           return '<tr><td><strong>'+d.name+'</strong></td><td><code>'+(d.national_id||'—')+'</code></td><td>'+licBadge(d.driver_license_expiry)+'</td><td>'+licBadge(d.vehicle_license_expiry)+'</td></tr>';
         }).join('')}
         </tbody></table></div>
@@ -803,22 +817,14 @@ async function renderDriversSection() {
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody>
         ${drivers.length ? drivers.map(d=>{
-          const today=new Date().toISOString().split('T')[0];
-          const soon =new Date(Date.now()+30*864e5).toISOString().split('T')[0];
-          function licBadge(dt){
-            if(!dt) return '—';
-            if(dt<today) return '<span class="badge badge-red">⚠️ منتهية '+dt+'</span>';
-            if(dt<=soon)  return '<span class="badge badge-yellow">⏰ '+dt+'</span>';
-            return '<span class="badge badge-green">✓ '+dt+'</span>';
-          }
           return `<tr>
             <td>${d.id}</td>
             <td><strong>${d.name}</strong></td>
             <td dir="ltr">${d.phone||'—'}</td>
             <td><code>${d.national_id||'—'}</code></td>
             <td style="font-size:.82rem">${d.birth_date||'—'}</td>
-            <td>${licBadge(d.driver_license_expiry)}</td>
-            <td>${licBadge(d.vehicle_license_expiry)}</td>
+            <td>${licBadge(d.driver_license_expiry, true)}</td>
+            <td>${licBadge(d.vehicle_license_expiry, true)}</td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
               ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
@@ -1809,7 +1815,7 @@ async function generateOpCard() {
     ? `${car.plate} — ${car.model}${car.car_name?' ('+car.car_name+')':''}`
     : 'جميع المركبات';
 
-  function fmt(n) { return n!=null ? (+n).toLocaleString('ar-EG',{maximumFractionDigits:1}) : '—'; }
+  function fmt(n) { return fmtNum(n); }
   function fmtDate(d) { return d ? new Date(d+'T00:00:00').toLocaleDateString('ar-EG') : '—'; }
 
   const periodHeader = isDaily?'اليوم' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
@@ -2153,7 +2159,7 @@ async function checkAnomalousTrips() {
     return;
   }
 
-  function fmt(n) { return n!=null ? (+n).toLocaleString('ar-EG',{maximumFractionDigits:1}) : '—'; }
+  function fmt(n) { return fmtNum(n); }
 
   const rows = data.trips.map((t,i) => {
     const km = t.trip_km || 0;
@@ -4177,36 +4183,43 @@ function dpWsModal(type) {
 
 
 /* ══════════════════════════════════════════════════════
-   SUPERUSER — إدارة الأدمنز
+   SUPERUSER — shared helpers for admin / reporter CRUD
    ══════════════════════════════════════════════════════ */
-async function renderSuperAdmins() {
+
+const ROLE_CONFIG = {
+  admin:    { endpoint: '/superuser/admins',    label: 'الأدمن',    icon: '👑', emptyMsg: 'لا يوجد أدمنز',   render: () => renderSuperUserRole('admin') },
+  reporter: { endpoint: '/superuser/reporters', label: 'المراقب',   icon: '👁️', emptyMsg: 'لا يوجد مراقبون', render: () => renderSuperUserRole('reporter') },
+};
+
+async function renderSuperUserRole(role) {
+  const cfg = ROLE_CONFIG[role];
   const c = document.getElementById('pageContent');
   c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
-  let admins = [];
-  try { admins = await apiCall('/superuser/admins'); } catch(e) { c.innerHTML=`<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`; return; }
+  let users = [];
+  try { users = await apiCall(cfg.endpoint); }
+  catch(e) { c.innerHTML=`<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`; return; }
 
   c.innerHTML = `
     <div class="card">
       <div class="card-header">
-        <div class="card-title">👑 إدارة حسابات الأدمن</div>
-        <button class="btn btn-primary btn-sm" onclick="openAddAdminModal()">➕ إضافة أدمن</button>
+        <div class="card-title">${cfg.icon} إدارة حسابات ${cfg.label}</div>
+        <button class="btn btn-primary btn-sm" onclick="openAddRoleModal('${role}')">➕ إضافة ${cfg.label}</button>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr>
-            <th>#</th><th>اسم المستخدم</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>الإجراءات</th>
-          </tr></thead>
+          <thead><tr><th>#</th><th>اسم المستخدم</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>الإجراءات</th></tr></thead>
           <tbody>
-            ${admins.length===0?`<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا يوجد أدمنز</td></tr>`:
-              admins.map(a=>`
+            ${users.length===0
+              ? `<tr><td colspan="5" style="text-align:center;color:var(--muted)">${cfg.emptyMsg}</td></tr>`
+              : users.map(u=>`
                 <tr>
-                  <td>${a.id}</td>
-                  <td><b>${a.username}</b></td>
-                  <td>${fmtDate(a.created_at)||'—'}</td>
-                  <td>${fmtDT(a.last_login)||'لم يدخل بعد'}</td>
+                  <td>${u.id}</td>
+                  <td><b>${u.username}</b></td>
+                  <td>${fmtDate(u.created_at)||'—'}</td>
+                  <td>${fmtDT(u.last_login)||'لم يدخل بعد'}</td>
                   <td style="display:flex;gap:.5rem;flex-wrap:wrap">
-                    <button class="btn btn-outline btn-sm" onclick="openEditAdminModal(${a.id},'${a.username.replace(/'/g,"\\'")}')">✏️ تعديل</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteAdmin(${a.id},'${a.username.replace(/'/g,"\\'")}')">🗑️ حذف</button>
+                    <button class="btn btn-outline btn-sm" onclick="openEditRoleModal('${role}',${u.id},'${u.username.replace(/'/g,"\\'")}')">✏️ تعديل</button>
+                    <button class="btn btn-danger btn-sm"  onclick="deleteRoleUser('${role}',${u.id},'${u.username.replace(/'/g,"\\'")}')">🗑️ حذف</button>
                   </td>
                 </tr>`).join('')}
           </tbody>
@@ -4215,175 +4228,83 @@ async function renderSuperAdmins() {
     </div>`;
 }
 
-function openAddAdminModal() {
+function openAddRoleModal(role) {
+  const cfg = ROLE_CONFIG[role];
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">➕ إضافة أدمن جديد</div>
+      <div class="modal-title">➕ إضافة ${cfg.label} جديد</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label>
-      <input type="text" id="newAdminUser" placeholder="اسم المستخدم"></div>
+      <input type="text" id="roleUserInput" placeholder="اسم المستخدم"></div>
     <div class="form-group"><label>كلمة المرور <span class="req">*</span></label>
-      <input type="password" id="newAdminPw" placeholder="كلمة المرور"></div>
+      <input type="password" id="rolePwInput" placeholder="كلمة المرور"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="addAdminSubmit">💾 إضافة</button>
+      <button class="btn btn-primary" id="roleModalSubmit">💾 إضافة</button>
     </div>`);
-  document.getElementById('addAdminSubmit').onclick = async () => {
-    const username = document.getElementById('newAdminUser').value.trim();
-    const password = document.getElementById('newAdminPw').value;
+  document.getElementById('roleModalSubmit').onclick = async () => {
+    const username = document.getElementById('roleUserInput').value.trim();
+    const password = document.getElementById('rolePwInput').value;
     if(!username || !password) return showNotification('يرجى ملء جميع الحقول','error');
-    const btn = document.getElementById('addAdminSubmit');
+    const btn = document.getElementById('roleModalSubmit');
     btn.disabled=true; btn.textContent='جاري...';
     try {
-      await apiCall('/superuser/admins','POST',{username,password});
-      showNotification(`✅ تم إنشاء الأدمن: ${username}`,'success');
-      closeModal(); renderSuperAdmins();
+      await apiCall(cfg.endpoint, 'POST', {username, password});
+      showNotification(`✅ تم إنشاء ${cfg.label}: ${username}`, 'success');
+      closeModal(); cfg.render();
     } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 إضافة'; }
   };
 }
 
-function openEditAdminModal(uid, oldUsername) {
+function openEditRoleModal(role, uid, oldUsername) {
+  const cfg = ROLE_CONFIG[role];
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">✏️ تعديل أدمن: ${oldUsername}</div>
+      <div class="modal-title">✏️ تعديل ${cfg.label}: ${oldUsername}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="form-group"><label>اسم المستخدم الجديد <span class="req">*</span></label>
-      <input type="text" id="editAdminUser" value="${oldUsername}"></div>
+      <input type="text" id="roleUserInput" value="${oldUsername}"></div>
     <div class="form-group"><label>كلمة المرور الجديدة <span style="font-size:.75rem;color:var(--muted)">(اتركها فارغة إن لم تريد التغيير)</span></label>
-      <input type="password" id="editAdminPw" placeholder="اتركها فارغة للإبقاء على الحالية"></div>
+      <input type="password" id="rolePwInput" placeholder="اتركها فارغة للإبقاء على الحالية"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="editAdminSubmit">💾 حفظ التعديلات</button>
+      <button class="btn btn-primary" id="roleModalSubmit">💾 حفظ التعديلات</button>
     </div>`);
-  document.getElementById('editAdminSubmit').onclick = async () => {
-    const username = document.getElementById('editAdminUser').value.trim();
-    const password = document.getElementById('editAdminPw').value || null;
+  document.getElementById('roleModalSubmit').onclick = async () => {
+    const username = document.getElementById('roleUserInput').value.trim();
+    const password = document.getElementById('rolePwInput').value || null;
     if(!username) return showNotification('اسم المستخدم مطلوب','error');
-    const btn = document.getElementById('editAdminSubmit');
+    const btn = document.getElementById('roleModalSubmit');
     btn.disabled=true; btn.textContent='جاري...';
     try {
-      await apiCall(`/superuser/admins/${uid}`,'PUT',{username,password});
-      showNotification('✅ تم تحديث بيانات الأدمن','success');
-      closeModal(); renderSuperAdmins();
+      await apiCall(`${cfg.endpoint}/${uid}`, 'PUT', {username, password});
+      showNotification(`✅ تم تحديث بيانات ${cfg.label}`, 'success');
+      closeModal(); cfg.render();
     } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ التعديلات'; }
   };
 }
 
-async function deleteAdmin(uid, username) {
-  if(!confirm(`⚠️ هل أنت متأكد من حذف الأدمن "${username}"؟\nلا يمكن التراجع عن هذا الإجراء.`)) return;
+async function deleteRoleUser(role, uid, username) {
+  const cfg = ROLE_CONFIG[role];
+  if(!confirm(`⚠️ هل أنت متأكد من حذف ${cfg.label} "${username}"?`)) return;
   try {
-    await apiCall(`/superuser/admins/${uid}`,'DELETE');
-    showNotification(`✅ تم حذف الأدمن: ${username}`,'success');
-    renderSuperAdmins();
+    await apiCall(`${cfg.endpoint}/${uid}`, 'DELETE');
+    showNotification(`✅ تم حذف ${cfg.label}: ${username}`, 'success');
+    cfg.render();
   } catch(e) { showNotification(e.message,'error'); }
 }
 
-
-/* ══════════════════════════════════════════════════════
-   SUPERUSER — إدارة المراقبين
-   ══════════════════════════════════════════════════════ */
-async function renderSuperReporters() {
-  const c = document.getElementById('pageContent');
-  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
-  let reporters = [];
-  try { reporters = await apiCall('/superuser/reporters'); } catch(e) { c.innerHTML=`<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`; return; }
-
-  c.innerHTML = `
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">👁️ إدارة حسابات المراقبين</div>
-        <button class="btn btn-primary btn-sm" onclick="openAddReporterModal()">➕ إضافة مراقب</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>#</th><th>اسم المستخدم</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>الإجراءات</th>
-          </tr></thead>
-          <tbody>
-            ${reporters.length===0?`<tr><td colspan="5" style="text-align:center;color:var(--muted)">لا يوجد مراقبون</td></tr>`:
-              reporters.map(r=>`
-                <tr>
-                  <td>${r.id}</td>
-                  <td><b>${r.username}</b></td>
-                  <td>${fmtDate(r.created_at)||'—'}</td>
-                  <td>${fmtDT(r.last_login)||'لم يدخل بعد'}</td>
-                  <td style="display:flex;gap:.5rem;flex-wrap:wrap">
-                    <button class="btn btn-outline btn-sm" onclick="openEditReporterModal(${r.id},'${r.username.replace(/'/g,"\'")}')">✏️ تعديل</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteReporter(${r.id},'${r.username.replace(/'/g,"\'")}')">🗑️ حذف</button>
-                  </td>
-                </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-}
-
-function openAddReporterModal() {
-  openModal(`
-    <div class="modal-header">
-      <div class="modal-title">➕ إضافة مراقب جديد</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label>
-      <input type="text" id="newRepUser" placeholder="اسم المستخدم"></div>
-    <div class="form-group"><label>كلمة المرور <span class="req">*</span></label>
-      <input type="password" id="newRepPw" placeholder="كلمة المرور"></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="addRepSubmit">💾 إضافة</button>
-    </div>`);
-  document.getElementById('addRepSubmit').onclick = async () => {
-    const username = document.getElementById('newRepUser').value.trim();
-    const password = document.getElementById('newRepPw').value;
-    if(!username || !password) return showNotification('يرجى ملء جميع الحقول','error');
-    const btn = document.getElementById('addRepSubmit');
-    btn.disabled=true; btn.textContent='جاري...';
-    try {
-      await apiCall('/superuser/reporters','POST',{username,password});
-      showNotification(`✅ تم إنشاء المراقب: ${username}`,'success');
-      closeModal(); renderSuperReporters();
-    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 إضافة'; }
-  };
-}
-
-function openEditReporterModal(uid, oldUsername) {
-  openModal(`
-    <div class="modal-header">
-      <div class="modal-title">✏️ تعديل مراقب: ${oldUsername}</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="form-group"><label>اسم المستخدم الجديد <span class="req">*</span></label>
-      <input type="text" id="editRepUser" value="${oldUsername}"></div>
-    <div class="form-group"><label>كلمة المرور الجديدة <span style="font-size:.75rem;color:var(--muted)">(اتركها فارغة إن لم تريد التغيير)</span></label>
-      <input type="password" id="editRepPw" placeholder="اتركها فارغة للإبقاء على الحالية"></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="editRepSubmit">💾 حفظ التعديلات</button>
-    </div>`);
-  document.getElementById('editRepSubmit').onclick = async () => {
-    const username = document.getElementById('editRepUser').value.trim();
-    const password = document.getElementById('editRepPw').value || null;
-    if(!username) return showNotification('اسم المستخدم مطلوب','error');
-    const btn = document.getElementById('editRepSubmit');
-    btn.disabled=true; btn.textContent='جاري...';
-    try {
-      await apiCall(`/superuser/reporters/${uid}`,'PUT',{username,password});
-      showNotification('✅ تم تحديث بيانات المراقب','success');
-      closeModal(); renderSuperReporters();
-    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ التعديلات'; }
-  };
-}
-
-async function deleteReporter(uid, username) {
-  if(!confirm(`⚠️ هل أنت متأكد من حذف المراقب "${username}"؟`)) return;
-  try {
-    await apiCall(`/superuser/reporters/${uid}`,'DELETE');
-    showNotification(`✅ تم حذف المراقب: ${username}`,'success');
-    renderSuperReporters();
-  } catch(e) { showNotification(e.message,'error'); }
-}
+// Named aliases so the rest of the codebase (and nav callbacks) continue to work unchanged
+const renderSuperAdmins      = () => renderSuperUserRole('admin');
+const renderSuperReporters   = () => renderSuperUserRole('reporter');
+const openAddAdminModal      = () => openAddRoleModal('admin');
+const openAddReporterModal   = () => openAddRoleModal('reporter');
+const openEditAdminModal     = (uid, u) => openEditRoleModal('admin',    uid, u);
+const openEditReporterModal  = (uid, u) => openEditRoleModal('reporter', uid, u);
+const deleteAdmin            = (uid, u) => deleteRoleUser('admin',    uid, u);
+const deleteReporter         = (uid, u) => deleteRoleUser('reporter', uid, u);
 
 /* ══════════════════════════════════════════════════════
    SUPERUSER — سجل الدخول والإجراءات

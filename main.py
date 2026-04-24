@@ -3,7 +3,10 @@ Fleet Management System — Production-Ready Backend
 Author: Refactored for enterprise use
 """
 
-import os, re, uuid, logging, shutil, struct
+import base64
+import os
+import uuid
+import logging
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,7 +20,6 @@ from fastapi import (
     UploadFile, File, status
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
@@ -259,8 +261,7 @@ def migrate_db():
             log.warning("⚠️  Created default admin — CHANGE PASSWORD IMMEDIATELY")
 
         # Seed price settings
-        for ws_type in ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng",
-                           "oil","filter","tire","battery","belt","other"]:
+        for ws_type in WORKSHOP_TYPES:
             c.execute("INSERT OR IGNORE INTO app_settings(key,value,updated_at) VALUES(?,?,?)",
                       (f"price_{ws_type}", "0", datetime.utcnow().isoformat() + "Z"))
 
@@ -525,6 +526,11 @@ EQUIPMENT_TYPES = {
     "معدات مساعدة", "معدات وآلات ورش", "أخرى"
 }
 
+WORKSHOP_TYPES = [
+    "fuel_solar", "fuel_92", "fuel_95", "fuel_80", "fuel_cng",
+    "oil", "filter", "tire", "battery", "belt", "other",
+]
+
 class CarCreate(BaseModel):
     plate: str; model: str; status: str = "available"
     car_name: Optional[str] = ""
@@ -649,60 +655,38 @@ SUPERUSERS = [
     ("super mohamed mansour",  "sup@momansour84329"),
 ]
 
+def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
+    """Ensure exactly the given accounts exist for a role.
+    Removes accounts no longer in the list, adds missing ones.
+    Skips rehashing on restart for accounts that already exist.
+    """
+    c.execute("SELECT id, username FROM users WHERE role=?", (role,))
+    existing = {r["username"]: r["id"] for r in c.fetchall()}
+    allowed  = {u for u, _ in accounts}
+
+    for uname, uid in list(existing.items()):
+        if uname not in allowed:
+            c.execute("DELETE FROM users WHERE id=?", (uid,))
+            log.info(f"Removed old {role}: {uname}")
+
+    for uname, pw in accounts:
+        if uname not in existing:
+            pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+            c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
+                      (uname, pw_hash, role))
+            log.info(f"Created {role}: {uname}")
+
+    log.info(f"✅ {role.capitalize()} accounts synced")
+
+
 @app.on_event("startup")
 async def startup():
     migrate_db()
-    # Ensure correct admin accounts exist
     with get_db() as conn:
         c = conn.cursor()
-        # Remove old admins not in the list
-        c.execute("SELECT id,username FROM users WHERE role='admin'")
-        existing = {r['username']:r['id'] for r in c.fetchall()}
-        allowed  = {u for u,_ in ADMINS}
-        for uname, uid in list(existing.items()):
-            if uname not in allowed:
-                c.execute("DELETE FROM users WHERE id=?", (uid,))
-                log.info(f"Removed old admin: {uname}")
-        # Add new admins only (don't rehash on every restart = faster)
-        for uname, pw in ADMINS:
-            if uname not in existing:
-                pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
-                c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
-                          (uname, pw_hash, "admin"))
-                log.info(f"Created admin: {uname}")
-        log.info("✅ Admin accounts synced")
-
-        # ── Reporter accounts ─────────────────────────────────────────
-        c.execute("SELECT username FROM users WHERE role='reporter'")
-        existing_reporters = {r['username'] for r in c.fetchall()}
-        allowed_reporters  = {u for u,_ in REPORTERS}
-        # Remove reporters not in list
-        for uname in list(existing_reporters - allowed_reporters):
-            c.execute("DELETE FROM users WHERE username=? AND role='reporter'", (uname,))
-            log.info(f"Removed old reporter: {uname}")
-        # Add missing reporters
-        for uname, pw in REPORTERS:
-            if uname not in existing_reporters:
-                pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
-                c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
-                          (uname, pw_hash, "reporter"))
-                log.info(f"Created reporter: {uname}")
-        log.info("✅ Reporter accounts synced")
-
-        # ── Superuser accounts ────────────────────────────────────────
-        c.execute("SELECT username FROM users WHERE role='superuser'")
-        existing_supers = {r['username'] for r in c.fetchall()}
-        allowed_supers  = {u for u,_ in SUPERUSERS}
-        for uname in list(existing_supers - allowed_supers):
-            c.execute("DELETE FROM users WHERE username=? AND role='superuser'", (uname,))
-            log.info(f"Removed old superuser: {uname}")
-        for uname, pw in SUPERUSERS:
-            if uname not in existing_supers:
-                pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
-                c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
-                          (uname, pw_hash, "superuser"))
-                log.info(f"Created superuser: {uname}")
-        log.info("✅ Superuser accounts synced")
+        _sync_accounts(c, ADMINS,      "admin")
+        _sync_accounts(c, REPORTERS,   "reporter")
+        _sync_accounts(c, SUPERUSERS,  "superuser")
     log.info("🚀 Fleet Management API started")
 
 # Rate limiter
@@ -776,6 +760,25 @@ def paginate(query_result: list, page: int, limit: int) -> dict:
         "page":    page,
         "limit":   limit,
         "pages":   (total + limit - 1) // limit,
+    }
+
+def _car_fields(car, cid: int) -> dict:
+    """Build a consistent car response dict from a CarCreate/CarUpdate model."""
+    return {
+        "id":                cid,
+        "plate":             car.plate,
+        "model":             car.model,
+        "status":            car.status,
+        "car_name":          car.car_name or "",
+        "car_code":          car.car_code or "",
+        "chassis":           car.chassis or "",
+        "engine_number":     car.engine_number or "",
+        "year":              car.year or "",
+        "project":           car.project or "",
+        "branch":            car.branch or "",
+        "car_license_expiry":car.car_license_expiry or "",
+        "equipment_type":    car.equipment_type or "",
+        "sector":            car.sector or "",
     }
 
 # ══════════════════════════════════════════════════════
@@ -1052,12 +1055,7 @@ async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
                        car.engine_number or "", car.year or "", car.project or "",
                        car.branch or "", car.car_license_expiry or "",
                        car.equipment_type or "", car.sector or ""))
-            return {"id": c.lastrowid, "plate": car.plate, "model": car.model, "status": car.status,
-                    "car_name": car.car_name or "", "car_code": car.car_code or "",
-                    "chassis": car.chassis or "", "engine_number": car.engine_number or "",
-                    "year": car.year or "", "project": car.project or "",
-                    "branch": car.branch or "", "car_license_expiry": car.car_license_expiry or "",
-                    "equipment_type": car.equipment_type or "", "sector": car.sector or ""}
+            return _car_fields(car, c.lastrowid)
         except sqlite3.IntegrityError:
             raise HTTPException(400, "رقم اللوحة موجود مسبقاً")
 
@@ -1076,12 +1074,7 @@ async def update_car(cid: int, car: CarUpdate, cu: dict = Depends(require_admin)
                    car.equipment_type or "", car.sector or "", cid))
         if c.rowcount == 0:
             raise HTTPException(404, "المركبة غير موجودة")
-        return {"id": cid, "plate": car.plate, "model": car.model, "status": car.status,
-                "car_name": car.car_name or "", "car_code": car.car_code or "",
-                "chassis": car.chassis or "", "engine_number": car.engine_number or "",
-                "year": car.year or "", "project": car.project or "",
-                "branch": car.branch or "", "car_license_expiry": car.car_license_expiry or "",
-                "equipment_type": car.equipment_type or "", "sector": car.sector or ""}
+        return _car_fields(car, cid)
 
 @app.delete("/cars/{cid}")
 async def delete_car(cid: int, cu: dict = Depends(require_admin)):
@@ -1324,7 +1317,7 @@ async def delete_user(uid: int, cu: dict = Depends(require_admin)):
 
 @app.post("/workshops")
 async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
-    if rec.type not in ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng","oil","filter","tire","battery","belt","other"]:
+    if rec.type not in WORKSHOP_TYPES:
         raise HTTPException(400, "نوع غير صالح")
     if cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
@@ -1550,7 +1543,6 @@ async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = De
         audio_url = ""
         if rep.audio_data and rep.audio_data.startswith("data:audio"):
             try:
-                import base64
                 header, b64 = rep.audio_data.split(",", 1)
                 ext = "webm" if "webm" in header else "ogg" if "ogg" in header else "mp4"
                 fname = f"{uuid.uuid4().hex}.{ext}"
@@ -1636,7 +1628,7 @@ async def get_prices(cu: dict = Depends(get_user)):
 
 @app.put("/settings/prices")
 async def set_prices(body: dict, cu: dict = Depends(require_admin)):
-    valid = ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng","oil","filter","tire","battery","belt","other"]
+    valid = WORKSHOP_TYPES
     now   = datetime.utcnow().isoformat() + "Z"
     saved = {}
     with get_db() as conn:
@@ -1990,7 +1982,6 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
                    float(new_odometer) if new_odometer else None,
                    int(trip_id) if trip_id else None, now))
         rid = c.lastrowid
-        conn.commit()
     log_event("request_created", driver_id=driver_id, request_id=rid, type=req_type)
     return {"id": rid, "status": "pending"}
 
@@ -2049,7 +2040,6 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
                          handled_by=?, handled_at=?
                      WHERE id=?""",
                   (status, admin_notes, admin_message, cu["username"], now, rid))
-        conn.commit()
     log_event("request_handled", request_id=rid, status=status, handled_by=cu["username"])
     return {"ok": True}
 

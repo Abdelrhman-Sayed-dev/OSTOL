@@ -4,6 +4,7 @@
 
 import os
 import sqlite3
+from datetime import datetime
 
 try:
     import bcrypt
@@ -222,7 +223,6 @@ def create_database():
         cursor.execute(idx)
 
     # ── Seed أسعار ──
-    from datetime import datetime
     for ws_type in ["fuel_solar","fuel_92","fuel_95","fuel_80","fuel_cng",
                     "oil","filter","tire","battery","belt","other"]:
         cursor.execute(
