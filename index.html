@@ -5078,23 +5078,36 @@ async function renderSuperBackup() {
     </div>
 
     <div class="card">
-      <div class="card-header"><div class="card-title">📥 استيراد بيانات من Excel</div></div>
-      <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;line-height:1.7">
-        رفع ملف Excel لاستيراد المركبات والسائقين تلقائياً وربط كل سائق بمركبته.
-        <br><strong>ملاحظة:</strong> كلمة المرور الافتراضية لكل سائق جديد: <code>Driver@1234</code>
+      <div class="card-header"><div class="card-title">📥 تصدير كامل البيانات كـ Excel</div></div>
+      <p style="font-size:.85rem;color:var(--muted);margin-bottom:1.2rem;line-height:1.8">
+        تصدير كل جداول قاعدة البيانات في ملف <strong>Excel واحد</strong> — كل جدول في Sheet منفصل.
+        مناسب للمراجعة والأرشفة والتحليل.
       </p>
-      <div class="form-group">
-        <label>اختر ملف Excel (.xlsx)</label>
-        <input type="file" id="excelImportFile" accept=".xlsx,.xls" style="padding:.6rem">
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1.4rem">
+        ${[
+          {icon:'👤', label:'السائقون'},
+          {icon:'🚗', label:'المركبات'},
+          {icon:'🗺️', label:'الرحلات'},
+          {icon:'🔧', label:'الورشة'},
+          {icon:'🆘', label:'الطوارئ'},
+          {icon:'🅿️', label:'الجراج'},
+          {icon:'🔓', label:'الصلاحيات'},
+          {icon:'📋', label:'سجل الإجراءات'},
+          {icon:'📊', label:'ملخص إجمالي'},
+        ].map(s=>`
+          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:.75rem;text-align:center">
+            <div style="font-size:1.5rem;margin-bottom:.3rem">${s.icon}</div>
+            <div style="font-size:.75rem;font-weight:600;color:var(--text-2)">${s.label}</div>
+          </div>`).join('')}
       </div>
-      <div id="importPreview" style="display:none;margin:1rem 0"></div>
-      <div style="display:flex;gap:.75rem">
-        <button class="btn btn-ghost" onclick="previewExcelImport()">👁️ معاينة البيانات</button>
-        <button class="btn btn-primary" onclick="executeExcelImport()" id="importBtn" style="display:none">
-          📥 استيراد الآن
-        </button>
-      </div>
-      <div id="importResult" style="margin-top:1rem"></div>
+
+      <button class="btn btn-primary" style="width:100%;justify-content:center;padding:1rem;font-size:.95rem" onclick="downloadBackupExcel()">
+        📥 تنزيل ملف Excel الكامل
+      </button>
+      <p style="font-size:.75rem;color:var(--muted);margin-top:.6rem;text-align:center">
+        ⚠️ لا يحتوي على كلمات المرور — كل الجداول بالأعمدة الكاملة
+      </p>
     </div>`;
 }
 
@@ -5130,6 +5143,36 @@ async function downloadBackupJSON() {
     a.click(); URL.revokeObjectURL(url);
     showNotification('✅ تم تصدير البيانات بنجاح','success');
   } catch(e) { showNotification(e.message||'خطأ في التصدير','error'); }
+}
+
+async function downloadBackupExcel() {
+  showNotification('⏳ جاري تجهيز ملف Excel...', 'info', 4000);
+  try {
+    const tok = getToken();
+    const res = await fetch(`${API}/superuser/backup/export-excel`, {
+      headers: {
+        'Authorization': `Bearer ${tok}`,
+        'X-Device-Fingerprint': window._deviceFingerprint || ''
+      }
+    });
+    if(!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.detail || 'فشل التصدير');
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const dt   = new Date().toISOString().slice(0,19).replace(/:/g,'-');
+    a.href = url;
+    a.download = `fleet_data_${dt}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showNotification('✅ تم تنزيل ملف Excel بنجاح', 'success');
+  } catch(e) {
+    showNotification('❌ ' + (e.message || 'خطأ في التصدير'), 'error');
+  }
 }
 
 async function previewExcelImport() {
