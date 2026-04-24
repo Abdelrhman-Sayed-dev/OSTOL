@@ -238,17 +238,19 @@ def migrate_db():
 
         # AUDIT LOGS
         c.execute("""CREATE TABLE IF NOT EXISTS audit_logs(
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id    INTEGER,
-            username   TEXT NOT NULL,
-            role       TEXT NOT NULL,
-            action     TEXT NOT NULL,
-            details    TEXT DEFAULT '',
-            ip_address TEXT DEFAULT '',
-            created_at TEXT NOT NULL
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER,
+            username    TEXT NOT NULL,
+            role        TEXT NOT NULL,
+            action      TEXT NOT NULL,
+            details     TEXT DEFAULT '',
+            ip_address  TEXT DEFAULT '',
+            device_info TEXT DEFAULT '',
+            created_at  TEXT NOT NULL
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_logs(user_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_audit_action  ON audit_logs(action)")
 
         # Safe migrations for existing columns
         _safe_add_columns(c)
@@ -339,6 +341,7 @@ def _safe_add_columns(c):
                                ("car_code","TEXT DEFAULT ''"),("engine_number","TEXT DEFAULT ''"),
                                ("year","TEXT DEFAULT ''"),("project","TEXT DEFAULT ''"),
                                ("branch","TEXT DEFAULT ''"),("equipment_type","TEXT DEFAULT ''")],
+        "audit_logs":         [("device_info","TEXT DEFAULT ''")],
     }
     for tbl, cols in additions.items():
         for col, col_type in cols:
@@ -430,16 +433,16 @@ def require_admin_or_reporter(cu: dict = Depends(get_user)):
 
 def write_audit_log(user_id: int, username: str, role: str,
                     action: str, details: str = "", ip: str = "",
-                    cursor=None):
+                    device_info: str = "", cursor=None):
     """Write an audit log entry.
     Pass an existing cursor to reuse the same transaction,
     or leave None to open a new connection.
     """
     try:
         now = datetime.utcnow().isoformat() + "Z"
-        sql = """INSERT INTO audit_logs(user_id,username,role,action,details,ip_address,created_at)
-                 VALUES(?,?,?,?,?,?,?)"""
-        params = (user_id, username, role, action, details, ip, now)
+        sql = """INSERT INTO audit_logs(user_id,username,role,action,details,ip_address,device_info,created_at)
+                 VALUES(?,?,?,?,?,?,?,?)"""
+        params = (user_id, username, role, action, details, ip, device_info, now)
         if cursor is not None:
             cursor.execute(sql, params)
         else:
@@ -447,6 +450,21 @@ def write_audit_log(user_id: int, username: str, role: str,
                 conn.cursor().execute(sql, params)
     except Exception as e:
         log.warning(f"audit_log write failed: {e}")
+
+
+def _get_device_info(request: Request) -> str:
+    """Extract device fingerprint from request headers (no MAC — browsers don't expose it)."""
+    ua  = request.headers.get("user-agent", "")
+    fp  = request.headers.get("X-Device-Fingerprint", "")   # sent by frontend
+    return fp if fp else ua[:120]
+
+
+def _get_ip(request: Request) -> str:
+    """Get real IP, respecting reverse proxy headers."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else ""
 
 # ══════════════════════════════════════════════════════
 # 5. RATE LIMITER
@@ -817,7 +835,8 @@ async def login(request: Request, data: LoginReq):
         write_audit_log(
             user_id=u["id"], username=u["username"], role=u["role"],
             action="login", details="تسجيل دخول ناجح",
-            ip=request.client.host if request.client else "",
+            ip=_get_ip(request),
+            device_info=_get_device_info(request),
             cursor=c
         )
         return LoginResp(
@@ -911,7 +930,8 @@ async def get_drivers(cu: dict = Depends(get_user)):
         return [dict(r) for r in c.fetchall()]
 
 @app.post("/drivers", response_model=DriverResp)
-async def create_driver(driver: DriverCreate, cu: dict = Depends(require_admin)):
+@app.post("/drivers", response_model=DriverResp)
+async def create_driver(driver: DriverCreate, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id FROM users WHERE username=?", (driver.username,))
@@ -929,6 +949,10 @@ async def create_driver(driver: DriverCreate, cu: dict = Depends(require_admin))
                    driver.branch or "", driver.fixed_number or ""))
         did = c.lastrowid
         log_event("driver_created", driver_id=did, admin=cu["username"])
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="create_driver",
+            details=f"إضافة سائق جديد: {driver.name} | يوزر: {driver.username} | فرع: {driver.branch or '—'}",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
         return {"id":did,"name":driver.name,"phone":driver.phone,"status":driver.status,
                 "user_id":uid,"username":driver.username,
                 "national_id":driver.national_id,"birth_date":driver.birth_date,
@@ -937,9 +961,12 @@ async def create_driver(driver: DriverCreate, cu: dict = Depends(require_admin))
                 "branch":driver.branch or "","fixed_number":driver.fixed_number or ""}
 
 @app.put("/drivers/{did}", response_model=DriverResp)
-async def update_driver(did: int, driver: DriverUpdate, cu: dict = Depends(require_admin)):
+async def update_driver(did: int, driver: DriverUpdate, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
+        c.execute("SELECT name FROM drivers WHERE id=?", (did,))
+        old = c.fetchone()
+        old_name = old["name"] if old else "—"
         c.execute("""UPDATE drivers SET name=?,phone=?,status=?,national_id=?,
                      birth_date=?,driver_license_expiry=?,vehicle_license_expiry=?,
                      branch=?,fixed_number=?
@@ -952,6 +979,10 @@ async def update_driver(did: int, driver: DriverUpdate, cu: dict = Depends(requi
             raise HTTPException(404, "السائق غير موجود")
         c.execute("SELECT user_id FROM drivers WHERE id=?", (did,))
         r = c.fetchone()
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="update_driver",
+            details=f"تعديل بيانات السائق: {old_name} → {driver.name} | ID: {did}",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
         return {"id":did,"name":driver.name,"phone":driver.phone,"status":driver.status,
                 "user_id":r["user_id"] if r else None,
                 "national_id":driver.national_id,"birth_date":driver.birth_date,
@@ -960,17 +991,22 @@ async def update_driver(did: int, driver: DriverUpdate, cu: dict = Depends(requi
                 "branch":driver.branch or "","fixed_number":driver.fixed_number or ""}
 
 @app.delete("/drivers/{did}")
-async def delete_driver(did: int, cu: dict = Depends(require_admin)):
+async def delete_driver(did: int, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT user_id FROM drivers WHERE id=?", (did,))
+        c.execute("SELECT name, user_id FROM drivers WHERE id=?", (did,))
         drv = c.fetchone()
+        drv_name = drv["name"] if drv else "—"
         for tbl in ["driver_car_permissions","trips","workshop_records"]:
             c.execute(f"DELETE FROM {tbl} WHERE driver_id=?", (did,))
         c.execute("DELETE FROM drivers WHERE id=?", (did,))
         if drv and drv["user_id"]:
             c.execute("DELETE FROM users WHERE id=?", (drv["user_id"],))
         log_event("driver_deleted", driver_id=did, admin=cu["username"])
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="delete_driver",
+            details=f"حذف السائق: {drv_name} | ID: {did}",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
         return {"message": "تم الحذف"}
 
 @app.put("/drivers/{did}/credentials")
@@ -1042,7 +1078,7 @@ async def get_cars(cu: dict = Depends(get_user)):
         return rows
 
 @app.post("/cars", response_model=CarResp)
-async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
+async def create_car(car: CarCreate, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
         try:
@@ -1055,14 +1091,21 @@ async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
                        car.engine_number or "", car.year or "", car.project or "",
                        car.branch or "", car.car_license_expiry or "",
                        car.equipment_type or "", car.sector or ""))
-            return _car_fields(car, c.lastrowid)
+            cid = c.lastrowid
+            write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                action="create_car",
+                details=f"إضافة مركبة: {car.plate} | {car.model} | كود: {car.car_code or '—'}",
+                ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
+            return _car_fields(car, cid)
         except sqlite3.IntegrityError:
             raise HTTPException(400, "رقم اللوحة موجود مسبقاً")
 
 @app.put("/cars/{cid}", response_model=CarResp)
-async def update_car(cid: int, car: CarUpdate, cu: dict = Depends(require_admin)):
+async def update_car(cid: int, car: CarUpdate, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
+        c.execute("SELECT plate FROM cars WHERE id=?", (cid,))
+        old = c.fetchone()
         c.execute("""UPDATE cars SET plate=?,model=?,status=?,car_name=?,car_code=?,
                                      chassis=?,engine_number=?,year=?,project=?,branch=?,
                                      car_license_expiry=?,equipment_type=?,sector=?
@@ -1074,14 +1117,24 @@ async def update_car(cid: int, car: CarUpdate, cu: dict = Depends(require_admin)
                    car.equipment_type or "", car.sector or "", cid))
         if c.rowcount == 0:
             raise HTTPException(404, "المركبة غير موجودة")
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="update_car",
+            details=f"تعديل مركبة: {old['plate'] if old else '—'} → {car.plate} | ID: {cid}",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
         return _car_fields(car, cid)
 
 @app.delete("/cars/{cid}")
-async def delete_car(cid: int, cu: dict = Depends(require_admin)):
+async def delete_car(cid: int, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
+        c.execute("SELECT plate FROM cars WHERE id=?", (cid,))
+        car = c.fetchone()
         c.execute("DELETE FROM driver_car_permissions WHERE car_id=?", (cid,))
         c.execute("DELETE FROM cars WHERE id=?", (cid,))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="delete_car",
+            details=f"حذف مركبة: {car['plate'] if car else '—'} | ID: {cid}",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
         return {"message": "تم الحذف"}
 
 @app.get("/cars/equipment-types")
@@ -1101,7 +1154,7 @@ async def get_permissions(cu: dict = Depends(get_user)):
         return [dict(r) for r in c.fetchall()]
 
 @app.post("/permissions", response_model=PermResp)
-async def create_permission(perm: PermCreate, cu: dict = Depends(require_admin)):
+async def create_permission(perm: PermCreate, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id FROM driver_car_permissions WHERE driver_id=? AND car_id=?",
@@ -1110,12 +1163,34 @@ async def create_permission(perm: PermCreate, cu: dict = Depends(require_admin))
             raise HTTPException(400, "الصلاحية موجودة مسبقاً")
         c.execute("INSERT INTO driver_car_permissions(driver_id,car_id) VALUES(?,?)",
                   (perm.driver_id, perm.car_id))
-        return {"id": c.lastrowid, "driver_id": perm.driver_id, "car_id": perm.car_id}
+        pid = c.lastrowid
+        # Get names for better log
+        c.execute("SELECT name FROM drivers WHERE id=?", (perm.driver_id,))
+        drv = c.fetchone()
+        c.execute("SELECT plate FROM cars WHERE id=?", (perm.car_id,))
+        car = c.fetchone()
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="add_permission",
+            details=f"إضافة صلاحية: سائق '{drv['name'] if drv else perm.driver_id}' → مركبة '{car['plate'] if car else perm.car_id}'",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
+        return {"id": pid, "driver_id": perm.driver_id, "car_id": perm.car_id}
 
 @app.delete("/permissions/{pid}")
-async def delete_permission(pid: int, cu: dict = Depends(require_admin)):
+async def delete_permission(pid: int, request: Request, cu: dict = Depends(require_admin)):
     with get_db() as conn:
-        conn.cursor().execute("DELETE FROM driver_car_permissions WHERE id=?", (pid,))
+        c = conn.cursor()
+        c.execute("SELECT driver_id, car_id FROM driver_car_permissions WHERE id=?", (pid,))
+        perm = c.fetchone()
+        if perm:
+            c.execute("SELECT name FROM drivers WHERE id=?", (perm["driver_id"],))
+            drv = c.fetchone()
+            c.execute("SELECT plate FROM cars WHERE id=?", (perm["car_id"],))
+            car = c.fetchone()
+            write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                action="remove_permission",
+                details=f"حذف صلاحية: سائق '{drv['name'] if drv else '—'}' ← مركبة '{car['plate'] if car else '—'}'",
+                ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
+        c.execute("DELETE FROM driver_car_permissions WHERE id=?", (pid,))
         return {"ok": True}
 
 # ══════════════════════════════════════════════════════
@@ -1135,7 +1210,7 @@ async def get_trips(cu: dict = Depends(get_user)):
         return [enrich(dict(r)) for r in c.fetchall()]
 
 @app.post("/trips/start", response_model=TripResp)
-async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
+async def start_trip(trip: TripStart, request: Request, cu: dict = Depends(get_user)):
     if trip.start_odometer < 0:
         raise HTTPException(400, "العداد يجب أن يكون موجباً")
     with get_db() as conn:
@@ -1183,13 +1258,17 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         tid = c.lastrowid
         log_event("trip_started", trip_id=tid, driver_id=trip.driver_id,
                   car_id=trip.car_id, start_location=effective_start_location)
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="start_trip",
+            details=f"بدء رحلة #{tid} | سائق ID: {trip.driver_id} | مركبة ID: {trip.car_id} | عداد: {trip.start_odometer}",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
         return {"id":tid,"driver_id":trip.driver_id,"car_id":trip.car_id,
                 "start_time":now,"end_time":None,"start_odometer":trip.start_odometer,
                 "end_odometer":None,"start_location":effective_start_location,
                 "end_location":None,"garage_location":None,"notes":None}
 
 @app.post("/trips/end", response_model=TripResp)
-async def end_trip(te: TripEnd, cu: dict = Depends(get_user)):
+async def end_trip(te: TripEnd, request: Request, cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT driver_id,start_odometer FROM trips WHERE id=? AND end_time IS NULL",
@@ -1205,8 +1284,14 @@ async def end_trip(te: TripEnd, cu: dict = Depends(get_user)):
         c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,notes=? WHERE id=?",
                   (now, te.end_odometer, te.end_location, te.notes, te.trip_id))
         c.execute("SELECT * FROM trips WHERE id=?", (te.trip_id,))
+        t_row = dict(c.fetchone())
         log_event("trip_ended", trip_id=te.trip_id)
-        return enrich(dict(c.fetchone()))
+        km = round(te.end_odometer - trip["start_odometer"], 1)
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="end_trip",
+            details=f"إنهاء رحلة #{te.trip_id} | عداد النهاية: {te.end_odometer} | مسافة: {km} كم",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
+        return enrich(t_row)
 
 @app.put("/trips/{tid}/garage")
 async def set_garage(tid: int, body: dict, cu: dict = Depends(get_user)):
@@ -1901,19 +1986,22 @@ async def superuser_audit_logs(
     offset: int = 0,
     role: Optional[str] = None,
     username: Optional[str] = None,
+    action: Optional[str] = None,
 ):
     """
-    عرض سجل التدقيق الكامل.
-    يمكن الفلترة بـ ?role=admin أو ?username=xyz
+    عرض سجل التدقيق الكامل — يشمل الجهاز والإجراء التفصيلي.
+    فلترة بـ ?role=admin &username=xyz &action=create_driver
     """
     limit = min(limit, 500)
-    base  = "SELECT * FROM audit_logs"
+    base  = "SELECT id,user_id,username,role,action,details,ip_address,device_info,created_at FROM audit_logs"
     conditions: list[str] = []
     params: list           = []
     if role:
         conditions.append("role=?"); params.append(role)
     if username:
         conditions.append("username LIKE ?"); params.append(f"%{username}%")
+    if action:
+        conditions.append("action=?"); params.append(action)
     if conditions:
         base += " WHERE " + " AND ".join(conditions)
     base += " ORDER BY id DESC LIMIT ? OFFSET ?"
@@ -1922,7 +2010,6 @@ async def superuser_audit_logs(
         c = conn.cursor()
         c.execute(base, params)
         rows = [dict(r) for r in c.fetchall()]
-        # total count
         count_q = "SELECT COUNT(*) as cnt FROM audit_logs"
         if conditions:
             count_q += " WHERE " + " AND ".join(conditions)
@@ -2341,6 +2428,172 @@ async def anomalous_trips(
         c.execute(q, p)
         rows = [dict(r) for r in c.fetchall()]
     return {"count": len(rows), "threshold_km": threshold, "trips": rows}
+
+
+# ══════════════════════════════════════════════════════
+# 27. BACKUP & DATA EXPORT
+# ══════════════════════════════════════════════════════
+
+@app.get("/superuser/backup/download-db")
+async def backup_download_db(cu: dict = Depends(require_superuser)):
+    """تحميل نسخة احتياطية كاملة من قاعدة البيانات (SQLite)."""
+    if not os.path.exists(DATABASE_PATH):
+        raise HTTPException(404, "قاعدة البيانات غير موجودة")
+    filename = f"fleet_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.db"
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+        action="backup_download", details="تحميل نسخة احتياطية من قاعدة البيانات")
+    return FileResponse(
+        DATABASE_PATH,
+        media_type="application/octet-stream",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/superuser/backup/export-json")
+async def backup_export_json(cu: dict = Depends(require_superuser)):
+    """تصدير كامل البيانات كـ JSON (بدون كلمات المرور)."""
+    import json as _json
+    tables = ["drivers","cars","trips","workshop_records",
+              "emergency_reports","garage_records","driver_car_permissions",
+              "driver_requests","audit_logs","app_settings"]
+    export = {"exported_at": datetime.utcnow().isoformat()+"Z", "version": "2.0", "tables": {}}
+    with get_db() as conn:
+        c = conn.cursor()
+        for tbl in tables:
+            try:
+                c.execute(f"SELECT * FROM {tbl} ORDER BY id DESC LIMIT 50000")
+                export["tables"][tbl] = [dict(r) for r in c.fetchall()]
+            except Exception:
+                export["tables"][tbl] = []
+        # Users without passwords
+        c.execute("SELECT id,username,role,created_at,last_login FROM users")
+        export["tables"]["users"] = [dict(r) for r in c.fetchall()]
+
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+        action="backup_export_json", details="تصدير بيانات JSON كاملة")
+
+    from fastapi.responses import Response
+    fname = f"fleet_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    return Response(
+        content=_json.dumps(export, ensure_ascii=False, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+@app.get("/superuser/backup/stats")
+async def backup_stats(cu: dict = Depends(require_superuser)):
+    """إحصائيات قاعدة البيانات للعرض في صفحة الباك اب."""
+    tables = ["users","drivers","cars","trips","workshop_records",
+              "emergency_reports","garage_records","driver_car_permissions","audit_logs"]
+    stats = {}
+    with get_db() as conn:
+        c = conn.cursor()
+        for tbl in tables:
+            try:
+                c.execute(f"SELECT COUNT(*) as cnt FROM {tbl}")
+                stats[tbl] = c.fetchone()["cnt"]
+            except Exception:
+                stats[tbl] = 0
+    db_size = os.path.getsize(DATABASE_PATH) if os.path.exists(DATABASE_PATH) else 0
+    return {
+        "stats": stats,
+        "db_size_bytes": db_size,
+        "db_size_mb": round(db_size / (1024*1024), 2),
+        "db_path": DATABASE_PATH
+    }
+
+# ══════════════════════════════════════════════════════
+# 28. BULK IMPORT (Excel → DB via API)
+# ══════════════════════════════════════════════════════
+
+class BulkImportItem(BaseModel):
+    plate:               str
+    model:               str
+    car_name:            Optional[str] = ""
+    car_code:            Optional[str] = ""
+    chassis:             Optional[str] = ""
+    engine_number:       Optional[str] = ""
+    year:                Optional[str] = ""
+    project:             Optional[str] = ""
+    branch:              Optional[str] = ""
+    car_license_expiry:  Optional[str] = ""
+    driver_name:         Optional[str] = ""
+    driver_phone:        Optional[str] = ""
+    driver_fixed_number: Optional[str] = ""
+    driver_license_expiry: Optional[str] = ""
+    driver_username:     Optional[str] = ""
+    driver_password:     Optional[str] = ""
+
+@app.post("/superuser/bulk-import")
+async def bulk_import(items: List[BulkImportItem], request: Request, cu: dict = Depends(require_superuser)):
+    """استيراد مجمع للمركبات والسائقين من ملف Excel."""
+    results = {"cars_added": 0, "cars_skipped": 0, "drivers_added": 0,
+               "drivers_skipped": 0, "permissions_added": 0, "errors": []}
+    with get_db() as conn:
+        c = conn.cursor()
+        for item in items:
+            car_id = None
+            # Insert car
+            try:
+                c.execute("""INSERT OR IGNORE INTO cars(plate,model,car_name,car_code,chassis,
+                              engine_number,year,project,branch,car_license_expiry,status)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,'available')""",
+                          (item.plate.strip(), item.model.strip(), item.car_name or "",
+                           item.car_code or "", item.chassis or "", item.engine_number or "",
+                           item.year or "", item.project or "", item.branch or "",
+                           item.car_license_expiry or ""))
+                if c.rowcount > 0:
+                    car_id = c.lastrowid
+                    results["cars_added"] += 1
+                else:
+                    c.execute("SELECT id FROM cars WHERE plate=?", (item.plate.strip(),))
+                    row = c.fetchone()
+                    car_id = row["id"] if row else None
+                    results["cars_skipped"] += 1
+            except Exception as e:
+                results["errors"].append(f"خطأ مركبة {item.plate}: {str(e)}")
+                continue
+
+            # Insert driver if name provided
+            if item.driver_name and item.driver_name.strip():
+                try:
+                    uname = item.driver_username or item.driver_phone or item.driver_fixed_number or item.driver_name.replace(" ","_")
+                    pw    = item.driver_password or "Driver@1234"
+                    # Check user exists
+                    c.execute("SELECT id FROM users WHERE username=?", (uname,))
+                    existing_user = c.fetchone()
+                    if existing_user:
+                        user_id = existing_user["id"]
+                        results["drivers_skipped"] += 1
+                    else:
+                        c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+                                  (uname, _hash(pw), "driver"))
+                        user_id = c.lastrowid
+                        c.execute("""INSERT OR IGNORE INTO drivers(name,phone,status,user_id,
+                                      fixed_number,driver_license_expiry)
+                                      VALUES(?,?,?,?,?,?)""",
+                                  (item.driver_name.strip(), item.driver_phone or "",
+                                   "active", user_id, item.driver_fixed_number or "",
+                                   item.driver_license_expiry or ""))
+                        results["drivers_added"] += 1
+
+                    # Get driver id and add permission
+                    c.execute("SELECT id FROM drivers WHERE user_id=?", (user_id,))
+                    drv_row = c.fetchone()
+                    if drv_row and car_id:
+                        c.execute("INSERT OR IGNORE INTO driver_car_permissions(driver_id,car_id) VALUES(?,?)",
+                                  (drv_row["id"], car_id))
+                        if c.rowcount > 0:
+                            results["permissions_added"] += 1
+                except Exception as e:
+                    results["errors"].append(f"خطأ سائق {item.driver_name}: {str(e)}")
+
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+            action="bulk_import",
+            details=f"استيراد مجمع: {results['cars_added']} مركبة | {results['drivers_added']} سائق | {results['permissions_added']} صلاحية",
+            ip=_get_ip(request), device_info=_get_device_info(request), cursor=c)
+
+    return results
 
 
 # ══════════════════════════════════════════════════════
