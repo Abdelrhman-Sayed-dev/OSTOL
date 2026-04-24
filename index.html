@@ -1882,19 +1882,21 @@ async function generateOpCard() {
 
       // السائقون
       if(dData.drivers && dData.drivers.length > 0) {
-        const dRows = dData.drivers.map((d,i)=>`
+        const dRows = dData.drivers.map((d,i)=>{
+          const dKm = Math.max(0, (d.last_odo||d.max_odo||0) - (d.first_odo||d.min_odo||0));
+          return `
           <tr>
             <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
             <td style="font-weight:700">${d.driver_name}</td>
             <td style="text-align:center">${d.trip_count}</td>
             <td><span style="background:#bfdbfe;color:#1e40af;padding:.2rem .7rem;
                              border-radius:20px;font-weight:700;font-size:.85rem">
-              ${fmt(d.total_km)} كم
+              ${fmt(dKm)} كم
             </span></td>
-            <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(d.min_odo)}</td>
-            <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(d.max_odo)}</td>
+            <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(d.first_odo||d.min_odo)}</td>
+            <td style="text-align:center;color:#64748b;font-size:.82rem">${fmt(d.last_odo||d.max_odo)}</td>
             <td style="text-align:center;font-size:.8rem;color:#94a3b8">${d.first_date||'—'}</td>
-          </tr>`).join('');
+          </tr>`;}).join('');
         driversHtml = `
           <div style="margin-top:1rem">
             <div style="font-weight:800;font-size:.88rem;color:#334155;margin-bottom:.6rem">
