@@ -2502,6 +2502,248 @@ async def backup_stats(cu: dict = Depends(require_superuser)):
         "db_path": DATABASE_PATH
     }
 
+
+@app.get("/superuser/backup/export-excel")
+async def backup_export_excel(cu: dict = Depends(require_superuser)):
+    """
+    تصدير كامل البيانات كملف Excel — كل جدول في Sheet منفصل.
+    بدون كلمات المرور.
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import (Font, PatternFill, Alignment,
+                                      Border, Side)
+        from openpyxl.utils import get_column_letter
+        import io
+    except ImportError:
+        raise HTTPException(500, "مطلوب: pip install openpyxl")
+
+    # ── تعريف الجداول والأعمدة المسموح بها ──
+    EXPORT_TABLES = {
+        "drivers": {
+            "label": "السائقون",
+            "query": """SELECT d.id, d.name, d.phone, d.status, d.national_id,
+                               d.birth_date, d.driver_license_expiry,
+                               d.vehicle_license_expiry, d.branch,
+                               d.fixed_number, u.username
+                        FROM drivers d
+                        LEFT JOIN users u ON d.user_id = u.id
+                        ORDER BY d.id""",
+            "headers": ["ID","الاسم","الهاتف","الحالة","الرقم القومي",
+                        "تاريخ الميلاد","انتهاء رخصة السائق",
+                        "انتهاء رخصة المركبة","الفرع","الرقم الثابت","اسم المستخدم"],
+        },
+        "cars": {
+            "label": "المركبات",
+            "query": """SELECT id,plate,model,status,car_name,car_code,chassis,
+                               engine_number,year,project,branch,
+                               car_license_expiry,equipment_type,sector
+                        FROM cars ORDER BY id""",
+            "headers": ["ID","رقم اللوحة","الماركة","الحالة","نوع السيارة",
+                        "الكود","الشاسية","رقم المحرك","سنة الصنع","المشروع",
+                        "الفرع","انتهاء رخصة السيارة","نوع المعدة","القطاع"],
+        },
+        "trips": {
+            "label": "الرحلات",
+            "query": """SELECT t.id, d.name AS driver_name, c.plate AS car_plate,
+                               t.start_time, t.end_time,
+                               t.start_odometer, t.end_odometer,
+                               ROUND(COALESCE(t.end_odometer,0)-t.start_odometer,1) AS km,
+                               t.start_location, t.end_location, t.notes
+                        FROM trips t
+                        LEFT JOIN drivers d ON t.driver_id = d.id
+                        LEFT JOIN cars    c ON t.car_id    = c.id
+                        ORDER BY t.id DESC""",
+            "headers": ["ID","السائق","رقم المركبة","وقت البداية","وقت النهاية",
+                        "عداد البداية","عداد النهاية","المسافة (كم)",
+                        "موقع البداية","موقع النهاية","ملاحظات"],
+        },
+        "workshop_records": {
+            "label": "الورشة",
+            "query": """SELECT w.id, d.name AS driver_name, c.plate AS car_plate,
+                               w.type, w.operation_type, w.quantity, w.price,
+                               w.odometer_reading, w.description, w.notes,
+                               w.created_at
+                        FROM workshop_records w
+                        LEFT JOIN drivers d ON w.driver_id  = d.id
+                        LEFT JOIN cars    c ON w.vehicle_id = c.id
+                        ORDER BY w.id DESC""",
+            "headers": ["ID","السائق","رقم المركبة","النوع","نوع العملية",
+                        "الكمية","السعر","قراءة العداد","الوصف","ملاحظات","التاريخ"],
+        },
+        "emergency_reports": {
+            "label": "الطوارئ والحوادث",
+            "query": """SELECT e.id, d.name AS driver_name, c.plate AS car_plate,
+                               e.type, e.notes, e.location, e.created_at,
+                               e.is_read, e.is_handled, e.action_taken,
+                               e.handled_by, e.action_time
+                        FROM emergency_reports e
+                        LEFT JOIN drivers d ON e.driver_id = d.id
+                        LEFT JOIN cars    c ON e.car_id    = c.id
+                        ORDER BY e.id DESC""",
+            "headers": ["ID","السائق","رقم المركبة","النوع","ملاحظات","الموقع",
+                        "التاريخ","مقروء؟","تم التعامل؟","الإجراء المتخذ",
+                        "بواسطة","وقت الإجراء"],
+        },
+        "garage_records": {
+            "label": "سجلات الجراج",
+            "query": """SELECT g.id, d.name AS driver_name, c.plate AS car_plate,
+                               g.location, g.recorded_at, g.notes
+                        FROM garage_records g
+                        LEFT JOIN drivers d ON g.driver_id = d.id
+                        LEFT JOIN cars    c ON g.car_id    = c.id
+                        ORDER BY g.id DESC""",
+            "headers": ["ID","السائق","رقم المركبة","الموقع","وقت التسجيل","ملاحظات"],
+        },
+        "driver_car_permissions": {
+            "label": "الصلاحيات",
+            "query": """SELECT p.id, d.name AS driver_name, u.username,
+                               c.plate AS car_plate, c.model
+                        FROM driver_car_permissions p
+                        LEFT JOIN drivers d ON p.driver_id = d.id
+                        LEFT JOIN cars    c ON p.car_id    = c.id
+                        LEFT JOIN users   u ON d.user_id   = u.id
+                        ORDER BY p.id""",
+            "headers": ["ID","اسم السائق","اسم المستخدم","رقم المركبة","الموديل"],
+        },
+        "driver_requests": {
+            "label": "طلبات السائقين",
+            "query": """SELECT r.id, d.name AS driver_name, r.type, r.notes,
+                               r.status, r.admin_notes, r.handled_by,
+                               r.handled_at, r.created_at
+                        FROM driver_requests r
+                        LEFT JOIN drivers d ON r.driver_id = d.id
+                        ORDER BY r.id DESC""",
+            "headers": ["ID","السائق","النوع","ملاحظات","الحالة",
+                        "ملاحظات الأدمن","بواسطة","وقت المعالجة","التاريخ"],
+        },
+        "audit_logs": {
+            "label": "سجل الإجراءات",
+            "query": """SELECT id, username, role, action, details,
+                               ip_address, device_info, created_at
+                        FROM audit_logs ORDER BY id DESC LIMIT 10000""",
+            "headers": ["ID","المستخدم","الدور","الإجراء","التفاصيل",
+                        "IP","معلومات الجهاز","التاريخ"],
+        },
+    }
+
+    # ── ألوان الهيدر ──
+    HEADER_FILL  = PatternFill("solid", fgColor="1e3a5f")   # Navy
+    ACCENT_FILL  = PatternFill("solid", fgColor="b8860b")   # Gold
+    HEADER_FONT  = Font(color="FFFFFF", bold=True, size=11, name="Cairo")
+    CELL_FONT    = Font(name="Cairo", size=10)
+    THIN_BORDER  = Border(
+        left=Side(style="thin", color="D0D7E3"),
+        right=Side(style="thin", color="D0D7E3"),
+        top=Side(style="thin", color="D0D7E3"),
+        bottom=Side(style="thin", color="D0D7E3"),
+    )
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)   # إزالة الـ sheet الافتراضية
+
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # ── Summary Sheet أول ──
+        ws_sum = wb.create_sheet("📊 ملخص")
+        ws_sum.sheet_view.rightToLeft = True
+        ws_sum.column_dimensions["A"].width = 30
+        ws_sum.column_dimensions["B"].width = 18
+
+        summary_headers = ["الجدول", "عدد السجلات"]
+        for col_i, h in enumerate(summary_headers, 1):
+            cell = ws_sum.cell(row=1, column=col_i, value=h)
+            cell.font    = HEADER_FONT
+            cell.fill    = HEADER_FILL
+            cell.alignment = Alignment(horizontal="center", vertical="center",
+                                       reading_order=2)
+            cell.border  = THIN_BORDER
+        ws_sum.row_dimensions[1].height = 24
+
+        sum_row = 2
+        total_records = 0
+
+        # ── كل جدول ──
+        for tbl_key, cfg in EXPORT_TABLES.items():
+            try:
+                c.execute(cfg["query"])
+                rows = c.fetchall()
+            except Exception:
+                rows = []
+
+            row_count = len(rows)
+            total_records += row_count
+
+            # أضف للـ summary
+            ws_sum.cell(row=sum_row, column=1, value=cfg["label"]).font = CELL_FONT
+            cnt_cell = ws_sum.cell(row=sum_row, column=2, value=row_count)
+            cnt_cell.font      = Font(bold=True, name="Cairo", size=10,
+                                      color="1e3a5f")
+            cnt_cell.alignment = Alignment(horizontal="center")
+            sum_row += 1
+
+            # أنشئ الـ sheet
+            ws = wb.create_sheet(cfg["label"])
+            ws.sheet_view.rightToLeft = True
+
+            # هيدر
+            for col_i, h in enumerate(cfg["headers"], 1):
+                cell = ws.cell(row=1, column=col_i, value=h)
+                cell.font      = HEADER_FONT
+                cell.fill      = HEADER_FILL
+                cell.alignment = Alignment(horizontal="center", vertical="center",
+                                           wrap_text=True, reading_order=2)
+                cell.border    = THIN_BORDER
+            ws.row_dimensions[1].height = 28
+            ws.freeze_panes = "A2"
+
+            # البيانات
+            for row_i, row in enumerate(rows, 2):
+                row_data = list(row)
+                alt_fill = PatternFill("solid", fgColor="F5F7FA") if row_i % 2 == 0 else None
+                for col_i, val in enumerate(row_data, 1):
+                    cell = ws.cell(row=row_i, column=col_i, value=val)
+                    cell.font      = CELL_FONT
+                    cell.border    = THIN_BORDER
+                    cell.alignment = Alignment(reading_order=2, vertical="center")
+                    if alt_fill:
+                        cell.fill = alt_fill
+
+            # ضبط عرض الأعمدة تلقائياً
+            for col_i in range(1, len(cfg["headers"]) + 1):
+                col_letter = get_column_letter(col_i)
+                max_len = len(str(cfg["headers"][col_i - 1]))
+                for row in rows[:50]:     # sample أول 50 صف
+                    val = str(list(row)[col_i - 1] or "")
+                    max_len = max(max_len, min(len(val), 40))
+                ws.column_dimensions[col_letter].width = max_len + 4
+
+        # إجمالي في الـ summary
+        ws_sum.cell(row=sum_row, column=1, value="الإجمالي الكلي").font = Font(
+            bold=True, name="Cairo", color="b8860b")
+        tot_cell = ws_sum.cell(row=sum_row, column=2, value=total_records)
+        tot_cell.font = Font(bold=True, name="Cairo", color="b8860b")
+        tot_cell.alignment = Alignment(horizontal="center")
+
+    # ── حفظ في memory buffer ──
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    fname = f"fleet_data_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+        action="backup_export_excel",
+        details=f"تصدير Excel كامل: {total_records} سجل إجمالي")
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
 # ══════════════════════════════════════════════════════
 # 28. BULK IMPORT (Excel → DB via API)
 # ══════════════════════════════════════════════════════
