@@ -1635,28 +1635,93 @@ function formatLocation(loc, asGarage=false) {
 /* ── TRIPS TABLE ── */
 function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
   if(!trips.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات</p></div>';
-  return `<table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>البداية</th><th>النهاية</th><th>عداد البداية</th><th>عداد النهاية</th><th>موقع البداية</th><th>موقع النهاية</th><th>موقع الجراج</th><th>ملاحظات</th><th>الحالة</th><th>تعديل</th></tr></thead><tbody>
-  ${trips.map(t=>{
-    const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
-    const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
-    const gRec=garageLatest.find(g=>g.car_id===t.car_id);
-    const garageLoc=t.end_time?(t.garage_location||gRec?.location||''):'';
-    return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
-      <td>${t.start_time?fmtDT(t.start_time):'—'}</td>
-      <td>${t.end_time?fmtDT(t.end_time):'—'}</td>
-      <td><strong>${t.start_odometer!=null?t.start_odometer+' كم':'—'}</strong></td>
-      <td><strong>${t.end_odometer!=null?t.end_odometer+' كم':'—'}</strong></td>
-      <td>${formatLocation(t.start_location)}</td><td>${formatLocation(t.end_location)}</td><td>${formatLocation(garageLoc, true)}</td>
-      <td style="font-size:.8rem;max-width:110px">${t.notes||'—'}</td>
-      <td>${!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>'}</td>
-      <td>${!isReporter()?`<button class="btn btn-ghost btn-sm edit-odo"
-        data-id="${t.id}"
-        data-start="${t.start_odometer??''}"
-        data-end="${t.end_odometer??''}"
-        data-driver="${dName}"
-        data-active="${!t.end_time?'1':'0'}"
-        title="تعديل العداد">✏️ عداد</button>`:'—'}</td></tr>`;
-  }).join('')}</tbody></table>`;
+  const su = isSuperuser();
+
+  // دالة تعرض التاريخ فقط (بدون الوقت) لغير السوبر، والتاريخ + الوقت للسوبر
+  function fmtTripTime(dt) {
+    if(!dt) return '—';
+    if(su) return fmtDT(dt);
+    // التاريخ فقط بالشكل dd/mm/yyyy
+    try {
+      const d = new Date(dt);
+      const pad = n => String(n).padStart(2,'0');
+      return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+    } catch { return dt.slice(0,10); }
+  }
+
+  const showTimeCol = su; // الوقت بيظهر كعمود منفصل للسوبر فقط
+
+  return `<table>
+    <thead><tr>
+      <th>#</th>
+      <th>السائق</th>
+      <th>المركبة</th>
+      <th>البداية${showTimeCol ? ' (تاريخ)' : ''}</th>
+      ${showTimeCol ? '<th>البداية (وقت)</th>' : ''}
+      <th>النهاية${showTimeCol ? ' (تاريخ)' : ''}</th>
+      ${showTimeCol ? '<th>النهاية (وقت)</th>' : ''}
+      <th>عداد البداية</th>
+      <th>عداد النهاية</th>
+      <th>موقع البداية</th>
+      <th>موقع النهاية</th>
+      <th>موقع الجراج</th>
+      <th>ملاحظات</th>
+      <th>الحالة</th>
+      <th>تعديل</th>
+    </tr></thead>
+    <tbody>
+    ${trips.map(t=>{
+      const drv  = drivers.find(d=>d.id===t.driver_id);
+      const car  = cars.find(c=>c.id===t.car_id);
+      const dName  = drv?.name  || '—';
+      const cPlate = car?.plate || '—';
+      const cModel = car?.model || '';
+      const cName  = car?.car_name || '';
+      const gRec   = garageLatest.find(g=>g.car_id===t.car_id);
+      const garageLoc = t.end_time ? (t.garage_location||gRec?.location||'') : '';
+
+      // عرض المركبة: اسم + لوحة + موديل
+      const carDisplay = `<div dir="ltr" style="font-weight:700;color:var(--primary)">${cPlate}</div>
+        ${cName ? `<div style="font-size:.72rem;color:var(--muted)">${cName}</div>` : ''}
+        ${cModel ? `<div style="font-size:.72rem;color:var(--muted)">${cModel}</div>` : ''}`;
+
+      // تاريخ ووقت منفصلَين (للسوبر)
+      function datePart(dt) {
+        if(!dt) return '—';
+        try { const d=new Date(dt); const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()}`; } catch { return dt.slice(0,10); }
+      }
+      function timePart(dt) {
+        if(!dt) return '—';
+        try { const d=new Date(dt); const p=n=>String(n).padStart(2,'0'); return `${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return ''; }
+      }
+
+      return `<tr>
+        <td style="color:var(--muted);font-size:.8rem">${t.id}</td>
+        <td style="font-weight:600">${dName}</td>
+        <td>${carDisplay}</td>
+        <td style="font-size:.82rem">${t.start_time ? datePart(t.start_time) : '—'}</td>
+        ${showTimeCol ? `<td style="font-size:.82rem;color:var(--muted);font-family:monospace">${t.start_time ? timePart(t.start_time) : '—'}</td>` : ''}
+        <td style="font-size:.82rem">${t.end_time ? datePart(t.end_time) : '—'}</td>
+        ${showTimeCol ? `<td style="font-size:.82rem;color:var(--muted);font-family:monospace">${t.end_time ? timePart(t.end_time) : '—'}</td>` : ''}
+        <td><strong>${t.start_odometer!=null ? t.start_odometer+' كم' : '—'}</strong></td>
+        <td><strong>${t.end_odometer!=null   ? t.end_odometer+' كم'  : '—'}</strong></td>
+        <td>${formatLocation(t.start_location)}</td>
+        <td>${formatLocation(t.end_location)}</td>
+        <td>${formatLocation(garageLoc,true)}</td>
+        <td style="font-size:.8rem;max-width:110px">${t.notes||'—'}</td>
+        <td>${!t.end_time
+          ? '<span class="badge badge-blue">● جارية</span>'
+          : '<span class="badge badge-green">✓ منتهية</span>'}</td>
+        <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-odo"
+          data-id="${t.id}"
+          data-start="${t.start_odometer??''}"
+          data-end="${t.end_odometer??''}"
+          data-driver="${dName}"
+          data-active="${!t.end_time?'1':'0'}"
+          title="تعديل العداد">✏️ عداد</button>` : '—'}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table>`;
 }
 
 async function renderTripsSection() {
@@ -5364,6 +5429,49 @@ async function renderSuperTrends() {
         }).join('');
       }
 
+      // ── شارت SVG أفقي ──
+      function svgBarChart(rows, metric, colorTop) {
+        if (!rows || !rows.length) return `<div style="text-align:center;color:var(--muted);padding:2rem;font-size:.85rem">لا توجد بيانات</div>`;
+        const maxVal = Math.max(...rows.map(r => metric === 'trips' ? r.trip_count : r.total_km), 1);
+        const rowH = 52, paddingRight = 130, paddingLeft = 70, chartH = rows.length * rowH + 16;
+        const medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+        const barColors = colorTop
+          ? ['#b8860b','#1e3a5f','#0d6e3c','#1e6091','#5b4fcf']
+          : ['#9ca3af','#a8b4c0','#b5bec8','#c2c8d0','#ced4da'];
+
+        const bars = rows.map((drv, i) => {
+          const val   = metric === 'trips' ? drv.trip_count : drv.total_km;
+          const pct   = val / maxVal;
+          const barW  = Math.max(8, Math.round(pct * (300 - paddingRight - paddingLeft)));
+          const y     = i * rowH + 8;
+          const label = metric === 'trips'
+            ? `${(+val).toLocaleString('ar-EG')} رحلة`
+            : `${(+val).toLocaleString('ar-EG',{maximumFractionDigits:1})} كم`;
+          const medal = colorTop ? (medals[i] || String(i+1)) : '▼';
+          const shortName = drv.driver_name.length > 16 ? drv.driver_name.slice(0,15)+'…' : drv.driver_name;
+
+          return `
+            <!-- row ${i} -->
+            <text x="${300 - paddingRight + 8}" y="${y + 22}" font-size="12" fill="#374151" font-weight="700" text-anchor="start" font-family="Cairo,sans-serif">${medal} ${shortName}</text>
+            ${drv.branch ? `<text x="${300 - paddingRight + 8}" y="${y + 35}" font-size="9" fill="#9ca3af" font-family="Cairo,sans-serif">${drv.branch}</text>` : ''}
+            <rect x="${paddingLeft}" y="${y + 6}" width="${barW}" height="22" rx="5"
+                  fill="${barColors[i % barColors.length]}" opacity="0.9"/>
+            <text x="${paddingLeft + barW + 6}" y="${y + 21}" font-size="11" fill="${barColors[i % barColors.length]}" font-weight="800" font-family="Cairo,sans-serif">${label}</text>
+          `;
+        }).join('');
+
+        // خطوط شبكية خفيفة
+        const gridLines = [25, 50, 75, 100].map(pct => {
+          const x = paddingLeft + Math.round(pct/100 * (300 - paddingRight - paddingLeft));
+          return `<line x1="${x}" y1="4" x2="${x}" y2="${chartH - 4}" stroke="#e5e9f0" stroke-width="1" stroke-dasharray="3,3"/>`;
+        }).join('');
+
+        return `<svg viewBox="0 0 300 ${chartH}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">
+          ${gridLines}
+          ${bars}
+        </svg>`;
+      }
+
       function trendCard(title, icon, top5, bottom5, metric) {
         return `
         <div class="card" style="padding:0;overflow:hidden;margin-bottom:1.2rem">
@@ -5373,18 +5481,21 @@ async function renderSuperTrends() {
             <span style="margin-right:auto;font-size:.72rem;color:rgba(255,255,255,.65)">${periodLabel}</span>
           </div>
           <div class="two-col" style="padding:1.2rem;gap:1.4rem">
+
             <div>
-              <div style="font-size:.72rem;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:.8px;margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:2px solid var(--gold-pale)">
+              <div style="font-size:.72rem;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:.8px;margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:2px solid var(--gold-pale);display:flex;align-items:center;gap:.4rem">
                 🏆 الأعلى أداءً — أول 5
               </div>
-              ${renderTrendTable(top5,'top',metric)}
+              ${svgBarChart(top5, metric, true)}
             </div>
+
             <div>
-              <div style="font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:2px solid var(--border)">
+              <div style="font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:2px solid var(--border);display:flex;align-items:center;gap:.4rem">
                 📉 الأقل أداءً — آخر 5
               </div>
-              ${renderTrendTable(bottom5,'bottom',metric)}
+              ${svgBarChart(bottom5, metric, false)}
             </div>
+
           </div>
         </div>`;
       }
