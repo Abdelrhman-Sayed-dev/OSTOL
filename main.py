@@ -183,7 +183,6 @@ def migrate_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_trips_driver ON trips(driver_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_trips_active ON trips(driver_id, end_time)")
-
         # WORKSHOPS
         c.execute("""CREATE TABLE IF NOT EXISTS workshop_records(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,26 +278,39 @@ def _safe_add_columns(c):
     try:
         c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
         row = c.fetchone()
-        if row and 'superuser' not in (row['sql'] or ''):
+        tbl_sql = row['sql'] or '' if row else ''
+        needs_role_fix   = 'superuser' not in tbl_sql
+        needs_unique_fix = 'username TEXT UNIQUE' in tbl_sql  # نشيل UNIQUE من username
+        if needs_role_fix or needs_unique_fix:
             c.execute("PRAGMA foreign_keys=OFF")
             c.execute("""CREATE TABLE IF NOT EXISTS users_migrated(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
+                username TEXT NOT NULL,
                 password TEXT NOT NULL,
                 role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter')),
+                branch TEXT DEFAULT '',
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
                 refresh_token TEXT,
                 refresh_exp TEXT
             )""")
-            c.execute("INSERT OR IGNORE INTO users_migrated SELECT id,username,password,role,created_at,last_login,refresh_token,refresh_exp FROM users")
+            c.execute("INSERT OR IGNORE INTO users_migrated SELECT id,username,password,role,COALESCE(branch,''),created_at,last_login,refresh_token,refresh_exp FROM users")
             c.execute("DROP TABLE users")
             c.execute("ALTER TABLE users_migrated RENAME TO users")
             c.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
             c.execute("PRAGMA foreign_keys=ON")
-            log.info("✅ Migrated users role constraint to include 'superuser'")
+            log.info("✅ Migrated users: removed UNIQUE on username, added superuser role")
     except Exception as e:
-        log.warning(f"Role migration skipped: {e}")
+        log.warning(f"Users migration skipped: {e}")
+
+    # ── UNIQUE index على fixed_number في drivers (بيتجاهل الفارغ) ──
+    try:
+        c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_fixed_number
+                     ON drivers(fixed_number)
+                     WHERE fixed_number IS NOT NULL AND fixed_number != ''""")
+        log.info("✅ UNIQUE index on drivers.fixed_number created")
+    except Exception as e:
+        log.warning(f"fixed_number index: {e}")
 
     existing = {}
     for tbl in ["users","drivers","cars","emergency_reports","trips","workshop_records"]:
@@ -812,9 +824,16 @@ def _car_fields(car, cid: int) -> dict:
 async def login(request: Request, data: LoginReq):
     with get_db() as conn:
         c = conn.cursor()
+        # username ممكن يتكرر عند السائقين — نجيب كل الحسابات بنفس الاسم
+        # ونبحث عن الأول اللي كلمة مروره تطابق
         c.execute("SELECT id,username,password,role,branch FROM users WHERE username=?", (data.username,))
-        u = c.fetchone()
-        if not u or not _verify(data.password, u["password"]):
+        candidates = c.fetchall()
+        u = None
+        for candidate in candidates:
+            if _verify(data.password, candidate["password"]):
+                u = candidate
+                break
+        if not u:
             log_event("login_failed", username=data.username, ip=request.client.host)
             raise HTTPException(401, "اسم المستخدم أو كلمة المرور غير صحيحة")
 
@@ -950,9 +969,11 @@ async def create_driver(driver: DriverCreate, cu: dict = Depends(require_admin))
         driver_branch = driver.branch or ""
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id FROM users WHERE username=?", (driver.username,))
-        if c.fetchone():
-            raise HTTPException(400, "اسم المستخدم موجود مسبقاً")
+        # username ممكن يتكرر — اللي مش ممكن يتكرر هو الرقم الثابت
+        if driver.fixed_number:
+            c.execute("SELECT id FROM drivers WHERE fixed_number=?", (driver.fixed_number,))
+            if c.fetchone():
+                raise HTTPException(400, f"الرقم الثابت '{driver.fixed_number}' موجود مسبقاً")
         c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
                   (driver.username, _hash(driver.password), "driver"))
         uid = c.lastrowid
@@ -1024,9 +1045,7 @@ async def update_credentials(did: int, body: dict, cu: dict = Depends(require_ad
         if not drv or not drv["user_id"]:
             raise HTTPException(404, "المستخدم غير موجود")
         uid = drv["user_id"]
-        c.execute("SELECT id FROM users WHERE username=? AND id!=?", (new_username, uid))
-        if c.fetchone():
-            raise HTTPException(400, "اسم المستخدم موجود مسبقاً")
+        # username مش unique للسائقين — مفيش حاجة نتأكد منها هنا
         if new_password:
             c.execute("UPDATE users SET username=?,password=? WHERE id=?",
                       (new_username, _hash(new_password), uid))
@@ -2757,12 +2776,13 @@ async def import_confirm(
         if import_type == "drivers":
             for row in valid_rows:
                 try:
-                    # تحقق من عدم تكرار username
-                    c.execute("SELECT id FROM users WHERE username=?", (row["username"],))
-                    if c.fetchone():
-                        row["errors"] = [f"اسم المستخدم '{row['username']}' موجود مسبقاً"]
-                        skipped_rows.append(row)
-                        continue
+                    # اللي مش ممكن يتكرر هو الرقم الثابت — مش اسم المستخدم
+                    if row["fixed_number"]:
+                        c.execute("SELECT id FROM drivers WHERE fixed_number=?", (row["fixed_number"],))
+                        if c.fetchone():
+                            row["errors"] = [f"الرقم الثابت '{row['fixed_number']}' موجود مسبقاً"]
+                            skipped_rows.append(row)
+                            continue
                     c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
                               (row["username"], _hash(row["password"]), "driver"))
                     uid = c.lastrowid
@@ -2775,7 +2795,7 @@ async def import_confirm(
                                row["driver_license_expiry"], row["vehicle_license_expiry"],
                                row["branch"], row["fixed_number"]))
                     inserted.append({"row_index": row["row_index"], "name": row["name"],
-                                     "username": row["username"]})
+                                     "fixed_number": row["fixed_number"]})
                 except Exception as e:
                     row["errors"] = [str(e)]
                     skipped_rows.append(row)
