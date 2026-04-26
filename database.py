@@ -31,6 +31,7 @@ def create_database():
             username   TEXT    UNIQUE NOT NULL,
             password   TEXT    NOT NULL,
             role       TEXT    NOT NULL CHECK(role IN ('superuser', 'admin', 'driver', 'reporter')),
+            branch     TEXT    DEFAULT '',
             created_at TEXT    DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
