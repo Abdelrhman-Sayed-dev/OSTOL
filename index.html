@@ -1051,6 +1051,7 @@ function buildAdminNav() {
     base.push({id:'super-admins',    icon:'👑', label:'إدارة الأدمنز'});
     base.push({id:'super-reporters', icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-logs',      icon:'📋', label:'سجل الدخول'});
+    base.push({id:'super-trends',    icon:'📈', label:'تريند السائقين'});
   }
   return base;
 }
@@ -1099,6 +1100,7 @@ async function renderSection(id) {
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-logs':      await renderSuperLogs(); break;
     case 'import-data':     await renderImportSection(); break;
+    case 'super-trends':    await renderSuperTrends(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -5291,6 +5293,134 @@ function filterLogs() {
           <td style="font-size:.8rem;color:var(--muted)">${r.details||'—'}</td>
           <td style="font-family:monospace;font-size:.72rem;color:var(--muted)">${r.ip_address||'—'}</td>
         </tr>`).join('');
+}
+
+
+/* ══════════════════════════════════════════════════
+   تريند السائقين — سوبر يوزر فقط
+══════════════════════════════════════════════════ */
+async function renderSuperTrends() {
+  const c = document.getElementById('pageContent');
+
+  const today = new Date();
+  const y = today.getFullYear(), m = String(today.getMonth()+1).padStart(2,'0'), d = String(today.getDate()).padStart(2,'0');
+  const defaultFrom = `${y}-${m}-01`;
+  const defaultTo   = `${y}-${m}-${d}`;
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.4rem;flex-wrap:wrap;gap:.8rem">
+      <h2 style="font-size:1.25rem;font-weight:900;color:var(--primary);display:flex;align-items:center;gap:.5rem">
+        📈 تريند السائقين
+        <span style="font-size:.7rem;background:var(--gold-pale);color:var(--gold);border:1px solid var(--gold-glow);padding:.2rem .7rem;border-radius:20px;font-weight:700">سوبر يوزر</span>
+      </h2>
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+        <input type="date" id="trendFrom" value="${defaultFrom}" style="width:145px;padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--border);font-size:.82rem">
+        <span style="color:var(--muted);font-size:.82rem">إلى</span>
+        <input type="date" id="trendTo"   value="${defaultTo}"   style="width:145px;padding:.45rem .7rem;border-radius:8px;border:1.5px solid var(--border);font-size:.82rem">
+        <button class="btn btn-primary btn-sm" onclick="_loadTrends()">🔍 بحث</button>
+        <button class="btn btn-ghost btn-sm"   onclick="_loadTrends()">🔄 تحديث</button>
+      </div>
+    </div>
+    <div id="trendsContent"><div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div></div>
+  `;
+
+  window._loadTrends = async function() {
+    const from = document.getElementById('trendFrom')?.value || defaultFrom;
+    const to   = document.getElementById('trendTo')?.value   || defaultTo;
+    const tc   = document.getElementById('trendsContent');
+    if (!tc) return;
+    tc.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+    try {
+      const data = await apiCall(`/superuser/driver-trends?date_from=${from}&date_to=${to}`);
+      const periodLabel = `${from} → ${to}`;
+
+      function renderTrendTable(rows, type, metric) {
+        if (!rows || !rows.length) return `<div style="text-align:center;color:var(--muted);padding:1.5rem;font-size:.85rem">لا توجد بيانات</div>`;
+        const maxVal = Math.max(...rows.map(r => metric === 'trips' ? r.trip_count : r.total_km), 1);
+        const medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+        const isTop  = type === 'top';
+        return rows.map((drv, i) => {
+          const val   = metric === 'trips' ? drv.trip_count : drv.total_km;
+          const pct   = Math.max(6, Math.round((val / maxVal) * 100));
+          const label = metric === 'trips'
+            ? `${(+val).toLocaleString('ar-EG')} رحلة`
+            : `${(+val).toLocaleString('ar-EG',{maximumFractionDigits:1})} كم`;
+          const barColor = isTop
+            ? (i===0 ? 'linear-gradient(90deg,#b8860b,#d4a017)' : i===1 ? 'linear-gradient(90deg,#1e3a5f,#2d5486)' : 'linear-gradient(90deg,#0d6e3c,#10b981)')
+            : 'linear-gradient(90deg,#9ca3af,#d1d5db)';
+          return `
+            <div style="display:flex;align-items:center;gap:.9rem;padding:.8rem .2rem;border-bottom:1px solid var(--border);${i===rows.length-1?'border-bottom:none':''}">
+              <div style="width:2rem;text-align:center;font-size:${isTop?'1.1rem':'.85rem'};flex-shrink:0">${isTop?(medals[i]||i+1):'⬇️'}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:.85rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${drv.driver_name}</div>
+                ${drv.branch ? `<div style="font-size:.7rem;color:var(--muted)">${drv.branch}</div>` : ''}
+                <div style="margin-top:.35rem;background:var(--bg);border-radius:20px;height:7px;overflow:hidden">
+                  <div style="height:100%;width:${pct}%;background:${barColor};border-radius:20px"></div>
+                </div>
+              </div>
+              <div style="font-weight:800;font-size:.88rem;color:${isTop?'var(--primary)':'var(--muted)'};white-space:nowrap;flex-shrink:0">${label}</div>
+            </div>`;
+        }).join('');
+      }
+
+      function trendCard(title, icon, top5, bottom5, metric) {
+        return `
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:1.2rem">
+          <div style="background:linear-gradient(135deg,var(--primary),var(--primary-light));padding:1rem 1.4rem;display:flex;align-items:center;gap:.6rem">
+            <span style="font-size:1.3rem">${icon}</span>
+            <span style="font-weight:800;color:white;font-size:.95rem">${title}</span>
+            <span style="margin-right:auto;font-size:.72rem;color:rgba(255,255,255,.65)">${periodLabel}</span>
+          </div>
+          <div class="two-col" style="padding:1.2rem;gap:1.4rem">
+            <div>
+              <div style="font-size:.72rem;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:.8px;margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:2px solid var(--gold-pale)">
+                🏆 الأعلى أداءً — أول 5
+              </div>
+              ${renderTrendTable(top5,'top',metric)}
+            </div>
+            <div>
+              <div style="font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:.8rem;padding-bottom:.5rem;border-bottom:2px solid var(--border)">
+                📉 الأقل أداءً — آخر 5
+              </div>
+              ${renderTrendTable(bottom5,'bottom',metric)}
+            </div>
+          </div>
+        </div>`;
+      }
+
+      tc.innerHTML = `
+        <div class="stats-row" style="margin-bottom:1.4rem">
+          <div class="stat-card">
+            <span class="stat-icon">👨‍✈️</span>
+            <div class="stat-value">${(data.total_drivers||0).toLocaleString('ar-EG')}</div>
+            <div class="stat-label">إجمالي السائقين النشطين</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon">🏆</span>
+            <div class="stat-value">${(data.by_trips.top5[0]?.trip_count||0).toLocaleString('ar-EG')}</div>
+            <div class="stat-label">أعلى رحلات · ${data.by_trips.top5[0]?.driver_name||'—'}</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon">📏</span>
+            <div class="stat-value">${(+(data.by_distance.top5[0]?.total_km||0)).toLocaleString('ar-EG',{maximumFractionDigits:0})}</div>
+            <div class="stat-label">أعلى مسافة كم · ${data.by_distance.top5[0]?.driver_name||'—'}</div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon">📅</span>
+            <div class="stat-value" style="font-size:1rem;letter-spacing:0">${from}</div>
+            <div class="stat-label">من تاريخ</div>
+          </div>
+        </div>
+        ${trendCard('تريند عدد الرحلات','🗺️',data.by_trips.top5,data.by_trips.bottom5,'trips')}
+        ${trendCard('تريند المسافة المقطوعة','📏',data.by_distance.top5,data.by_distance.bottom5,'distance')}
+      `;
+    } catch(e) {
+      tc.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>خطأ في تحميل البيانات: ${e.message||''}</p></div>`;
+    }
+  };
+
+  await window._loadTrends();
 }
 
 
