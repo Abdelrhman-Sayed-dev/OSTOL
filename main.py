@@ -1166,6 +1166,11 @@ async def get_cars(cu: dict = Depends(get_user), branch: Optional[str] = None):
             for f in ("car_name","car_code","chassis","engine_number","year","project",
                       "branch","car_license_expiry","equipment_type","sector"):
                 d.setdefault(f, "")
+            # Parse category|subtype from equipment_type
+            eq = d.get("equipment_type","") or ""
+            parts = eq.split("|",1)
+            d["vehicle_category"] = parts[0] if parts else ""
+            d["vehicle_subtype"]  = parts[1] if len(parts)>1 else ""
             rows.append(d)
         return rows
 
