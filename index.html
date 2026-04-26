@@ -1038,6 +1038,20 @@ function branchOptions(selected='') {
   return '<option value="">— اختر الفرع / الإدارة —</option>'
     + BRANCHES.map(b=>`<option value="${b}" ${b===selected?'selected':''}>${b}</option>`).join('');
 }
+
+/** حقل فرع قابل للبحث (input + datalist) */
+function branchSearchField(id, value='') {
+  const listId = id+'_list';
+  return `<div style="position:relative">
+    <input id="${id}" list="${listId}" value="${value||''}" autocomplete="off"
+      placeholder="اكتب أو اختر الفرع / الإدارة..."
+      style="width:100%;padding:.55rem .8rem;border:1.5px solid var(--border);border-radius:10px;
+             font-family:inherit;font-size:.88rem;background:var(--bg);color:var(--text)">
+    <datalist id="${listId}">
+      ${BRANCHES.map(b=>`<option value="${b}">`).join('')}
+    </datalist>
+  </div>`;
+}
 function setSuperBranch(branch, btn) {
   window._superBranch = branch;
   document.querySelectorAll('.branch-btn').forEach(b=>b.classList.remove('active'));
@@ -1181,12 +1195,14 @@ async function renderOverview() {
   }
   const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
 
-  // ── تسمية الفرع للأدمن المقيّد (يعرف إن بياناته مفلترة) ──
+  // ── شريط الفرع للأدمن (للقراءة فقط) ──
   if(currentUser?.role==='admin' && currentUser?.branch) {
-    const branchLabel = document.createElement('div');
-    branchLabel.style.cssText = 'padding:.5rem 1rem;background:var(--surface-2);border-radius:10px;margin-bottom:.75rem;font-size:.82rem;color:var(--muted)';
-    branchLabel.innerHTML = `📍 تعرض بيانات فرع: <strong style="color:var(--gold)">${currentUser.branch}</strong>`;
-    document.getElementById('pageContent').prepend(branchLabel);
+    const pc = document.getElementById('pageContent');
+    const bar = document.createElement('div');
+    bar.style.cssText='display:flex;align-items:center;gap:.6rem;padding:.6rem 1rem;background:var(--surface-2);border-radius:12px;margin-bottom:1rem';
+    bar.innerHTML=`<span style="font-size:.82rem;color:var(--muted);font-weight:600">📍 الفرع:</span>
+      <span style="font-size:.88rem;font-weight:700;color:var(--primary)">${currentUser.branch}</span>`;
+    pc.insertBefore(bar, pc.firstChild);
   }
   const garageRecs = await loadLatestGarage().catch(()=>[]);
   const active = trips.filter(t=>!t.end_time).length;
@@ -1202,8 +1218,8 @@ async function renderOverview() {
                && parseFloat(t.end_odometer) > parseFloat(t.start_odometer))
     .reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
   const fuelRecords = records.filter(r=>r.type&&r.type.startsWith('fuel_'));
-  // التكلفة = الكمية (لتر) × سعر الوحدة المخزّن وقت التسجيل
-  const fuelCost = fuelRecords.reduce((s,r)=>s+((parseFloat(r.quantity)||0)*(parseFloat(r.price)||0)),0);
+  // price = الإجمالي المخزّن مباشرة
+  const fuelCost = fuelRecords.reduce((s,r)=>s+(parseFloat(r.price)||0),0);
 
   const today = new Date(); today.setHours(0,0,0,0);
   const days7 = Array.from({length:7},(_,i)=>{
@@ -1221,13 +1237,13 @@ async function renderOverview() {
   const carKmMap = {};
   trips.filter(t=>t.end_time&&t.end_odometer>t.start_odometer).forEach(t=>{ const c=cars.find(ca=>ca.id===t.car_id); if(c){carKmMap[c.plate]=(carKmMap[c.plate]||0)+(t.end_odometer-t.start_odometer);} });
   const topCarsKm = Object.entries(carKmMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const fuelPerDay = days7.map(day=>fuelRecords.filter(r=>(r.created_at||'').startsWith(day)).reduce((s,r)=>s+((parseFloat(r.quantity)||0)*(parseFloat(r.price)||0)),0));
+  const fuelPerDay = days7.map(day=>fuelRecords.filter(r=>(r.created_at||'').startsWith(day)).reduce((s,r)=>s+(parseFloat(r.price)||0),0));
 
   const latestRows = trips.slice(0,8).map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
     const badge=!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>';
-    return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr"><strong>${cPlate}</strong></td><td style="font-size:.78rem;color:var(--muted)">${t.start_time?fmtDT(t.start_time):'—'}</td><td>${badge}</td></tr>`;
+    return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr"><strong>${cPlate}</strong></td><td style="font-size:.78rem;color:var(--muted)">${t.start_time?fmtDate(t.start_time):'—'}</td><td>${badge}</td></tr>`;
   }).join('');
 
   // ملاحظة: تنبيهات الرخص انتقلت لتاب 'تنبيهات الرخص' عند السوبر يوزر
@@ -1414,7 +1430,7 @@ function openAddDriverModal() {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group"><label>الرقم الثابت</label><input id="mDrvFixed" placeholder="مثال: 206338"></div>
-      <div class="form-group"><label>الفرع / الإدارة</label><select id="mDrvBranch">${branchOptions()}</select></div>
+      <div class="form-group"><label>الفرع / الإدارة</label>${branchSearchField('mDrvBranch')}</div>
     </div>
 
     <div class="modal-footer">
@@ -1488,7 +1504,7 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group"><label>الرقم الثابت</label><input id="mEditFixed" value="${fixed_number||''}"></div>
-      <div class="form-group"><label>الفرع / الإدارة</label><select id="mEditBranch">${branchOptions(branch||'')}</select></div>
+      <div class="form-group"><label>الفرع / الإدارة</label>${branchSearchField('mEditBranch', branch||'')}</div>
     </div>
 
     <hr style="margin:1rem 0;border:none;border-top:1px solid var(--border)">
@@ -1686,7 +1702,7 @@ function openAddCarModal(editId='', editCar={}) {
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>الفرع / الإدارة</label>
-        <select id="mCarBranch">${branchOptions(editCar.branch||'')}</select>
+        ${branchSearchField('mCarBranch', editCar.branch||'')}
       </div>
     </div>
 
@@ -1800,8 +1816,8 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
     const garageLoc=t.garage_location||'';
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
-      <td>${t.start_time?fmtDT(t.start_time):'—'}</td>
-      <td>${t.end_time?fmtDT(t.end_time):'—'}</td>
+      <td title="${t.start_time||''}">${t.start_time?fmtDate(t.start_time):'—'}</td>
+      <td title="${t.end_time||''}">${t.end_time?fmtDate(t.end_time):'—'}</td>
       <td><strong>${t.start_odometer!=null?t.start_odometer+' كم':'—'}</strong></td>
       <td><strong>${t.end_odometer!=null?t.end_odometer+' كم':'—'}</strong></td>
       <td>${formatLocation(t.start_location)}</td><td>${formatLocation(t.end_location)}</td><td>${formatLocation(garageLoc, true)}</td>
@@ -2089,7 +2105,7 @@ async function renderAdminWorkshops() {
     loadWorkshops(), loadCars(),
     apiCall('/settings/prices').catch(()=>({}))
   ]);
-  const totalRaw = records.reduce((s,r)=>s+((r.quantity||1)*(r.price||0)),0);
+  const totalRaw = records.reduce((s,r)=>s+(r.price||0),0);
   const total = totalRaw.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
@@ -2163,7 +2179,7 @@ function buildWSTable(records) {
       <td dir="ltr">${r.vehicle_plate||'—'}</td><td>${r.odometer_reading?r.odometer_reading+' كم':'—'}</td>
       <td>${r.quantity||'—'}</td>
       <td style="font-size:.82rem">${r.price} جنيه</td>
-      <td><strong>${r.quantity&&r.price?((r.quantity||1)*(r.price||0)).toFixed(2)+' جنيه':'—'}</strong></td>
+      <td><strong>${r.price?(parseFloat(r.price)).toFixed(2)+' جنيه':'—'}</strong></td>
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.location?formatLocation(r.location):'<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td></tr>`;
@@ -5182,7 +5198,7 @@ function openAddRoleModal(role) {
       <input type="password" id="rolePwInput" placeholder="كلمة المرور"></div>
     <div class="form-group">
       <label>الفرع <span style="font-size:.75rem;color:var(--muted)">(اتركه فارغاً ليرى كل الفروع)</span></label>
-      <select id="roleBranchInput">${branchOptions()}</select>
+      ${branchSearchField('roleBranchInput')}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
@@ -5216,7 +5232,7 @@ function openEditRoleModal(role, uid, oldUsername, oldBranch='') {
       <input type="password" id="rolePwInput" placeholder="اتركها فارغة للإبقاء على الحالية"></div>
     <div class="form-group">
       <label>الفرع <span style="font-size:.75rem;color:var(--muted)">(فارغ = يرى كل الفروع)</span></label>
-      <select id="roleBranchInput">${branchOptions(oldBranch)}</select>
+      ${branchSearchField('roleBranchInput', oldBranch)}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
