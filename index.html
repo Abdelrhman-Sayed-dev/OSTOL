@@ -243,7 +243,12 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 .page-content{padding:1.6rem;flex:1}
 
 /* ── CARDS & STATS ── */
-.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:1rem;margin-bottom:1.6rem}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.9rem;margin-bottom:1.5rem}
+.resp-grid-2-1{grid-template-columns:2fr 1fr}
+.resp-grid-2{grid-template-columns:1fr 1fr}
+@media(max-width:900px){
+  .resp-grid-2-1,.resp-grid-2{grid-template-columns:1fr !important}
+}
 .stat-card{
   background:var(--surface);border-radius:var(--card-radius);
   padding:1.3rem 1.4rem;
@@ -560,54 +565,138 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
 
 /* ── MOBILE ── */
 .sidebar-toggle{display:none}
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — Tablet (≤900px)
+══════════════════════════════════════════════════ */
 @media(max-width:900px){
-  /* Sidebar */
+  /* ── Sidebar ── */
   .sidebar{transform:translateX(100%)}
   .sidebar.open{transform:translateX(0)}
   .sidebar-toggle{display:flex}
 
-  /* Layout — prevent horizontal scroll */
-  .main-content{margin-right:0 !important; width:100vw; max-width:100vw; overflow-x:hidden}
-  #appShell{overflow-x:hidden; width:100vw}
-  .page-content{padding:.7rem; overflow-x:hidden}
+  /* ── Layout ── */
+  .main-content{margin-right:0 !important;width:100vw;max-width:100vw;overflow-x:hidden}
+  #appShell{overflow-x:hidden;width:100vw}
+  .page-content{padding:.7rem;overflow-x:hidden}
 
-  /* Tables — horizontal scroll inside box only */
-  .table-wrap{
-    overflow-x:auto;
-    -webkit-overflow-scrolling:touch;
-    max-width:calc(100vw - 1.4rem);
-  }
-  table{min-width:520px; font-size:.75rem}
-  th,td{padding:.45rem .5rem; white-space:nowrap}
+  /* ── Tables ── */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:calc(100vw - 1.4rem)}
+  table{min-width:480px;font-size:.74rem}
+  th,td{padding:.4rem .45rem;white-space:nowrap}
 
-  /* Cards */
+  /* ── Cards ── */
+  .card{padding:.9rem}
+  .card-header{flex-wrap:wrap;gap:.4rem}
+  .card-header .btn{font-size:.72rem;padding:.3rem .6rem}
+
+  /* ── Grids ── */
   .two-col{grid-template-columns:1fr}
-  .stats-row{grid-template-columns:1fr 1fr}
-  .card{padding:1rem}
-  .card-header{flex-wrap:wrap; gap:.4rem}
-  .card-header .btn{font-size:.72rem; padding:.3rem .6rem}
-
-  /* Topbar */
-  .topbar{padding:0 .8rem}
-  .topbar-title{font-size:.95rem}
-
-  /* Filters */
-  .filters-bar{flex-wrap:wrap}
-  .filters-bar select,.filters-bar input{min-width:120px; flex:1}
-
-  /* Misc */
-  .workshop-items{grid-template-columns:repeat(2,1fr)}
+  .stats-row{grid-template-columns:repeat(2,1fr) !important}
   .emergency-grid{grid-template-columns:1fr}
-  .stat-value{font-size:1.4rem}
+
+  /* ── Stat cards ── */
+  .stat-card{padding:.8rem .7rem}
+  .stat-value{font-size:1.35rem}
+  .stat-icon{font-size:1.5rem}
+  .stat-label{font-size:.7rem}
+
+  /* ── Topbar ── */
+  .topbar{padding:0 .8rem}
+  .topbar-title{font-size:.9rem}
+
+  /* ── Filters & Search ── */
+  .filters-bar{flex-wrap:wrap}
+  .filters-bar select,.filters-bar input{min-width:120px;flex:1}
+  .srch-bar{flex-wrap:wrap;gap:.4rem}
+  .srch-bar input{min-width:150px}
+  .srch-bar select{min-width:110px}
+
+  /* ── Workshop ── */
+  .workshop-items{grid-template-columns:repeat(2,1fr)}
+
+  /* ── Inline grids in templates (overview charts etc.) ── */
+  [style*="grid-template-columns:2fr 1fr"],
+  [style*="grid-template-columns:1fr 1fr"]{
+    grid-template-columns:1fr !important;
+  }
+  [style*="grid-template-columns:1fr 1fr 1fr"]{
+    grid-template-columns:1fr 1fr !important;
+  }
+
+  /* ── Request cards ── */
+  .req-card [style*="grid-template-columns:1fr 1fr"]{
+    grid-template-columns:1fr !important;
+  }
+
+  /* ── Misc ── */
   .badge{font-size:.65rem}
+  .modal-body{max-height:70vh;overflow-y:auto}
 }
 
-@media(max-width:480px){
-  .page-content{padding:.5rem}
-  .stats-row{grid-template-columns:1fr 1fr}
-  th,td{padding:.35rem .4rem; font-size:.7rem}
-  .btn{font-size:.78rem}
-  .topbar-title{font-size:.85rem}
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — Mobile (≤600px)
+══════════════════════════════════════════════════ */
+@media(max-width:600px){
+  .page-content{padding:.45rem}
+  .card{padding:.7rem}
+  .card-header{gap:.3rem}
+
+  /* Stats: 2 columns on mobile */
+  .stats-row{grid-template-columns:repeat(2,1fr) !important;gap:.5rem}
+  .stat-card{padding:.65rem .5rem;border-radius:10px}
+  .stat-value{font-size:1.2rem}
+  .stat-icon{font-size:1.3rem}
+  .stat-label{font-size:.66rem}
+
+  /* Force stat card with grid-column:span 2 to stay full width */
+  .stat-card[style*="grid-column:span 2"],
+  .stat-card[style*="grid-column: span 2"]{
+    grid-column:span 2 !important;
+  }
+
+  /* Tables */
+  table{min-width:420px;font-size:.7rem}
+  th,td{padding:.32rem .38rem}
+
+  /* Workshop items: 2 per row on mobile */
+  .workshop-items{grid-template-columns:repeat(2,1fr);gap:.55rem}
+  .workshop-item-icon{font-size:1.8rem}
+  .workshop-item-label{font-size:.72rem}
+
+  /* Buttons */
+  .btn{font-size:.76rem;padding:.35rem .65rem}
+  .btn-sm{font-size:.7rem;padding:.28rem .5rem}
+
+  /* Topbar */
+  .topbar-title{font-size:.82rem}
+
+  /* two-col always 1 column */
+  .two-col{grid-template-columns:1fr !important}
+
+  /* Search bars */
+  .srch-bar{gap:.35rem;padding:.5rem .7rem}
+  .srch-bar input{font-size:.82rem;padding:.38rem .6rem}
+  .srch-bar select{font-size:.82rem;padding:.38rem .5rem}
+  .srch-count{font-size:.72rem}
+
+  /* Overview charts: stack */
+  [style*="grid-template-columns:2fr 1fr"],
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns:1fr 1fr 1fr"]{
+    grid-template-columns:1fr !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   RESPONSIVE — Small Mobile (≤400px)
+══════════════════════════════════════════════════ */
+@media(max-width:400px){
+  .stats-row{grid-template-columns:1fr 1fr !important;gap:.4rem}
+  .stat-value{font-size:1.05rem}
+  .stat-card{padding:.55rem .4rem}
+  table{min-width:360px;font-size:.67rem}
+  th,td{padding:.28rem .32rem}
+  .workshop-items{grid-template-columns:1fr 1fr}
 }
 .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
 .sidebar-overlay.show{display:block}
@@ -1405,19 +1494,19 @@ async function renderOverview() {
       <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value" style="color:#3b82f6">${Math.round(fuelCost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة الوقود (جنيه)</div></div>
       <div class="stat-card"><div class="stat-icon">🚨</div><div class="stat-value" style="color:${unread>0?'#dc2626':'var(--primary)'}">${unread}</div><div class="stat-label">بلاغ غير مقروء</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1rem">
+    <div class="resp-grid-2-1" style="display:grid;gap:1rem;margin-bottom:1rem">
       <div class="card"><div class="card-header"><div class="card-title">📈 الرحلات عبر الزمن (آخر 7 أيام)</div></div>
         <div style="padding:1rem;height:220px"><canvas id="chartTripsTime"></canvas></div></div>
       <div class="card"><div class="card-header"><div class="card-title">🍩 حسب الحالة</div></div>
         <div style="padding:.5rem;height:220px;display:flex;align-items:center;justify-content:center"><canvas id="chartTripStatus"></canvas></div></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+    <div class="resp-grid-2" style="display:grid;gap:1rem;margin-bottom:1rem">
       <div class="card"><div class="card-header"><div class="card-title">👨‍✈️ أعلى السائقين في عدد الرحلات</div></div>
         <div style="padding:1rem;height:230px"><canvas id="chartTopDrivers"></canvas></div></div>
       <div class="card"><div class="card-header"><div class="card-title">⛽ تكلفة الوقود (آخر 7 أيام)</div></div>
         <div style="padding:1rem;height:230px"><canvas id="chartFuelCost"></canvas></div></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+    <div class="resp-grid-2" style="display:grid;gap:1rem;margin-bottom:1rem">
       <div class="card"><div class="card-header"><div class="card-title">🚙 المسافة (كم) حسب المركبة (أعلى 5)</div></div>
         <div style="padding:1rem;height:230px"><canvas id="chartCarsKm"></canvas></div></div>
       <div class="card"><div class="card-header"><div class="card-title">🕐 آخر الرحلات</div></div>
@@ -2361,7 +2450,19 @@ async function renderAdminWorkshops() {
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
   document.getElementById('pageContent').innerHTML=`
-    <div class="stats-row" style="margin-bottom:1.4rem">${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}<div class="stat-card" style="border:2px solid #10b981;background:linear-gradient(135deg,#f0fdf9,#dcfce7);grid-column:span 2;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.4rem"><div style="font-size:2rem;margin-bottom:.3rem">💰</div><div style="font-size:2.8rem;font-weight:900;color:#065f46;line-height:1">${total}</div><div style="font-size:.9rem;font-weight:700;color:#059669;margin-top:.4rem">إجمالي التكاليف (جنيه)</div></div></div>
+    <!-- إجمالي التكاليف — بطاقة مستقلة -->
+    <div style="background:linear-gradient(135deg,#f0fdf9,#dcfce7);border:2px solid #10b981;border-radius:16px;padding:1.2rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="font-size:2rem">💰</div>
+      <div>
+        <div style="font-size:2rem;font-weight:900;color:#065f46;line-height:1">${total}</div>
+        <div style="font-size:.85rem;font-weight:700;color:#059669;margin-top:.2rem">إجمالي التكاليف (جنيه)</div>
+      </div>
+    </div>
+    <!-- إحصائيات الأنواع -->
+    <div class="stats-row" style="margin-bottom:1.4rem">
+      ${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}
+      ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}
+    </div>
     <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1.2rem">
       <div class="card-header">
         <div class="card-title" style="color:#065f46">💰 أسعار الصيانة لكل نوع (يُطبَّق تلقائياً على السائقين)</div>
@@ -2369,7 +2470,7 @@ async function renderAdminWorkshops() {
       </div>
       <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:12px;padding:.9rem;margin-bottom:.8rem">
         <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.7rem">⛽ أنواع الوقود — سعر اللتر (جنيه)</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.6rem">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.55rem">
           ${FUEL_TYPES.map(f=>`
             <div style="background:white;border-radius:8px;padding:.7rem;border:1px solid #fde68a">
               <div style="font-size:.77rem;font-weight:700;color:#b45309;margin-bottom:.3rem">⛽ ${f.label}</div>
@@ -4726,7 +4827,7 @@ async function renderDriverSinglePage() {
         const weeklyTrips = myCompleted.filter(t=>t.end_time>=weekAgo).length;
         if(!myTrips.length) return '';
         return `
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin:.75rem 0">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin:.75rem 0">
             <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
               <div style="font-size:1.3rem;font-weight:700;color:#fff">${weeklyTrips}</div>
               <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">رحلات هذا الأسبوع</div>
@@ -5638,7 +5739,7 @@ async function renderSuperLicenses() {
   }
 
   c.innerHTML = `
-    <div class="stats-row" style="margin-bottom:1.2rem">
+    <div class="stats-row" style="margin-bottom:1.2rem;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
       <div class="stat-card"><div class="stat-icon" style="color:#ef4444">🔴</div><div class="stat-value" style="color:#ef4444">${expired.length}</div><div class="stat-label">رخصة منتهية</div></div>
       <div class="stat-card"><div class="stat-icon" style="color:#f97316">🟠</div><div class="stat-value" style="color:#f97316">${critical.length}</div><div class="stat-label">تنتهي خلال 30 يوم</div></div>
       <div class="stat-card"><div class="stat-icon" style="color:#f59e0b">🟡</div><div class="stat-value" style="color:#f59e0b">${warning.length}</div><div class="stat-label">تنتهي خلال 60 يوم</div></div>
