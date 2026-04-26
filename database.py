@@ -28,7 +28,7 @@ def create_database():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            username   TEXT    UNIQUE NOT NULL,
+            username   TEXT    NOT NULL,
             password   TEXT    NOT NULL,
             role       TEXT    NOT NULL CHECK(role IN ('superuser', 'admin', 'driver', 'reporter')),
             branch     TEXT    DEFAULT '',
@@ -219,6 +219,8 @@ def create_database():
         "CREATE INDEX IF NOT EXISTS idx_drivers_user   ON drivers(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_user     ON audit_logs(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_logs(created_at)",
+        # الرقم الثابت يجب أن يكون فريداً (unique) — اللي ممكن يتكرر هو اسم المستخدم فقط
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_fixed_number ON drivers(fixed_number) WHERE fixed_number IS NOT NULL AND fixed_number != ''",
     ]
     for idx in indexes:
         cursor.execute(idx)
