@@ -2461,62 +2461,182 @@ async def anomalous_trips(
 # 26. BULK IMPORT — CSV / Excel
 # ══════════════════════════════════════════════════════
 
-DRIVER_IMPORT_COLS  = ["name","phone","username","password","national_id",
-                       "birth_date","driver_license_expiry","vehicle_license_expiry",
-                       "branch","fixed_number","status"]
+DRIVER_IMPORT_COLS  = ["name","phone","fixed_number","driver_license_expiry","vehicle_license_expiry",
+                       "national_id","birth_date","branch","status"]
 CAR_IMPORT_COLS     = ["plate","model","car_name","car_code","chassis",
                        "engine_number","year","project","branch",
                        "car_license_expiry","equipment_type","sector","status"]
 
+# خريطة أسماء الأعمدة العربية → الإنجليزية
+ARABIC_COL_MAP = {
+    "اسم السائق":        "name",
+    "الاسم":             "name",
+    "name":              "name",
+    "رقم ثابت":          "fixed_number",
+    "الرقم الثابت":      "fixed_number",
+    "fixed_number":      "fixed_number",
+    "تليفون السائق":     "phone",
+    "الهاتف":            "phone",
+    "تليفون":            "phone",
+    "phone":             "phone",
+    "انتهاء رخصة السائق":  "driver_license_expiry",
+    "رخصة السائق":         "driver_license_expiry",
+    "driver_license_expiry": "driver_license_expiry",
+    "انتهاء رخصة السيارة":  "vehicle_license_expiry",
+    "انتهاء رخصة العربة":   "vehicle_license_expiry",
+    "رخصة السيارة":          "vehicle_license_expiry",
+    "vehicle_license_expiry": "vehicle_license_expiry",
+    "الرقم التعريفي":    "national_id",
+    "national_id":       "national_id",
+    "تاريخ الميلاد":     "birth_date",
+    "birth_date":        "birth_date",
+    "الفرع":             "branch",
+    "branch":            "branch",
+    "الحالة":            "status",
+    "status":            "status",
+    # للمركبات
+    "رقم اللوحة":        "plate",
+    "plate":             "plate",
+    "الموديل":           "model",
+    "model":             "model",
+    "اسم المركبة":       "car_name",
+    "car_name":          "car_name",
+    "كود المركبة":       "car_code",
+    "car_code":          "car_code",
+    "رقم الشاسيه":       "chassis",
+    "chassis":           "chassis",
+    "رقم الموتور":       "engine_number",
+    "engine_number":     "engine_number",
+    "سنة الصنع":         "year",
+    "year":              "year",
+    "المشروع":           "project",
+    "project":           "project",
+    "انتهاء رخصة المركبة": "car_license_expiry",
+    "car_license_expiry": "car_license_expiry",
+    "نوع المعدة":        "equipment_type",
+    "equipment_type":    "equipment_type",
+    "القطاع":            "sector",
+    "sector":            "sector",
+}
+
+def _normalize_date(val: str) -> str:
+    """تحويل تنسيقات التاريخ المختلفة إلى YYYY-MM-DD."""
+    if not val or val.strip() in ("", "None", "—"):
+        return ""
+    val = val.strip().replace("/", "-")
+    # handle YYYY-M-D → YYYY-MM-DD
+    parts = val.split("-")
+    if len(parts) == 3:
+        try:
+            y, m, d = parts
+            # لو السنة مش 4 أرقام تجاهل
+            if len(y) != 4:
+                return ""
+            return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+        except Exception:
+            return ""
+    return ""
+
 def _parse_upload_file(content: bytes, filename: str) -> list[dict]:
-    """Parse CSV or Excel file and return list of row dicts."""
+    """
+    Parse CSV or Excel file and return list of row dicts with English keys.
+    يدعم:
+    - الأعمدة العربية والإنجليزية
+    - الـ header في أي صف (يبحث عن أول صف فيه بيانات حقيقية)
+    - أعمدة فارغة قبل البيانات (زي Book1.xlsx)
+    """
     ext = Path(filename).suffix.lower()
+
     if ext in (".xlsx", ".xls"):
         if not OPENPYXL_AVAILABLE:
             raise HTTPException(400, "ملفات Excel غير مدعومة — ثبّت openpyxl أو استخدم CSV")
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
         ws = wb.active
-        rows = list(ws.iter_rows(values_only=True))
-        if not rows:
+        all_rows = list(ws.iter_rows(values_only=True))
+
+        # ابحث عن صف الـ headers: أول صف فيه على الأقل عمودين من أعمدتنا المعروفة
+        header_row_idx = None
+        headers_raw = []
+        for i, row in enumerate(all_rows):
+            cells = [str(c).strip() if c is not None else "" for c in row]
+            mapped = sum(1 for c in cells if c.lower() in ARABIC_COL_MAP or c in ARABIC_COL_MAP)
+            if mapped >= 2:
+                header_row_idx = i
+                headers_raw = cells
+                break
+
+        if header_row_idx is None:
             return []
-        headers = [str(h).strip() if h is not None else "" for h in rows[0]]
+
+        # map headers
+        headers_mapped = [ARABIC_COL_MAP.get(h, ARABIC_COL_MAP.get(h.lower(), h)) for h in headers_raw]
+
         result = []
-        for row in rows[1:]:
-            d = {headers[i]: (str(v).strip() if v is not None else "") for i, v in enumerate(row)}
+        for row in all_rows[header_row_idx + 1:]:
+            cells = [str(v).strip() if v is not None else "" for v in row]
+            # تجاهل الصفوف الفارغة كلياً
+            if not any(cells):
+                continue
+            d = {headers_mapped[i]: cells[i] for i in range(min(len(headers_mapped), len(cells)))}
             result.append(d)
         return result
+
     elif ext == ".csv":
         text = content.decode("utf-8-sig", errors="replace")
         reader = csv.DictReader(io.StringIO(text))
-        return [{k.strip(): (v.strip() if v else "") for k, v in row.items()} for row in reader]
+        rows = []
+        for row in reader:
+            d = {}
+            for k, v in row.items():
+                k = k.strip() if k else k
+                mapped_key = ARABIC_COL_MAP.get(k, ARABIC_COL_MAP.get((k or "").lower(), k))
+                d[mapped_key] = (v.strip() if v else "")
+            rows.append(d)
+        return rows
     else:
         raise HTTPException(400, "نوع الملف غير مدعوم — استخدم CSV أو Excel (.xlsx)")
 
 
 def _validate_driver_row(row: dict, idx: int, admin_branch: Optional[str]) -> dict:
-    """Validate a single driver row. Returns cleaned row or raises error info."""
+    """
+    التحقق من صف سائق واحد.
+    - username = الكلمة الأولى من الاسم (تلقائي)
+    - password = الرقم الثابت (تلقائي)
+    """
     errors = []
-    name = row.get("name", "").strip()
+    name         = row.get("name", "").strip()
+    fixed_number = row.get("fixed_number", "").strip()
+    phone        = row.get("phone", "").strip()
+
+    # توليد username وpassword تلقائياً
     username = row.get("username", "").strip()
     password = row.get("password", "").strip()
-    if not name:      errors.append("الاسم مطلوب")
-    if not username:  errors.append("اسم المستخدم مطلوب")
-    if not password:  errors.append("كلمة المرور مطلوبة")
+    if not username and name:
+        username = name.split()[0]   # الكلمة الأولى من الاسم
+    if not password and fixed_number:
+        password = fixed_number      # الرقم الثابت
+
+    if not name:          errors.append("الاسم مطلوب")
+    if not username:      errors.append("اسم المستخدم مطلوب")
+    if not password:      errors.append("كلمة المرور مطلوبة (الرقم الثابت فارغ)")
+    if not fixed_number:  errors.append("الرقم الثابت مطلوب")
+
     branch = admin_branch if admin_branch else row.get("branch", "").strip()
+
     return {
         "row_index":               idx,
         "valid":                   len(errors) == 0,
         "errors":                  errors,
         "name":                    name,
-        "phone":                   row.get("phone", "").strip(),
+        "phone":                   phone,
         "username":                username,
         "password":                password,
         "national_id":             row.get("national_id", "").strip(),
-        "birth_date":              row.get("birth_date", "").strip(),
-        "driver_license_expiry":   row.get("driver_license_expiry", "").strip(),
-        "vehicle_license_expiry":  row.get("vehicle_license_expiry", "").strip(),
+        "birth_date":              _normalize_date(row.get("birth_date", "")),
+        "driver_license_expiry":   _normalize_date(row.get("driver_license_expiry", "")),
+        "vehicle_license_expiry":  _normalize_date(row.get("vehicle_license_expiry", "")),
         "branch":                  branch,
-        "fixed_number":            row.get("fixed_number", "").strip(),
+        "fixed_number":            fixed_number,
         "status":                  row.get("status", "active").strip() or "active",
     }
 
@@ -2542,7 +2662,7 @@ def _validate_car_row(row: dict, idx: int, admin_branch: Optional[str]) -> dict:
         "year":            row.get("year", "").strip(),
         "project":         row.get("project", "").strip(),
         "branch":          branch,
-        "car_license_expiry": row.get("car_license_expiry", "").strip(),
+        "car_license_expiry": _normalize_date(row.get("car_license_expiry", "")),
         "equipment_type":  row.get("equipment_type", "").strip(),
         "sector":          row.get("sector", "").strip(),
         "status":          row.get("status", "available").strip() or "available",
@@ -2700,9 +2820,8 @@ async def import_confirm(
 async def import_template(import_type: str, cu: dict = Depends(require_admin)):
     """تحميل قالب CSV فارغ للسائقين أو المركبات."""
     if import_type == "drivers":
-        cols = DRIVER_IMPORT_COLS
-        sample = ["محمد أحمد","01012345678","m.ahmed","Pass@123","12345678901234",
-                  "1990-01-15","2026-12-31","2026-12-31","القاهرة","D-001","active"]
+        cols = ["اسم السائق","رقم ثابت","تليفون السائق","انتهاء رخصة السائق","انتهاء رخصة السيارة","الفرع","الحالة"]
+        sample = ["محمد أحمد","123456","01012345678","2026-12-31","2026-12-31","القاهرة","active"]
     elif import_type == "cars":
         cols = CAR_IMPORT_COLS
         sample = ["أ-ب-1234","تويوتا لاندكروزر","هيلاكس","T-001","CH123456",
