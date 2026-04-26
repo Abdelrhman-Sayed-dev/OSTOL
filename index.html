@@ -1201,7 +1201,6 @@ function buildAdminNav() {
     {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'}, // 9. التقارير
     {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
-    {id:'attendance',    icon:'📅', label:'الحضور والانصراف'},
     {id:'fuel-report',   icon:'⛽', label:'كفاءة الوقود'},
   ];
   if(isSuperuser()) {
@@ -1259,7 +1258,6 @@ async function renderSection(id) {
     case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
     case 'maintenance':     await renderMaintenanceSection(); break;
-    case 'attendance':      await renderAttendanceReport(); break;
     case 'fuel-report':     await renderFuelEfficiencyReport(); break;
     case 'super-decisions': await renderSuperDecisions(); break;
     case 'super-licenses':  await renderSuperLicenses(); break;
@@ -6298,6 +6296,8 @@ async function renderMaintenanceSection() {
     apiCall('/maintenance/schedule').catch(()=>[]),
     loadCars()
   ]);
+  // تحديث الكاش دايماً
+  window._carsCache = cars;
   
   window._maintenanceAlertCount = records.filter(r=>r.alert_status!=='ok').length;
   
@@ -6370,8 +6370,12 @@ async function renderMaintenanceSection() {
   `;
 }
 
-function openAddMaintenanceModal() {
-  const carsOpts = (window._carsCache||[]).map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('');
+async function openAddMaintenanceModal() {
+  // جيب العربيات لو مش محملة
+  if(!window._carsCache || !window._carsCache.length) {
+    window._carsCache = await loadCars();
+  }
+  const carsOpts = (window._carsCache||[]).map(c=>`<option value="${c.id}">${c.plate} — ${c.model}${c.car_name?' ('+c.car_name+')':''}</option>`).join('');
   const typeOpts = MAINTENANCE_TYPES_FE.map(t=>`<option value="${t}">${t}</option>`).join('');
   openModal(`
     <div class="modal-header"><div class="modal-title">➕ إضافة جدول صيانة دورية</div><button class="modal-close" onclick="closeModal()">✕</button></div>
