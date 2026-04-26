@@ -1027,8 +1027,11 @@ const API = (window.location.hostname === '127.0.0.1' || window.location.hostnam
   : "";
 let currentUser = null;
 const isReporter  = () => currentUser?.role === 'reporter';
-const isAdminLike    = () => ['admin','reporter','superuser'].includes(currentUser?.role);
-const isSuperuser    = () => currentUser?.role === 'superuser';
+const isAdminLike    = () => ['admin','reporter','superuser','supervisor_workshop','supervisor_field'].includes(currentUser?.role);
+const isSuperuser       = () => currentUser?.role === 'superuser';
+const isSupervisorWS   = () => currentUser?.role === 'supervisor_workshop';
+const isSupervisorField= () => currentUser?.role === 'supervisor_field';
+const isSupervisor     = () => isSupervisorWS() || isSupervisorField();
 const isAdminOrSuper = () => ['admin','superuser'].includes(currentUser?.role);
 let notifPollInterval = null;
 let lastUnreadCount = 0;
@@ -1187,6 +1190,25 @@ function closeModal() { document.getElementById('activeModal')?.remove(); }
 
 /* ── NAV ── */
 let currentSection = '';
+function buildSupervisorNav() {
+  // مشرف الورشة: يشوف الورش + المركبات + الصيانة فقط
+  if(isSupervisorWS()) return [
+    {id:'workshops',   icon:'🛠️', label:'الورش'},
+    {id:'maintenance', icon:'🔧', label:'الصيانة الدورية'},
+    {id:'cars',        icon:'🚙', label:'المركبات'},
+    {id:'fuel-report', icon:'⛽', label:'كفاءة الوقود'},
+  ];
+  // مشرف الميدان: يشوف الرحلات + الخريطة + الطوارئ
+  if(isSupervisorField()) return [
+    {id:'overview',    icon:'📊', label:'نظرة عامة'},
+    {id:'trips',       icon:'🗺️', label:'الرحلات'},
+    {id:'map',         icon:'📍', label:'خريطة الأسطول'},
+    {id:'emergencies', icon:'🚨', label:'الطوارئ والحوادث'},
+    {id:'drivers',     icon:'👨‍✈️', label:'السائقون'},
+  ];
+  return buildAdminNav();
+}
+
 function buildAdminNav() {
   // ترتيب حسب الأولوية: العمليات الحرجة أولاً، ثم الإدارة، ثم التقارير
   const base = [
@@ -1202,14 +1224,16 @@ function buildAdminNav() {
     {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
     {id:'fuel-report',   icon:'⛽', label:'كفاءة الوقود'},
+    {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
   ];
   if(isSuperuser()) {
-    base.push({id:'super-decisions', icon:'🏛️', label:'اتخاذ قرار'});
-    base.push({id:'super-licenses',  icon:'⚠️', label:'تنبيهات الرخص'});
-    base.push({id:'import-data',     icon:'📥', label:'استيراد البيانات'});
-    base.push({id:'super-admins',    icon:'👑', label:'إدارة الأدمنز'});
-    base.push({id:'super-reporters', icon:'👁️', label:'إدارة المراقبين'});
-    base.push({id:'super-logs',      icon:'📋', label:'سجل الدخول'});
+    base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
+    base.push({id:'super-licenses',    icon:'⚠️', label:'تنبيهات الرخص'});
+    base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
+    base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
+    base.push({id:'super-supervisors', icon:'🎯', label:'المشرفين'});
+    base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
+    base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
   }
   return base;
 }
@@ -1235,7 +1259,9 @@ function renderNav(items) {
 
 function switchSection(id) {
   currentSection=id;
-  const items = isAdminLike() ? buildAdminNav() : buildDriverNav();
+  const items = isSupervisor() ? buildSupervisorNav()
+              : isAdminLike()  ? buildAdminNav()
+              : buildDriverNav();
   renderNav(items);
   const item = items.find(i=>i.id===id);
   document.getElementById('topbarTitle').textContent = item?.label||'';
@@ -1259,7 +1285,9 @@ async function renderSection(id) {
     case 'permissions':    await renderPermissionsSection(); break;
     case 'maintenance':     await renderMaintenanceSection(); break;
     case 'fuel-report':     await renderFuelEfficiencyReport(); break;
-    case 'super-decisions': await renderSuperDecisions(); break;
+    case 'monthly-report':   await renderMonthlyReport(); break;
+    case 'super-supervisors':await renderSuperSupervisors(); break;
+    case 'super-decisions':  await renderSuperDecisions(); break;
     case 'super-licenses':  await renderSuperLicenses(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
@@ -6720,5 +6748,348 @@ async function pollMaintenanceAlerts() {
     window._maintenanceAlertCount = alerts.length;
     renderNav(buildAdminNav());
   } catch(e) {}
+}
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// MONTHLY REPORT — التقرير الشهري الشامل
+// ═══════════════════════════════════════════════════════════════
+async function renderMonthlyReport() {
+  const c = document.getElementById('pageContent');
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  // جيب قائمة الفروع
+  const branches = isSuperuser() ? await loadBranches() : [];
+
+  const branchSelectHtml = isSuperuser() ? `
+    <select id="mrBranch" style="padding:.42rem .75rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.85rem;min-width:200px">
+      <option value="">🌐 كل الفروع</option>
+      ${branches.map(b=>`<option value="${b}">${b}</option>`).join('')}
+    </select>` : `<span style="font-size:.88rem;color:var(--muted);font-weight:600">${currentUser?.branch||'فرعك'}</span>`;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📄 التقرير الشهري الشامل</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="printMonthlyReport()">🖨️ طباعة / PDF</button>
+          <button class="btn btn-outline btn-sm" onclick="exportMonthlyCSV()">⬇️ CSV</button>
+        </div>
+      </div>
+      <div class="srch-bar" style="border-radius:0;gap:.6rem;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">الشهر:</label>
+          <input type="month" id="mrMonth" value="${defaultMonth}"
+            style="padding:.42rem .75rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.85rem">
+        </div>
+        ${branchSelectHtml}
+        <button class="btn btn-primary btn-sm" onclick="loadMonthlyReport()">📊 إنشاء التقرير</button>
+        <span class="srch-count" id="mrStatus"></span>
+      </div>
+      <div id="mrContent" style="padding:1rem">
+        <div class="empty-state"><div class="empty-icon">📄</div><p>اختر الشهر والفرع ثم انقر "إنشاء التقرير"</p></div>
+      </div>
+    </div>`;
+
+  await loadMonthlyReport();
+}
+
+async function loadMonthlyReport() {
+  const month  = document.getElementById('mrMonth')?.value;
+  const branch = document.getElementById('mrBranch')?.value || '';
+  if(!month) return;
+
+  const el = document.getElementById('mrContent');
+  document.getElementById('mrStatus').textContent = 'جاري التحميل...';
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري إعداد التقرير...</p></div>';
+
+  try {
+    const url = `/reports/monthly?month=${month}${branch?'&branch='+encodeURIComponent(branch):''}`;
+    const data = await apiCall(url);
+    window._mrData = data;
+    const s = data.summary;
+    document.getElementById('mrStatus').textContent =
+      `${data.branch} — ${data.month}`;
+
+    const [yr, mo] = month.split('-');
+    const monthName = new Date(yr, mo-1, 1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+
+    el.innerHTML = `
+      <div id="mrPrintArea">
+        <div style="text-align:center;padding:1rem 0;border-bottom:2px solid var(--border);margin-bottom:1.2rem">
+          <div style="font-size:1.3rem;font-weight:700">إدارة الأسطول — تقرير شهري</div>
+          <div style="font-size:.95rem;color:var(--muted);margin-top:.3rem">${monthName} | الفرع: ${data.branch}</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:.2rem">صدر بتاريخ: ${fmtDT(data.generated_at)}</div>
+        </div>
+
+        <!-- إجمالي الشهر -->
+        <div style="margin-bottom:1.2rem">
+          <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;border-right:3px solid var(--primary);padding-right:.6rem">📊 ملخص الشهر</div>
+          <div class="stats-row">
+            <div class="stat-card"><div class="stat-icon">👨‍✈️</div><div class="stat-value">${s.total_drivers}</div><div class="stat-label">سائق</div></div>
+            <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${s.total_cars}</div><div class="stat-label">مركبة</div></div>
+            <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value">${s.total_trips}</div><div class="stat-label">رحلة</div></div>
+            <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value">${Math.round(s.total_km).toLocaleString('ar-EG')}</div><div class="stat-label">كم إجمالي</div></div>
+            <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${Math.round(s.total_fuel_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة وقود (جنيه)</div></div>
+            <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${Math.round(s.total_maint_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة صيانة (جنيه)</div></div>
+            <div class="stat-card" style="border:2px solid var(--primary);grid-column:span 2"><div class="stat-icon">💰</div><div class="stat-value" style="color:var(--primary)">${Math.round(s.total_cost).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي التكاليف (جنيه)</div></div>
+          </div>
+        </div>
+
+        <!-- أداء السائقين -->
+        <div style="margin-bottom:1.2rem">
+          <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;border-right:3px solid #3b82f6;padding-right:.6rem">👨‍✈️ أداء السائقين</div>
+          <div class="table-wrap">
+            <table><thead><tr>
+              <th>#</th><th>السائق</th><th>الرقم الثابت</th><th>الفرع</th>
+              <th>عدد الرحلات</th><th>مكتملة</th><th>إجمالي كم</th><th>متوسط كم/رحلة</th>
+            </tr></thead><tbody>
+            ${data.drivers.map((d,i)=>`<tr>
+              <td>${i+1}</td>
+              <td><strong>${d.name}</strong></td>
+              <td><code>${d.fixed_number||'—'}</code></td>
+              <td style="font-size:.8rem">${d.branch||'—'}</td>
+              <td>${d.trips}</td>
+              <td>${d.completed}</td>
+              <td>${d.km>0?Math.round(d.km).toLocaleString('ar-EG'):'—'}</td>
+              <td>${d.trips>0?Math.round(d.km/d.trips).toLocaleString('ar-EG'):'—'}</td>
+            </tr>`).join('')}
+            ${!data.drivers.length?'<tr><td colspan="8" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
+            </tbody></table>
+          </div>
+        </div>
+
+        <!-- تكاليف المركبات -->
+        <div style="margin-bottom:1.2rem">
+          <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;border-right:3px solid #10b981;padding-right:.6rem">🚙 تكاليف المركبات</div>
+          <div class="table-wrap">
+            <table><thead><tr>
+              <th>#</th><th>اللوحة</th><th>الموديل</th><th>الفرع</th>
+              <th>وقود (لتر)</th><th>تكلفة وقود</th><th>تكلفة صيانة</th><th>الإجمالي (جنيه)</th>
+            </tr></thead><tbody>
+            ${data.cars.map((c,i)=>`<tr>
+              <td>${i+1}</td>
+              <td dir="ltr"><strong>${c.plate}</strong></td>
+              <td>${c.model}</td>
+              <td style="font-size:.8rem">${c.branch||'—'}</td>
+              <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
+              <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
+              <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
+              <td><strong>${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
+            </tr>`).join('')}
+            ${!data.cars.length?'<tr><td colspan="8" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
+            </tbody></table>
+          </div>
+        </div>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+    document.getElementById('mrStatus').textContent = 'خطأ';
+  }
+}
+
+function printMonthlyReport() {
+  const area = document.getElementById('mrPrintArea');
+  if(!area) return showNotification('أنشئ التقرير أولاً','error');
+  const win = window.open('','_blank');
+  win.document.write(`
+    <!DOCTYPE html><html lang="ar" dir="rtl"><head>
+    <meta charset="UTF-8">
+    <title>التقرير الشهري</title>
+    <style>
+      body{font-family:Arial,sans-serif;direction:rtl;margin:20px;font-size:13px;color:#1a1a2e}
+      table{width:100%;border-collapse:collapse;margin-bottom:16px}
+      th,td{border:1px solid #ddd;padding:6px 8px;text-align:right}
+      th{background:#f8fafc;font-weight:700}
+      .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+      .stat-box{border:1px solid #e2e8f0;border-radius:8px;padding:10px;text-align:center}
+      .stat-n{font-size:1.4rem;font-weight:700}
+      .stat-l{font-size:.72rem;color:#64748b}
+      h2{border-right:4px solid #1a1a2e;padding-right:8px;font-size:1rem;margin:16px 0 8px}
+      @media print{@page{margin:15mm}}
+    </style></head><body>
+    ${area.innerHTML.replace(/class="stats-row"/g,'class="stats-grid"').replace(/class="stat-card"/g,'class="stat-box"').replace(/class="stat-value"/g,'class="stat-n"').replace(/class="stat-label"/g,'class="stat-l"').replace(/class="table-wrap"/g,'').replace(/style="border-right:3px solid[^"]*"/g,'')}
+    <script>window.onload=()=>{ window.print(); window.onafterprint=()=>window.close(); }<\/script>
+    </body></html>`);
+  win.document.close();
+}
+
+function exportMonthlyCSV() {
+  const d = window._mrData;
+  if(!d) return showNotification('أنشئ التقرير أولاً','error');
+  let csv = `التقرير الشهري - ${d.month} - ${d.branch}\n\n`;
+  csv += 'إجمالي الرحلات,إجمالي كم,تكلفة وقود,تكلفة صيانة,الإجمالي\n';
+  csv += `${d.summary.total_trips},${Math.round(d.summary.total_km)},${Math.round(d.summary.total_fuel_cost)},${Math.round(d.summary.total_maint_cost)},${Math.round(d.summary.total_cost)}\n\n`;
+  csv += 'السائقون\nالاسم,الرقم الثابت,الفرع,الرحلات,مكتملة,الكيلومترات\n';
+  d.drivers.forEach(dr=>{ csv+=`${dr.name},${dr.fixed_number||''},${dr.branch||''},${dr.trips},${dr.completed},${Math.round(dr.km)}\n`; });
+  csv += '\nالمركبات\nاللوحة,الموديل,الفرع,وقود لتر,تكلفة وقود,تكلفة صيانة,الإجمالي\n';
+  d.cars.forEach(c=>{ csv+=`${c.plate},${c.model},${c.branch||''},${c.fuel_liters},${Math.round(c.fuel_cost)},${Math.round(c.maint_cost)},${Math.round(c.total_cost)}\n`; });
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download = `monthly_report_${d.month}${d.branch&&d.branch!=='كل الفروع'?'_'+d.branch:''}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUPERVISORS MANAGEMENT — إدارة المشرفين (سوبر يوزر فقط)
+// ═══════════════════════════════════════════════════════════════
+async function renderSuperSupervisors() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+  // جيب كل المستخدمين ذوي صلاحيات مشرف
+  const users = await apiCall('/users/list').catch(()=>[]);
+  const branches = await loadBranches();
+  const supervisors = users.filter(u=>u.role==='supervisor_workshop'||u.role==='supervisor_field');
+
+  const ROLE_LABELS = {
+    supervisor_workshop: {label:'🔧 مشرف ورشة', color:'#7c3aed', bg:'#ede9fe',
+      desc:'يرى: الورش + المركبات + الصيانة'},
+    supervisor_field:    {label:'🗺️ مشرف ميدان', color:'#0369a1', bg:'#e0f2fe',
+      desc:'يرى: الرحلات + الخريطة + الطوارئ + السائقون'},
+  };
+
+  const branchOpts = branches.map(b=>`<option value="${b}">${b}</option>`).join('');
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🎯 إدارة المشرفين (${supervisors.length})</div>
+        <button class="btn btn-primary btn-sm" onclick="openAddSupervisorModal('${branchOpts.replace(/'/g,"\\'")}')">➕ إضافة مشرف</button>
+      </div>
+
+      <!-- شرح الصلاحيات -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:1rem 1.2rem;border-bottom:1px solid var(--border)">
+        ${Object.entries(ROLE_LABELS).map(([role,info])=>`
+          <div style="background:${info.bg};border-radius:10px;padding:.8rem 1rem">
+            <div style="font-weight:700;color:${info.color};margin-bottom:.3rem">${info.label}</div>
+            <div style="font-size:.8rem;color:var(--muted)">${info.desc}</div>
+          </div>`).join('')}
+      </div>
+
+      <!-- جدول المشرفين -->
+      <div class="table-wrap">
+        <table><thead><tr>
+          <th>#</th><th>اسم المستخدم</th><th>النوع</th><th>الفرع</th><th>آخر دخول</th><th>إجراءات</th>
+        </tr></thead><tbody>
+        ${supervisors.map((u,i)=>{
+          const info = ROLE_LABELS[u.role]||{};
+          return `<tr>
+            <td>${i+1}</td>
+            <td><strong>${u.username}</strong></td>
+            <td><span style="background:${info.bg||'#f1f5f9'};color:${info.color||'#475569'};border-radius:20px;font-size:.72rem;font-weight:700;padding:.15rem .55rem">${info.label||u.role}</span></td>
+            <td>${u.branch||'—'}</td>
+            <td style="font-size:.78rem;color:var(--muted)">${u.last_login?fmtDT(u.last_login):'لم يدخل'}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="openEditSupervisorModal(${u.id},'${u.username.replace(/'/g,"\\'")}','${u.role}','${(u.branch||'').replace(/'/g,"\\'")}','${branchOpts.replace(/'/g,"\\'")}')">✏️ تعديل</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteSupervisor(${u.id},'${u.username.replace(/'/g,"\\'")}')">🗑️</button>
+            </td>
+          </tr>`;
+        }).join('')}
+        ${!supervisors.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem">لا يوجد مشرفون — انقر ➕ لإضافة أول مشرف</td></tr>':''}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+
+function openAddSupervisorModal(branchOpts) {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">➕ إضافة مشرف جديد</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group">
+      <label>نوع الصلاحية <span class="req">*</span></label>
+      <select id="svRole" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="">— اختر النوع —</option>
+        <option value="supervisor_workshop">🔧 مشرف ورشة (الورش + المركبات + الصيانة)</option>
+        <option value="supervisor_field">🗺️ مشرف ميدان (الرحلات + الخريطة + الطوارئ)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>الفرع / الإدارة <span class="req">*</span></label>
+      <select id="svBranch" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="">— اختر الفرع —</option>
+        ${branchOpts}
+      </select>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label><input id="svUser" placeholder="مثال: supervisor_cairo"></div>
+      <div class="form-group"><label>كلمة المرور <span class="req">*</span></label><input id="svPass" type="password" placeholder="كلمة مرور قوية"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="svSave">✅ إنشاء المشرف</button>
+    </div>`);
+
+  document.getElementById('svSave').onclick = async () => {
+    const role     = document.getElementById('svRole').value;
+    const branch   = document.getElementById('svBranch').value;
+    const username = document.getElementById('svUser').value.trim();
+    const password = document.getElementById('svPass').value;
+    if(!role)     return showNotification('اختر نوع الصلاحية','error');
+    if(!branch)   return showNotification('اختر الفرع','error');
+    if(!username) return showNotification('أدخل اسم المستخدم','error');
+    if(password.length<6) return showNotification('كلمة المرور يجب أن تكون 6 أحرف على الأقل','error');
+    const btn = document.getElementById('svSave');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall('/users','POST',{username, password, role, branch});
+      showNotification('✅ تم إنشاء المشرف','success');
+      closeModal(); await renderSuperSupervisors();
+    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✅ إنشاء المشرف'; }
+  };
+}
+
+function openEditSupervisorModal(uid, oldUser, oldRole, oldBranch, branchOpts) {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">✏️ تعديل المشرف: ${oldUser}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group">
+      <label>نوع الصلاحية</label>
+      <select id="svEditRole" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="supervisor_workshop" ${oldRole==='supervisor_workshop'?'selected':''}>🔧 مشرف ورشة</option>
+        <option value="supervisor_field"    ${oldRole==='supervisor_field'?'selected':''}>🗺️ مشرف ميدان</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>الفرع / الإدارة</label>
+      <select id="svEditBranch" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="">— اختر الفرع —</option>
+        ${branchOpts.replace(`value="${oldBranch}"`,`value="${oldBranch}" selected`)}
+      </select>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>اسم المستخدم</label><input id="svEditUser" value="${oldUser}"></div>
+      <div class="form-group"><label>كلمة مرور جديدة (اتركها فاضية للإبقاء)</label><input id="svEditPass" type="password" placeholder="(اختياري)"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="svEditSave">💾 حفظ التعديلات</button>
+    </div>`);
+
+  document.getElementById('svEditSave').onclick = async () => {
+    const body = {
+      role:     document.getElementById('svEditRole').value,
+      branch:   document.getElementById('svEditBranch').value,
+      username: document.getElementById('svEditUser').value.trim(),
+    };
+    const pw = document.getElementById('svEditPass').value;
+    if(pw) body.password = pw;
+    const btn = document.getElementById('svEditSave');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/superuser/admins/${uid}`,'PUT',body);
+      showNotification('✅ تم التحديث','success');
+      closeModal(); await renderSuperSupervisors();
+    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ'; }
+  };
+}
+
+async function deleteSupervisor(uid, name) {
+  if(!confirm(`هل تريد حذف المشرف "${name}"؟`)) return;
+  try {
+    await apiCall(`/superuser/admins/${uid}`,'DELETE');
+    showNotification('تم الحذف','success');
+    await renderSuperSupervisors();
+  } catch(e) { showNotification(e.message,'error'); }
 }
 </script>
