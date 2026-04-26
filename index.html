@@ -4959,7 +4959,7 @@ function renderImportPreview(data) {
   const summaryColor = summary.invalid === 0 ? 'var(--success)' : summary.valid === 0 ? 'var(--danger)' : 'var(--warning)';
 
   const cols = isDrivers
-    ? ['#','الاسم','اسم المستخدم','الهاتف','الفرع','الحالة','التحقق']
+    ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
     : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
 
   const renderRow = (r) => {
@@ -4970,10 +4970,11 @@ function renderImportPreview(data) {
       <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
         <td>${r.row_index}</td>
         <td>${r.name||'—'}</td>
-        <td>${r.username||'—'}</td>
-        <td>${r.phone||'—'}</td>
+        <td><code style="font-size:.82rem">${r.username||'—'}</code></td>
+        <td dir="ltr">${r.phone||'—'}</td>
+        <td><code>${r.fixed_number||'—'}</code></td>
         <td>${r.branch||'—'}</td>
-        <td><span class="badge ${r.status==='active'?'badge-green':'badge-yellow'}">${r.status||'active'}</span></td>
+        <td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td>
         <td>${status}</td>
       </tr>`;
     else return `
