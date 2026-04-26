@@ -1666,45 +1666,147 @@ async function renderTripsSection() {
         <div class="card-title">🗺️ جميع الرحلات (<span id="tripCount">${trips.length}</span>)</div>
         <button class="btn btn-success btn-sm" onclick="exportCSV()" ${isReporter()?'style="display:none"':''}>⬇️ تصدير CSV</button>
       </div>
-      <div class="filters-bar" style="margin-bottom:1rem">
-        <select id="ftDriver" onchange="filterTrips()">
-          <option value="">👨‍✈️ كل السائقين</option>
-          ${drivers.map(d=>'<option value="'+d.id+'">'+d.name+'</option>').join('')}
-        </select>
-        <select id="ftCar" onchange="filterTrips()">
-          <option value="">🚗 كل المركبات</option>
-          ${cars.map(c=>'<option value="'+c.id+'">'+c.plate+'</option>').join('')}
-        </select>
-        <input type="date" id="ftDate" onchange="filterTrips()">
-        <select id="ftStatus" onchange="filterTrips()">
+
+      <!-- شريط البحث الموحّد -->
+      <div style="padding:.75rem 1.25rem;border-bottom:1px solid var(--border);display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+        <!-- بحث نصي عام -->
+        <div style="position:relative;flex:1;min-width:180px">
+          <span style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none">🔍</span>
+          <input id="ftSearch" placeholder="بحث في كل الأعمدة..."
+                 style="width:100%;padding:.5rem 2.2rem .5rem .75rem;border:1.5px solid var(--border-2);border-radius:8px;background:var(--surface-2);font-size:.88rem"
+                 oninput="filterTrips()">
+        </div>
+
+        <!-- Combobox السائق -->
+        <div class="trip-combo-wrap" style="position:relative;min-width:170px">
+          <input id="ftDriverSearch" placeholder="👨‍✈️ اسم السائق..." autocomplete="off"
+                 style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border-2);border-radius:8px;background:var(--surface-2);font-size:.88rem"
+                 oninput="openCombo('driver')" onfocus="openCombo('driver')" onblur="setTimeout(()=>closeCombo('driver'),200)">
+          <div id="ftDriverDrop" style="display:none;position:absolute;top:calc(100% + 4px);right:0;left:0;z-index:999;
+               background:var(--surface);border:1.5px solid var(--border-2);border-radius:8px;
+               max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+          <input type="hidden" id="ftDriverVal">
+        </div>
+
+        <!-- Combobox المركبة -->
+        <div class="trip-combo-wrap" style="position:relative;min-width:150px">
+          <input id="ftCarSearch" placeholder="🚗 رقم اللوحة..." autocomplete="off"
+                 style="width:100%;padding:.5rem .75rem;border:1.5px solid var(--border-2);border-radius:8px;background:var(--surface-2);font-size:.88rem"
+                 oninput="openCombo('car')" onfocus="openCombo('car')" onblur="setTimeout(()=>closeCombo('car'),200)">
+          <div id="ftCarDrop" style="display:none;position:absolute;top:calc(100% + 4px);right:0;left:0;z-index:999;
+               background:var(--surface);border:1.5px solid var(--border-2);border-radius:8px;
+               max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div>
+          <input type="hidden" id="ftCarVal">
+        </div>
+
+        <!-- التاريخ -->
+        <input type="date" id="ftDate" onchange="filterTrips()"
+               style="padding:.5rem .75rem;border:1.5px solid var(--border-2);border-radius:8px;background:var(--surface-2);font-size:.88rem">
+
+        <!-- الحالة -->
+        <select id="ftStatus" onchange="filterTrips()"
+                style="padding:.5rem .75rem;border:1.5px solid var(--border-2);border-radius:8px;background:var(--surface-2);font-size:.88rem">
           <option value="">📋 كل الحالات</option>
           <option value="active">● جارية</option>
           <option value="done">✓ منتهية</option>
         </select>
+
         <button class="btn btn-ghost btn-sm" onclick="clearTripFilters()">✕ مسح</button>
       </div>
+
       <div class="table-wrap" id="tripsTable">${buildTripsTable(trips,drivers,cars,garageLatest)}</div>
     </div>`;
 }
+
+/* ── Combobox helpers ── */
+function openCombo(type) {
+  const isDriver = type === 'driver';
+  const searchEl = document.getElementById(isDriver ? 'ftDriverSearch' : 'ftCarSearch');
+  const drop     = document.getElementById(isDriver ? 'ftDriverDrop'   : 'ftCarDrop');
+  const query    = searchEl.value.trim().toLowerCase();
+  const data     = isDriver ? (window._driversData||[]) : (window._carsData||[]);
+
+  const items = data.filter(item => {
+    const text = isDriver ? item.name : item.plate;
+    return !query || text.toLowerCase().includes(query);
+  }).slice(0, 60);
+
+  if(!items.length) { drop.style.display='none'; return; }
+
+  const highlight = (text) => {
+    if(!query) return text;
+    const idx = text.toLowerCase().indexOf(query);
+    if(idx === -1) return text;
+    return text.slice(0,idx) + `<mark style="background:#fde68a;border-radius:2px">${text.slice(idx,idx+query.length)}</mark>` + text.slice(idx+query.length);
+  };
+
+  drop.innerHTML = items.map(item => {
+    const label = isDriver ? item.name : item.plate;
+    const sub   = isDriver ? (item.fixed_number ? `<span style="color:var(--muted);font-size:.78rem"> · ${item.fixed_number}</span>` : '') : (item.model ? `<span style="color:var(--muted);font-size:.78rem"> · ${item.model}</span>` : '');
+    return `<div data-id="${item.id}" data-label="${label}"
+                 style="padding:.5rem .85rem;cursor:pointer;font-size:.88rem;border-bottom:1px solid var(--border)"
+                 onmousedown="selectCombo('${type}',${item.id},'${label.replace(/'/g,"\\'")}')">
+              ${highlight(label)}${sub}
+            </div>`;
+  }).join('');
+  drop.style.display = 'block';
+}
+
+function selectCombo(type, id, label) {
+  const isDriver = type === 'driver';
+  document.getElementById(isDriver ? 'ftDriverSearch' : 'ftCarSearch').value = label;
+  document.getElementById(isDriver ? 'ftDriverVal'    : 'ftCarVal').value    = id;
+  document.getElementById(isDriver ? 'ftDriverDrop'   : 'ftCarDrop').style.display = 'none';
+  filterTrips();
+}
+
+function closeCombo(type) {
+  const isDriver = type === 'driver';
+  // لو ما اختارش حاجة وكتب نص فارغ → امسح الفلتر
+  const searchEl = document.getElementById(isDriver ? 'ftDriverSearch' : 'ftCarSearch');
+  const valEl    = document.getElementById(isDriver ? 'ftDriverVal'    : 'ftCarVal');
+  if(!searchEl.value.trim()) { valEl.value = ''; filterTrips(); }
+  document.getElementById(isDriver ? 'ftDriverDrop' : 'ftCarDrop').style.display = 'none';
+}
+
 function filterTrips() {
-  const dId=document.getElementById('ftDriver')?.value;
-  const cId=document.getElementById('ftCar')?.value;
-  const date=document.getElementById('ftDate')?.value;
-  const status=document.getElementById('ftStatus')?.value;
+  const dId    = document.getElementById('ftDriverVal')?.value;
+  const cId    = document.getElementById('ftCarVal')?.value;
+  const date   = document.getElementById('ftDate')?.value;
+  const status = document.getElementById('ftStatus')?.value;
+  const search = (document.getElementById('ftSearch')?.value||'').trim().toLowerCase();
+
+  // اجمع كل بيانات السائقين والمركبات في map للبحث السريع
+  const drvMap = Object.fromEntries((window._driversData||[]).map(d=>[d.id, d.name]));
+  const carMap = Object.fromEntries((window._carsData||[]).map(c=>[c.id, c.plate]));
+
   let f=(window._tripsData||[]).filter(t=>{
-    if(dId && String(t.driver_id)!==dId) return false;
-    if(cId && String(t.car_id)!==cId)    return false;
-    if(date && !t.start_time?.startsWith(date)) return false;
+    if(dId    && String(t.driver_id)!==dId)  return false;
+    if(cId    && String(t.car_id)!==cId)     return false;
+    if(date   && !t.start_time?.startsWith(date)) return false;
     if(status==='active' && t.end_time)   return false;
     if(status==='done'   && !t.end_time)  return false;
+    if(search) {
+      const haystack = [
+        drvMap[t.driver_id]||'', carMap[t.car_id]||'',
+        t.start_odometer, t.end_odometer,
+        t.start_time, t.end_time,
+        t.notes, t.start_location, t.end_location
+      ].join(' ').toLowerCase();
+      if(!haystack.includes(search)) return false;
+    }
     return true;
   });
   document.getElementById('tripsTable').innerHTML=buildTripsTable(f,window._driversData,window._carsData,window._garageLatest);
   document.getElementById('tripCount').textContent=f.length;
 }
+
 function clearTripFilters(){
-  ['ftDriver','ftCar','ftStatus'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['ftDriverSearch','ftCarSearch','ftSearch'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['ftDriverVal','ftCarVal'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['ftDriverDrop','ftCarDrop'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   const fd=document.getElementById('ftDate');if(fd)fd.value='';
+  const fs=document.getElementById('ftStatus');if(fs)fs.value='';
   filterTrips();
 }
 
