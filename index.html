@@ -1766,46 +1766,121 @@ async function renderCarsSection() {
         <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status!=='available').length}</div><div class="stat-label">صيانة</div></div>
       </div>
       <div class="srch-bar">
-        <input data-tsearch placeholder="🔍 بحث برقم اللوحة أو الموديل أو الفرع..."
-          oninput="liveSearch(this,'carsBody',[1,2,3])">
-        <select onchange="liveFilter(this,'carsBody',3)">
-          <option value="">كل الحالات</option>
-          <option value="متاحة">● متاحة</option>
-          <option value="صيانة">🔧 صيانة</option>
+        <input data-tsearch placeholder="🔍 بحث باللوحة / الموديل / الاسم / الفرع..."
+          oninput="filterCarsTable()">
+        <select id="carsFilterCat" onchange="filterCarsTable()">
+          <option value="">كل التصنيفات</option>
+          <option value="عربات">🚗 عربات</option>
+          <option value="آلات ومعدات">⚙️ آلات ومعدات</option>
         </select>
-        <span class="srch-count"></span>
-        <button class="srch-reset" onclick="resetSearch(this)">✕ مسح</button>
+        <select id="carsFilterStatus" onchange="filterCarsTable()">
+          <option value="">كل الحالات</option>
+          <option value="available">● متاحة</option>
+          <option value="maintenance">🔧 صيانة</option>
+        </select>
+        <span class="srch-count" id="carsCount">${cars.length}</span>
+        <button class="srch-reset" onclick="resetCarsFilter()">✕ مسح</button>
       </div>
       <div class="table-wrap" id="carsList">
-        <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody id="carsBody">
-        ${cars.map(c=>`<tr><td>${c.id}</td><td dir="ltr"><strong>${c.plate}</strong></td><td>${c.model}</td>
-          <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
-          <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}" data-plate="${c.plate}" data-model="${c.model}" data-status="${c.status}">✏️</button>
-          <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td></tr>`).join('')}
+        <table><thead><tr>
+          <th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th>
+          <th>التصنيف</th><th>النوع</th><th>الفرع</th>
+          <th>الحالة</th><th>إجراءات</th>
+        </tr></thead>
+        <tbody id="carsBody">
+        ${cars.map(c=>{
+          const eqParts = (c.equipment_type||'').split('|');
+          const cat = eqParts[0]||'—';
+          const sub = eqParts[1]||'—';
+          const catBadge = cat==='عربات'
+            ? '<span class="badge badge-blue">🚗 عربات</span>'
+            : cat==='آلات ومعدات'
+            ? '<span class="badge badge-purple">⚙️ آلات ومعدات</span>'
+            : `<span style="color:var(--muted);font-size:.78rem">${cat}</span>`;
+          return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
+            <td>${c.id}</td>
+            <td dir="ltr"><strong>${c.plate}</strong></td>
+            <td>${c.car_name||'—'}</td>
+            <td>${c.model}</td>
+            <td>${catBadge}</td>
+            <td style="font-size:.82rem">${sub}</td>
+            <td style="font-size:.82rem">${c.branch||'—'}</td>
+            <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
+            <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
+            <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
+          </tr>`;
+        }).join('')}
         </tbody></table>
       </div>
     </div>`;
   document.getElementById('carsList').addEventListener('click',async e=>{
-    if(e.target.closest('.edit-car')){const cid=e.target.closest('.edit-car').dataset.id; const car=(window._carsCache||[]).find(c=>c.id==cid)||{}; openAddCarModal(cid,car);}
+    if(e.target.closest('.edit-car')){const cid=e.target.closest('.edit-car').dataset.id; const car=(window._carsCache||[]).find(c=>String(c.id)===String(cid))||{}; openAddCarModal(cid,car);}
     if(e.target.closest('.del-car')){const id=+e.target.closest('.del-car').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/cars/${id}`,'DELETE');showNotification('تم الحذف','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');}}
   });
 }
 
+
+
+function filterCarsTable() {
+  const txt    = document.querySelector('#carsList')?.closest('.card')?.querySelector('[data-tsearch]')?.value?.toLowerCase()||'';
+  const cat    = document.getElementById('carsFilterCat')?.value||'';
+  const status = document.getElementById('carsFilterStatus')?.value||'';
+  const tbody  = document.getElementById('carsBody');
+  if(!tbody) return;
+  let vis=0;
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    const matchCat    = !cat    || (tr.dataset.cat||'').includes(cat);
+    const matchStatus = !status || (tr.dataset.status||'')=== status;
+    const matchTxt    = !txt    || tr.textContent.toLowerCase().includes(txt);
+    const show = matchCat && matchStatus && matchTxt;
+    tr.classList.toggle('row-hidden', !show);
+    if(show) vis++;
+  });
+  const cnt = document.getElementById('carsCount');
+  if(cnt) cnt.textContent = `${vis} / ${tbody.querySelectorAll('tr').length}`;
+}
+function resetCarsFilter() {
+  const card = document.getElementById('carsList')?.closest('.card');
+  if(card) card.querySelectorAll('input,select').forEach(el=>el.value='');
+  filterCarsTable();
+}
+
+function onCarCategoryChange(cat) {
+  const CAR_CATEGORIES = {
+    'عربات': ['سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة','ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'],
+    'آلات ومعدات': ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى']
+  };
+  const sel = document.getElementById('mCarSubType');
+  if(!sel) return;
+  const subs = CAR_CATEGORIES[cat]||[];
+  sel.innerHTML = '<option value="">— اختر النوع —</option>'
+    + subs.map(s=>`<option value="${s}">${s}</option>`).join('');
+}
+
 function openAddCarModal(editId='', editCar={}) {
   const isEdit = !!editId;
-  const eqTypes = [
-    {v:'',l:'— اختر التصنيف —'},
-    {v:'وسائل انتقال',l:'🚗 وسائل انتقال'},
-    {v:'معدات نقل',l:'🚛 معدات نقل'},
-    {v:'معدات رفع',l:'🏗️ معدات رفع'},
-    {v:'معدات تحريك تربة',l:'🚜 معدات تحريك تربة'},
-    {v:'معدات ثابتة',l:'⚙️ معدات ثابتة'},
-    {v:'معدات إنتاجية',l:'🏭 معدات إنتاجية'},
-    {v:'معدات مساعدة',l:'🔧 معدات مساعدة'},
-    {v:'معدات وآلات ورش',l:'🛠️ معدات وآلات ورش'},
-    {v:'أخرى',l:'📦 أخرى'},
-  ];
-  const eqOpts = eqTypes.map(t=>`<option value="${t.v}" ${editCar.equipment_type===t.v?'selected':''}>${t.l}</option>`).join('');
+  // التصنيف الرئيسي + التصنيف الفرعي
+  const CAR_CATEGORIES = {
+    'عربات': [
+      'سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة',
+      'ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'
+    ],
+    'آلات ومعدات': [
+      'معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل',
+      'معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'
+    ]
+  };
+  const currentCat = editCar.equipment_type?.split('|')[0]||'';
+  const currentSub = editCar.equipment_type?.split('|')[1]||'';
+
+  function buildSubOpts(cat, selectedSub='') {
+    const subs = CAR_CATEGORIES[cat]||[];
+    return '<option value="">— اختر النوع —</option>'
+      + subs.map(s=>`<option value="${s}" ${s===selectedSub?'selected':''}>${s}</option>`).join('');
+  }
+
+  const catOptsHtml = '<option value="">— اختر التصنيف الرئيسي —</option>'
+    + Object.keys(CAR_CATEGORIES).map(c=>`<option value="${c}" ${c===currentCat?'selected':''}>${c==='عربات'?'🚗 عربات':'⚙️ آلات ومعدات'}</option>`).join('');
   openModal(`
     <div class="modal-header">
       <div class="modal-title">${isEdit?'✏️ تعديل مركبة':'➕ إضافة مركبة جديدة'}</div>
@@ -1857,9 +1932,15 @@ function openAddCarModal(editId='', editCar={}) {
       </div>
     </div>
 
-    <div class="form-group">
-      <label>تصنيف المعدة / المركبة <span class="req">*</span></label>
-      <select id="mCarEquipType">${eqOpts}</select>
+    <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
+      <div class="form-group" style="margin-bottom:0">
+        <label>التصنيف الرئيسي <span class="req">*</span></label>
+        <select id="mCarCategory" onchange="onCarCategoryChange(this.value)">${catOptsHtml}</select>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>النوع الفرعي <span class="req">*</span></label>
+        <select id="mCarSubType">${buildSubOpts(currentCat, currentSub)}</select>
+      </div>
     </div>
 
     <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
@@ -1903,11 +1984,14 @@ function openAddCarModal(editId='', editCar={}) {
     const car_code       = document.getElementById('mCarCode').value.trim();
     const engine_number  = document.getElementById('mCarEngine').value.trim();
     const year           = document.getElementById('mCarYear').value.trim();
-    const equipment_type = document.getElementById('mCarEquipType').value;
+    const _cat = document.getElementById('mCarCategory').value;
+    const _sub = document.getElementById('mCarSubType').value;
+    const equipment_type = _cat && _sub ? `${_cat}|${_sub}` : (_cat||'');
     const project        = document.getElementById('mCarProject').value.trim();
     const branch         = document.getElementById('mCarBranch').value.trim();
     if(!plate||!model) return showNotification('اللوحة والموديل مطلوبان','error');
-    if(!equipment_type) return showNotification('يرجى اختيار تصنيف المركبة','error');
+    if(!_cat) return showNotification('يرجى اختيار التصنيف الرئيسي','error');
+    if(!_sub) return showNotification('يرجى اختيار النوع الفرعي','error');
     const btn = document.getElementById('mCarSave');
     btn.disabled=true; btn.textContent='جاري...';
     try{
