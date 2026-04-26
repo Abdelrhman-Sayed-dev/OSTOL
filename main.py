@@ -485,6 +485,15 @@ def _branch_filter(cu: dict) -> Optional[str]:
         return None
     return cu.get("branch") or None
 
+def _effective_branch(cu: dict, super_branch: Optional[str] = None) -> Optional[str]:
+    """
+    للسوبر يوزر: يقدر يمرر super_branch (query param) عشان يفلتر بفرع معين.
+    للأدمن/المراقب: دايماً فرعه الخاص (لو موجود).
+    """
+    if cu["role"] == "superuser":
+        return super_branch or None
+    return cu.get("branch") or None
+
 def write_audit_log(user_id: int, username: str, role: str,
                     action: str, details: str = "", ip: str = "",
                     cursor=None):
@@ -969,10 +978,10 @@ async def upload_audio(
 # ══════════════════════════════════════════════════════
 
 @app.get("/drivers", response_model=List[DriverResp])
-async def get_drivers(cu: dict = Depends(get_user)):
+async def get_drivers(cu: dict = Depends(get_user), branch: Optional[str] = None):
     with get_db() as conn:
         c = conn.cursor()
-        branch = _branch_filter(cu)
+        branch = _effective_branch(cu, branch)
         if branch:
             c.execute("""SELECT d.*,u.username FROM drivers d
                          LEFT JOIN users u ON d.user_id=u.id
@@ -1105,10 +1114,10 @@ async def allowed_cars(did: int, cu: dict = Depends(get_user)):
 # ══════════════════════════════════════════════════════
 
 @app.get("/cars", response_model=List[CarResp])
-async def get_cars(cu: dict = Depends(get_user)):
+async def get_cars(cu: dict = Depends(get_user), branch: Optional[str] = None):
     with get_db() as conn:
         c = conn.cursor()
-        branch = _branch_filter(cu)
+        branch = _effective_branch(cu, branch)
         base_q = """SELECT id,plate,model,status,car_name,car_code,chassis,engine_number,
                            year,project,branch,car_license_expiry,equipment_type,sector
                     FROM cars"""
@@ -1213,10 +1222,10 @@ async def delete_permission(pid: int, cu: dict = Depends(require_admin)):
 # ══════════════════════════════════════════════════════
 
 @app.get("/trips")
-async def get_trips(cu: dict = Depends(get_user)):
+async def get_trips(cu: dict = Depends(get_user), branch: Optional[str] = None):
     with get_db() as conn:
         c = conn.cursor()
-        branch = _branch_filter(cu)
+        branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
             if branch:
                 c.execute("""SELECT t.* FROM trips t
@@ -1463,14 +1472,14 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 "tire_action":rec.tire_action or "","vehicle_plate":vp,"location":rec.location or ""}
 
 @app.get("/workshops")
-async def get_workshops(cu: dict = Depends(get_user)):
+async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None):
     q = """SELECT w.*,d.name as driver_name,c.plate as vehicle_plate
            FROM workshop_records w
            LEFT JOIN drivers d ON w.driver_id=d.id
            LEFT JOIN cars c ON w.vehicle_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
-        branch = _branch_filter(cu)
+        branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
             if branch:
                 c.execute(q + " WHERE d.branch=? ORDER BY w.id DESC LIMIT 500", (branch,))
@@ -1639,14 +1648,14 @@ async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = De
         return {"id": rid, "created_at": now, "type": rep.type}
 
 @app.get("/emergency/reports")
-async def get_emergency_reports(cu: dict = Depends(get_user)):
+async def get_emergency_reports(cu: dict = Depends(get_user), branch: Optional[str] = None):
     q = """SELECT e.*,d.name as driver_name,c.plate as car_plate
            FROM emergency_reports e
            LEFT JOIN drivers d ON e.driver_id=d.id
            LEFT JOIN cars c ON e.car_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
-        branch = _branch_filter(cu)
+        branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
             if branch:
                 c.execute(q + " WHERE d.branch=? ORDER BY e.id DESC LIMIT 500", (branch,))
@@ -2110,23 +2119,30 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
 
 
 @app.get("/requests")
-async def get_requests(cu: dict = Depends(get_user)):
+async def get_requests(cu: dict = Depends(get_user), branch: Optional[str] = None):
     with get_db() as conn:
         c = conn.cursor()
-        # Driver sees only their own requests
         if cu["role"] == "driver":
             driver_id = cu.get("driver_id")
-            c.execute("""SELECT r.*, d.name as driver_name
+            c.execute("""SELECT r.*, d.name as driver_name, d.branch as driver_branch
                          FROM driver_requests r
                          LEFT JOIN drivers d ON r.driver_id=d.id
                          WHERE r.driver_id=?
                          ORDER BY r.id DESC""", (driver_id,))
         else:
-            # Admin/superuser/reporter see all
-            c.execute("""SELECT r.*, d.name as driver_name
-                         FROM driver_requests r
-                         LEFT JOIN drivers d ON r.driver_id=d.id
-                         ORDER BY r.id DESC""")
+            # تحديد فلتر الفرع الفعّال
+            eff_branch = _effective_branch(cu, branch)
+            if eff_branch:
+                c.execute("""SELECT r.*, d.name as driver_name, d.branch as driver_branch
+                             FROM driver_requests r
+                             LEFT JOIN drivers d ON r.driver_id=d.id
+                             WHERE d.branch=?
+                             ORDER BY r.id DESC""", (eff_branch,))
+            else:
+                c.execute("""SELECT r.*, d.name as driver_name, d.branch as driver_branch
+                             FROM driver_requests r
+                             LEFT JOIN drivers d ON r.driver_id=d.id
+                             ORDER BY r.id DESC""")
         return [dict(row) for row in c.fetchall()]
 
 
@@ -2134,7 +2150,13 @@ async def get_requests(cu: dict = Depends(get_user)):
 async def requests_pending_count(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as cnt FROM driver_requests WHERE status='pending'")
+        eff_branch = _branch_filter(cu)
+        if eff_branch:
+            c.execute("""SELECT COUNT(*) as cnt FROM driver_requests r
+                         LEFT JOIN drivers d ON r.driver_id=d.id
+                         WHERE r.status='pending' AND d.branch=?""", (eff_branch,))
+        else:
+            c.execute("SELECT COUNT(*) as cnt FROM driver_requests WHERE status='pending'")
         row = c.fetchone()
         return {"count": row["cnt"] if row else 0}
 
@@ -2205,6 +2227,26 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
         return {"count": c.fetchone()["cnt"]}
 
 
+
+# ══════════════════════════════════════════════════════
+# 24-B. BRANCHES LIST — لقائمة الفروع المتاحة
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/branches")
+async def list_branches(cu: dict = Depends(require_admin_or_reporter)):
+    """قائمة الفروع الفريدة من drivers و cars."""
+    with get_db() as conn:
+        c = conn.cursor()
+        eff_branch = _branch_filter(cu)
+        if eff_branch:
+            # الأدمن المقيّد بفرع لا يحتاج قائمة فروع — يرجع فرعه فقط
+            return {"branches": [eff_branch]}
+        c.execute("SELECT DISTINCT branch FROM drivers WHERE branch IS NOT NULL AND branch!='' ORDER BY branch")
+        d_branches = {r["branch"] for r in c.fetchall()}
+        c.execute("SELECT DISTINCT branch FROM cars WHERE branch IS NOT NULL AND branch!='' ORDER BY branch")
+        c_branches = {r["branch"] for r in c.fetchall()}
+        all_branches = sorted(d_branches | c_branches)
+        return {"branches": all_branches}
 
 # ══════════════════════════════════════════════════════
 # 25. OPERATIONAL CARD REPORT

@@ -1006,15 +1006,31 @@ function licBadge(dt, showGreen = false) {
   return showGreen ? `<span class="badge badge-green">✓ ${dt}</span>` : dt;
 }
 
-const loadDrivers = () => apiCall('/drivers').catch(()=>[]);
-const loadCars    = () => apiCall('/cars').catch(()=>[]);
-const loadPerms   = () => apiCall('/permissions').catch(()=>[]);
-const loadTrips   = () => apiCall('/trips').catch(()=>[]);
-const loadUsers   = () => apiCall('/users/list').catch(()=>[]);
-const loadWorkshops = () => apiCall('/workshops').catch(()=>[]);
-const loadEmergencies = () => apiCall('/emergency/reports').catch(()=>[]);
-const loadGarageRecords = () => apiCall('/garage/records').catch(()=>[]);
-const loadLatestGarage  = () => apiCall('/garage/latest').catch(()=>[]);
+// ── فرع الفلتر النشط للسوبر يوزر ──
+window._superBranch = null;
+function branchQ() {
+  if(currentUser?.role==='superuser' && window._superBranch)
+    return '?branch='+encodeURIComponent(window._superBranch);
+  return '';
+}
+function setSuperBranch(branch, btn) {
+  window._superBranch = branch;
+  document.querySelectorAll('.branch-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  renderSection('overview');
+}
+
+const loadDrivers    = () => apiCall('/drivers'          +branchQ()).catch(()=>[]);
+const loadCars       = () => apiCall('/cars'             +branchQ()).catch(()=>[]);
+const loadPerms      = () => apiCall('/permissions').catch(()=>[]);
+const loadTrips      = () => apiCall('/trips'            +branchQ()).catch(()=>[]);
+const loadUsers      = () => apiCall('/users/list').catch(()=>[]);
+const loadWorkshops  = () => apiCall('/workshops'        +branchQ()).catch(()=>[]);
+const loadEmergencies= () => apiCall('/emergency/reports'+branchQ()).catch(()=>[]);
+const loadGarageRecords=()=> apiCall('/garage/records').catch(()=>[]);
+const loadLatestGarage =()=> apiCall('/garage/latest').catch(()=>[]);
+const loadBranches   = () => apiCall('/reports/branches').then(r=>r.branches||[]).catch(()=>[]);
+const loadRequests   = () => apiCall('/requests'         +branchQ()).catch(()=>[]);
 const loadAllowedCars = () => currentUser?.driver_id
   ? apiCall(`/drivers/${currentUser.driver_id}/allowed-cars`).catch(()=>[]) : [];
 
@@ -1116,7 +1132,32 @@ async function renderSection(id) {
 
 /* ── OVERVIEW ── */
 async function renderOverview() {
+  // ── فلتر الفرع للسوبر يوزر ──
+  if(isSuperuser()) {
+    const branches = await loadBranches();
+    const sel = document.createElement('div');
+    sel.id = 'branchFilterBar';
+    sel.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.6rem 1rem;background:var(--surface-2);border-radius:12px;margin-bottom:1rem;flex-wrap:wrap';
+    sel.innerHTML = `
+      <span style="font-size:.82rem;color:var(--muted);font-weight:600">📍 فلتر الفرع:</span>
+      <button class="btn btn-ghost btn-sm branch-btn ${!window._superBranch?'active':''}"
+        onclick="setSuperBranch(null,this)">🌐 كل الفروع</button>
+      ${branches.map(b=>`<button class="btn btn-ghost btn-sm branch-btn ${window._superBranch===b?'active':''}"
+        onclick="setSuperBranch('${b}',this)">${b}</button>`).join('')}
+    `;
+    const pc = document.getElementById('pageContent');
+    pc.innerHTML = '';
+    pc.appendChild(sel);
+  }
   const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
+
+  // ── تسمية الفرع للأدمن المقيّد (يعرف إن بياناته مفلترة) ──
+  if(currentUser?.role==='admin' && currentUser?.branch) {
+    const branchLabel = document.createElement('div');
+    branchLabel.style.cssText = 'padding:.5rem 1rem;background:var(--surface-2);border-radius:10px;margin-bottom:.75rem;font-size:.82rem;color:var(--muted)';
+    branchLabel.innerHTML = `📍 تعرض بيانات فرع: <strong style="color:var(--gold)">${currentUser.branch}</strong>`;
+    document.getElementById('pageContent').prepend(branchLabel);
+  }
   const garageRecs = await loadLatestGarage().catch(()=>[]);
   const active = trips.filter(t=>!t.end_time).length;
   const activeTripCarIds = trips.filter(t=>!t.end_time).map(t=>t.car_id);
@@ -1158,7 +1199,10 @@ async function renderOverview() {
 
   // ملاحظة: تنبيهات الرخص انتقلت لتاب 'تنبيهات الرخص' عند السوبر يوزر
 
-  document.getElementById('pageContent').innerHTML = `
+  const _overviewWrap = document.getElementById('pageContent');
+  if(!isSuperuser()) _overviewWrap.innerHTML='';
+  const _overviewEl = document.createElement('div');
+  _overviewEl.innerHTML = `
     <div class="stats-row" style="margin-bottom:1.2rem">
       <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${cars.filter(c=>c.status!=='inactive').length}</div><div class="stat-label">مركبات نشطة</div></div>
       <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value" style="color:#10b981">${active}</div><div class="stat-label">رحلة جارية</div></div>
@@ -1188,6 +1232,7 @@ async function renderOverview() {
           <tbody>${latestRows}</tbody></table></div></div>
     </div>
   `;
+  _overviewWrap.appendChild(_overviewEl);
 
   const isDark = document.documentElement.getAttribute('data-theme')==='dark';
   const gc = isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)';
@@ -2971,7 +3016,7 @@ async function downloadOpPDF() {
 async function renderRequestsSection() {
   const c = document.getElementById('pageContent');
   let reqs = [];
-  try { reqs = await apiCall('/requests'); } catch(e) { reqs = []; }
+  try { reqs = await loadRequests(); } catch(e) { reqs = []; }
   window._pendingRequestsCount = reqs.filter(r=>r.status==='pending').length;
 
   const isSuper = currentUser?.role === 'superuser';
@@ -3836,12 +3881,16 @@ function stopAndSend() {
 let selWsType=null;
 
 async function renderDriverWorkshop() {
-  const [allowedCars, pricesData] = await Promise.all([
+  const [allowedCars, pricesData, allTrips] = await Promise.all([
     loadAllowedCars(),
-    apiCall('/settings/prices').catch(()=>({}))
+    apiCall('/settings/prices').catch(()=>({})),
+    apiCall('/trips').catch(()=>[])
   ]);
   window._typePrices    = pricesData || {};
   window._wsAllowedCars = allowedCars;
+  // Auto-fill: العربية النشطة حالياً للسائق
+  const activeTrip = allTrips.find(t=>t.driver_id===currentUser.driver_id&&!t.end_time);
+  window._wsActiveCarId = activeTrip?.car_id || null;
   selWsType = null;
 
   document.getElementById('pageContent').innerHTML=`
@@ -3864,9 +3913,12 @@ async function renderDriverWorkshop() {
 function openWsModal(type) {
   selWsType = type;
   const wt  = WT[type];
+  const activeCarId = window._wsActiveCarId;
   const carOpts = (window._wsAllowedCars||[]).length
     ? '<option value="">-- اختر المركبة --</option>'
-      + (window._wsAllowedCars||[]).map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('')
+      + (window._wsAllowedCars||[]).map(c=>`<option value="${c.id}" ${c.id===activeCarId?'selected':''}>
+          ${c.id===activeCarId?'🚗 ':''}${c.plate} — ${c.model}
+        </option>`).join('')
     : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
 
   let specific = '';
@@ -4071,10 +4123,13 @@ async function pollNotifications() {
     try{
       const allDrvs=await apiCall('/drivers').catch(()=>[]);
       const d60=new Date(Date.now()+60*864e5).toISOString().split('T')[0];
-      window._licenseAlertsCount=allDrvs.filter(d=>
+      const allCarsForCount = await apiCall('/cars').catch(()=>[]);
+      const drvAlerts = allDrvs.filter(d=>
         (d.driver_license_expiry&&d.driver_license_expiry<=d60)||
         (d.vehicle_license_expiry&&d.vehicle_license_expiry<=d60)
       ).length;
+      const carAlerts = allCarsForCount.filter(c=>c.car_license_expiry&&c.car_license_expiry<=d60).length;
+      window._licenseAlertsCount = drvAlerts + carAlerts;
     }catch(e){}
   }
   renderNav(buildAdminNav());
@@ -4304,6 +4359,32 @@ async function renderDriverSinglePage() {
                       display:flex;align-items:flex-start;gap:.7rem">
             <div style="font-size:.88rem;font-weight:700;color:${a.color};line-height:1.5">${a.msg}</div>
           </div>`).join('');
+      })()}
+
+      <!-- MY STATS -->
+      ${(()=>{
+        const myTrips = allTrips.filter(t=>t.driver_id===currentUser.driver_id);
+        const myCompleted = myTrips.filter(t=>t.end_time);
+        const myKm = myCompleted.filter(t=>t.end_odometer&&t.start_odometer)
+          .reduce((s,t)=>s+(t.end_odometer-t.start_odometer),0);
+        const weekAgo = new Date(Date.now()-7*864e5).toISOString();
+        const weeklyTrips = myCompleted.filter(t=>t.end_time>=weekAgo).length;
+        if(!myTrips.length) return '';
+        return `
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin:.75rem 0">
+            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
+              <div style="font-size:1.3rem;font-weight:700;color:#fff">${weeklyTrips}</div>
+              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">رحلات هذا الأسبوع</div>
+            </div>
+            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
+              <div style="font-size:1.3rem;font-weight:700;color:#fff">${myCompleted.length}</div>
+              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي الرحلات</div>
+            </div>
+            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
+              <div style="font-size:1.1rem;font-weight:700;color:#fff">${Math.round(myKm).toLocaleString('ar-EG')}</div>
+              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي كم</div>
+            </div>
+          </div>`;
       })()}
 
       <!-- TRIP BUTTONS -->
@@ -5141,7 +5222,7 @@ async function deleteRoleUser(role, uid, username) {
 async function renderSuperLicenses() {
   const c = document.getElementById('pageContent');
   c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
-  const drivers = await loadDrivers();
+  const [drivers, cars] = await Promise.all([loadDrivers(), loadCars()]);
 
   const now  = new Date().toISOString().split('T')[0];
   const d30  = new Date(Date.now() +  30*864e5).toISOString().split('T')[0];
@@ -5212,8 +5293,52 @@ async function renderSuperLicenses() {
     ${buildGroup('🟠 تنتهي خلال 30 يوم', critical)}
     ${buildGroup('🟡 تنتهي خلال 60 يوم', warning)}
     ${buildGroup('🟢 تنتهي خلال 90 يوم', notice)}
-    ${tagged.length === 0 ? '<div class="empty-state"><div class="empty-icon">✅</div><p>جميع الرخص سارية المفعول — لا توجد تنبيهات</p></div>' : ''}
+    ${tagged.length === 0 ? '<div class="empty-state"><div class="empty-icon">✅</div><p>جميع رخص السائقين سارية — لا توجد تنبيهات</p></div>' : ''}
+
+    <!-- ══ رخص المركبات ══ -->
+    <div style="margin:1.5rem 0 .75rem;font-size:.75rem;font-weight:600;color:var(--muted);letter-spacing:.06em;text-transform:uppercase">رخص المركبات</div>
+    ${buildCarLicenses(cars, now, d30, d60, d90)}
   `;
+}
+
+function buildCarLicenses(cars, now, d30, d60, d90) {
+  function classifyCar(car) {
+    const cl = car.car_license_expiry || '';
+    if (!cl) return null;
+    if (cl < now)  return { level:'expired',  label:'🔴 منتهية',       color:'#ef4444', bg:'#fef2f2', border:'#fca5a5', date:cl };
+    if (cl <= d30) return { level:'critical', label:'🟠 خلال 30 يوم',  color:'#f97316', bg:'#fff7ed', border:'#fed7aa', date:cl };
+    if (cl <= d60) return { level:'warning',  label:'🟡 خلال 60 يوم',  color:'#f59e0b', bg:'#fffbeb', border:'#fde68a', date:cl };
+    if (cl <= d90) return { level:'notice',   label:'🟢 خلال 90 يوم',  color:'#10b981', bg:'#f0fdf9', border:'#6ee7b7', date:cl };
+    return null;
+  }
+  const tagged = cars.map(c=>({...c, _lic:classifyCar(c)})).filter(c=>c._lic)
+                     .sort((a,b)=>a._lic.date.localeCompare(b._lic.date));
+  if (!tagged.length)
+    return '<div class="empty-state" style="padding:.8rem"><div class="empty-icon">✅</div><p style="font-size:.85rem">جميع رخص المركبات سارية</p></div>';
+
+  const groups = [
+    {level:'expired',  title:'🔴 رخص منتهية',         items:tagged.filter(c=>c._lic.level==='expired')},
+    {level:'critical', title:'🟠 تنتهي خلال 30 يوم',  items:tagged.filter(c=>c._lic.level==='critical')},
+    {level:'warning',  title:'🟡 تنتهي خلال 60 يوم',  items:tagged.filter(c=>c._lic.level==='warning')},
+    {level:'notice',   title:'🟢 تنتهي خلال 90 يوم',  items:tagged.filter(c=>c._lic.level==='notice')},
+  ].filter(g=>g.items.length);
+
+  return groups.map(g => `
+    <div class="card" style="border:1.5px solid ${g.items[0]._lic.border};margin-bottom:.75rem">
+      <div class="card-header" style="background:${g.items[0]._lic.bg}">
+        <div class="card-title" style="color:${g.items[0]._lic.color}">${g.title} (${g.items.length})</div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr><th>رقم اللوحة</th><th>الموديل</th><th>الفرع</th><th>تاريخ انتهاء الرخصة</th></tr></thead><tbody>
+        ${g.items.map(car=>`<tr>
+          <td dir="ltr"><strong>${car.plate}</strong></td>
+          <td>${car.model}</td>
+          <td>${car.branch||'—'}</td>
+          <td><span style="color:${car._lic.color};font-weight:700">${car._lic.date}</span></td>
+        </tr>`).join('')}
+        </tbody></table>
+      </div>
+    </div>`).join('');
 }
 
 async function renderSuperDecisions() {
