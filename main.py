@@ -593,6 +593,25 @@ EQUIPMENT_TYPES = {
     "معدات مساعدة", "معدات وآلات ورش", "أخرى"
 }
 
+BRANCHES = [
+    "القاهرة",
+    "مدينة نصر",
+    "حلوان",
+    "صيناء القصور والآثار",
+    "المنشآت المتميزة",
+    "مشروع منوريل 6 أكتوبر",
+    "مشروع المرحلة الأولى من الخط الرابع مترو الأنفاق القاهرة الكبرى",
+    "الأعمال الكهربائية",
+    "مشروعات كهروميكانيكية للمباني العامة والمرافق",
+    "مشروعات كهروميكانيكية لمياه الشرب والصرف الصحي والمصانع",
+    "المصانع والورش المركزية",
+    "ترسانة المعصرة",
+    "الأعمال الاعتيادية",
+    "أعمال الصحي والتشطيبات",
+    "الشدات والأعمال التخصصية",
+    "الكباري والأعمال التخصصية",
+]
+
 WORKSHOP_TYPES = [
     "fuel_solar", "fuel_92", "fuel_95", "fuel_80", "fuel_cng",
     "oil", "filter", "tire", "battery", "belt", "other",
@@ -1742,7 +1761,7 @@ async def get_prices(cu: dict = Depends(get_user)):
             return {r["key"].replace("price_",""): float(r["value"]) for r in c.fetchall()}
 
 @app.put("/settings/prices")
-async def set_prices(body: dict, cu: dict = Depends(require_admin)):
+async def set_prices(body: dict, cu: dict = Depends(require_superuser)):
     """
     - admin عنده فرع: يحفظ الأسعار لفرعه: key = price_{branch}_{type}
     - superuser أو بدون فرع: يحفظ الأسعار العامة: key = price_{type}
@@ -2234,19 +2253,11 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
 
 @app.get("/reports/branches")
 async def list_branches(cu: dict = Depends(require_admin_or_reporter)):
-    """قائمة الفروع الفريدة من drivers و cars."""
-    with get_db() as conn:
-        c = conn.cursor()
-        eff_branch = _branch_filter(cu)
-        if eff_branch:
-            # الأدمن المقيّد بفرع لا يحتاج قائمة فروع — يرجع فرعه فقط
-            return {"branches": [eff_branch]}
-        c.execute("SELECT DISTINCT branch FROM drivers WHERE branch IS NOT NULL AND branch!='' ORDER BY branch")
-        d_branches = {r["branch"] for r in c.fetchall()}
-        c.execute("SELECT DISTINCT branch FROM cars WHERE branch IS NOT NULL AND branch!='' ORDER BY branch")
-        c_branches = {r["branch"] for r in c.fetchall()}
-        all_branches = sorted(d_branches | c_branches)
-        return {"branches": all_branches}
+    """قائمة الفروع الثابتة للنظام."""
+    eff_branch = _branch_filter(cu)
+    if eff_branch:
+        return {"branches": [eff_branch]}
+    return {"branches": BRANCHES}
 
 # ══════════════════════════════════════════════════════
 # 25. OPERATIONAL CARD REPORT
