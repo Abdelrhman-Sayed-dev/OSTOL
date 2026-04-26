@@ -393,6 +393,24 @@ def _safe_add_columns(c):
                 except Exception:
                     pass
 
+    # ── جدول الصيانة الدورية ──
+    c.execute("""CREATE TABLE IF NOT EXISTS maintenance_schedule (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_id            INTEGER NOT NULL,
+        maintenance_type  TEXT    NOT NULL,
+        interval_km       REAL,
+        interval_days     INTEGER,
+        last_done_km      REAL,
+        last_done_date    TEXT,
+        alert_km_before   REAL    DEFAULT 500,
+        alert_days_before INTEGER DEFAULT 7,
+        notes             TEXT    DEFAULT '',
+        created_at        TEXT    NOT NULL,
+        updated_at        TEXT    NOT NULL,
+        FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
+
     # ── تصحيح السجلات القديمة: price كان سعر/وحدة، دلوقتي يبقى إجمالي ──
     # نضرب السجلات اللي price فيها صغيرة (< 200) وعندها كمية > 0
     FUEL_TYPES_FOR_MIGRATION = [t for t in WORKSHOP_TYPES if t.startswith("fuel_")] + ["oil"]
@@ -2281,6 +2299,39 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
 
 
 
+
+# ══════════════════════════════════════════════════════
+# 27. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
+# ══════════════════════════════════════════════════════
+
+MAINTENANCE_TYPES = [
+    "تغيير زيت", "فلتر زيت", "فلتر هواء", "فلتر وقود",
+    "فلتر مكيف", "إطارات", "بطارية", "فرامل أمامية",
+    "فرامل خلفية", "سير توزيع", "ترمس", "ماء تبريد",
+    "سائل فرامل", "فحص دوري عام", "أخرى",
+]
+
+class MaintenanceScheduleCreate(BaseModel):
+    car_id:           int
+    maintenance_type: str
+    interval_km:      Optional[float] = None   # كل كام كم
+    interval_days:    Optional[int]   = None   # أو كل كام يوم
+    last_done_km:     Optional[float] = None   # آخر عداد عند الصيانة
+    last_done_date:   Optional[str]   = None   # تاريخ آخر صيانة (YYYY-MM-DD)
+    alert_km_before:  Optional[float] = 500.0  # إنذار قبل كام كم
+    alert_days_before:Optional[int]   = 7      # إنذار قبل كام يوم
+    notes:            Optional[str]   = ""
+
+class MaintenanceScheduleUpdate(BaseModel):
+    maintenance_type: Optional[str]   = None
+    interval_km:      Optional[float] = None
+    interval_days:    Optional[int]   = None
+    last_done_km:     Optional[float] = None
+    last_done_date:   Optional[str]   = None
+    alert_km_before:  Optional[float] = None
+    alert_days_before:Optional[int]   = None
+    notes:            Optional[str]   = None
+
 # ══════════════════════════════════════════════════════
 # 24-B. BRANCHES LIST — لقائمة الفروع المتاحة
 # ══════════════════════════════════════════════════════
@@ -2993,3 +3044,386 @@ if __name__ == "__main__":
         reload=(ENVIRONMENT != "production"),
         workers=1 if ENVIRONMENT != "production" else 4,
     )
+# ══════════════════════════════════════════════════════
+# 27. MAINTENANCE SCHEDULE — CRUD + ALERTS
+# ══════════════════════════════════════════════════════
+
+def _maintenance_row(row: dict, cars_map: dict) -> dict:
+    """Enrich a maintenance_schedule row with computed fields."""
+    d = dict(row)
+    d.setdefault("notes", "")
+    car = cars_map.get(d.get("car_id"), {})
+    d["car_plate"]  = car.get("plate", "—")
+    d["car_model"]  = car.get("model", "—")
+    d["car_branch"] = car.get("branch", "")
+
+    # Last known odometer from trips
+    d["current_km"] = d.get("_current_km", None)
+
+    # Compute next due
+    next_km = None
+    if d.get("last_done_km") is not None and d.get("interval_km"):
+        next_km = float(d["last_done_km"]) + float(d["interval_km"])
+    d["next_due_km"] = next_km
+
+    next_date = None
+    if d.get("last_done_date") and d.get("interval_days"):
+        from datetime import timedelta
+        try:
+            ld = datetime.fromisoformat(d["last_done_date"])
+            next_date = (ld + timedelta(days=int(d["interval_days"]))).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    d["next_due_date"] = next_date
+
+    # Alert status
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    alert_km_before   = float(d.get("alert_km_before") or 500)
+    alert_days_before = int(d.get("alert_days_before") or 7)
+    cur_km = d.get("current_km")
+
+    status = "ok"
+    if next_km is not None and cur_km is not None:
+        remaining_km = next_km - float(cur_km)
+        if remaining_km <= 0:
+            status = "overdue"
+        elif remaining_km <= alert_km_before:
+            status = "warning"
+
+    if next_date and status == "ok":
+        from datetime import timedelta
+        try:
+            nd = datetime.fromisoformat(next_date)
+            days_left = (nd - datetime.utcnow()).days
+            if days_left <= 0:
+                status = "overdue"
+            elif days_left <= alert_days_before:
+                status = "warning"
+        except Exception:
+            pass
+
+    d["alert_status"] = status
+    d.pop("_current_km", None)
+    return d
+
+
+@app.get("/maintenance/schedule")
+async def get_maintenance_schedule(cu: dict = Depends(require_admin_or_reporter)):
+    branch = _branch_filter(cu)
+    with get_db() as conn:
+        c = conn.cursor()
+        # جيب أحدث عداد لكل عربية من الرحلات المنتهية
+        c.execute("""SELECT car_id, MAX(end_odometer) as max_odo
+                     FROM trips WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL
+                     GROUP BY car_id""")
+        odo_map = {r["car_id"]: r["max_odo"] for r in c.fetchall()}
+
+        # جيب العربيات
+        if branch:
+            c.execute("SELECT id,plate,model,branch FROM cars WHERE branch=?", (branch,))
+        else:
+            c.execute("SELECT id,plate,model,branch FROM cars")
+        cars_map = {r["id"]: dict(r) for r in c.fetchall()}
+
+        # جيب الجدول
+        car_ids = list(cars_map.keys())
+        if not car_ids:
+            return []
+        placeholders = ",".join("?" * len(car_ids))
+        c.execute(f"""SELECT * FROM maintenance_schedule
+                      WHERE car_id IN ({placeholders})
+                      ORDER BY car_id, maintenance_type""", car_ids)
+        rows = []
+        for r in c.fetchall():
+            d = dict(r)
+            d["_current_km"] = odo_map.get(d["car_id"])
+            rows.append(_maintenance_row(d, cars_map))
+        return rows
+
+
+@app.get("/maintenance/alerts")
+async def get_maintenance_alerts(cu: dict = Depends(require_admin_or_reporter)):
+    """يرجع فقط السجلات اللي status فيها warning أو overdue."""
+    all_rows = await get_maintenance_schedule(cu)
+    return [r for r in all_rows if r["alert_status"] in ("warning", "overdue")]
+
+
+@app.post("/maintenance/schedule", status_code=201)
+async def create_maintenance(rec: MaintenanceScheduleCreate, cu: dict = Depends(require_admin)):
+    if rec.maintenance_type not in MAINTENANCE_TYPES:
+        raise HTTPException(400, f"نوع صيانة غير صالح. الأنواع المتاحة: {MAINTENANCE_TYPES}")
+    if not rec.interval_km and not rec.interval_days:
+        raise HTTPException(400, "يجب تحديد interval_km أو interval_days على الأقل")
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM cars WHERE id=?", (rec.car_id,))
+        if not c.fetchone():
+            raise HTTPException(404, "المركبة غير موجودة")
+        # منع تكرار نفس النوع لنفس العربية
+        c.execute("SELECT id FROM maintenance_schedule WHERE car_id=? AND maintenance_type=?",
+                  (rec.car_id, rec.maintenance_type))
+        if c.fetchone():
+            raise HTTPException(400, "يوجد جدول صيانة لهذا النوع لهذه المركبة بالفعل")
+        c.execute("""INSERT INTO maintenance_schedule
+                     (car_id,maintenance_type,interval_km,interval_days,
+                      last_done_km,last_done_date,alert_km_before,alert_days_before,notes,created_at,updated_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                  (rec.car_id, rec.maintenance_type, rec.interval_km, rec.interval_days,
+                   rec.last_done_km, rec.last_done_date,
+                   rec.alert_km_before or 500, rec.alert_days_before or 7,
+                   rec.notes or "", now, now))
+        rid = c.lastrowid
+        log_event("maintenance_created", id=rid, car_id=rec.car_id, type=rec.maintenance_type)
+        return {"id": rid, "ok": True}
+
+
+@app.put("/maintenance/schedule/{mid}")
+async def update_maintenance(mid: int, rec: MaintenanceScheduleUpdate, cu: dict = Depends(require_admin)):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM maintenance_schedule WHERE id=?", (mid,))
+        row = c.fetchone()
+        if not row:
+            raise HTTPException(404, "السجل غير موجود")
+        updates = {k: v for k, v in rec.dict(exclude_none=True).items()}
+        if not updates:
+            raise HTTPException(400, "لا توجد بيانات للتحديث")
+        updates["updated_at"] = now
+        set_clause = ", ".join(f"{k}=?" for k in updates)
+        c.execute(f"UPDATE maintenance_schedule SET {set_clause} WHERE id=?",
+                  list(updates.values()) + [mid])
+        log_event("maintenance_updated", id=mid, changes=list(updates.keys()))
+        return {"ok": True}
+
+
+@app.delete("/maintenance/schedule/{mid}")
+async def delete_maintenance(mid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM maintenance_schedule WHERE id=?", (mid,))
+        if conn.execute("SELECT changes()").fetchone()[0] == 0:
+            raise HTTPException(404, "السجل غير موجود")
+        log_event("maintenance_deleted", id=mid)
+        return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════
+# 28. ATTENDANCE REPORT (تقرير الحضور والانصراف)
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/attendance")
+async def attendance_report(
+    month: Optional[str] = None,   # YYYY-MM  — لو None يأخذ الشهر الحالي
+    driver_id: Optional[int] = None,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """
+    لكل سائق ولكل يوم عمل:
+    - أول رحلة في اليوم = وقت الحضور
+    - آخر رحلة في اليوم = وقت الانصراف (end_time)
+    - عدد الرحلات في اليوم
+    - إجمالي المسافة في اليوم
+    """
+    if not month:
+        month = datetime.utcnow().strftime("%Y-%m")
+    # التحقق من صحة الشهر
+    try:
+        datetime.strptime(month, "%Y-%m")
+    except ValueError:
+        raise HTTPException(400, "صيغة الشهر غير صحيحة. المطلوب: YYYY-MM")
+
+    branch = _branch_filter(cu)
+    with get_db() as conn:
+        c = conn.cursor()
+        # جيب السائقين
+        if branch:
+            c.execute("SELECT id, name, fixed_number, branch FROM drivers WHERE branch=? AND status='active' ORDER BY name",
+                      (branch,))
+        else:
+            c.execute("SELECT id, name, fixed_number, branch FROM drivers WHERE status='active' ORDER BY name")
+        drivers = {r["id"]: dict(r) for r in c.fetchall()}
+
+        if driver_id and driver_id not in drivers:
+            raise HTTPException(404, "السائق غير موجود أو خارج نطاق صلاحياتك")
+
+        # جيب رحلات الشهر
+        like_pat = month + "%"
+        if driver_id:
+            c.execute("""SELECT * FROM trips
+                         WHERE start_time LIKE ? AND driver_id=?
+                         ORDER BY driver_id, start_time""", (like_pat, driver_id))
+        elif branch:
+            c.execute("""SELECT t.* FROM trips t
+                         JOIN drivers d ON t.driver_id=d.id
+                         WHERE t.start_time LIKE ? AND d.branch=?
+                         ORDER BY t.driver_id, t.start_time""", (like_pat, branch))
+        else:
+            c.execute("SELECT * FROM trips WHERE start_time LIKE ? ORDER BY driver_id, start_time",
+                      (like_pat,))
+        trips = c.fetchall()
+
+    # تجميع حسب السائق ثم اليوم
+    from collections import defaultdict
+    driver_days: dict = defaultdict(lambda: defaultdict(list))
+    for t in trips:
+        did  = t["driver_id"]
+        day  = (t["start_time"] or "")[:10]
+        if not day:
+            continue
+        driver_days[did][day].append(dict(t))
+
+    result = []
+    target_drivers = [driver_id] if driver_id else list(drivers.keys())
+
+    for did in target_drivers:
+        drv = drivers.get(did)
+        if not drv:
+            continue
+        days_data = []
+        for day, day_trips in sorted(driver_days[did].items()):
+            # أول رحلة = حضور
+            first_trip = min(day_trips, key=lambda x: x["start_time"] or "")
+            # آخر رحلة = انصراف (end_time)
+            finished = [t for t in day_trips if t["end_time"]]
+            last_trip = max(finished, key=lambda x: x["end_time"]) if finished else None
+
+            # المسافة الكلية لليوم
+            day_km = sum(
+                (float(t["end_odometer"] or 0) - float(t["start_odometer"] or 0))
+                for t in day_trips
+                if t["end_odometer"] and t["start_odometer"]
+                and float(t["end_odometer"]) > float(t["start_odometer"])
+            )
+
+            days_data.append({
+                "date":       day,
+                "check_in":   first_trip["start_time"],
+                "check_out":  last_trip["end_time"] if last_trip else None,
+                "trips_count": len(day_trips),
+                "km":          round(day_km, 1),
+                "completed":   len(finished),
+            })
+
+        result.append({
+            "driver_id":    did,
+            "driver_name":  drv["name"],
+            "fixed_number": drv.get("fixed_number", ""),
+            "branch":       drv.get("branch", ""),
+            "work_days":    len(days_data),
+            "total_trips":  sum(d["trips_count"] for d in days_data),
+            "total_km":     round(sum(d["km"] for d in days_data), 1),
+            "days":         days_data,
+        })
+
+    return {"month": month, "drivers": result}
+
+
+# ══════════════════════════════════════════════════════
+# 29. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/fuel-efficiency")
+async def fuel_efficiency_report(
+    date_from: Optional[str] = None,   # YYYY-MM-DD
+    date_to:   Optional[str] = None,   # YYYY-MM-DD
+    car_id:    Optional[int] = None,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """
+    لكل عربية:
+    - إجمالي المسافة من الرحلات المنتهية (كم)
+    - إجمالي الوقود المستهلك من سجلات الورش (لتر)
+    - الكفاءة = المسافة / الوقود (كم/لتر)
+    - إجمالي تكلفة الوقود
+    """
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    if not date_from:
+        # آخر 30 يوم بشكل افتراضي
+        from datetime import timedelta
+        date_from = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+    if not date_to:
+        date_to = today
+
+    branch = _branch_filter(cu)
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # جيب العربيات
+        if branch:
+            c.execute("SELECT id,plate,model,car_name,branch,equipment_type FROM cars WHERE branch=? ORDER BY plate",
+                      (branch,))
+        else:
+            c.execute("SELECT id,plate,model,car_name,branch,equipment_type FROM cars ORDER BY plate")
+        cars_list = [dict(r) for r in c.fetchall()]
+        if car_id:
+            cars_list = [c2 for c2 in cars_list if c2["id"] == car_id]
+        cars_map = {c2["id"]: c2 for c2 in cars_list}
+
+        if not cars_map:
+            return {"date_from": date_from, "date_to": date_to, "cars": []}
+
+        car_ids = list(cars_map.keys())
+        placeholders = ",".join("?" * len(car_ids))
+
+        # رحلات منتهية في الفترة
+        c.execute(f"""SELECT car_id,
+                             SUM(CASE WHEN end_odometer > start_odometer
+                                      THEN end_odometer - start_odometer ELSE 0 END) as total_km
+                      FROM trips
+                      WHERE car_id IN ({placeholders})
+                        AND end_time IS NOT NULL
+                        AND end_time >= ? AND end_time <= ?
+                        AND end_odometer IS NOT NULL AND start_odometer IS NOT NULL
+                      GROUP BY car_id""",
+                  car_ids + [date_from + "T00:00:00Z", date_to + "T23:59:59Z"])
+        km_map = {r["car_id"]: float(r["total_km"] or 0) for r in c.fetchall()}
+
+        # سجلات وقود في الفترة
+        fuel_types_ph = ",".join("?" * len([t for t in WORKSHOP_TYPES if t.startswith("fuel_")]))
+        fuel_types = [t for t in WORKSHOP_TYPES if t.startswith("fuel_")]
+        c.execute(f"""SELECT vehicle_id,
+                             SUM(COALESCE(quantity,0)) as total_liters,
+                             SUM(COALESCE(price,0))    as total_cost,
+                             COUNT(*)                  as refills
+                      FROM workshop_records
+                      WHERE vehicle_id IN ({placeholders})
+                        AND type IN ({fuel_types_ph})
+                        AND created_at >= ? AND created_at <= ?
+                      GROUP BY vehicle_id""",
+                  car_ids + fuel_types + [date_from + "T00:00:00Z", date_to + "T23:59:59Z"])
+        fuel_map = {r["vehicle_id"]: {
+            "liters": float(r["total_liters"] or 0),
+            "cost":   float(r["total_cost"]   or 0),
+            "refills": int(r["refills"] or 0),
+        } for r in c.fetchall()}
+
+    result = []
+    for cid, car in cars_map.items():
+        km     = km_map.get(cid, 0)
+        fuel   = fuel_map.get(cid, {"liters": 0, "cost": 0, "refills": 0})
+        liters = fuel["liters"]
+        cost   = fuel["cost"]
+        eff    = round(km / liters, 2) if liters > 0 else None   # كم/لتر
+        cost_per_km = round(cost / km, 2) if km > 0 else None    # جنيه/كم
+
+        eq = (car.get("equipment_type") or "").split("|")
+        result.append({
+            "car_id":       cid,
+            "plate":        car["plate"],
+            "model":        car["model"],
+            "car_name":     car.get("car_name", ""),
+            "branch":       car.get("branch", ""),
+            "category":     eq[0] if eq else "",
+            "km":           round(km, 1),
+            "liters":       round(liters, 1),
+            "cost":         round(cost, 2),
+            "refills":      fuel["refills"],
+            "efficiency_km_per_liter": eff,
+            "cost_per_km":  cost_per_km,
+        })
+
+    # رتّب من الأعلى كفاءةً للأقل
+    result.sort(key=lambda x: (x["efficiency_km_per_liter"] is None, -(x["efficiency_km_per_liter"] or 0)))
+    return {"date_from": date_from, "date_to": date_to, "cars": result}
