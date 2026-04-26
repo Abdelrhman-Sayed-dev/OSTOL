@@ -1046,10 +1046,8 @@ function buildAdminNav() {
     {id:'op-card',    icon:'📊', label:'البطاقة التشغيلية'},
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
   ];
-  if(isAdminOrSuper()) {
-    base.push({id:'import-data', icon:'📥', label:'استيراد البيانات'});
-  }
   if(isSuperuser()) {
+    base.push({id:'import-data', icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',    icon:'👑', label:'إدارة الأدمنز'});
     base.push({id:'super-reporters', icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-logs',      icon:'📋', label:'سجل الدخول'});
@@ -1150,10 +1148,10 @@ async function renderOverview() {
       return `<div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
         <div class="card-header"><div class="card-title" style="color:#92400e">⚠️ رخص قاربت على الانتهاء أو منتهية (${expiring.length})</div></div>
         <div class="table-wrap"><table><thead><tr>
-          <th>السائق</th><th>الرقم التعريفي</th><th>انتهاء رخصة السائق</th>
+          <th>السائق</th><th>الرقم الثابت</th><th>انتهاء رخصة السائق</th>
         </tr></thead><tbody>
         ${expiring.map(d=>{
-          return '<tr><td><strong>'+d.name+'</strong></td><td><code>'+(d.national_id||'—')+'</code></td><td>'+licBadge(d.driver_license_expiry)+'</td></tr>';
+          return '<tr><td><strong>'+d.name+'</strong></td><td><code>'+(d.fixed_number||'—')+'</code></td><td>'+licBadge(d.driver_license_expiry)+'</td></tr>';
         }).join('')}
         </tbody></table></div>
       </div>`;
@@ -1176,8 +1174,8 @@ async function renderDriversSection() {
       </div>
       <div class="table-wrap" id="driversList">
         <table><thead><tr>
-          <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم التعريفي</th>
-          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th>
+          <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم الثابت</th>
+          <th>انتهاء رخصة السائق</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody>
         ${drivers.length ? drivers.map(d=>{
@@ -1185,8 +1183,7 @@ async function renderDriversSection() {
             <td>${d.id}</td>
             <td><strong>${d.name}</strong></td>
             <td dir="ltr">${d.phone||'—'}</td>
-            <td><code>${d.national_id||'—'}</code></td>
-            <td style="font-size:.82rem">${d.birth_date||'—'}</td>
+            <td><code>${d.fixed_number||'—'}</code></td>
             <td>${licBadge(d.driver_license_expiry, true)}</td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
@@ -1199,7 +1196,7 @@ async function renderDriversSection() {
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
-        }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
+        }).join('') : '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
         </tbody></table>
       </div>
     </div>`;
@@ -1784,8 +1781,8 @@ function exportCSV(){
 
 function exportDriversCSV(){
   const drivers=window._driversCSVData||[];
-  const rows=[['#','الاسم','الهاتف','الرقم التعريفي','تاريخ الميلاد','انتهاء رخصة السائق','انتهاء رخصة العربة','الحالة','اسم المستخدم']];
-  drivers.forEach(d=>rows.push([d.id,d.name,d.phone||'',d.national_id||'',d.birth_date||'',d.driver_license_expiry||'',d.vehicle_license_expiry||'',d.status==='active'?'نشط':'غير نشط',d.username||'']));
+  const rows=[['#','الاسم','الهاتف','الرقم الثابت','انتهاء رخصة السائق','انتهاء رخصة العربة','الحالة','اسم المستخدم']];
+  drivers.forEach(d=>rows.push([d.id,d.name,d.phone||'',d.fixed_number||'',d.driver_license_expiry||'',d.vehicle_license_expiry||'',d.status==='active'?'نشط':'غير نشط',d.username||'']));
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`السائقون_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير السائقين ✅','success');
