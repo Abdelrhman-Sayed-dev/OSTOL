@@ -110,7 +110,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter')),
+            role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
@@ -287,7 +287,7 @@ def _safe_add_columns(c):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter')),
+                role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field')),
                 branch TEXT DEFAULT '',
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
@@ -502,9 +502,11 @@ def require_superuser(cu: dict = Depends(get_user)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات السوبر يوزر مطلوبة")
     return cu
 
+ADMIN_LIKE_ROLES = ("superuser","admin","reporter","supervisor_workshop","supervisor_field")
+
 def require_admin_or_reporter(cu: dict = Depends(get_user)):
-    """Allows superuser, admin and reporter (read-only) roles."""
-    if cu["role"] not in ("superuser", "admin", "reporter"):
+    """Allows superuser, admin, reporter and supervisors (read-only) roles."""
+    if cu["role"] not in ADMIN_LIKE_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات غير كافية")
     return cu
 
@@ -712,9 +714,17 @@ class TripResp(BaseModel):
     garage_location: Optional[str]; notes: Optional[str]
 
 class UserCreate(BaseModel):
-    username: str; password: str; role: str
+    username: str
+    password: str
+    role:     str
+    branch:   Optional[str] = ""
 
-    # No password restrictions
+    @validator('role')
+    def validate_role(cls, v):
+        allowed = ("admin","superuser","driver","reporter","supervisor_workshop","supervisor_field")
+        if v not in allowed:
+            raise ValueError(f"دور غير صالح. المتاح: {allowed}")
+        return v
 
 class WorkshopCreate(BaseModel):
     driver_id: int; type: str; quantity: Optional[float] = None
@@ -1444,8 +1454,8 @@ async def create_user(user: UserCreate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         c = conn.cursor()
         try:
-            c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
-                      (user.username, _hash(user.password), user.role))
+            c.execute("INSERT INTO users(username,password,role,branch) VALUES(?,?,?,?)",
+                      (user.username, _hash(user.password), user.role, user.branch or ""))
             uid = c.lastrowid
             if user.role == "driver":
                 c.execute("INSERT INTO drivers(name,phone,status,user_id) VALUES(?,?,?,?)",
@@ -1458,7 +1468,7 @@ async def create_user(user: UserCreate, cu: dict = Depends(require_admin)):
 async def list_users(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id,username,role FROM users ORDER BY id DESC LIMIT 200")
+        c.execute("SELECT id,username,role,branch,last_login FROM users ORDER BY id DESC LIMIT 200")
         return [dict(r) for r in c.fetchall()]
 
 @app.delete("/users/{uid}")
@@ -1536,6 +1546,27 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             c.execute("SELECT plate FROM cars WHERE id=?", (rec.vehicle_id,))
             cv = c.fetchone()
             vp = cv["plate"] if cv else None
+        # ── تحديث جدول الصيانة الدورية تلقائياً ──
+        if rec.vehicle_id and rec.odometer_reading:
+            MAINT_MAP = {
+                "oil":    ["تغيير زيت","فلتر زيت"],
+                "filter": ["فلتر هواء","فلتر وقود","فلتر مكيف"],
+                "tire":   ["إطارات"],
+                "battery":["بطارية"],
+                "belt":   ["سير توزيع"],
+            }
+            related_types = MAINT_MAP.get(rec.type, [])
+            if related_types:
+                placeholders_m = ",".join("?" * len(related_types))
+                c.execute(f"""UPDATE maintenance_schedule
+                              SET last_done_km=?, last_done_date=?, updated_at=?
+                              WHERE car_id=? AND maintenance_type IN ({placeholders_m})""",
+                          [rec.odometer_reading, now[:10], now, rec.vehicle_id] + related_types)
+                updated_m = conn.execute("SELECT changes()").fetchone()[0]
+                if updated_m:
+                    log_event("maintenance_auto_updated",
+                              car_id=rec.vehicle_id, types=related_types, km=rec.odometer_reading)
+
         return {"id":rid,"driver_id":rec.driver_id,"type":rec.type,"quantity":rec.quantity,
                 "price":final_price,"notes":rec.notes or "","created_at":now,
                 "operation_type":rec.operation_type or "","vehicle_id":rec.vehicle_id,
@@ -3316,3 +3347,143 @@ async def fuel_efficiency_report(
     # رتّب من الأعلى كفاءةً للأقل
     result.sort(key=lambda x: (x["efficiency_km_per_liter"] is None, -(x["efficiency_km_per_liter"] or 0)))
     return {"date_from": date_from, "date_to": date_to, "cars": result}
+
+# ══════════════════════════════════════════════════════
+# 30. MONTHLY REPORT — تقرير شهري شامل
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/monthly")
+async def monthly_report(
+    month:  Optional[str] = None,   # YYYY-MM
+    branch: Optional[str] = None,   # فرع محدد أو None للكل
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    if not month:
+        month = datetime.utcnow().strftime("%Y-%m")
+    try:
+        datetime.strptime(month, "%Y-%m")
+    except ValueError:
+        raise HTTPException(400, "صيغة الشهر: YYYY-MM")
+
+    # الأدمن المقيّد بفرع لا يقدر يشوف فروع تانية
+    eff_branch = _effective_branch(cu, branch)
+    like = month + "%"
+
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # ── السائقون ──
+        if eff_branch:
+            c.execute("SELECT id,name,fixed_number,branch FROM drivers WHERE branch=?", (eff_branch,))
+        else:
+            c.execute("SELECT id,name,fixed_number,branch FROM drivers")
+        drivers_list = [dict(r) for r in c.fetchall()]
+        driver_ids = [d["id"] for d in drivers_list]
+
+        # ── المركبات ──
+        if eff_branch:
+            c.execute("SELECT id,plate,model,car_name,branch FROM cars WHERE branch=?", (eff_branch,))
+        else:
+            c.execute("SELECT id,plate,model,car_name,branch FROM cars")
+        cars_list = [dict(r) for r in c.fetchall()]
+        car_ids = [c2["id"] for c2 in cars_list]
+
+        if not driver_ids:
+            return {"month": month, "branch": eff_branch, "drivers": [], "cars": [],
+                    "summary": {}, "workshops": []}
+
+        drv_ph  = ",".join("?" * len(driver_ids))
+        car_ph  = ",".join("?" * len(car_ids)) if car_ids else "NULL"
+
+        # ── الرحلات ──
+        c.execute(f"""SELECT driver_id, car_id,
+                             COUNT(*) as trip_count,
+                             SUM(CASE WHEN end_time IS NOT NULL THEN 1 ELSE 0 END) as completed,
+                             SUM(CASE WHEN end_odometer > start_odometer
+                                      THEN end_odometer - start_odometer ELSE 0 END) as total_km
+                      FROM trips
+                      WHERE driver_id IN ({drv_ph}) AND start_time LIKE ?
+                      GROUP BY driver_id""", driver_ids + [like])
+        trip_stats = {r["driver_id"]: dict(r) for r in c.fetchall()}
+
+        # ── الورش ──
+        if car_ids:
+            c.execute(f"""SELECT w.vehicle_id, w.type,
+                                 SUM(w.price)    as total_cost,
+                                 SUM(w.quantity) as total_qty,
+                                 COUNT(*)        as count
+                          FROM workshop_records w
+                          WHERE w.vehicle_id IN ({car_ph}) AND w.created_at LIKE ?
+                          GROUP BY w.vehicle_id, w.type""", car_ids + [like])
+            ws_rows = [dict(r) for r in c.fetchall()]
+        else:
+            ws_rows = []
+
+        # ── تجميع الورش لكل عربية ──
+        car_ws_map: dict = {}
+        for w in ws_rows:
+            vid = w["vehicle_id"]
+            if vid not in car_ws_map:
+                car_ws_map[vid] = []
+            car_ws_map[vid].append(w)
+
+        # ── إجمالي تكاليف الوقود ──
+        total_fuel_cost  = sum(w["total_cost"] for w in ws_rows if w["type"].startswith("fuel_"))
+        total_fuel_liters= sum(w["total_qty"]  for w in ws_rows if w["type"].startswith("fuel_"))
+        total_maint_cost = sum(w["total_cost"] for w in ws_rows if not w["type"].startswith("fuel_"))
+        total_km_all     = sum(ts["total_km"] for ts in trip_stats.values())
+        total_trips_all  = sum(ts["trip_count"] for ts in trip_stats.values())
+
+        # ── بيانات السائقين ──
+        drivers_report = []
+        for d in drivers_list:
+            ts = trip_stats.get(d["id"], {})
+            drivers_report.append({
+                "driver_id":   d["id"],
+                "name":        d["name"],
+                "fixed_number":d.get("fixed_number",""),
+                "branch":      d.get("branch",""),
+                "trips":       ts.get("trip_count",0),
+                "completed":   ts.get("completed",0),
+                "km":          round(ts.get("total_km",0),1),
+            })
+        drivers_report.sort(key=lambda x: -x["km"])
+
+        # ── بيانات العربيات ──
+        cars_report = []
+        for car in cars_list:
+            ws = car_ws_map.get(car["id"],[])
+            fuel_l = sum(w["total_qty"] or 0 for w in ws if w["type"].startswith("fuel_"))
+            fuel_c = sum(w["total_cost"] or 0 for w in ws if w["type"].startswith("fuel_"))
+            maint_c= sum(w["total_cost"] or 0 for w in ws if not w["type"].startswith("fuel_"))
+            cars_report.append({
+                "car_id":      car["id"],
+                "plate":       car["plate"],
+                "model":       car["model"],
+                "car_name":    car.get("car_name",""),
+                "branch":      car.get("branch",""),
+                "fuel_liters": round(fuel_l,1),
+                "fuel_cost":   round(fuel_c,2),
+                "maint_cost":  round(maint_c,2),
+                "total_cost":  round(fuel_c+maint_c,2),
+                "workshops":   ws,
+            })
+        cars_report.sort(key=lambda x: -x["total_cost"])
+
+    return {
+        "month":         month,
+        "branch":        eff_branch or "كل الفروع",
+        "generated_at":  datetime.utcnow().isoformat() + "Z",
+        "summary": {
+            "total_drivers":    len(drivers_list),
+            "total_cars":       len(cars_list),
+            "total_trips":      total_trips_all,
+            "total_km":         round(total_km_all, 1),
+            "total_fuel_cost":  round(total_fuel_cost, 2),
+            "total_fuel_liters":round(total_fuel_liters, 1),
+            "total_maint_cost": round(total_maint_cost, 2),
+            "total_cost":       round(total_fuel_cost + total_maint_cost, 2),
+        },
+        "drivers": drivers_report,
+        "cars":    cars_report,
+    }
