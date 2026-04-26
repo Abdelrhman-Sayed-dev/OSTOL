@@ -4022,7 +4022,7 @@ function openWsModal(type) {
     </div>
 
     <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
-
+    ${(window._typePrices&&window._typePrices[type]>0)?`<div style="padding:.4rem .8rem;background:#f0fdf9;border:1px solid #6ee7b7;border-radius:8px;margin-bottom:.5rem;font-size:.85rem">💰 سعر الوحدة: <strong>${(window._typePrices[type]||0).toFixed(2)} جنيه/وحدة</strong> — الإجمالي = الكمية × السعر</div>`:''}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ السجل</button>
@@ -5109,6 +5109,11 @@ function dpWsModal(type) {
     <div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>
     <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:8px;padding:.55rem 1rem;font-size:.8rem;color:#166534;font-weight:700;margin-bottom:.8rem">💰 السعر محدد من قبل الإدارة</div>
     <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
+    ${(window._typePrices&&window._typePrices[type]>0)?`
+    <div style="padding:.4rem .8rem;background:var(--surface-2);border-radius:8px;margin-bottom:.5rem;font-size:.85rem">
+      💰 سعر الوحدة: <strong style="color:var(--primary)">${(window._typePrices[type]||0).toFixed(2)} جنيه</strong>
+      <span style="color:var(--muted)">— الإجمالي يُحسب تلقائياً</span>
+    </div>`:''}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button>
