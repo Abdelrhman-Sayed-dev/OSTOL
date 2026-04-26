@@ -876,6 +876,7 @@ body.driver-mode { background:#f5f5f5; }
 }
 
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -1047,6 +1048,7 @@ function buildAdminNav() {
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
   ];
   if(isSuperuser()) {
+    base.push({id:'super-decisions', icon:'🏛️', label:'اتخاذ قرار'});
     base.push({id:'import-data', icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',    icon:'👑', label:'إدارة الأدمنز'});
     base.push({id:'super-reporters', icon:'👁️', label:'إدارة المراقبين'});
@@ -1068,6 +1070,7 @@ function renderNav(items) {
       <span class="nav-icon">${item.icon}</span> ${item.label}
       ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
       ${item.id==='requests' && window._pendingRequestsCount>0 ? `<span class="nav-badge">${window._pendingRequestsCount}</span>` : ''}
+      ${item.id==='super-decisions' && window._pendingSuperCount>0 ? `<span class="nav-badge">${window._pendingSuperCount}</span>` : ''}
     </button>`).join('');
 }
 
@@ -1095,6 +1098,7 @@ async function renderSection(id) {
     case 'requests':       await renderRequestsSection(); break;
     case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
+    case 'super-decisions': await renderSuperDecisions(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-logs':      await renderSuperLogs(); break;
@@ -1109,54 +1113,138 @@ async function renderSection(id) {
 /* ── OVERVIEW ── */
 async function renderOverview() {
   const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
-  const active = trips.filter(t=>!t.end_time).length;
   const garageRecs = await loadLatestGarage().catch(()=>[]);
-  // Count parked: latest garage record exists AND car has NO active trip
+  const active = trips.filter(t=>!t.end_time).length;
   const activeTripCarIds = trips.filter(t=>!t.end_time).map(t=>t.car_id);
   const parkedCarIds = new Set();
-  // From garage_records table
   garageRecs.forEach(g=>{if(g.car_id&&!activeTripCarIds.includes(g.car_id))parkedCarIds.add(g.car_id);});
-  // From trips with garage_location (ended via garage button)
-  trips.filter(t=>t.end_time&&t.garage_location&&!activeTripCarIds.includes(t.car_id))
-       .forEach(t=>parkedCarIds.add(t.car_id));
-  // From trips that have garage_location but somehow still "active" (edge case — count their car as parked)
-  trips.filter(t=>!t.end_time&&t.garage_location&&!activeTripCarIds.filter(id=>id!==t.car_id).includes(t.car_id))
-       .forEach(t=>parkedCarIds.add(t.car_id));
+  trips.filter(t=>t.end_time&&t.garage_location&&!activeTripCarIds.includes(t.car_id)).forEach(t=>parkedCarIds.add(t.car_id));
   const garageCount = parkedCarIds.size;
   const unread = emgs.filter(e=>!e.is_read).length;
+  const completed = trips.filter(t=>t.end_time).length;
+  const totalKm = trips.filter(t=>t.end_time&&t.end_odometer&&t.start_odometer)
+    .reduce((s,t)=>s+(t.end_odometer-t.start_odometer),0);
+  const fuelRecords = records.filter(r=>r.type&&r.type.startsWith('fuel_'));
+  const fuelCost = fuelRecords.reduce((s,r)=>s+(r.price||0),0);
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days7 = Array.from({length:7},(_,i)=>{
+    const d=new Date(today); d.setDate(d.getDate()-6+i);
+    return d.toISOString().split('T')[0];
+  });
+  const tripsPerDay = days7.map(day=>trips.filter(t=>(t.start_time||'').startsWith(day)).length);
+  const dayLabels = days7.map(d=>{
+    const dt=new Date(d+'T00:00:00');
+    return dt.toLocaleDateString('ar-EG',{weekday:'short',day:'numeric',month:'numeric'});
+  });
+  const driverTripMap = {};
+  trips.forEach(t=>{ const d=drivers.find(dr=>dr.id===t.driver_id); if(d){driverTripMap[d.name]=(driverTripMap[d.name]||0)+1;} });
+  const topDrivers = Object.entries(driverTripMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const carKmMap = {};
+  trips.filter(t=>t.end_time&&t.end_odometer>t.start_odometer).forEach(t=>{ const c=cars.find(ca=>ca.id===t.car_id); if(c){carKmMap[c.plate]=(carKmMap[c.plate]||0)+(t.end_odometer-t.start_odometer);} });
+  const topCarsKm = Object.entries(carKmMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const fuelPerDay = days7.map(day=>fuelRecords.filter(r=>(r.created_at||'').startsWith(day)).reduce((s,r)=>s+(r.price||0),0));
+
+  const latestRows = trips.slice(0,8).map(t=>{
+    const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
+    const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
+    const badge=!t.end_time?'<span class="badge badge-blue">● جارية</span>':'<span class="badge badge-green">✓ منتهية</span>';
+    return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr"><strong>${cPlate}</strong></td><td style="font-size:.78rem;color:var(--muted)">${t.start_time?fmtDT(t.start_time):'—'}</td><td>${badge}</td></tr>`;
+  }).join('');
+
+  const expiringHtml=(()=>{
+    const soon=new Date(Date.now()+30*864e5).toISOString().split('T')[0];
+    const expiring=drivers.filter(d=>(d.driver_license_expiry&&d.driver_license_expiry<=soon)||(d.vehicle_license_expiry&&d.vehicle_license_expiry<=soon));
+    if(!expiring.length) return '';
+    return `<div class="card" style="border:2px solid #f59e0b;background:#fffbeb;margin-top:1rem">
+      <div class="card-header"><div class="card-title" style="color:#92400e">⚠️ رخص قاربت على الانتهاء (${expiring.length})</div></div>
+      <div class="table-wrap"><table><thead><tr><th>السائق</th><th>الرقم الثابت</th><th>انتهاء رخصة السائق</th></tr></thead><tbody>
+      ${expiring.map(d=>`<tr><td><strong>${d.name}</strong></td><td><code>${d.fixed_number||'—'}</code></td><td>${licBadge(d.driver_license_expiry)}</td></tr>`).join('')}
+      </tbody></table></div></div>`;
+  })();
+
   document.getElementById('pageContent').innerHTML = `
-    <div class="stats-row">
-      <div class="stat-card"><div class="stat-icon">👨‍✈️</div><div class="stat-value">${drivers.filter(d=>d.status==='active').length}</div><div class="stat-label">سائق نشط</div></div>
-      <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${cars.length}</div><div class="stat-label">إجمالي المركبات</div></div>
+    <div class="stats-row" style="margin-bottom:1.2rem">
+      <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${cars.filter(c=>c.status!=='inactive').length}</div><div class="stat-label">مركبات نشطة</div></div>
       <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value" style="color:#10b981">${active}</div><div class="stat-label">رحلة جارية</div></div>
-      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value">${trips.filter(t=>t.end_time).length}</div><div class="stat-label">رحلة مكتملة</div></div>
-      <div class="stat-card"><div class="stat-icon">🅿️</div><div class="stat-value">${garageCount}</div><div class="stat-label">في الجراج</div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value">${completed}</div><div class="stat-label">رحلة مكتملة</div></div>
+      <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value" style="color:#f59e0b">${Math.round(totalKm).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي المسافة (كم)</div></div>
+      <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value" style="color:#3b82f6">${Math.round(fuelCost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة الوقود</div></div>
       <div class="stat-card"><div class="stat-icon">🚨</div><div class="stat-value" style="color:${unread>0?'#dc2626':'var(--primary)'}">${unread}</div><div class="stat-label">بلاغ غير مقروء</div></div>
-      <div class="stat-card"><div class="stat-icon">🛠️</div><div class="stat-value">${records.length}</div><div class="stat-label">سجل ورشة</div></div>
     </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">🗺️ آخر الرحلات</div></div>
-      <div class="table-wrap">${buildTripsTable(trips.slice(0,6),drivers,cars,garageRecs)}</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="card"><div class="card-header"><div class="card-title">📈 الرحلات عبر الزمن (آخر 7 أيام)</div></div>
+        <div style="padding:1rem;height:220px"><canvas id="chartTripsTime"></canvas></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🍩 حسب الحالة</div></div>
+        <div style="padding:.5rem;height:220px;display:flex;align-items:center;justify-content:center"><canvas id="chartTripStatus"></canvas></div></div>
     </div>
-    ${(()=>{
-      const today=new Date().toISOString().split('T')[0];
-      const soon=new Date(Date.now()+30*864e5).toISOString().split('T')[0];
-      const expiring=drivers.filter(d=>
-        (d.driver_license_expiry&&d.driver_license_expiry<=soon)||
-        (d.vehicle_license_expiry&&d.vehicle_license_expiry<=soon));
-      if(!expiring.length) return '';
-      return `<div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
-        <div class="card-header"><div class="card-title" style="color:#92400e">⚠️ رخص قاربت على الانتهاء أو منتهية (${expiring.length})</div></div>
-        <div class="table-wrap"><table><thead><tr>
-          <th>السائق</th><th>الرقم الثابت</th><th>انتهاء رخصة السائق</th>
-        </tr></thead><tbody>
-        ${expiring.map(d=>{
-          return '<tr><td><strong>'+d.name+'</strong></td><td><code>'+(d.fixed_number||'—')+'</code></td><td>'+licBadge(d.driver_license_expiry)+'</td></tr>';
-        }).join('')}
-        </tbody></table></div>
-      </div>`;
-    })()}`;
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="card"><div class="card-header"><div class="card-title">👨‍✈️ أعلى السائقين في عدد الرحلات</div></div>
+        <div style="padding:1rem;height:230px"><canvas id="chartTopDrivers"></canvas></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">⛽ تكلفة الوقود (آخر 7 أيام)</div></div>
+        <div style="padding:1rem;height:230px"><canvas id="chartFuelCost"></canvas></div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="card"><div class="card-header"><div class="card-title">🚙 المسافة (كم) حسب المركبة (أعلى 5)</div></div>
+        <div style="padding:1rem;height:230px"><canvas id="chartCarsKm"></canvas></div></div>
+      <div class="card"><div class="card-header"><div class="card-title">🕐 آخر الرحلات</div></div>
+        <div class="table-wrap" style="max-height:270px;overflow-y:auto">
+          <table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>الوقت</th><th>الحالة</th></tr></thead>
+          <tbody>${latestRows}</tbody></table></div></div>
+    </div>
+    ${expiringHtml}`;
+
+  const isDark = document.documentElement.getAttribute('data-theme')==='dark';
+  const gc = isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)';
+  const tc = isDark ? '#94a3b8' : '#64748b';
+  Chart.defaults.font.family = 'inherit';
+  Chart.defaults.color = tc;
+
+  new Chart(document.getElementById('chartTripsTime'), {
+    type:'line',
+    data:{labels:dayLabels,datasets:[{label:'عدد الرحلات',data:tripsPerDay,
+      borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.12)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#3b82f6'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true,ticks:{stepSize:1}}}}
+  });
+
+  new Chart(document.getElementById('chartTripStatus'), {
+    type:'doughnut',
+    data:{labels:['✅ مكتملة','🔵 جارية','🅿️ في الجراج'],
+      datasets:[{data:[completed,active,garageCount],
+        backgroundColor:['#10b981','#3b82f6','#f59e0b'],borderWidth:2,borderColor:isDark?'#1e293b':'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{padding:10,font:{size:11}}}}}
+  });
+
+  new Chart(document.getElementById('chartTopDrivers'), {
+    type:'bar',
+    data:{labels:topDrivers.map(([n])=>n),
+      datasets:[{label:'عدد الرحلات',data:topDrivers.map(([,v])=>v),
+        backgroundColor:['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444'],borderRadius:6}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},scales:{x:{grid:{color:gc},beginAtZero:true,ticks:{stepSize:1}},y:{grid:{display:false}}}}
+  });
+
+  new Chart(document.getElementById('chartFuelCost'), {
+    type:'line',
+    data:{labels:dayLabels,datasets:[{label:'التكلفة',data:fuelPerDay,
+      borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#10b981'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true}}}
+  });
+
+  new Chart(document.getElementById('chartCarsKm'), {
+    type:'bar',
+    data:{labels:topCarsKm.map(([p])=>p),
+      datasets:[{label:'كم',data:topCarsKm.map(([,v])=>Math.round(v)),
+        backgroundColor:['#6366f1','#3b82f6','#10b981','#f59e0b','#8b5cf6'],borderRadius:6}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},scales:{x:{grid:{color:gc},beginAtZero:true},y:{grid:{display:false}}}}
+  });
 }
+
+
 
 /* ── DRIVERS — Modal UX ── */
 async function renderDriversSection() {
@@ -1637,8 +1725,7 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
   ${trips.map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
-    const gRec=garageLatest.find(g=>g.car_id===t.car_id);
-    const garageLoc=t.end_time?(t.garage_location||gRec?.location||''):'';
+    const garageLoc=t.garage_location||'';
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
       <td>${t.start_time?fmtDT(t.start_time):'—'}</td>
       <td>${t.end_time?fmtDT(t.end_time):'—'}</td>
@@ -2889,71 +2976,99 @@ async function downloadOpPDF() {
 async function renderRequestsSection() {
   const c = document.getElementById('pageContent');
   let reqs = [];
-  try {
-    reqs = await apiCall('/requests');
-    window._pendingRequestsCount = reqs.filter(r=>r.status==='pending').length;
-  } catch(e) { reqs = []; }
+  try { reqs = await apiCall('/requests'); } catch(e) { reqs = []; }
+  window._pendingRequestsCount = reqs.filter(r=>r.status==='pending').length;
+
+  const isSuper = currentUser?.role === 'superuser';
+  const isAdminRole = currentUser?.role === 'admin';
 
   const TYPE_LABELS = {
-    odometer_change:'🔢 تغيير العداد',
-    permission:'🙋 طلب إذن',
-    leave:'🏖️ طلب إجازة',
-    other:'📝 طلب آخر',
+    odometer_change:'🔢 تغيير العداد', permission:'🙋 طلب إذن',
+    leave:'🏖️ طلب إجازة', other:'📝 طلب آخر',
   };
   const STATUS_STYLE = {
-    pending:  {bg:'#fff7ed',border:'#fde68a',badge:'#f59e0b',txt:'⏳ بانتظار الرد'},
-    approved: {bg:'#f0fdf9',border:'#6ee7b7',badge:'#10b981',txt:'✅ مقبول'},
-    rejected: {bg:'#fef2f2',border:'#fca5a5',badge:'#ef4444',txt:'❌ مرفوض'},
+    pending:      {bg:'#fff7ed',border:'#fde68a',badge:'#f59e0b',txt:'⏳ بانتظار الأدمن'},
+    pending_super:{bg:'#eff6ff',border:'#93c5fd',badge:'#3b82f6',txt:'📤 محال للسوبر'},
+    approved:     {bg:'#f0fdf9',border:'#6ee7b7',badge:'#10b981',txt:'✅ مقبول'},
+    rejected:     {bg:'#fef2f2',border:'#fca5a5',badge:'#ef4444',txt:'❌ مرفوض'},
   };
+  const PRIORITY_LABELS = {urgent:'🔴 عاجل',medium:'🟡 متوسط',deferrable:'🟢 قابل للتأجيل'};
+  const PRIORITY_COLORS = {urgent:'#ef4444',medium:'#f59e0b',deferrable:'#10b981'};
 
-  const filterBtns = `
-    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
-      <button class="btn btn-ghost btn-sm req-filter-btn active" data-filter="all" onclick="filterRequests('all',this)">الكل (${reqs.length})</button>
-      <button class="btn btn-ghost btn-sm req-filter-btn" data-filter="pending" onclick="filterRequests('pending',this)">⏳ بانتظار الرد (${reqs.filter(r=>r.status==='pending').length})</button>
-      <button class="btn btn-ghost btn-sm req-filter-btn" data-filter="approved" onclick="filterRequests('approved',this)">✅ مقبولة</button>
-      <button class="btn btn-ghost btn-sm req-filter-btn" data-filter="rejected" onclick="filterRequests('rejected',this)">❌ مرفوضة</button>
-    </div>`;
+  // الفلاتر
+  const filterOpts = [
+    {v:'all', l:`الكل (${reqs.length})`},
+    {v:'pending', l:`⏳ بانتظار الرد (${reqs.filter(r=>r.status==='pending').length})`},
+    ...(isSuper?[{v:'pending_super', l:`📤 محال للسوبر (${reqs.filter(r=>r.status==='pending_super').length})`}]:[]),
+    {v:'approved', l:'✅ مقبولة'},
+    {v:'rejected', l:'❌ مرفوضة'},
+    ...(isSuper?[
+      {v:'urgent', l:'🔴 عاجلة'},
+      {v:'medium', l:'🟡 متوسطة'},
+      {v:'deferrable', l:'🟢 قابل للتأجيل'},
+    ]:[]),
+  ];
+
+  const filterBtns = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+    ${filterOpts.map(o=>`<button class="btn btn-ghost btn-sm req-filter-btn ${o.v==='all'?'active':''}" 
+      data-filter="${o.v}" onclick="filterRequests('${o.v}',this)">${o.l}</button>`).join('')}
+  </div>`;
 
   const rows = reqs.map(r => {
     const st = STATUS_STYLE[r.status] || STATUS_STYLE.pending;
     const tl = TYPE_LABELS[r.type] || r.type;
     const isPending = r.status === 'pending';
+    const isPendingSuper = r.status === 'pending_super';
+    const priority = r.priority || 'medium';
+    const priorityTag = `<span style="background:${PRIORITY_COLORS[priority]};color:white;border-radius:20px;
+      font-size:.65rem;font-weight:700;padding:.12rem .45rem">${PRIORITY_LABELS[priority]||priority}</span>`;
     return `
-      <div class="req-card" data-status="${r.status}"
+      <div class="req-card" data-status="${r.status}" data-priority="${priority}"
            style="border:1.5px solid ${st.border};border-radius:14px;background:${st.bg};
                   margin-bottom:.8rem;overflow:hidden">
-        <!-- Header -->
         <div style="padding:.7rem 1rem;display:flex;justify-content:space-between;align-items:center;
                     border-bottom:1px solid ${st.border}">
-          <div style="display:flex;align-items:center;gap:.7rem">
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
             <span style="font-weight:800;font-size:.9rem;color:#1e293b">${tl}</span>
             <span style="background:${st.badge};color:white;border-radius:20px;
                          font-size:.68rem;font-weight:700;padding:.15rem .55rem">${st.txt}</span>
+            ${(isPendingSuper||r.forwarded_to_super)?priorityTag:''}
           </div>
           <span style="font-size:.72rem;color:#64748b">${fmtDT(r.created_at)}</span>
         </div>
-        <!-- Body -->
         <div style="padding:.8rem 1rem">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem">
             <div style="font-size:.82rem"><span style="color:#64748b">السائق: </span><strong>${r.driver_name||'—'}</strong></div>
             ${r.type==='odometer_change'&&r.new_odometer?`<div style="font-size:.82rem"><span style="color:#64748b">العداد المطلوب: </span><strong style="color:#3b82f6">${r.new_odometer} كم</strong></div>`:'<div></div>'}
           </div>
           ${r.notes?`<div style="font-size:.82rem;color:#475569;background:white;border-radius:8px;
-                                  padding:.45rem .7rem;margin-bottom:.6rem;border:1px solid #e2e8f0">
-            📝 ${r.notes}</div>`:''}
-          ${!isPending&&r.admin_notes?`<div style="font-size:.82rem;color:#475569;background:white;border-radius:8px;
-                                          padding:.45rem .7rem;margin-bottom:.6rem;border:1px solid #e2e8f0">
-            🗒️ ملاحظات الإدارة: ${r.admin_notes}</div>`:''}
-          ${!isPending&&r.admin_message?`<div style="font-size:.82rem;background:#f0fdf9;border-radius:8px;
-                                              padding:.45rem .7rem;margin-bottom:.6rem;border:1.5px solid #6ee7b7">
+                                padding:.45rem .7rem;margin-bottom:.6rem;border:1px solid #e2e8f0">📝 ${r.notes}</div>`:''}
+          ${r.admin_notes?`<div style="font-size:.82rem;color:#475569;background:#f8fafc;border-radius:8px;
+                                      padding:.45rem .7rem;margin-bottom:.4rem;border:1px solid #e2e8f0">
+            🗒️ ملاحظات الأدمن: ${r.admin_notes}<br>
+            <span style="font-size:.72rem;color:#94a3b8">بواسطة: ${r.handled_by||'—'}</span></div>`:'' }
+          ${r.admin_message?`<div style="font-size:.82rem;background:#f0fdf9;border-radius:8px;
+                                        padding:.45rem .7rem;margin-bottom:.4rem;border:1.5px solid #6ee7b7">
             💬 رسالة للسائق: ${r.admin_message}</div>`:''}
-          ${!isPending?`<div style="font-size:.75rem;color:#94a3b8">بواسطة: ${r.handled_by} — ${fmtDT(r.handled_at)}</div>`:''}
-          ${isPending&&!isReporter()?`
-          <div style="display:flex;gap:.5rem;margin-top:.6rem">
-            <button class="btn btn-primary btn-sm" onclick="openHandleRequestModal(${r.id},'approved')"
-                    style="background:#10b981;border-color:#10b981">✅ قبول</button>
-            <button class="btn btn-sm" onclick="openHandleRequestModal(${r.id},'rejected')"
-                    style="background:#ef4444;color:white;border:none">❌ رفض</button>
+          ${r.super_notes?`<div style="font-size:.82rem;background:#eff6ff;border-radius:8px;
+                                      padding:.45rem .7rem;margin-bottom:.4rem;border:1.5px solid #93c5fd">
+            🏛️ قرار السوبر: ${r.super_notes}<br>
+            <span style="font-size:.72rem;color:#94a3b8">بواسطة: ${r.super_handled_by||'—'} — ${fmtDT(r.super_handled_at)}</span></div>`:''}
+
+          <!-- أزرار الأدمن -->
+          ${isPending&&isAdminRole&&!isReporter()?`
+          <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="openAdminRequestModal(${r.id})"
+                    style="background:#3b82f6;border-color:#3b82f6">📤 إضافة ملاحظة وإحالة للسوبر</button>
+          </div>`:''}
+
+          <!-- أزرار السوبر — اتخاذ القرار النهائي -->
+          ${isPendingSuper&&isSuper?`
+          <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
+            <button class="btn btn-sm" onclick="openSuperDecisionModal(${r.id},'approved')"
+                    style="background:#10b981;color:white;border:none">✅ قبول نهائي</button>
+            <button class="btn btn-sm" onclick="openSuperDecisionModal(${r.id},'rejected')"
+                    style="background:#ef4444;color:white;border:none">❌ رفض نهائي</button>
           </div>`:''}
         </div>
       </div>`;
@@ -2978,55 +3093,101 @@ function filterRequests(status, btn) {
   document.querySelectorAll('.req-filter-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   document.querySelectorAll('.req-card').forEach(card=>{
-    card.style.display = (status==='all' || card.dataset.status===status) ? 'block' : 'none';
+    const match = status==='all' || card.dataset.status===status || card.dataset.priority===status;
+    card.style.display = match ? 'block' : 'none';
   });
 }
 
-function openHandleRequestModal(rid, defaultStatus) {
+// الأدمن: إضافة ملاحظة وتحديد الأولوية والإحالة للسوبر
+function openAdminRequestModal(rid) {
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">${defaultStatus==='approved'?'✅ قبول الطلب':'❌ رفض الطلب'}</div>
+      <div class="modal-title">📤 إحالة الطلب للسوبر يوزر</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="form-group">
-      <label>الإجراء</label>
-      <select id="hReqStatus">
+      <label>الأولوية</label>
+      <select id="hReqPriority" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="urgent">🔴 عاجل</option>
+        <option value="medium" selected>🟡 متوسط</option>
+        <option value="deferrable">🟢 قابل للتأجيل</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>ملاحظات الأدمن (ستُرسل للسوبر)</label>
+      <textarea id="hReqNotes" rows="3" placeholder="اكتب توصيتك وملاحظاتك هنا..."
+                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+    </div>
+    <div class="form-group">
+      <label>رسالة للسائق (اختياري)</label>
+      <textarea id="hReqMsg" rows="2" placeholder="رسالة توضيحية للسائق..."
+                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="hAdminSave">📤 إحالة للسوبر</button>
+    </div>`);
+
+  document.getElementById('hAdminSave').onclick = async () => {
+    const priority = document.getElementById('hReqPriority').value;
+    const admin_notes = document.getElementById('hReqNotes').value.trim();
+    const admin_message = document.getElementById('hReqMsg').value.trim();
+    const btn = document.getElementById('hAdminSave');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/requests/${rid}`,'PUT',{admin_notes,admin_message,priority,forward_to_super:true});
+      showNotification('✅ تم إحالة الطلب للسوبر','success');
+      closeModal();
+      await renderRequestsSection();
+    } catch(e) {
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent='📤 إحالة للسوبر';
+    }
+  };
+}
+
+// السوبر: اتخاذ القرار النهائي
+function openSuperDecisionModal(rid, defaultStatus) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${defaultStatus==='approved'?'✅ قبول نهائي':'❌ رفض نهائي'}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>القرار النهائي</label>
+      <select id="hSuperStatus" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
         <option value="approved" ${defaultStatus==='approved'?'selected':''}>✅ قبول الطلب</option>
         <option value="rejected" ${defaultStatus==='rejected'?'selected':''}>❌ رفض الطلب</option>
       </select>
     </div>
     <div class="form-group">
-      <label>ملاحظات داخلية (للإدارة فقط)</label>
-      <input id="hReqNotes" placeholder="ملاحظات اختيارية...">
-    </div>
-    <div class="form-group">
-      <label>رسالة للسائق</label>
-      <textarea id="hReqMsg" rows="3" placeholder="اكتب رسالة ستظهر للسائق في صفحته..."
-                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);
-                       border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+      <label>ملاحظات القرار (ستظهر للجميع)</label>
+      <textarea id="hSuperNotes" rows="3" placeholder="سبب القرار أو ملاحظات إضافية..."
+                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="hReqSave">💾 حفظ الإجراء</button>
+      <button class="btn btn-primary" id="hSuperSave">🏛️ تأكيد القرار</button>
     </div>`);
 
-  document.getElementById('hReqSave').onclick = async () => {
-    const status        = document.getElementById('hReqStatus').value;
-    const admin_notes   = document.getElementById('hReqNotes').value.trim();
-    const admin_message = document.getElementById('hReqMsg').value.trim();
-    const btn = document.getElementById('hReqSave');
+  document.getElementById('hSuperSave').onclick = async () => {
+    const status = document.getElementById('hSuperStatus').value;
+    const super_notes = document.getElementById('hSuperNotes').value.trim();
+    const btn = document.getElementById('hSuperSave');
     btn.disabled=true; btn.textContent='جاري...';
     try {
-      await apiCall(`/requests/${rid}`,'PUT',{status,admin_notes,admin_message});
-      showNotification('✅ تم تسجيل الإجراء','success');
+      await apiCall(`/requests/${rid}`,'PUT',{status,super_notes});
+      showNotification('✅ تم تسجيل القرار النهائي','success');
       closeModal();
       await renderRequestsSection();
     } catch(e) {
       showNotification(e.message,'error');
-      btn.disabled=false; btn.textContent='💾 حفظ الإجراء';
+      btn.disabled=false; btn.textContent='🏛️ تأكيد القرار';
     }
   };
 }
+
+
 
 /* ── EMERGENCIES SECTION (Admin) ── */
 async function renderEmergenciesSection() {
@@ -4936,6 +5097,78 @@ async function deleteRoleUser(role, uid, username) {
 }
 
 // Named aliases so the rest of the codebase (and nav callbacks) continue to work unchanged
+async function renderSuperDecisions() {
+  const c = document.getElementById('pageContent');
+  let reqs = [];
+  try { reqs = await apiCall('/requests'); } catch(e) { reqs=[]; }
+  const pending = reqs.filter(r=>r.status==='pending_super');
+
+  const TYPE_LABELS = {odometer_change:'🔢 تغيير العداد',permission:'🙋 طلب إذن',leave:'🏖️ طلب إجازة',other:'📝 طلب آخر'};
+  const PRIORITY_LABELS = {urgent:'🔴 عاجل',medium:'🟡 متوسط',deferrable:'🟢 قابل للتأجيل'};
+  const PRIORITY_COLORS = {urgent:'#ef4444',medium:'#f59e0b',deferrable:'#10b981'};
+
+  const filterBtns = `
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+      <button class="btn btn-ghost btn-sm sd-filter active" data-f="all" onclick="sdFilter('all',this)">الكل (${pending.length})</button>
+      <button class="btn btn-ghost btn-sm sd-filter" data-f="urgent" onclick="sdFilter('urgent',this)">🔴 عاجل (${pending.filter(r=>r.priority==='urgent').length})</button>
+      <button class="btn btn-ghost btn-sm sd-filter" data-f="medium" onclick="sdFilter('medium',this)">🟡 متوسط (${pending.filter(r=>r.priority==='medium').length})</button>
+      <button class="btn btn-ghost btn-sm sd-filter" data-f="deferrable" onclick="sdFilter('deferrable',this)">🟢 قابل للتأجيل (${pending.filter(r=>r.priority==='deferrable').length})</button>
+    </div>`;
+
+  const rows = pending.map(r => {
+    const tl=TYPE_LABELS[r.type]||r.type;
+    const pr=r.priority||'medium';
+    return `
+      <div class="sd-card" data-priority="${pr}"
+           style="border:1.5px solid #93c5fd;border-radius:14px;background:#eff6ff;margin-bottom:.8rem;overflow:hidden">
+        <div style="padding:.7rem 1rem;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #93c5fd;flex-wrap:wrap;gap:.5rem">
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <span style="font-weight:800;font-size:.9rem">${tl}</span>
+            <span style="background:${PRIORITY_COLORS[pr]};color:white;border-radius:20px;font-size:.65rem;font-weight:700;padding:.12rem .45rem">${PRIORITY_LABELS[pr]}</span>
+          </div>
+          <span style="font-size:.72rem;color:#64748b">${fmtDT(r.created_at)}</span>
+        </div>
+        <div style="padding:.8rem 1rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem">
+            <div style="font-size:.82rem"><span style="color:#64748b">السائق: </span><strong>${r.driver_name||'—'}</strong></div>
+            ${r.type==='odometer_change'&&r.new_odometer?`<div style="font-size:.82rem"><span style="color:#64748b">العداد المطلوب: </span><strong style="color:#3b82f6">${r.new_odometer} كم</strong></div>`:'<div></div>'}
+          </div>
+          ${r.notes?`<div style="font-size:.82rem;color:#475569;background:white;border-radius:8px;padding:.4rem .7rem;margin-bottom:.4rem;border:1px solid #e2e8f0">📝 طلب السائق: ${r.notes}</div>`:''}
+          ${r.admin_notes?`<div style="font-size:.82rem;background:#f8fafc;border-radius:8px;padding:.4rem .7rem;margin-bottom:.4rem;border:1px solid #e2e8f0">🗒️ توصية الأدمن (${r.handled_by||'—'}): ${r.admin_notes}</div>`:''}
+          ${r.admin_message?`<div style="font-size:.82rem;background:#f0fdf9;border-radius:8px;padding:.4rem .7rem;margin-bottom:.4rem;border:1.5px solid #6ee7b7">💬 رسالة للسائق: ${r.admin_message}</div>`:''}
+          <div style="display:flex;gap:.5rem;margin-top:.7rem">
+            <button class="btn btn-sm" onclick="openSuperDecisionModal(${r.id},'approved')"
+                    style="background:#10b981;color:white;border:none">✅ قبول نهائي</button>
+            <button class="btn btn-sm" onclick="openSuperDecisionModal(${r.id},'rejected')"
+                    style="background:#ef4444;color:white;border:none">❌ رفض نهائي</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏛️ اتخاذ قرار — الطلبات المحالة للسوبر (${pending.length})</div>
+        <button class="btn btn-ghost btn-sm" onclick="renderSuperDecisions()">🔄 تحديث</button>
+      </div>
+      <div style="padding:0 1.2rem 1rem">
+        ${filterBtns}
+        ${pending.length===0
+          ? '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد طلبات محالة — كل شيء تمام</p></div>'
+          : `<div>${rows}</div>`}
+      </div>
+    </div>`;
+}
+
+function sdFilter(f, btn) {
+  document.querySelectorAll('.sd-filter').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.sd-card').forEach(card=>{
+    card.style.display = (f==='all'||card.dataset.priority===f)?'block':'none';
+  });
+}
+
 const renderSuperAdmins      = () => renderSuperUserRole('admin');
 const renderSuperReporters   = () => renderSuperUserRole('reporter');
 const openAddAdminModal      = () => openAddRoleModal('admin');

@@ -322,20 +322,44 @@ def _safe_add_columns(c):
 
     # Create driver_requests table if not exists
     c.execute("""CREATE TABLE IF NOT EXISTS driver_requests (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        driver_id     INTEGER NOT NULL,
-        type          TEXT NOT NULL,
-        notes         TEXT DEFAULT '',
-        new_odometer  REAL,
-        trip_id       INTEGER,
-        status        TEXT DEFAULT 'pending',
-        admin_notes   TEXT DEFAULT '',
-        admin_message TEXT DEFAULT '',
-        handled_by    TEXT DEFAULT '',
-        handled_at    TEXT DEFAULT '',
-        created_at    TEXT NOT NULL,
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        driver_id           INTEGER NOT NULL,
+        type                TEXT NOT NULL,
+        notes               TEXT DEFAULT '',
+        new_odometer        REAL,
+        trip_id             INTEGER,
+        status              TEXT DEFAULT 'pending',
+        priority            TEXT DEFAULT 'medium',
+        admin_notes         TEXT DEFAULT '',
+        admin_message       TEXT DEFAULT '',
+        handled_by          TEXT DEFAULT '',
+        handled_at          TEXT DEFAULT '',
+        forwarded_to_super  INTEGER DEFAULT 0,
+        super_decision      TEXT DEFAULT '',
+        super_notes         TEXT DEFAULT '',
+        super_handled_by    TEXT DEFAULT '',
+        super_handled_at    TEXT DEFAULT '',
+        created_at          TEXT NOT NULL,
         FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
     )""")
+
+    # Migrate driver_requests new columns
+    try:
+        c.execute("PRAGMA table_info(driver_requests)")
+        existing_req_cols = {row["name"] for row in c.fetchall()}
+        req_new_cols = [
+            ("priority",           "TEXT DEFAULT 'medium'"),
+            ("forwarded_to_super", "INTEGER DEFAULT 0"),
+            ("super_decision",     "TEXT DEFAULT ''"),
+            ("super_notes",        "TEXT DEFAULT ''"),
+            ("super_handled_by",   "TEXT DEFAULT ''"),
+            ("super_handled_at",   "TEXT DEFAULT ''"),
+        ]
+        for col, col_type in req_new_cols:
+            if col not in existing_req_cols:
+                c.execute(f"ALTER TABLE driver_requests ADD COLUMN {col} {col_type}")
+    except Exception as e:
+        log.warning(f"driver_requests migration: {e}")
     c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
 
@@ -1205,15 +1229,7 @@ async def get_trips(cu: dict = Depends(get_user)):
             did = cu.get("driver_id")
             if not did: return []
             c.execute("SELECT * FROM trips WHERE driver_id=? ORDER BY id DESC LIMIT 200", (did,))
-        rows = [enrich(dict(r)) for r in c.fetchall()]
-
-        # ── السوبر يوزر بس يشوف أوقات الرحلات — الأدمن والريبورتر والسائق لا يشوفوها ──
-        if cu["role"] != "superuser":
-            for row in rows:
-                row["start_time"] = None
-                row["end_time"]   = None
-
-        return rows
+        return [enrich(dict(r)) for r in c.fetchall()]
 
 @app.post("/trips/start", response_model=TripResp)
 async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
@@ -1518,43 +1534,10 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
             except Exception:
                 pass  # لو التحليل فشل نكمل عادي
 
-        # ── جيب الرحلة النشطة لهذا السائق ──
-        c.execute("""
-            SELECT id, start_odometer, start_location
-            FROM trips
-            WHERE driver_id=? AND end_time IS NULL
-            ORDER BY id DESC LIMIT 1
-        """, (rec.driver_id,))
-        active = c.fetchone()
-        auto_ended = False
-
-        if active:
-            start_odo = float(active["start_odometer"] or 0)
-            # استخدم العداد المرسل لو أكبر من البداية، وإلا اتركه NULL
-            end_odo = None
-            if rec.odometer is not None:
-                try:
-                    end_odo_val = float(rec.odometer)
-                    if end_odo_val > start_odo:
-                        end_odo = end_odo_val
-                    else:
-                        log_event("garage_odometer_ignored",
-                                  driver_id=rec.driver_id, trip_id=active["id"],
-                                  sent=rec.odometer, start_odo=start_odo)
-                except (TypeError, ValueError):
-                    pass
-
-            # أنهي الرحلة النشطة بموقع + وقت الجراج
-            c.execute(
-                "UPDATE trips SET end_time=?,end_odometer=?,end_location=?,garage_location=? WHERE id=?",
-                (now, end_odo, loc, loc, active["id"])
-            )
-            auto_ended = True
-            log_event("garage_trip_auto_ended",
-                      trip_id=active["id"], driver_id=rec.driver_id,
-                      garage_location=loc, end_odometer=end_odo)
-        else:
-            log_event("garage_no_active_trip", driver_id=rec.driver_id)
+        # ── الجراج يُسجَّل مستقلاً عن انتهاء الرحلة ──
+        # السائق ينهي رحلته بزر منفصل، والجراج يُسجَّل مرة واحدة في نهاية اليوم
+        log_event("garage_record_attempt", driver_id=rec.driver_id,
+                  car_id=rec.car_id, location=loc)
 
         # ── أدرج سجل الجراج الجديد ──
         c.execute(
@@ -1574,7 +1557,7 @@ async def create_garage_record(rec: GarageRecordCreate, cu: dict = Depends(get_u
 
         return {"id":rid,"driver_id":rec.driver_id,"car_id":rec.car_id,
                 "location":loc,"recorded_at":now,"notes":rec.notes or "",
-                "driver_name":dn,"car_plate":plate,"trip_auto_ended":auto_ended}
+                "driver_name":dn,"car_plate":plate}
 
 @app.get("/garage/records")
 async def get_garage_records(cu: dict = Depends(get_user)):
@@ -1591,57 +1574,6 @@ async def get_garage_records(cu: dict = Depends(get_user)):
             if not did: return []
             c.execute(q + " WHERE g.driver_id=? ORDER BY g.id DESC LIMIT 200", (did,))
         return [dict(r) for r in c.fetchall()]
-
-@app.get("/garage/my-location")
-async def garage_my_location(cu: dict = Depends(get_user)):
-    """
-    يرجع آخر موقع جراج مسجّل للسائق الحالي.
-    يُستخدم عند فتح شاشة تسجيل الجراج لإظهار الموقع المحفوظ مسبقاً.
-    """
-    driver_id = cu.get("driver_id")
-    # الأدمن والسوبر يوزر يمكنهم الاستعلام عن أي سائق عبر query param
-    # لكن للسائق نفسه يُرجع موقعه مباشرة
-    if not driver_id and cu["role"] not in ("admin", "superuser"):
-        raise HTTPException(403, "غير مصرح")
-
-    with get_db() as conn:
-        c = conn.cursor()
-        if driver_id:
-            c.execute("""
-                SELECT g.location, g.recorded_at, g.notes, c.plate as car_plate
-                FROM garage_records g
-                LEFT JOIN cars c ON g.car_id = c.id
-                WHERE g.driver_id = ?
-                ORDER BY g.id DESC LIMIT 1
-            """, (driver_id,))
-        else:
-            return {"location": None, "recorded_at": None, "notes": "", "car_plate": None}
-        row = c.fetchone()
-        if not row:
-            return {"location": None, "recorded_at": None, "notes": "", "car_plate": None}
-        return dict(row)
-
-
-@app.get("/garage/driver-location/{driver_id}")
-async def garage_driver_location(driver_id: int, cu: dict = Depends(require_admin)):
-    """
-    [أدمن/سوبر فقط] يرجع آخر موقع جراج مسجّل لسائق معين.
-    """
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT g.location, g.recorded_at, g.notes, c.plate as car_plate, d.name as driver_name
-            FROM garage_records g
-            LEFT JOIN cars c ON g.car_id = c.id
-            LEFT JOIN drivers d ON g.driver_id = d.id
-            WHERE g.driver_id = ?
-            ORDER BY g.id DESC LIMIT 1
-        """, (driver_id,))
-        row = c.fetchone()
-        if not row:
-            return {"location": None, "recorded_at": None, "notes": "", "car_plate": None, "driver_name": None}
-        return dict(row)
-
 
 @app.get("/garage/latest")
 async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
@@ -2138,88 +2070,6 @@ async def audit_logs_summary(cu: dict = Depends(require_superuser)):
     return {"by_role": by_role, "top_actions": top_actions, "recent": recent}
 
 
-@app.get("/superuser/driver-trends")
-async def driver_trends(
-    date_from: Optional[str] = None,
-    date_to:   Optional[str] = None,
-    cu: dict = Depends(require_superuser)
-):
-    """
-    [سوبر يوزر فقط] تريند السائقين: أول 5 وآخر 5 بحسب عدد الرحلات والمسافة المقطوعة.
-    يمكن تصفية الفترة بـ date_from و date_to (YYYY-MM-DD).
-
-    يرجع:
-      - by_trips:    { top5: [...], bottom5: [...] }   — مرتبين بعدد الرحلات
-      - by_distance: { top5: [...], bottom5: [...] }   — مرتبين بإجمالي المسافة
-      - period: { date_from, date_to }
-    """
-    with get_db() as conn:
-        c = conn.cursor()
-
-        # بناء شروط التصفية
-        conds = [
-            "t.end_time IS NOT NULL",
-            "t.start_odometer IS NOT NULL",
-            "t.end_odometer > t.start_odometer",
-            "(t.end_odometer - t.start_odometer) < 2000",
-        ]
-        params = []
-        if date_from:
-            conds.append("date(t.start_time) >= ?")
-            params.append(date_from)
-        if date_to:
-            conds.append("date(t.start_time) <= ?")
-            params.append(date_to)
-        where_sql = " AND ".join(conds)
-
-        # جيب كل السائقين مع إحصائياتهم
-        c.execute(f"""
-            SELECT
-                d.id                                                     AS driver_id,
-                d.name                                                   AS driver_name,
-                d.branch                                                 AS branch,
-                COUNT(t.id)                                              AS trip_count,
-                ROUND(SUM(t.end_odometer - t.start_odometer), 1)        AS total_km
-            FROM drivers d
-            LEFT JOIN trips t ON t.driver_id = d.id AND {where_sql}
-            WHERE d.status = 'active'
-            GROUP BY d.id, d.name, d.branch
-            ORDER BY trip_count DESC, total_km DESC
-        """, params)
-        all_drivers = [dict(r) for r in c.fetchall()]
-
-        # تأكد من قيم None تتحول لـ 0
-        for drv in all_drivers:
-            drv["trip_count"] = drv["trip_count"] or 0
-            drv["total_km"]   = drv["total_km"]   or 0.0
-
-        # ── ترتيب بعدد الرحلات ──
-        by_trips_sorted = sorted(all_drivers, key=lambda x: (x["trip_count"], x["total_km"]), reverse=True)
-        top5_trips    = by_trips_sorted[:5]
-        bottom5_trips = list(reversed(by_trips_sorted[-5:])) if len(by_trips_sorted) >= 5 else list(reversed(by_trips_sorted))
-
-        # ── ترتيب بالمسافة المقطوعة ──
-        by_km_sorted = sorted(all_drivers, key=lambda x: (x["total_km"], x["trip_count"]), reverse=True)
-        top5_km    = by_km_sorted[:5]
-        bottom5_km = list(reversed(by_km_sorted[-5:])) if len(by_km_sorted) >= 5 else list(reversed(by_km_sorted))
-
-        return {
-            "by_trips": {
-                "top5":    top5_trips,
-                "bottom5": bottom5_trips,
-            },
-            "by_distance": {
-                "top5":    top5_km,
-                "bottom5": bottom5_km,
-            },
-            "total_drivers": len(all_drivers),
-            "period": {
-                "date_from": date_from or None,
-                "date_to":   date_to   or None,
-            },
-        }
-
-
 # ══════════════════════════════════════════════════════
 # 23. DRIVER REQUESTS
 # ══════════════════════════════════════════════════════
@@ -2289,17 +2139,24 @@ async def requests_pending_count(cu: dict = Depends(require_admin_or_reporter)):
         return {"count": row["cnt"] if row else 0}
 
 
+PRIORITY_VALUES = {"urgent", "medium", "deferrable"}
+
 @app.put("/requests/{rid}")
 async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
+    """
+    Admin: يضيف priority + admin_notes + admin_message ويحيل للسوبر.
+    Superuser: يمكنه الموافقة/الرفض مباشرة (يتجاوز دور الأدمن).
+    """
     if cu["role"] not in ("admin", "superuser"):
         raise HTTPException(403, "غير مصرح")
 
-    status        = (body.get("status") or "").strip()
     admin_notes   = (body.get("admin_notes") or "").strip()
     admin_message = (body.get("admin_message") or "").strip()
+    priority      = (body.get("priority") or "medium").strip()
+    forward       = bool(body.get("forward_to_super", False))
 
-    if status not in ("approved", "rejected"):
-        raise HTTPException(400, "الحالة يجب أن تكون approved أو rejected")
+    if priority not in PRIORITY_VALUES:
+        priority = "medium"
 
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
@@ -2308,13 +2165,44 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
         req = c.fetchone()
         if not req:
             raise HTTPException(404, "الطلب غير موجود")
-        c.execute("""UPDATE driver_requests
-                     SET status=?, admin_notes=?, admin_message=?,
-                         handled_by=?, handled_at=?
-                     WHERE id=?""",
-                  (status, admin_notes, admin_message, cu["username"], now, rid))
-    log_event("request_handled", request_id=rid, status=status, handled_by=cu["username"])
-    return {"ok": True}
+
+        if cu["role"] == "admin":
+            # الأدمن يضيف ملاحظاته ويحيل للسوبر — لا يقرر نهائياً
+            new_status = "pending_super" if forward else req["status"]
+            c.execute("""UPDATE driver_requests
+                         SET admin_notes=?, admin_message=?, priority=?,
+                             forwarded_to_super=?, handled_by=?, handled_at=?,
+                             status=?
+                         WHERE id=?""",
+                      (admin_notes, admin_message, priority,
+                       1 if forward else req["forwarded_to_super"],
+                       cu["username"], now, new_status, rid))
+            log_event("request_forwarded_by_admin", request_id=rid,
+                      priority=priority, forwarded=forward, admin=cu["username"])
+            return {"ok": True, "forwarded": forward}
+
+        else:  # superuser — قرار نهائي
+            status = (body.get("status") or "").strip()
+            if status not in ("approved", "rejected"):
+                raise HTTPException(400, "الحالة يجب أن تكون approved أو rejected")
+            super_notes = (body.get("super_notes") or "").strip()
+            c.execute("""UPDATE driver_requests
+                         SET status=?, super_decision=?, super_notes=?,
+                             super_handled_by=?, super_handled_at=?
+                         WHERE id=?""",
+                      (status, status, super_notes, cu["username"], now, rid))
+            log_event("request_decided_by_super", request_id=rid,
+                      status=status, superuser=cu["username"])
+            return {"ok": True, "status": status}
+
+
+@app.get("/requests/pending-super-count")
+async def pending_super_count(cu: dict = Depends(require_superuser)):
+    """عدد الطلبات المحالة للسوبر وبانتظار قرار."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) as cnt FROM driver_requests WHERE status='pending_super'")
+        return {"count": c.fetchone()["cnt"]}
 
 
 
