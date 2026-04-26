@@ -1150,10 +1150,10 @@ async function renderOverview() {
       return `<div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
         <div class="card-header"><div class="card-title" style="color:#92400e">⚠️ رخص قاربت على الانتهاء أو منتهية (${expiring.length})</div></div>
         <div class="table-wrap"><table><thead><tr>
-          <th>السائق</th><th>الرقم التعريفي</th><th>انتهاء رخصة السائق</th><th>انتهاء رخصة العربة</th>
+          <th>السائق</th><th>الرقم التعريفي</th><th>انتهاء رخصة السائق</th>
         </tr></thead><tbody>
         ${expiring.map(d=>{
-          return '<tr><td><strong>'+d.name+'</strong></td><td><code>'+(d.national_id||'—')+'</code></td><td>'+licBadge(d.driver_license_expiry)+'</td><td>'+licBadge(d.vehicle_license_expiry)+'</td></tr>';
+          return '<tr><td><strong>'+d.name+'</strong></td><td><code>'+(d.national_id||'—')+'</code></td><td>'+licBadge(d.driver_license_expiry)+'</td></tr>';
         }).join('')}
         </tbody></table></div>
       </div>`;
@@ -1177,7 +1177,7 @@ async function renderDriversSection() {
       <div class="table-wrap" id="driversList">
         <table><thead><tr>
           <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم التعريفي</th>
-          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th><th>انتهاء رخصة العربة</th>
+          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody>
         ${drivers.length ? drivers.map(d=>{
@@ -1188,7 +1188,6 @@ async function renderDriversSection() {
             <td><code>${d.national_id||'—'}</code></td>
             <td style="font-size:.82rem">${d.birth_date||'—'}</td>
             <td>${licBadge(d.driver_license_expiry, true)}</td>
-            <td>${licBadge(d.vehicle_license_expiry, true)}</td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
               ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
@@ -1200,7 +1199,7 @@ async function renderDriversSection() {
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
-        }).join('') : '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
+        }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
         </tbody></table>
       </div>
     </div>`;
@@ -4933,9 +4932,7 @@ async function doImportPreview() {
   const fd = new FormData();
   fd.append('file', file);
 
-  const token = localStorage.getItem('accessToken');
-  try {
-    const res = await fetch(`/import/preview?import_type=${importType}`, {
+  const token = getToken();
       method:'POST',
       headers:{ Authorization:`Bearer ${token}` },
       body: fd
@@ -5035,9 +5032,7 @@ async function doImportConfirm() {
   const fd = new FormData();
   fd.append('file', file);
 
-  const token = localStorage.getItem('accessToken');
-  try {
-    const res = await fetch(`/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`, {
+  const token = getToken();
       method:'POST',
       headers:{ Authorization:`Bearer ${token}` },
       body: fd
