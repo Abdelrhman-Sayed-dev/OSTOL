@@ -1465,7 +1465,10 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             if not row:
                 c.execute("SELECT value FROM app_settings WHERE key=?", (f"price_{rec.type}",))
                 row = c.fetchone()
-            final_price = float(row["value"]) if row else 0.0
+            unit_price = float(row["value"]) if row else 0.0
+    # اخزّن السعر الإجمالي = سعر الوحدة × الكمية
+    qty = rec.quantity if rec.quantity and rec.quantity > 0 else 1.0
+    final_price = unit_price * qty
     if final_price < 0:
         raise HTTPException(400, "السعر لا يمكن أن يكون سالباً")
     now = datetime.utcnow().isoformat() + "Z"
