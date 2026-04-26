@@ -1013,10 +1013,39 @@ function branchQ() {
     return '?branch='+encodeURIComponent(window._superBranch);
   return '';
 }
+
+const BRANCHES = [
+  "القاهرة",
+  "مدينة نصر",
+  "حلوان",
+  "صيناء القصور والآثار",
+  "المنشآت المتميزة",
+  "مشروع منوريل 6 أكتوبر",
+  "مشروع المرحلة الأولى من الخط الرابع مترو الأنفاق القاهرة الكبرى",
+  "الأعمال الكهربائية",
+  "مشروعات كهروميكانيكية للمباني العامة والمرافق",
+  "مشروعات كهروميكانيكية لمياه الشرب والصرف الصحي والمصانع",
+  "المصانع والورش المركزية",
+  "ترسانة المعصرة",
+  "الأعمال الاعتيادية",
+  "أعمال الصحي والتشطيبات",
+  "الشدات والأعمال التخصصية",
+  "الكباري والأعمال التخصصية",
+];
+
+/** يبني <option> tags من قائمة الفروع الثابتة */
+function branchOptions(selected='') {
+  return '<option value="">— اختر الفرع / الإدارة —</option>'
+    + BRANCHES.map(b=>`<option value="${b}" ${b===selected?'selected':''}>${b}</option>`).join('');
+}
 function setSuperBranch(branch, btn) {
   window._superBranch = branch;
   document.querySelectorAll('.branch-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
+  renderSection('overview');
+}
+function setSuperBranchFromSelect(val) {
+  window._superBranch = val || null;
   renderSection('overview');
 }
 
@@ -1132,18 +1161,19 @@ async function renderSection(id) {
 
 /* ── OVERVIEW ── */
 async function renderOverview() {
-  // ── فلتر الفرع للسوبر يوزر ──
+  // ── فلتر الفرع للسوبر يوزر (dropdown مدمج) ──
   if(isSuperuser()) {
-    const branches = await loadBranches();
     const sel = document.createElement('div');
     sel.id = 'branchFilterBar';
-    sel.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.6rem 1rem;background:var(--surface-2);border-radius:12px;margin-bottom:1rem;flex-wrap:wrap';
+    sel.style.cssText = 'display:flex;align-items:center;gap:.7rem;padding:.65rem 1rem;background:var(--surface-2);border-radius:12px;margin-bottom:1rem';
     sel.innerHTML = `
-      <span style="font-size:.82rem;color:var(--muted);font-weight:600">📍 فلتر الفرع:</span>
-      <button class="btn btn-ghost btn-sm branch-btn ${!window._superBranch?'active':''}"
-        onclick="setSuperBranch(null,this)">🌐 كل الفروع</button>
-      ${branches.map(b=>`<button class="btn btn-ghost btn-sm branch-btn ${window._superBranch===b?'active':''}"
-        onclick="setSuperBranch('${b}',this)">${b}</button>`).join('')}
+      <span style="font-size:.82rem;color:var(--muted);font-weight:600;white-space:nowrap">📍 الفرع:</span>
+      <select id="superBranchSelect" onchange="setSuperBranchFromSelect(this.value)"
+        style="flex:1;padding:.4rem .7rem;border:1.5px solid var(--border);border-radius:10px;
+               font-family:inherit;font-size:.85rem;background:var(--bg);color:var(--text)">
+        <option value="">🌐 كل الفروع</option>
+        ${BRANCHES.map(b=>`<option value="${b}" ${window._superBranch===b?'selected':''}>${b}</option>`).join('')}
+      </select>
     `;
     const pc = document.getElementById('pageContent');
     pc.innerHTML = '';
@@ -1167,10 +1197,13 @@ async function renderOverview() {
   const garageCount = parkedCarIds.size;
   const unread = emgs.filter(e=>!e.is_read).length;
   const completed = trips.filter(t=>t.end_time).length;
-  const totalKm = trips.filter(t=>t.end_time&&t.end_odometer&&t.start_odometer)
-    .reduce((s,t)=>s+(t.end_odometer-t.start_odometer),0);
+  const totalKm = trips
+    .filter(t=>t.end_time && parseFloat(t.end_odometer)>0 && parseFloat(t.start_odometer)>0
+               && parseFloat(t.end_odometer) > parseFloat(t.start_odometer))
+    .reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
   const fuelRecords = records.filter(r=>r.type&&r.type.startsWith('fuel_'));
-  const fuelCost = fuelRecords.reduce((s,r)=>s+(r.price||0),0);
+  // التكلفة = الكمية (لتر) × سعر الوحدة المخزّن وقت التسجيل
+  const fuelCost = fuelRecords.reduce((s,r)=>s+((parseFloat(r.quantity)||0)*(parseFloat(r.price)||0)),0);
 
   const today = new Date(); today.setHours(0,0,0,0);
   const days7 = Array.from({length:7},(_,i)=>{
@@ -1188,7 +1221,7 @@ async function renderOverview() {
   const carKmMap = {};
   trips.filter(t=>t.end_time&&t.end_odometer>t.start_odometer).forEach(t=>{ const c=cars.find(ca=>ca.id===t.car_id); if(c){carKmMap[c.plate]=(carKmMap[c.plate]||0)+(t.end_odometer-t.start_odometer);} });
   const topCarsKm = Object.entries(carKmMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const fuelPerDay = days7.map(day=>fuelRecords.filter(r=>(r.created_at||'').startsWith(day)).reduce((s,r)=>s+(r.price||0),0));
+  const fuelPerDay = days7.map(day=>fuelRecords.filter(r=>(r.created_at||'').startsWith(day)).reduce((s,r)=>s+((parseFloat(r.quantity)||0)*(parseFloat(r.price)||0)),0));
 
   const latestRows = trips.slice(0,8).map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
@@ -1207,8 +1240,8 @@ async function renderOverview() {
       <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${cars.filter(c=>c.status!=='inactive').length}</div><div class="stat-label">مركبات نشطة</div></div>
       <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value" style="color:#10b981">${active}</div><div class="stat-label">رحلة جارية</div></div>
       <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value">${completed}</div><div class="stat-label">رحلة مكتملة</div></div>
-      <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value" style="color:#f59e0b">${Math.round(totalKm).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي المسافة (كم)</div></div>
-      <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value" style="color:#3b82f6">${Math.round(fuelCost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة الوقود</div></div>
+      <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value" style="color:#f59e0b">${totalKm>0?Math.round(totalKm).toLocaleString('ar-EG'):'—'}</div><div class="stat-label">إجمالي المسافة (كم)</div></div>
+      <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value" style="color:#3b82f6">${Math.round(fuelCost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة الوقود (جنيه)</div></div>
       <div class="stat-card"><div class="stat-icon">🚨</div><div class="stat-value" style="color:${unread>0?'#dc2626':'var(--primary)'}">${unread}</div><div class="stat-label">بلاغ غير مقروء</div></div>
     </div>
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1rem">
@@ -1381,7 +1414,7 @@ function openAddDriverModal() {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group"><label>الرقم الثابت</label><input id="mDrvFixed" placeholder="مثال: 206338"></div>
-      <div class="form-group"><label>الفرع / الإدارة</label><input id="mDrvBranch" placeholder="مثال: فرع القاهرة"></div>
+      <div class="form-group"><label>الفرع / الإدارة</label><select id="mDrvBranch">${branchOptions()}</select></div>
     </div>
 
     <div class="modal-footer">
@@ -1455,7 +1488,7 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group"><label>الرقم الثابت</label><input id="mEditFixed" value="${fixed_number||''}"></div>
-      <div class="form-group"><label>الفرع / الإدارة</label><input id="mEditBranch" value="${branch||''}"></div>
+      <div class="form-group"><label>الفرع / الإدارة</label><select id="mEditBranch">${branchOptions(branch||'')}</select></div>
     </div>
 
     <hr style="margin:1rem 0;border:none;border-top:1px solid var(--border)">
@@ -1653,7 +1686,7 @@ function openAddCarModal(editId='', editCar={}) {
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>الفرع / الإدارة</label>
-        <input id="mCarBranch" placeholder="مثال: فرع القاهرة" value="${editCar.branch||''}">
+        <select id="mCarBranch">${branchOptions(editCar.branch||'')}</select>
       </div>
     </div>
 
@@ -2065,7 +2098,7 @@ async function renderAdminWorkshops() {
     <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1.2rem">
       <div class="card-header">
         <div class="card-title" style="color:#065f46">💰 أسعار الصيانة لكل نوع (يُطبَّق تلقائياً على السائقين)</div>
-        ${!isReporter() ? `<button class="btn btn-success btn-sm" onclick="saveTypePrices()">💾 حفظ الأسعار</button>` : ''}
+        ${isSuperuser() ? `<button class="btn btn-success btn-sm" onclick="saveTypePrices()">💾 حفظ الأسعار</button>` : '<span style="font-size:.78rem;color:var(--muted)">👁️ عرض فقط — الأسعار يحددها السوبر يوزر</span>'}
       </div>
       <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:12px;padding:.9rem;margin-bottom:.8rem">
         <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.7rem">⛽ أنواع الوقود — سعر اللتر (جنيه)</div>
@@ -2074,7 +2107,7 @@ async function renderAdminWorkshops() {
             <div style="background:white;border-radius:8px;padding:.7rem;border:1px solid #fde68a">
               <div style="font-size:.77rem;font-weight:700;color:#b45309;margin-bottom:.3rem">⛽ ${f.label}</div>
               <div style="display:flex;align-items:center;gap:.3rem">
-                <input type="number" id="typePrice_${f.key}" value="${currentPrices[f.key]||0}"
+                <input type="number" id="typePrice_${f.key}" value="${currentPrices[f.key]||0}" ${!isSuperuser()?"disabled":""}
                   placeholder="0" min="0" step="0.01" ${isReporter()?'disabled':''}
                   style="width:100%;padding:.4rem .6rem;border:1.5px solid #f59e0b;border-radius:7px;font-size:.85rem">
                 <span style="font-size:.72rem;color:var(--muted)">جنيه</span>
@@ -2087,7 +2120,7 @@ async function renderAdminWorkshops() {
           <div style="background:white;border-radius:10px;padding:.8rem;border:1px solid #e2e8f0">
             <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.4rem">${v.icon} ${v.label}</div>
             <div style="display:flex;align-items:center;gap:.4rem">
-              <input type="number" id="typePrice_${k}" value="${currentPrices[k]||0}" placeholder="0" min="0" step="0.01" ${isReporter()?'disabled':''}
+              <input type="number" id="typePrice_${k}" value="${currentPrices[k]||0}" placeholder="0" min="0" step="0.01" ${!isSuperuser()?'disabled':''}
                 style="width:100%;padding:.45rem .7rem;border:1.5px solid #10b981;border-radius:8px;font-size:.88rem">
               <span style="font-size:.78rem;color:var(--muted);white-space:nowrap">جنيه</span>
             </div>
@@ -4085,7 +4118,7 @@ function openEmergencyActionModal(reportId) {
 
 /* ── PER-TYPE PRICE MANAGEMENT ── */
 async function saveTypePrices() {
-  if(isReporter()){ showNotification('⛔ المراقب لا يملك صلاحية التعديل','error'); return; }
+  if(!isSuperuser()){ showNotification('⛔ فقط السوبر يوزر يستطيع تعديل الأسعار','error'); return; }
   const body={};
   Object.keys(WT).forEach(k=>{
     const el=document.getElementById('typePrice_'+k);
@@ -4365,8 +4398,8 @@ async function renderDriverSinglePage() {
       ${(()=>{
         const myTrips = allTrips.filter(t=>t.driver_id===currentUser.driver_id);
         const myCompleted = myTrips.filter(t=>t.end_time);
-        const myKm = myCompleted.filter(t=>t.end_odometer&&t.start_odometer)
-          .reduce((s,t)=>s+(t.end_odometer-t.start_odometer),0);
+        const myKm = myCompleted.filter(t=>parseFloat(t.end_odometer)>parseFloat(t.start_odometer))
+          .reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
         const weekAgo = new Date(Date.now()-7*864e5).toISOString();
         const weeklyTrips = myCompleted.filter(t=>t.end_time>=weekAgo).length;
         if(!myTrips.length) return '';
@@ -5149,7 +5182,7 @@ function openAddRoleModal(role) {
       <input type="password" id="rolePwInput" placeholder="كلمة المرور"></div>
     <div class="form-group">
       <label>الفرع <span style="font-size:.75rem;color:var(--muted)">(اتركه فارغاً ليرى كل الفروع)</span></label>
-      <input type="text" id="roleBranchInput" placeholder="مثال: القاهرة، الإسكندرية، أسيوط...">
+      <select id="roleBranchInput">${branchOptions()}</select>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
@@ -5183,7 +5216,7 @@ function openEditRoleModal(role, uid, oldUsername, oldBranch='') {
       <input type="password" id="rolePwInput" placeholder="اتركها فارغة للإبقاء على الحالية"></div>
     <div class="form-group">
       <label>الفرع <span style="font-size:.75rem;color:var(--muted)">(فارغ = يرى كل الفروع)</span></label>
-      <input type="text" id="roleBranchInput" value="${oldBranch}" placeholder="مثال: القاهرة، الإسكندرية...">
+      <select id="roleBranchInput">${branchOptions(oldBranch)}</select>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
