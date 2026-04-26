@@ -1,267 +1,196 @@
+#!/usr/bin/env python3
 """
-seed_data.py — استيراد بيانات السائقين والمركبات من ملفات Excel
-يُشغَّل مرة واحدة بجانب ملف قاعدة البيانات trip_tracker.db
+سكريبت استيراد السائقين من Excel
+Fleet Management System - Bulk Driver Import
 """
 
-import os
-import sqlite3
 import pandas as pd
-import bcrypt
+import requests
+import re
+import sys
 from datetime import datetime
 
-# ──────────────────────────────────────────────
-# إعدادات
-# ──────────────────────────────────────────────
-DB_PATH   = os.environ.get("DATABASE_PATH", "trip_tracker.db")
-SKIP_NAMES = {"عمرة محرك", "محرك إستيراد", ""}   # أسماء وهمية / بدون سائق
-
-# ──────────────────────────────────────────────
-# مساعدات
-# ──────────────────────────────────────────────
-def hash_pw(pw: str) -> str:
-    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
-
-def s(val) -> str:
-    """تحويل آمن لـ string"""
-    if pd.isna(val) if not isinstance(val, str) else False:
-        return ""
-    return str(val).strip()
-
-def parse_date(val) -> str:
-    """تحويل أي صيغة تاريخ إلى YYYY-MM-DD"""
-    raw = s(val)
-    if not raw or raw in ("NaT", "nan"):
-        return ""
-    raw = raw.split(" ")[0]          # إزالة وقت من Timestamp
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return raw   # إذا مش عارف يحللها، يرجعها كما هي
-
-# ──────────────────────────────────────────────
-# اتصال بقاعدة البيانات
-# ──────────────────────────────────────────────
-conn = sqlite3.connect(DB_PATH)
-conn.execute("PRAGMA foreign_keys=ON")
-cur = conn.cursor()
-
-# جمع الـ usernames الموجودة مسبقاً لتجنب التكرار
-cur.execute("SELECT username FROM users")
-used_usernames: set = {r[0] for r in cur.fetchall()}
-
-# جمع أسماء السائقين الموجودة مسبقاً
-cur.execute("SELECT name FROM drivers")
-existing_driver_names: set = {r[0] for r in cur.fetchall()}
-
-# ──────────────────────────────────────────────
-# دوال الإدراج
-# ──────────────────────────────────────────────
-def make_username(full_name: str) -> str:
-    """أول كلمة من الاسم، وإذا مكررة نضيف رقم"""
-    base = full_name.strip().split()[0]
-    username = base
-    i = 1
-    while username in used_usernames:
-        username = f"{base}{i}"
-        i += 1
-    used_usernames.add(username)
-    return username
-
-
-def upsert_car(plate, model, car_name, car_code, chassis, year,
-               branch, car_license_expiry, equipment_type="") -> int | None:
-    plate = s(plate)
-    if not plate:
-        return None
-    cur.execute("SELECT id FROM cars WHERE plate=?", (plate,))
-    row = cur.fetchone()
-    if row:
-        return row[0]
-    cur.execute(
-        """INSERT INTO cars(plate, model, car_name, car_code, chassis, year,
-                            branch, car_license_expiry, equipment_type)
-           VALUES(?,?,?,?,?,?,?,?,?)""",
-        (plate, s(model), s(car_name), s(car_code), s(chassis),
-         s(year), s(branch), parse_date(car_license_expiry), s(equipment_type)),
-    )
-    return cur.lastrowid
-
-
-def insert_driver(name: str, fixed_number: str, phone: str,
-                  branch: str, driver_license_expiry, car_id: int | None):
-    name = s(name)
-    if not name or name in SKIP_NAMES:
-        return
-
-    # تجنب تكرار السائق بنفس الاسم
-    if name in existing_driver_names:
-        # نربط العربية بالسائق الموجود فقط
-        if car_id:
-            cur.execute("SELECT id FROM drivers WHERE name=?", (name,))
-            driver_row = cur.fetchone()
-            if driver_row:
-                cur.execute(
-                    "INSERT OR IGNORE INTO driver_car_permissions(driver_id,car_id) VALUES(?,?)",
-                    (driver_row[0], car_id),
-                )
-        return
-
-    existing_driver_names.add(name)
-
-    fixed_number = s(fixed_number)
-    phone        = s(phone)
-    password     = fixed_number or phone or "123456"
-    username     = make_username(name)
-
-    # إدراج مستخدم
-    cur.execute(
-        "INSERT INTO users(username, password, role) VALUES(?,?,?)",
-        (username, hash_pw(password), "driver"),
-    )
-    user_id = cur.lastrowid
-
-    # إدراج سائق
-    cur.execute(
-        """INSERT INTO drivers(name, phone, status, user_id,
-                               driver_license_expiry, branch, fixed_number)
-           VALUES(?,?,?,?,?,?,?)""",
-        (name, phone, "active", user_id,
-         parse_date(driver_license_expiry), s(branch), fixed_number),
-    )
-    driver_id = cur.lastrowid
-
-    # صلاحية العربية
-    if car_id:
-        cur.execute(
-            "INSERT OR IGNORE INTO driver_car_permissions(driver_id,car_id) VALUES(?,?)",
-            (driver_id, car_id),
-        )
-
-    print(f"  ✅  {name:<30}  user={username:<25}  pass={password}")
-
-
 # ══════════════════════════════════════════════
-# ملف 1 — المنشآت المتميزة (إدراج الشاسية)
+# ⚙️ الإعدادات — عدّلها قبل التشغيل
 # ══════════════════════════════════════════════
-print("\n📂 ملف 1 — المنشآت المتميزة")
-df1 = pd.read_excel(
-    "إدراج_الشاسية_رخصة_السير_ورخصة_القيادة_المنشات_المتميزة_شهر4-2026.xlsx",
-    header=None,
-)
-# البيانات من صف 4 (index 4)
-for _, row in df1.iloc[4:].iterrows():
-    # تخطي صفوف العناوين أو الفارغة
-    if pd.isna(row[0]) or not str(row[0]).strip().lstrip("0123456789").strip() == "":
-        # إذا العمود الأول مش رقم → عنوان قسم
-        try:
-            int(float(row[0]))
-        except (ValueError, TypeError):
+BASE_URL    = "https://ostol.onrender.com"  # رابط السيرفر
+ADMIN_USER  = "admin"                  # اسم مستخدم أدمن
+ADMIN_PASS  = "ad11228898"             # كلمة المرور
+EXCEL_FILE  = "Book1.xlsx"             # مسار ملف Excel
+# ══════════════════════════════════════════════
+
+
+def fix_phone(phone):
+    """تنظيف رقم التليفون وتوحيد صيغته"""
+    if not phone or str(phone).strip() in ('', 'nan'):
+        return ""
+    p = re.sub(r'\D', '', str(phone))
+    if len(p) == 10 and not p.startswith('0'):
+        p = '0' + p
+    return p
+
+
+def fix_date(val):
+    """تحويل التاريخ إلى صيغة YYYY-MM-DD"""
+    if not val or str(val).strip() in ('', 'nan', 'NaT'):
+        return ""
+    s = str(val).strip()
+    # pandas Timestamp
+    if hasattr(val, 'strftime'):
+        return val.strftime('%Y-%m-%d')
+    # صيغة YYYY/M/D أو YYYY-M-D
+    m = re.match(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', s)
+    if m:
+        y, mo, d = m.groups()
+        if int(y) > 2000:
+            return f"{y}-{int(mo):02d}-{int(d):02d}"
+    return ""
+
+
+def make_username(name, fixed_num):
+    """توليد username من الاسم أو الرقم الثابت"""
+    if fixed_num:
+        return f"drv_{str(fixed_num).strip()}"
+    clean = re.sub(r'\s+', '_', name.strip().lower())
+    clean = re.sub(r'[^\w]', '', clean)
+    return f"drv_{clean}"
+
+
+def make_password(fixed_num, phone):
+    """كلمة مرور افتراضية = الرقم الثابت أو آخر 6 أرقام من التليفون"""
+    if fixed_num and str(fixed_num).strip():
+        return str(fixed_num).strip()
+    ph = fix_phone(phone)
+    return ph[-6:] if len(ph) >= 6 else "123456"
+
+
+def login(session):
+    r = session.post(f"{BASE_URL}/auth/login",
+                     json={"username": ADMIN_USER, "password": ADMIN_PASS})
+    if r.status_code != 200:
+        print(f"❌ فشل تسجيل الدخول: {r.text}")
+        sys.exit(1)
+    token = r.json().get("access_token")
+    session.headers.update({"Authorization": f"Bearer {token}"})
+    print(f"✅ تم تسجيل الدخول كـ {ADMIN_USER}")
+
+
+def load_excel(path):
+    df = pd.read_excel(path, header=None)
+    # إيجاد صف الـ header (السطر اللي فيه "اسم السائق")
+    header_row = None
+    for i, row in df.iterrows():
+        if any("اسم السائق" in str(c) for c in row.values):
+            header_row = i
+            break
+    if header_row is None:
+        print("❌ مش لاقي عمود 'اسم السائق' في الملف")
+        sys.exit(1)
+    df = pd.read_excel(path, header=header_row)
+    # إزالة الأعمدة الفاضية
+    df = df.dropna(how='all', axis=1).dropna(how='all', axis=0)
+    # توحيد أسماء الأعمدة
+    col_map = {}
+    for c in df.columns:
+        cs = str(c).strip()
+        if 'اسم السائق' in cs:     col_map[c] = 'name'
+        elif 'رقم ثابت' in cs:     col_map[c] = 'fixed_number'
+        elif 'تليفون' in cs:       col_map[c] = 'phone'
+        elif 'رخصة السيارة' in cs: col_map[c] = 'vehicle_license_expiry'
+        elif 'رخصة السائق' in cs:  col_map[c] = 'driver_license_expiry'
+    df = df.rename(columns=col_map)
+    needed = ['name']
+    for n in needed:
+        if n not in df.columns:
+            print(f"❌ العمود '{n}' مش موجود في الملف")
+            sys.exit(1)
+    df = df[df['name'].notna() & (df['name'].astype(str).str.strip() != '')]
+    return df
+
+
+def import_drivers(session, df):
+    success, skipped, errors = 0, 0, 0
+    used_usernames = set()
+
+    # جلب السائقين الموجودين مسبقاً
+    existing = session.get(f"{BASE_URL}/drivers").json()
+    existing_fixed = {str(d.get('fixed_number','')) for d in existing if d.get('fixed_number')}
+    print(f"📋 سائقون موجودون مسبقاً: {len(existing)}")
+    print(f"📄 سائقون في الملف: {len(df)}")
+    print("─" * 55)
+
+    for _, row in df.iterrows():
+        name         = str(row.get('name', '')).strip()
+        fixed_num    = str(row.get('fixed_number', '')).strip().replace('.0','')
+        phone        = fix_phone(row.get('phone', ''))
+        drv_lic      = fix_date(row.get('driver_license_expiry', ''))
+        veh_lic      = fix_date(row.get('vehicle_license_expiry', ''))
+
+        if not name:
             continue
 
-    # --- بيانات العربية ---
-    car_id = upsert_car(
-        plate              = row[7],          # رقم المرور
-        model              = row[2],          # نوع السيارة
-        car_name           = row[5],          # الماركة
-        car_code           = row[3],          # رقم الكود
-        chassis            = row[4],          # رقم الشاسية
-        year               = row[6],          # سنة الصنع
-        branch             = row[1],          # الفرع
-        car_license_expiry = row[8],
-    )
+        # تخطي المكرر بالرقم الثابت
+        if fixed_num and fixed_num in existing_fixed:
+            print(f"⏭️  موجود مسبقاً: {name} ({fixed_num})")
+            skipped += 1
+            continue
 
-    # --- بيانات السائق ---
-    insert_driver(
-        name                 = row[9],        # اسم السائق
-        fixed_number         = row[10],       # الرقم الثابت
-        phone                = row[11],       # رقم التليفون
-        branch               = row[1],
-        driver_license_expiry= row[12],
-        car_id               = car_id,
-    )
+        # توليد username فريد
+        base_uname = make_username(name, fixed_num)
+        uname = base_uname
+        counter = 2
+        while uname in used_usernames:
+            uname = f"{base_uname}_{counter}"; counter += 1
+        used_usernames.add(uname)
 
+        password = make_password(fixed_num, phone)
 
-# ══════════════════════════════════════════════
-# ملف 2 — بيان سيارات الركوب — فرع القاهرة
-# ══════════════════════════════════════════════
-print("\n📂 ملف 2 — فرع القاهرة")
-df2 = pd.read_excel(
-    "بيان_بسيارات_الركوب_التابعة_لفرع_القاهرة_١٠٥٣٣٧.xlsx",
-    sheet_name="Sheet1",
-    header=None,
-)
-# البيانات من صف 5 (index 5)
-for _, row in df2.iloc[5:].iterrows():
-    try:
-        int(float(row[0]))
-    except (ValueError, TypeError):
-        continue
+        payload = {
+            "name":                    name,
+            "phone":                   phone,
+            "username":                uname,
+            "password":                password,
+            "status":                  "active",
+            "fixed_number":            fixed_num,
+            "driver_license_expiry":   drv_lic,
+            "vehicle_license_expiry":  veh_lic,
+            "national_id":             "",
+            "birth_date":              "",
+            "branch":                  ""
+        }
 
-    car_id = upsert_car(
-        plate              = row[4],          # رقم اللوحة
-        model              = row[1],          # نوع السيارة
-        car_name           = row[2],          # الماركة
-        car_code           = row[3],          # الكود
-        chassis            = row[5],          # الشاسية
-        year               = "",
-        branch             = "فرع القاهرة",
-        car_license_expiry = row[9],
-    )
+        r = session.post(f"{BASE_URL}/drivers", json=payload)
+        if r.status_code in (200, 201):
+            print(f"✅ {name:<30} | user: {uname:<25} | pass: {password}")
+            success += 1
+            if fixed_num:
+                existing_fixed.add(fixed_num)
+        elif r.status_code == 400 and "موجود" in r.text:
+            print(f"⚠️  مكرر:   {name} — {r.json().get('detail','')}")
+            skipped += 1
+        else:
+            print(f"❌ خطأ:    {name} — {r.status_code}: {r.text[:80]}")
+            errors += 1
 
-    insert_driver(
-        name                 = row[6],        # اسم السائق
-        fixed_number         = row[7],        # الرقم الثابت
-        phone                = row[8],        # رقم التليفون
-        branch               = "فرع القاهرة",
-        driver_license_expiry= row[10],
-        car_id               = car_id,
-    )
+    print("─" * 55)
+    print(f"✅ تم إضافة : {success}")
+    print(f"⏭️  تم تخطي : {skipped} (موجودون مسبقاً)")
+    print(f"❌ أخطاء    : {errors}")
+    print("─" * 55)
+    if success:
+        print("💡 كلمة مرور كل سائق = رقمه الثابت")
+        print("   (مثال: رقم ثابت 178058 → كلمة المرور 178058)")
 
 
-# ══════════════════════════════════════════════
-# ملف 3 — بيان تراخيص — صيانة القصور والآثار
-# ══════════════════════════════════════════════
-print("\n📂 ملف 3 — صيانة القصور")
-df3 = pd.read_excel(
-    "بيان_تراخيص_سيارات_وسائق.xlsx",
-    sheet_name="صبانة القصور",
-    header=None,
-)
-# البيانات من صف 4 (index 4)
-for _, row in df3.iloc[4:].iterrows():
-    try:
-        int(float(row[0]))
-    except (ValueError, TypeError):
-        continue
+def main():
+    print("=" * 55)
+    print("  🚗 استيراد السائقين — نظام إدارة الأسطول")
+    print("=" * 55)
+    s = requests.Session()
+    login(s)
+    df = load_excel(EXCEL_FILE)
+    import_drivers(s, df)
 
-    car_id = upsert_car(
-        plate              = row[6],          # رقم المرور
-        model              = row[2],          # نوع السيارة
-        car_name           = row[7],          # الماركة
-        car_code           = row[3],          # الكود
-        chassis            = row[4],          # شاسيه
-        year               = row[8],          # سنة الصنع
-        branch             = row[1],          # الإدارة/الفرع
-        car_license_expiry = row[12],
-    )
 
-    insert_driver(
-        name                 = row[9],        # اسم السائق
-        fixed_number         = row[10],       # رقم ثابت
-        phone                = row[11],       # تليفون السائق
-        branch               = row[1],
-        driver_license_expiry= row[13],
-        car_id               = car_id,
-    )
-
-# ──────────────────────────────────────────────
-# حفظ التغييرات
-# ──────────────────────────────────────────────
-conn.commit()
-conn.close()
-
-print("\n" + "="*55)
-print("✅  تم الاستيراد بنجاح!")
-print("="*55)
+if __name__ == "__main__":
+    main()
