@@ -1205,7 +1205,15 @@ async def get_trips(cu: dict = Depends(get_user)):
             did = cu.get("driver_id")
             if not did: return []
             c.execute("SELECT * FROM trips WHERE driver_id=? ORDER BY id DESC LIMIT 200", (did,))
-        return [enrich(dict(r)) for r in c.fetchall()]
+        rows = [enrich(dict(r)) for r in c.fetchall()]
+
+        # ── السوبر يوزر بس يشوف أوقات الرحلات — الأدمن والريبورتر والسائق لا يشوفوها ──
+        if cu["role"] != "superuser":
+            for row in rows:
+                row["start_time"] = None
+                row["end_time"]   = None
+
+        return rows
 
 @app.post("/trips/start", response_model=TripResp)
 async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
@@ -1583,6 +1591,57 @@ async def get_garage_records(cu: dict = Depends(get_user)):
             if not did: return []
             c.execute(q + " WHERE g.driver_id=? ORDER BY g.id DESC LIMIT 200", (did,))
         return [dict(r) for r in c.fetchall()]
+
+@app.get("/garage/my-location")
+async def garage_my_location(cu: dict = Depends(get_user)):
+    """
+    يرجع آخر موقع جراج مسجّل للسائق الحالي.
+    يُستخدم عند فتح شاشة تسجيل الجراج لإظهار الموقع المحفوظ مسبقاً.
+    """
+    driver_id = cu.get("driver_id")
+    # الأدمن والسوبر يوزر يمكنهم الاستعلام عن أي سائق عبر query param
+    # لكن للسائق نفسه يُرجع موقعه مباشرة
+    if not driver_id and cu["role"] not in ("admin", "superuser"):
+        raise HTTPException(403, "غير مصرح")
+
+    with get_db() as conn:
+        c = conn.cursor()
+        if driver_id:
+            c.execute("""
+                SELECT g.location, g.recorded_at, g.notes, c.plate as car_plate
+                FROM garage_records g
+                LEFT JOIN cars c ON g.car_id = c.id
+                WHERE g.driver_id = ?
+                ORDER BY g.id DESC LIMIT 1
+            """, (driver_id,))
+        else:
+            return {"location": None, "recorded_at": None, "notes": "", "car_plate": None}
+        row = c.fetchone()
+        if not row:
+            return {"location": None, "recorded_at": None, "notes": "", "car_plate": None}
+        return dict(row)
+
+
+@app.get("/garage/driver-location/{driver_id}")
+async def garage_driver_location(driver_id: int, cu: dict = Depends(require_admin)):
+    """
+    [أدمن/سوبر فقط] يرجع آخر موقع جراج مسجّل لسائق معين.
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT g.location, g.recorded_at, g.notes, c.plate as car_plate, d.name as driver_name
+            FROM garage_records g
+            LEFT JOIN cars c ON g.car_id = c.id
+            LEFT JOIN drivers d ON g.driver_id = d.id
+            WHERE g.driver_id = ?
+            ORDER BY g.id DESC LIMIT 1
+        """, (driver_id,))
+        row = c.fetchone()
+        if not row:
+            return {"location": None, "recorded_at": None, "notes": "", "car_plate": None, "driver_name": None}
+        return dict(row)
+
 
 @app.get("/garage/latest")
 async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
@@ -2077,6 +2136,88 @@ async def audit_logs_summary(cu: dict = Depends(require_superuser)):
                      FROM audit_logs ORDER BY id DESC LIMIT 20""")
         recent = [dict(r) for r in c.fetchall()]
     return {"by_role": by_role, "top_actions": top_actions, "recent": recent}
+
+
+@app.get("/superuser/driver-trends")
+async def driver_trends(
+    date_from: Optional[str] = None,
+    date_to:   Optional[str] = None,
+    cu: dict = Depends(require_superuser)
+):
+    """
+    [سوبر يوزر فقط] تريند السائقين: أول 5 وآخر 5 بحسب عدد الرحلات والمسافة المقطوعة.
+    يمكن تصفية الفترة بـ date_from و date_to (YYYY-MM-DD).
+
+    يرجع:
+      - by_trips:    { top5: [...], bottom5: [...] }   — مرتبين بعدد الرحلات
+      - by_distance: { top5: [...], bottom5: [...] }   — مرتبين بإجمالي المسافة
+      - period: { date_from, date_to }
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # بناء شروط التصفية
+        conds = [
+            "t.end_time IS NOT NULL",
+            "t.start_odometer IS NOT NULL",
+            "t.end_odometer > t.start_odometer",
+            "(t.end_odometer - t.start_odometer) < 2000",
+        ]
+        params = []
+        if date_from:
+            conds.append("date(t.start_time) >= ?")
+            params.append(date_from)
+        if date_to:
+            conds.append("date(t.start_time) <= ?")
+            params.append(date_to)
+        where_sql = " AND ".join(conds)
+
+        # جيب كل السائقين مع إحصائياتهم
+        c.execute(f"""
+            SELECT
+                d.id                                                     AS driver_id,
+                d.name                                                   AS driver_name,
+                d.branch                                                 AS branch,
+                COUNT(t.id)                                              AS trip_count,
+                ROUND(SUM(t.end_odometer - t.start_odometer), 1)        AS total_km
+            FROM drivers d
+            LEFT JOIN trips t ON t.driver_id = d.id AND {where_sql}
+            WHERE d.status = 'active'
+            GROUP BY d.id, d.name, d.branch
+            ORDER BY trip_count DESC, total_km DESC
+        """, params)
+        all_drivers = [dict(r) for r in c.fetchall()]
+
+        # تأكد من قيم None تتحول لـ 0
+        for drv in all_drivers:
+            drv["trip_count"] = drv["trip_count"] or 0
+            drv["total_km"]   = drv["total_km"]   or 0.0
+
+        # ── ترتيب بعدد الرحلات ──
+        by_trips_sorted = sorted(all_drivers, key=lambda x: (x["trip_count"], x["total_km"]), reverse=True)
+        top5_trips    = by_trips_sorted[:5]
+        bottom5_trips = list(reversed(by_trips_sorted[-5:])) if len(by_trips_sorted) >= 5 else list(reversed(by_trips_sorted))
+
+        # ── ترتيب بالمسافة المقطوعة ──
+        by_km_sorted = sorted(all_drivers, key=lambda x: (x["total_km"], x["trip_count"]), reverse=True)
+        top5_km    = by_km_sorted[:5]
+        bottom5_km = list(reversed(by_km_sorted[-5:])) if len(by_km_sorted) >= 5 else list(reversed(by_km_sorted))
+
+        return {
+            "by_trips": {
+                "top5":    top5_trips,
+                "bottom5": bottom5_trips,
+            },
+            "by_distance": {
+                "top5":    top5_km,
+                "bottom5": bottom5_km,
+            },
+            "total_drivers": len(all_drivers),
+            "period": {
+                "date_from": date_from or None,
+                "date_to":   date_to   or None,
+            },
+        }
 
 
 # ══════════════════════════════════════════════════════
