@@ -393,6 +393,22 @@ def _safe_add_columns(c):
                 except Exception:
                     pass
 
+    # ── تصحيح السجلات القديمة: price كان سعر/وحدة، دلوقتي يبقى إجمالي ──
+    # نضرب السجلات اللي price فيها صغيرة (< 200) وعندها كمية > 0
+    FUEL_TYPES_FOR_MIGRATION = [t for t in WORKSHOP_TYPES if t.startswith("fuel_")] + ["oil"]
+    for ws_type in FUEL_TYPES_FOR_MIGRATION:
+        try:
+            # فقط السجلات اللي price فيها أصغر من 200 (سعر/لتر عادةً) وعندها كمية
+            c.execute("""UPDATE workshop_records
+                         SET price = price * COALESCE(quantity,1)
+                         WHERE type=?
+                           AND quantity IS NOT NULL AND quantity > 0
+                           AND price > 0 AND price < 200
+                           AND quantity != 1""",
+                      (ws_type,))
+        except Exception:
+            pass
+
 # ══════════════════════════════════════════════════════
 # 4. AUTH — Access + Refresh Token system
 # ══════════════════════════════════════════════════════
@@ -1446,29 +1462,39 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
         raise HTTPException(400, "نوع غير صالح")
     if cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
-    # Enforce admin price for drivers
-    final_price = rec.price if cu["role"] in ("admin", "superuser") else 0.0
-    if cu["role"] == "driver":
-        with get_db() as conn:
-            c = conn.cursor()
-            # جيب فرع السائق
-            c.execute("SELECT branch FROM drivers WHERE id=?", (rec.driver_id,))
-            drv_row = c.fetchone()
-            drv_branch = drv_row["branch"] if drv_row else ""
-            # ابحث عن سعر الفرع أولاً، وإلا الأسعار العامة
-            if drv_branch:
-                c.execute("SELECT value FROM app_settings WHERE key=?",
-                          (f"price_{drv_branch}_{rec.type}",))
-                row = c.fetchone()
-            else:
-                row = None
-            if not row:
-                c.execute("SELECT value FROM app_settings WHERE key=?", (f"price_{rec.type}",))
-                row = c.fetchone()
-            unit_price = float(row["value"]) if row else 0.0
-    # اخزّن السعر الإجمالي = سعر الوحدة × الكمية
+    # ── احسب السعر الإجمالي بشكل موحّد لكل الأدوار ──
+    # الأنواع اللي ليها كمية: الوقود بكل أنواعه + الزيت + الكوتش
+    QUANTITY_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t in ("oil","tire")}
+    HAS_QUANTITY   = rec.type in QUANTITY_TYPES
+
+    with get_db() as conn:
+        c = conn.cursor()
+        # جيب فرع السائق/المركبة لتحديد السعر الصحيح
+        c.execute("SELECT branch FROM drivers WHERE id=?", (rec.driver_id,))
+        drv_row = c.fetchone()
+        drv_branch = drv_row["branch"] if drv_row else ""
+
+        if drv_branch:
+            c.execute("SELECT value FROM app_settings WHERE key=?",
+                      (f"price_{drv_branch}_{rec.type}",))
+            srow = c.fetchone()
+        else:
+            srow = None
+        if not srow:
+            c.execute("SELECT value FROM app_settings WHERE key=?", (f"price_{rec.type}",))
+            srow = c.fetchone()
+        unit_price_cfg = float(srow["value"]) if srow else 0.0
+
+    if cu["role"] in ("admin", "superuser"):
+        # الأدمن يرسل price من الإعدادات (سعر/وحدة) — نضرب في الكمية
+        unit_price = rec.price if rec.price and rec.price > 0 else unit_price_cfg
+    else:
+        # السائق: دايماً سعر الإعدادات
+        unit_price = unit_price_cfg
+
     qty = rec.quantity if rec.quantity and rec.quantity > 0 else 1.0
-    final_price = unit_price * qty
+    # الإجمالي = سعر الوحدة × الكمية (للأنواع ذات الكمية) أو سعر الوحدة مباشرة
+    final_price = unit_price * qty if HAS_QUANTITY else unit_price
     if final_price < 0:
         raise HTTPException(400, "السعر لا يمكن أن يكون سالباً")
     now = datetime.utcnow().isoformat() + "Z"
