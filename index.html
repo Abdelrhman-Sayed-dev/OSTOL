@@ -1192,7 +1192,9 @@ async function renderDriversSection() {
                 data-status="${d.status}" data-nid="${d.national_id||''}"
                 data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
                 data-clic="${d.vehicle_license_expiry||''}"
-                data-username="${d.username||''}">✏️</button>
+                data-username="${d.username||''}"
+                data-fixed="${d.fixed_number||''}"
+                data-branch="${d.branch||''}">✏️</button>
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
@@ -1201,7 +1203,7 @@ async function renderDriversSection() {
       </div>
     </div>`;
   document.getElementById('driversList').addEventListener('click', async e=>{
-    if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username); }
+    if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username,b.dataset.fixed,b.dataset.branch); }
     if(e.target.closest('.del-driver')){ const id=+e.target.closest('.del-driver').dataset.id; if(!confirm('حذف هذا السائق؟')) return; try{ await apiCall(`/drivers/${id}`,'DELETE'); showNotification('تم الحذف','success'); await renderDriversSection(); }catch(e){showNotification(e.message,'error');} }
   });
 }
@@ -1291,7 +1293,7 @@ function openAddDriverModal() {
   };
 }
 
-function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_license_expiry,vehicle_license_expiry,currentUsername) {
+function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_license_expiry,vehicle_license_expiry,currentUsername,fixed_number,branch) {
   openModal(`
     <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات السائق</div><button class="modal-close" onclick="closeModal()">✕</button></div>
 
@@ -1324,8 +1326,8 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group"><label>الرقم الثابت</label><input id="mEditFixed" value="${arguments[9]||''}"></div>
-      <div class="form-group"><label>الفرع / الإدارة</label><input id="mEditBranch" value="${arguments[10]||''}"></div>
+      <div class="form-group"><label>الرقم الثابت</label><input id="mEditFixed" value="${fixed_number||''}"></div>
+      <div class="form-group"><label>الفرع / الإدارة</label><input id="mEditBranch" value="${branch||''}"></div>
     </div>
 
     <hr style="margin:1rem 0;border:none;border-top:1px solid var(--border)">
