@@ -875,6 +875,31 @@ body.driver-mode { background:#f5f5f5; }
   .dp-ws-grid { gap:.55rem; }
 }
 
+
+/* ── Universal Search Bar ── */
+.srch-bar {
+  display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;
+  padding:.65rem 1rem; border-bottom:1px solid var(--border);
+  background:var(--surface-2);
+}
+.srch-bar input, .srch-bar select {
+  padding:.42rem .75rem; border:1.5px solid var(--border);
+  border-radius:9px; font-family:inherit; font-size:.85rem;
+  background:var(--bg); color:var(--text); transition:border-color .15s;
+}
+.srch-bar input:focus, .srch-bar select:focus {
+  outline:none; border-color:var(--primary);
+}
+.srch-bar input { flex:1; min-width:160px; }
+.srch-bar select { min-width:130px; }
+.srch-bar .srch-count {
+  font-size:.78rem; color:var(--muted); white-space:nowrap; margin-right:auto;
+}
+.srch-bar .srch-reset {
+  font-size:.78rem; color:var(--primary); cursor:pointer;
+  background:none; border:none; padding:.3rem .5rem;
+}
+tr.row-hidden { display:none; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
@@ -1174,6 +1199,126 @@ async function renderSection(id) {
 }
 
 /* ── OVERVIEW ── */
+
+// ══════════════════════════════════════════════
+// Universal table search/filter helper
+// ══════════════════════════════════════════════
+function tableSearch(tableId, countId, fields) {
+  /**
+   * tableId  : id of <table> or wrapping element containing <tr>
+   * countId  : id of element showing count (optional)
+   * fields   : array of column indices to search in (0-based)
+   */
+  const wrap   = document.getElementById(tableId);
+  if(!wrap) return;
+  const inputs = wrap.closest('.card')?.querySelectorAll('.srch-bar input, .srch-bar select') || [];
+  const rows   = wrap.querySelectorAll('tbody tr');
+
+  let visible = 0;
+  rows.forEach(tr => {
+    let show = true;
+    inputs.forEach(inp => {
+      const val = inp.value.trim().toLowerCase();
+      if(!val) return;
+      if(inp.dataset.col !== undefined) {
+        // column-specific
+        const col = tr.cells[+inp.dataset.col];
+        if(col && !col.textContent.toLowerCase().includes(val)) show = false;
+      } else {
+        // global text search across all cells
+        if(fields) {
+          const haystack = fields.map(i => tr.cells[i]?.textContent||'').join(' ').toLowerCase();
+          if(!haystack.includes(val)) show = false;
+        } else {
+          if(!tr.textContent.toLowerCase().includes(val)) show = false;
+        }
+      }
+    });
+    tr.classList.toggle('row-hidden', !show);
+    if(show) visible++;
+  });
+
+  const countEl = countId ? document.getElementById(countId) : null;
+  if(countEl) countEl.textContent = visible;
+
+  // update srch-count span inside the bar
+  const countSpan = wrap.closest('.card')?.querySelector('.srch-count');
+  if(countSpan) countSpan.textContent = `${visible} / ${rows.length}`;
+}
+
+function buildSearchBar(placeholder='بحث...', extraSelects=[]) {
+  /**
+   * extraSelects: [{label, options:[{v,l}], col}]
+   * Returns HTML string for .srch-bar div
+   */
+  const selHtml = extraSelects.map(s =>
+    `<select data-col="${s.col}" onchange="this.closest('.card').querySelector('[data-tsearch]').dispatchEvent(new Event('input'))">
+      <option value="">${s.label}</option>
+      ${s.options.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}
+    </select>`
+  ).join('');
+  return `<div class="srch-bar">
+    <input data-tsearch placeholder="🔍 ${placeholder}" oninput="this.closest('.card').querySelector('[data-table-search]') && eval(this.closest('.card').querySelector('[data-table-search]').dataset.tableSearch)">
+    ${selHtml}
+    <span class="srch-count"></span>
+    <button class="srch-reset" onclick="resetSearch(this)">✕ مسح</button>
+  </div>`;
+}
+
+function resetSearch(btn) {
+  const bar = btn.closest('.srch-bar');
+  bar.querySelectorAll('input,select').forEach(el=>el.value='');
+  // trigger re-filter
+  bar.querySelectorAll('input').forEach(el=>el.dispatchEvent(new Event('input')));
+}
+
+/** Generic: search all <tr> in a table by text across given columns */
+function liveSearch(inputEl, tableBodyId, colIndices) {
+  const q = inputEl.value.trim().toLowerCase();
+  const tbody = document.getElementById(tableBodyId);
+  if(!tbody) return;
+  let vis = 0;
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    const hay = (colIndices ? colIndices.map(i=>tr.cells[i]?.textContent||'') : [...tr.cells].map(c=>c.textContent)).join(' ').toLowerCase();
+    const show = !q || hay.includes(q);
+    tr.classList.toggle('row-hidden', !show);
+    if(show) vis++;
+  });
+  // update counter
+  const bar = inputEl.closest('.srch-bar');
+  if(bar){
+    const cnt = bar.querySelector('.srch-count');
+    if(cnt) cnt.textContent = `${vis} / ${tbody.querySelectorAll('tr').length}`;
+  }
+}
+
+/** Generic: filter <tr> by select value in a specific column */
+function liveFilter(selectEl, tableBodyId, colIdx) {
+  const val = selectEl.value.toLowerCase();
+  const tbody = document.getElementById(tableBodyId);
+  if(!tbody) return;
+  let vis = 0;
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    const cell = tr.cells[colIdx]?.textContent?.toLowerCase()||'';
+    const show = !val || cell.includes(val);
+    tr.classList.toggle('row-hidden', !show);
+    if(show) vis++;
+  });
+  // sync with any text search already applied (re-run text search)
+  const bar = selectEl.closest('.srch-bar');
+  if(bar){
+    const txt = bar.querySelector('input[data-tsearch]');
+    if(txt && txt.value) liveSearch(txt, tableBodyId);
+    const cnt = bar.querySelector('.srch-count');
+    if(cnt){
+      const tbody2 = document.getElementById(tableBodyId);
+      const v2 = tbody2?.querySelectorAll('tr:not(.row-hidden)').length||0;
+      const t2 = tbody2?.querySelectorAll('tr').length||0;
+      cnt.textContent = `${v2} / ${t2}`;
+    }
+  }
+}
+
 async function renderOverview() {
   // ── فلتر الفرع للسوبر يوزر (dropdown مدمج) ──
   if(isSuperuser()) {
@@ -1256,7 +1401,7 @@ async function renderOverview() {
       <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${cars.filter(c=>c.status!=='inactive').length}</div><div class="stat-label">مركبات نشطة</div></div>
       <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value" style="color:#10b981">${active}</div><div class="stat-label">رحلة جارية</div></div>
       <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value">${completed}</div><div class="stat-label">رحلة مكتملة</div></div>
-      <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value" style="color:#f59e0b">${totalKm>0?Math.round(totalKm).toLocaleString('ar-EG'):'—'}</div><div class="stat-label">إجمالي المسافة (كم)</div></div>
+
       <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value" style="color:#3b82f6">${Math.round(fuelCost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة الوقود (جنيه)</div></div>
       <div class="stat-card"><div class="stat-icon">🚨</div><div class="stat-value" style="color:${unread>0?'#dc2626':'var(--primary)'}">${unread}</div><div class="stat-label">بلاغ غير مقروء</div></div>
     </div>
@@ -1349,12 +1494,23 @@ async function renderDriversSection() {
           ${!isReporter() ? `<button class="btn btn-primary btn-sm" onclick="openAddDriverModal()">➕ إضافة سائق</button>` : ''}
         </div>
       </div>
+      <div class="srch-bar">
+        <input data-tsearch placeholder="🔍 بحث بالاسم أو الهاتف أو الرقم الثابت..."
+          oninput="liveSearch(this,'driversBody',[1,2,3])">
+        <select onchange="liveFilter(this,'driversBody',5)">
+          <option value="">كل الحالات</option>
+          <option value="نشط">● نشط</option>
+          <option value="غير نشط">● غير نشط</option>
+        </select>
+        <span class="srch-count"></span>
+        <button class="srch-reset" onclick="resetSearch(this)">✕ مسح</button>
+      </div>
       <div class="table-wrap" id="driversList">
         <table><thead><tr>
           <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم الثابت</th>
           <th>انتهاء رخصة السائق</th>
           <th>الحالة</th><th>إجراءات</th>
-        </tr></thead><tbody>
+        </tr></thead><tbody id="driversBody">
         ${drivers.length ? drivers.map(d=>{
           return `<tr>
             <td>${d.id}</td>
@@ -1609,8 +1765,19 @@ async function renderCarsSection() {
         <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value">${cars.filter(c=>c.status==='available').length}</div><div class="stat-label">متاحة</div></div>
         <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status!=='available').length}</div><div class="stat-label">صيانة</div></div>
       </div>
+      <div class="srch-bar">
+        <input data-tsearch placeholder="🔍 بحث برقم اللوحة أو الموديل أو الفرع..."
+          oninput="liveSearch(this,'carsBody',[1,2,3])">
+        <select onchange="liveFilter(this,'carsBody',3)">
+          <option value="">كل الحالات</option>
+          <option value="متاحة">● متاحة</option>
+          <option value="صيانة">🔧 صيانة</option>
+        </select>
+        <span class="srch-count"></span>
+        <button class="srch-reset" onclick="resetSearch(this)">✕ مسح</button>
+      </div>
       <div class="table-wrap" id="carsList">
-        <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
+        <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody id="carsBody">
         ${cars.map(c=>`<tr><td>${c.id}</td><td dir="ltr"><strong>${c.plate}</strong></td><td>${c.model}</td>
           <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
           <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}" data-plate="${c.plate}" data-model="${c.model}" data-status="${c.status}">✏️</button>
@@ -2148,7 +2315,9 @@ async function renderAdminWorkshops() {
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
-      <div class="filters-bar">
+      <div class="srch-bar" style="gap:.45rem">
+        <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الملاحظات..."
+          oninput="filterWS()" id="wsSearchText" style="flex:1.5">
         <select id="filterCar" onchange="filterWS()">
           <option value="">🚗 كل المركبات</option>
           ${cars.map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('')}
@@ -2158,7 +2327,9 @@ async function renderAdminWorkshops() {
           <optgroup label="⛽ الوقود">${FUEL_TYPES.map(f=>`<option value="${f.key}">⛽ ${f.label}</option>`).join('')}</optgroup>
           <optgroup label="🛠️ الصيانة">${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</optgroup>
         </select>
-        <input type="date" id="filterDate" onchange="filterWS()" placeholder="تاريخ">
+        <input type="date" id="filterDate" onchange="filterWS()" style="min-width:130px">
+        <span class="srch-count" id="wsCount"></span>
+        <button class="srch-reset" onclick="document.getElementById('wsSearchText').value='';document.getElementById('filterCar').value='';document.getElementById('filterType').value='';document.getElementById('filterDate').value='';filterWS()">✕ مسح</button>
       </div>
       <div class="table-wrap" id="wsTable">${buildWSTable(records)}</div>
     </div>`;
@@ -2190,13 +2361,20 @@ function filterWS(){
   const car  = document.getElementById('filterCar')?.value  || '';
   const type = document.getElementById('filterType')?.value || '';
   const date = document.getElementById('filterDate')?.value || '';
+  const txt  = (document.getElementById('wsSearchText')?.value||'').trim().toLowerCase();
   let f = (window._wsRecords||[]).filter(r=>{
+    if(txt){
+      const hay = [r.driver_name||'',r.vehicle_plate||'',r.notes||'',r.description||''].join(' ').toLowerCase();
+      if(!hay.includes(txt)) return false;
+    }
     if(car  && String(r.vehicle_id) !== car)          return false;
     if(type && r.type !== type)                        return false;
     if(date && !r.created_at?.startsWith(date))       return false;
     return true;
   });
   document.getElementById('wsTable').innerHTML = buildWSTable(f);
+  const wsCnt=document.getElementById('wsCount');
+  if(wsCnt) wsCnt.textContent=`${f.length} / ${(window._wsRecords||[]).length}`;
 }
 
 /* ── MAP — Dual Location Pins ── */
@@ -3169,6 +3347,12 @@ async function renderRequestsSection() {
         <div class="card-title">📋 طلبات السائقين</div>
         <button class="btn btn-ghost btn-sm" onclick="renderRequestsSection()">🔄 تحديث</button>
       </div>
+      <div class="srch-bar" style="border-radius:0;border-right:none;border-left:none">
+        <input placeholder="🔍 بحث بالسائق أو نوع الطلب..." style="flex:1"
+          oninput="filterReqCards(this.value)" id="reqSearchInput">
+        <span class="srch-count" id="reqCount">${reqs.length}</span>
+        <button class="srch-reset" onclick="document.getElementById('reqSearchInput').value='';filterReqCards('')">✕ مسح</button>
+      </div>
       <div style="padding:0 1.2rem 1rem">
         ${filterBtns}
         ${reqs.length===0
@@ -3176,6 +3360,28 @@ async function renderRequestsSection() {
           : `<div id="reqCardsList">${rows}</div>`}
       </div>
     </div>`;
+}
+
+function filterReqCards(q) {
+  q = (q||'').toLowerCase().trim();
+  const cnt = document.getElementById('reqCount');
+  let vis = 0, total = 0;
+  document.querySelectorAll('.req-card').forEach(card=>{
+    total++;
+    const hidden = card.style.display==='none';
+    if(hidden){ total--; return; } // already hidden by status filter
+    const hay = card.textContent.toLowerCase();
+    const show = !q || hay.includes(q);
+    card.style.opacity = show ? '1' : '0.2';
+    card.style.pointerEvents = show ? 'auto' : 'none';
+    card.dataset.textHidden = show ? '' : '1';
+    if(show) vis++;
+    total++;
+  });
+  // re-count only visible + not text-hidden
+  vis = document.querySelectorAll('.req-card:not([data-text-hidden="1"])').length;
+  total = document.querySelectorAll('.req-card').length;
+  if(cnt) cnt.textContent = `${vis} / ${total}`;
 }
 
 function filterRequests(status, btn) {
@@ -3295,12 +3501,28 @@ async function renderEmergenciesSection() {
       <div class="stat-card"><div class="stat-icon">📋</div><div class="stat-value">${reports.length}</div><div class="stat-label">إجمالي البلاغات</div></div>
     </div>
     <div class="card">
-      <div class="card-header"><div class="card-title">🚨 جميع البلاغات والحوادث</div><button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button></div>
+      <div class="card-header"><div class="card-title">🚨 جميع البلاغات والحوادث (<span id="emgCount">${reports.length}</span>)</div><button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button></div>
+      <div class="srch-bar">
+        <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الموقع..."
+          oninput="liveSearch(this,'emgBody')" style="flex:1">
+        <select onchange="liveFilter(this,'emgBody',2)">
+          <option value="">كل الأنواع</option>
+          <option value="طارئ">🚨 طارئ</option>
+          <option value="حادث">💥 حادث</option>
+        </select>
+        <select onchange="liveFilter(this,'emgBody',7)">
+          <option value="">كل الحالات</option>
+          <option value="لم يُتخذ">⏳ لم يُعالج</option>
+          <option value="تمت">✅ تمت المعالجة</option>
+        </select>
+        <span class="srch-count"></span>
+        <button class="srch-reset" onclick="resetSearch(this)">✕ مسح</button>
+      </div>
       ${reports.length ? `<div class="table-wrap"><table><thead><tr>
         <th>#</th><th>النوع</th><th>السائق</th><th>المركبة</th><th>الوقت</th>
         <th>الموقع</th><th>ملاحظات</th><th>التسجيل الصوتي</th>
         <th>الحالة</th><th>الإجراء المتخذ</th><th>رسالة للسائق</th><th>بواسطة</th><th>وقت الإجراء</th><th>إجراء</th>
-      </tr></thead><tbody>
+      </tr></thead><tbody id="emgBody">
       ${reports.map(r=>`<tr class="report-row-${r.type}">
         <td>${r.id}</td>
         <td>${r.type==='emergency'?'<span class="badge badge-emg">🚨 طارئ</span>':'<span class="badge badge-acc">🚗 حادث</span>'}</td>
