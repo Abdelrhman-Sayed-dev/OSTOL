@@ -1035,21 +1035,23 @@ function closeModal() { document.getElementById('activeModal')?.remove(); }
 /* ── NAV ── */
 let currentSection = '';
 function buildAdminNav() {
+  // ترتيب حسب الأولوية: العمليات الحرجة أولاً، ثم الإدارة، ثم التقارير
   const base = [
-    {id:'overview',   icon:'📊', label:'نظرة عامة'},
-    {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},
-    {id:'cars',       icon:'🚙', label:'المركبات'},
-    {id:'trips',      icon:'🗺️', label:'الرحلات'},
-    {id:'workshops',  icon:'🛠️', label:'الورش'},
-    {id:'map',        icon:'📍', label:'خريطة الأسطول'},
-    {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
-    {id:'requests',   icon:'📋', label:'طلبات السائقين'},
-    {id:'op-card',    icon:'📊', label:'البطاقة التشغيلية'},
-    {id:'permissions',icon:'🔗', label:'الصلاحيات'},
+    {id:'overview',   icon:'📊', label:'نظرة عامة'},        // 1. لوحة القيادة
+    {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'}, // 2. حرج - سلامة
+    {id:'trips',      icon:'🗺️', label:'الرحلات'},           // 3. العملية الأساسية
+    {id:'map',        icon:'📍', label:'خريطة الأسطول'},     // 4. متابعة لحظية
+    {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},          // 5. إدارة السائقين
+    {id:'cars',       icon:'🚙', label:'المركبات'},           // 6. إدارة المركبات
+    {id:'requests',   icon:'📋', label:'طلبات السائقين'},    // 7. طلبات معلقة
+    {id:'workshops',  icon:'🛠️', label:'الورش'},              // 8. الصيانة والوقود
+    {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'}, // 9. التقارير
+    {id:'permissions',icon:'🔗', label:'الصلاحيات'},         // 10. إدارة الصلاحيات
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions', icon:'🏛️', label:'اتخاذ قرار'});
-    base.push({id:'import-data', icon:'📥', label:'استيراد البيانات'});
+    base.push({id:'super-licenses',  icon:'⚠️', label:'تنبيهات الرخص'});
+    base.push({id:'import-data',     icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',    icon:'👑', label:'إدارة الأدمنز'});
     base.push({id:'super-reporters', icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-logs',      icon:'📋', label:'سجل الدخول'});
@@ -1071,6 +1073,7 @@ function renderNav(items) {
       ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
       ${item.id==='requests' && window._pendingRequestsCount>0 ? `<span class="nav-badge">${window._pendingRequestsCount}</span>` : ''}
       ${item.id==='super-decisions' && window._pendingSuperCount>0 ? `<span class="nav-badge">${window._pendingSuperCount}</span>` : ''}
+      ${item.id==='super-licenses' && window._licenseAlertsCount>0 ? `<span class="nav-badge" style="background:#f97316">${window._licenseAlertsCount}</span>` : ''}
     </button>`).join('');
 }
 
@@ -1099,6 +1102,7 @@ async function renderSection(id) {
     case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
     case 'super-decisions': await renderSuperDecisions(); break;
+    case 'super-licenses':  await renderSuperLicenses(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-logs':      await renderSuperLogs(); break;
@@ -1152,16 +1156,7 @@ async function renderOverview() {
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr"><strong>${cPlate}</strong></td><td style="font-size:.78rem;color:var(--muted)">${t.start_time?fmtDT(t.start_time):'—'}</td><td>${badge}</td></tr>`;
   }).join('');
 
-  const expiringHtml=(()=>{
-    const soon=new Date(Date.now()+30*864e5).toISOString().split('T')[0];
-    const expiring=drivers.filter(d=>(d.driver_license_expiry&&d.driver_license_expiry<=soon)||(d.vehicle_license_expiry&&d.vehicle_license_expiry<=soon));
-    if(!expiring.length) return '';
-    return `<div class="card" style="border:2px solid #f59e0b;background:#fffbeb;margin-top:1rem">
-      <div class="card-header"><div class="card-title" style="color:#92400e">⚠️ رخص قاربت على الانتهاء (${expiring.length})</div></div>
-      <div class="table-wrap"><table><thead><tr><th>السائق</th><th>الرقم الثابت</th><th>انتهاء رخصة السائق</th></tr></thead><tbody>
-      ${expiring.map(d=>`<tr><td><strong>${d.name}</strong></td><td><code>${d.fixed_number||'—'}</code></td><td>${licBadge(d.driver_license_expiry)}</td></tr>`).join('')}
-      </tbody></table></div></div>`;
-  })();
+  // ملاحظة: تنبيهات الرخص انتقلت لتاب 'تنبيهات الرخص' عند السوبر يوزر
 
   document.getElementById('pageContent').innerHTML = `
     <div class="stats-row" style="margin-bottom:1.2rem">
@@ -1192,7 +1187,7 @@ async function renderOverview() {
           <table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>الوقت</th><th>الحالة</th></tr></thead>
           <tbody>${latestRows}</tbody></table></div></div>
     </div>
-    ${expiringHtml}`;
+  `;
 
   const isDark = document.documentElement.getAttribute('data-theme')==='dark';
   const gc = isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)';
@@ -4071,6 +4066,17 @@ async function pollNotifications() {
     }
     window._pendingRequestsCount=newCount;
   }catch(e){}
+  // حساب عدد تنبيهات الرخص (السوبر فقط)
+  if(isSuperuser()){
+    try{
+      const allDrvs=await apiCall('/drivers').catch(()=>[]);
+      const d60=new Date(Date.now()+60*864e5).toISOString().split('T')[0];
+      window._licenseAlertsCount=allDrvs.filter(d=>
+        (d.driver_license_expiry&&d.driver_license_expiry<=d60)||
+        (d.vehicle_license_expiry&&d.vehicle_license_expiry<=d60)
+      ).length;
+    }catch(e){}
+  }
   renderNav(buildAdminNav());
 }
 
@@ -4152,12 +4158,15 @@ function showPermissionsModal() {
 async function renderDriverSinglePage() {
   document.body.classList.add('driver-mode');
 
-  const [primaryCar, allTrips, pricesData, myReports] = await Promise.all([
+  const [primaryCar, allTrips, pricesData, myReports, allDrivers] = await Promise.all([
     apiCall(`/drivers/${currentUser.driver_id}/primary-car`).catch(()=>null),
     loadTrips().catch(()=>[]),
     apiCall('/settings/prices').catch(()=>({})),
-    apiCall('/emergency/reports').catch(()=>[])
+    apiCall('/emergency/reports').catch(()=>[]),
+    apiCall('/drivers').catch(()=>[])
   ]);
+  // بيانات السائق الحالي (للتحقق من رخصته)
+  const _myDriverData = allDrivers.find(d=>d.id===currentUser.driver_id)||null;
   window._typePrices = pricesData||{};
   window._driverCar  = primaryCar;
 
@@ -4268,6 +4277,34 @@ async function renderDriverSinglePage() {
           🚛
         </div>
       </div>
+
+      <!-- LICENSE ALERT BANNER -->
+      ${(()=>{
+        if(!_myDriverData) return '';
+        const today = new Date().toISOString().split('T')[0];
+        const d30   = new Date(Date.now()+30*864e5).toISOString().split('T')[0];
+        const d60   = new Date(Date.now()+60*864e5).toISOString().split('T')[0];
+        const dl    = _myDriverData.driver_license_expiry||'';
+        const vl    = _myDriverData.vehicle_license_expiry||'';
+        const alerts = [];
+        if(dl){
+          if(dl<today)      alerts.push({msg:`🔴 رخصة القيادة منتهية منذ ${dl} — يرجى التجديد فوراً`,color:'#ef4444',bg:'#fef2f2',border:'#fca5a5'});
+          else if(dl<=d30)  alerts.push({msg:`🟠 رخصة القيادة تنتهي في ${dl} (أقل من 30 يوم)`,color:'#f97316',bg:'#fff7ed',border:'#fed7aa'});
+          else if(dl<=d60)  alerts.push({msg:`🟡 رخصة القيادة تنتهي في ${dl} (أقل من 60 يوم)`,color:'#d97706',bg:'#fffbeb',border:'#fde68a'});
+        }
+        if(vl){
+          if(vl<today)      alerts.push({msg:`🔴 رخصة المركبة منتهية منذ ${vl} — يرجى التجديد فوراً`,color:'#ef4444',bg:'#fef2f2',border:'#fca5a5'});
+          else if(vl<=d30)  alerts.push({msg:`🟠 رخصة المركبة تنتهي في ${vl} (أقل من 30 يوم)`,color:'#f97316',bg:'#fff7ed',border:'#fed7aa'});
+          else if(vl<=d60)  alerts.push({msg:`🟡 رخصة المركبة تنتهي في ${vl} (أقل من 60 يوم)`,color:'#d97706',bg:'#fffbeb',border:'#fde68a'});
+        }
+        if(!alerts.length) return '';
+        return alerts.map(a=>`
+          <div style="margin:0 0 .75rem;padding:.85rem 1rem;border-radius:14px;
+                      background:${a.bg};border:2px solid ${a.border};
+                      display:flex;align-items:flex-start;gap:.7rem">
+            <div style="font-size:.88rem;font-weight:700;color:${a.color};line-height:1.5">${a.msg}</div>
+          </div>`).join('');
+      })()}
 
       <!-- TRIP BUTTONS -->
       <div class="dp-section">
@@ -5097,6 +5134,88 @@ async function deleteRoleUser(role, uid, username) {
 }
 
 // Named aliases so the rest of the codebase (and nav callbacks) continue to work unchanged
+
+// ══════════════════════════════════════════════════════
+// تنبيهات الرخص — سوبر يوزر فقط
+// ══════════════════════════════════════════════════════
+async function renderSuperLicenses() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+  const drivers = await loadDrivers();
+
+  const now  = new Date().toISOString().split('T')[0];
+  const d30  = new Date(Date.now() +  30*864e5).toISOString().split('T')[0];
+  const d60  = new Date(Date.now() +  60*864e5).toISOString().split('T')[0];
+  const d90  = new Date(Date.now() +  90*864e5).toISOString().split('T')[0];
+
+  // تصنيف السائقين حسب حالة الرخصة
+  function classify(d) {
+    const dl = d.driver_license_expiry || '';
+    const vl = d.vehicle_license_expiry || '';
+    const worst = [dl, vl].filter(Boolean).sort()[0];
+    if (!worst) return null;
+    if (worst < now)  return { level: 'expired',  label: '🔴 منتهية',   color: '#ef4444', bg: '#fef2f2', border: '#fca5a5', date: worst, field: dl <= vl || !vl ? 'رخصة السائق' : 'رخصة السيارة' };
+    if (worst <= d30) return { level: 'critical',  label: '🟠 خلال 30 يوم', color: '#f97316', bg: '#fff7ed', border: '#fed7aa', date: worst, field: dl <= vl || !vl ? 'رخصة السائق' : 'رخصة السيارة' };
+    if (worst <= d60) return { level: 'warning',   label: '🟡 خلال 60 يوم', color: '#f59e0b', bg: '#fffbeb', border: '#fde68a', date: worst, field: dl <= vl || !vl ? 'رخصة السائق' : 'رخصة السيارة' };
+    if (worst <= d90) return { level: 'notice',    label: '🟢 خلال 90 يوم', color: '#10b981', bg: '#f0fdf9', border: '#6ee7b7', date: worst, field: dl <= vl || !vl ? 'رخصة السائق' : 'رخصة السيارة' };
+    return null;
+  }
+
+  const tagged = drivers.map(d => ({ ...d, _lic: classify(d) }))
+                        .filter(d => d._lic)
+                        .sort((a,b) => a._lic.date.localeCompare(b._lic.date));
+
+  const expired  = tagged.filter(d => d._lic.level === 'expired');
+  const critical = tagged.filter(d => d._lic.level === 'critical');
+  const warning  = tagged.filter(d => d._lic.level === 'warning');
+  const notice   = tagged.filter(d => d._lic.level === 'notice');
+
+  function buildGroup(title, list) {
+    if (!list.length) return '';
+    return `
+      <div class="card" style="border:1.5px solid ${list[0]._lic.border};margin-bottom:1rem">
+        <div class="card-header" style="background:${list[0]._lic.bg}">
+          <div class="card-title" style="color:${list[0]._lic.color}">${title} (${list.length})</div>
+        </div>
+        <div class="table-wrap">
+          <table><thead><tr>
+            <th>السائق</th><th>الرقم الثابت</th><th>الفرع</th>
+            <th>نوع الرخصة</th><th>تاريخ الانتهاء</th><th>رخصة السائق</th><th>رخصة السيارة</th>
+          </tr></thead><tbody>
+          ${list.map(d => `<tr>
+            <td><strong>${d.name}</strong></td>
+            <td><code>${d.fixed_number||'—'}</code></td>
+            <td>${d.branch||'—'}</td>
+            <td><span style="color:${d._lic.color};font-weight:700">${d._lic.field}</span></td>
+            <td><span style="color:${d._lic.color};font-weight:700">${d._lic.date}</span></td>
+            <td>${licBadge(d.driver_license_expiry)}</td>
+            <td>${licBadge(d.vehicle_license_expiry)}</td>
+          </tr>`).join('')}
+          </tbody></table>
+        </div>
+      </div>`;
+  }
+
+  c.innerHTML = `
+    <div class="stats-row" style="margin-bottom:1.2rem">
+      <div class="stat-card"><div class="stat-icon" style="color:#ef4444">🔴</div><div class="stat-value" style="color:#ef4444">${expired.length}</div><div class="stat-label">رخصة منتهية</div></div>
+      <div class="stat-card"><div class="stat-icon" style="color:#f97316">🟠</div><div class="stat-value" style="color:#f97316">${critical.length}</div><div class="stat-label">تنتهي خلال 30 يوم</div></div>
+      <div class="stat-card"><div class="stat-icon" style="color:#f59e0b">🟡</div><div class="stat-value" style="color:#f59e0b">${warning.length}</div><div class="stat-label">تنتهي خلال 60 يوم</div></div>
+      <div class="stat-card"><div class="stat-icon" style="color:#10b981">🟢</div><div class="stat-value" style="color:#10b981">${notice.length}</div><div class="stat-label">تنتهي خلال 90 يوم</div></div>
+    </div>
+    <div class="card" style="margin-bottom:1rem;background:#eff6ff;border:1.5px solid #93c5fd">
+      <div style="padding:.8rem 1.2rem;font-size:.88rem;color:#1e40af">
+        💡 <strong>ملاحظة:</strong> السائقون يرون إشعار ثابت في واجهتهم عند اقتراب انتهاء رخصهم.
+      </div>
+    </div>
+    ${buildGroup('🔴 رخص منتهية', expired)}
+    ${buildGroup('🟠 تنتهي خلال 30 يوم', critical)}
+    ${buildGroup('🟡 تنتهي خلال 60 يوم', warning)}
+    ${buildGroup('🟢 تنتهي خلال 90 يوم', notice)}
+    ${tagged.length === 0 ? '<div class="empty-state"><div class="empty-icon">✅</div><p>جميع الرخص سارية المفعول — لا توجد تنبيهات</p></div>' : ''}
+  `;
+}
+
 async function renderSuperDecisions() {
   const c = document.getElementById('pageContent');
   let reqs = [];
