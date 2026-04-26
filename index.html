@@ -905,7 +905,11 @@ body.driver-mode { background:#f5f5f5; }
     </div>
     <div class="sidebar-user">
       <div class="user-avatar" id="userAvatar">؟</div>
-      <div><div class="user-name" id="sidebarUsername">—</div><div class="user-role" id="sidebarRole">—</div></div>
+      <div>
+        <div class="user-name" id="sidebarUsername">—</div>
+        <div class="user-role" id="sidebarRole">—</div>
+        <div id="sidebarBranchBadge" style="display:none;margin-top:.3rem;font-size:.72rem;font-weight:700;color:var(--gold);background:rgba(184,134,11,.15);padding:.15rem .5rem;border-radius:20px;border:1px solid rgba(184,134,11,.3)"></div>
+      </div>
     </div>
     <nav class="sidebar-nav" id="sidebarNav"></nav>
     <div class="sidebar-footer">
@@ -1042,6 +1046,9 @@ function buildAdminNav() {
     {id:'op-card',    icon:'📊', label:'البطاقة التشغيلية'},
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
   ];
+  if(isAdminOrSuper()) {
+    base.push({id:'import-data', icon:'📥', label:'استيراد البيانات'});
+  }
   if(isSuperuser()) {
     base.push({id:'super-admins',    icon:'👑', label:'إدارة الأدمنز'});
     base.push({id:'super-reporters', icon:'👁️', label:'إدارة المراقبين'});
@@ -1093,6 +1100,7 @@ async function renderSection(id) {
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-logs':      await renderSuperLogs(); break;
+    case 'import-data':     await renderImportSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -1169,7 +1177,7 @@ async function renderDriversSection() {
       <div class="table-wrap" id="driversList">
         <table><thead><tr>
           <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم التعريفي</th>
-          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th>
+          <th>تاريخ الميلاد</th><th>انتهاء رخصة السائق</th><th>انتهاء رخصة العربة</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody>
         ${drivers.length ? drivers.map(d=>{
@@ -1180,6 +1188,7 @@ async function renderDriversSection() {
             <td><code>${d.national_id||'—'}</code></td>
             <td style="font-size:.82rem">${d.birth_date||'—'}</td>
             <td>${licBadge(d.driver_license_expiry, true)}</td>
+            <td>${licBadge(d.vehicle_license_expiry, true)}</td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
               ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
@@ -1191,7 +1200,7 @@ async function renderDriversSection() {
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
-        }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
+        }).join('') : '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
         </tbody></table>
       </div>
     </div>`;
@@ -1631,9 +1640,7 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
     const gRec=garageLatest.find(g=>g.car_id===t.car_id);
-    // موقع الجراج يظهر فقط إذا كانت الرحلة منتهية وهي آخر رحلة لهذه المركبة
-    const isLatestTripForCar = !trips.some(other => other.car_id===t.car_id && other.id > t.id);
-    const garageLoc=t.end_time&&isLatestTripForCar?(t.garage_location||gRec?.location||''):'';
+    const garageLoc=t.end_time?(t.garage_location||gRec?.location||''):'';
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
       <td>${t.start_time?fmtDT(t.start_time):'—'}</td>
       <td>${t.end_time?fmtDT(t.end_time):'—'}</td>
@@ -1770,7 +1777,7 @@ function openEditOdoModal(tid, curStart, curEnd, dName, isActive) {
 function exportCSV(){
   const trips=window._tripsData||[],drivers=window._driversData||[],cars=window._carsData||[];
   const rows=[['#','السائق','المركبة','وقت البداية','وقت النهاية','عداد البداية','عداد النهاية','موقع البداية','موقع النهاية','موقع الجراج','ملاحظات','الحالة']];
-  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const isLatestTripForCar=!trips.some(other=>other.car_id===t.car_id&&other.id>t.id); const garageLoc=t.end_time&&isLatestTripForCar?(t.garage_location||gRec?.location||''):''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer||'',t.end_odometer||'',t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
+  const garageLatest=window._garageLatest||[]; trips.forEach(t=>{ const dName=drivers.find(d=>d.id===t.driver_id)?.name||''; const cPlate=cars.find(c=>c.id===t.car_id)?.plate||''; const gRec=garageLatest.find(g=>g.car_id===t.car_id); const garageLoc=t.garage_location||gRec?.location||''; rows.push([t.id,dName,cPlate,t.start_time||'',t.end_time||'',t.start_odometer||'',t.end_odometer||'',t.start_location||'',t.end_location||'',garageLoc,t.notes||'',!t.end_time?'جارية':'منتهية']); });
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`رحلات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير الرحلات ✅','success');
@@ -3812,6 +3819,16 @@ function initUI() {
   document.getElementById('userAvatar').textContent=currentUser.username.charAt(0).toUpperCase();
   document.getElementById('sidebarUsername').textContent=currentUser.username;
   document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':'🚗 سائق';
+  // إظهار الفرع في الـ sidebar لو الأدمن/المراقب مقيّد بفرع
+  const branchBadgeEl = document.getElementById('sidebarBranchBadge');
+  if(branchBadgeEl) {
+    if(currentUser.branch && currentUser.role !== 'superuser') {
+      branchBadgeEl.textContent = '📍 ' + currentUser.branch;
+      branchBadgeEl.style.display = 'block';
+    } else {
+      branchBadgeEl.style.display = 'none';
+    }
+  }
   if(isAdminLike()){
     currentSection='overview'; renderNav(buildAdminNav()); renderSection('overview');
     notifPollInterval=setInterval(pollNotifications,20000);
@@ -4718,18 +4735,19 @@ async function renderSuperUserRole(role) {
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>#</th><th>اسم المستخدم</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>الإجراءات</th></tr></thead>
+          <thead><tr><th>#</th><th>اسم المستخدم</th><th>الفرع</th><th>تاريخ الإنشاء</th><th>آخر دخول</th><th>الإجراءات</th></tr></thead>
           <tbody>
             ${users.length===0
-              ? `<tr><td colspan="5" style="text-align:center;color:var(--muted)">${cfg.emptyMsg}</td></tr>`
+              ? `<tr><td colspan="6" style="text-align:center;color:var(--muted)">${cfg.emptyMsg}</td></tr>`
               : users.map(u=>`
                 <tr>
                   <td>${u.id}</td>
                   <td><b>${u.username}</b></td>
+                  <td>${u.branch ? `<span class="badge badge-blue">${u.branch}</span>` : '<span style="color:var(--muted);font-size:.8rem">بدون فرع</span>'}</td>
                   <td>${fmtDate(u.created_at)||'—'}</td>
                   <td>${fmtDT(u.last_login)||'لم يدخل بعد'}</td>
                   <td style="display:flex;gap:.5rem;flex-wrap:wrap">
-                    <button class="btn btn-outline btn-sm" onclick="openEditRoleModal('${role}',${u.id},'${u.username.replace(/'/g,"\\'")}')">✏️ تعديل</button>
+                    <button class="btn btn-outline btn-sm" onclick="openEditRoleModal('${role}',${u.id},'${u.username.replace(/'/g,"\\'")}','${(u.branch||'').replace(/'/g,"\\'")}')">✏️ تعديل</button>
                     <button class="btn btn-danger btn-sm"  onclick="deleteRoleUser('${role}',${u.id},'${u.username.replace(/'/g,"\\'")}')">🗑️ حذف</button>
                   </td>
                 </tr>`).join('')}
@@ -4743,13 +4761,17 @@ function openAddRoleModal(role) {
   const cfg = ROLE_CONFIG[role];
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">➕ إضافة ${cfg.label} جديد</div>
+      <div class="modal-title">➕ إضافة ${cfg.icon} ${cfg.label} جديد</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label>
       <input type="text" id="roleUserInput" placeholder="اسم المستخدم"></div>
     <div class="form-group"><label>كلمة المرور <span class="req">*</span></label>
       <input type="password" id="rolePwInput" placeholder="كلمة المرور"></div>
+    <div class="form-group">
+      <label>الفرع <span style="font-size:.75rem;color:var(--muted)">(اتركه فارغاً ليرى كل الفروع)</span></label>
+      <input type="text" id="roleBranchInput" placeholder="مثال: القاهرة، الإسكندرية، أسيوط...">
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="roleModalSubmit">💾 إضافة</button>
@@ -4757,28 +4779,33 @@ function openAddRoleModal(role) {
   document.getElementById('roleModalSubmit').onclick = async () => {
     const username = document.getElementById('roleUserInput').value.trim();
     const password = document.getElementById('rolePwInput').value;
-    if(!username || !password) return showNotification('يرجى ملء جميع الحقول','error');
+    const branch   = document.getElementById('roleBranchInput').value.trim();
+    if(!username || !password) return showNotification('يرجى ملء جميع الحقول المطلوبة','error');
     const btn = document.getElementById('roleModalSubmit');
     btn.disabled=true; btn.textContent='جاري...';
     try {
-      await apiCall(cfg.endpoint, 'POST', {username, password});
-      showNotification(`✅ تم إنشاء ${cfg.label}: ${username}`, 'success');
+      await apiCall(cfg.endpoint, 'POST', {username, password, branch});
+      showNotification(`✅ تم إنشاء ${cfg.label}: ${username}${branch?' (فرع: '+branch+')':''}`, 'success');
       closeModal(); cfg.render();
     } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 إضافة'; }
   };
 }
 
-function openEditRoleModal(role, uid, oldUsername) {
+function openEditRoleModal(role, uid, oldUsername, oldBranch='') {
   const cfg = ROLE_CONFIG[role];
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">✏️ تعديل ${cfg.label}: ${oldUsername}</div>
+      <div class="modal-title">✏️ تعديل ${cfg.icon} ${cfg.label}: ${oldUsername}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="form-group"><label>اسم المستخدم الجديد <span class="req">*</span></label>
       <input type="text" id="roleUserInput" value="${oldUsername}"></div>
-    <div class="form-group"><label>كلمة المرور الجديدة <span style="font-size:.75rem;color:var(--muted)">(اتركها فارغة إن لم تريد التغيير)</span></label>
+    <div class="form-group"><label>كلمة المرور الجديدة <span style="font-size:.75rem;color:var(--muted)">(فارغة = بدون تغيير)</span></label>
       <input type="password" id="rolePwInput" placeholder="اتركها فارغة للإبقاء على الحالية"></div>
+    <div class="form-group">
+      <label>الفرع <span style="font-size:.75rem;color:var(--muted)">(فارغ = يرى كل الفروع)</span></label>
+      <input type="text" id="roleBranchInput" value="${oldBranch}" placeholder="مثال: القاهرة، الإسكندرية...">
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="roleModalSubmit">💾 حفظ التعديلات</button>
@@ -4786,11 +4813,12 @@ function openEditRoleModal(role, uid, oldUsername) {
   document.getElementById('roleModalSubmit').onclick = async () => {
     const username = document.getElementById('roleUserInput').value.trim();
     const password = document.getElementById('rolePwInput').value || null;
+    const branch   = document.getElementById('roleBranchInput').value.trim();
     if(!username) return showNotification('اسم المستخدم مطلوب','error');
     const btn = document.getElementById('roleModalSubmit');
     btn.disabled=true; btn.textContent='جاري...';
     try {
-      await apiCall(`${cfg.endpoint}/${uid}`, 'PUT', {username, password});
+      await apiCall(`${cfg.endpoint}/${uid}`, 'PUT', {username, password, branch});
       showNotification(`✅ تم تحديث بيانات ${cfg.label}`, 'success');
       closeModal(); cfg.render();
     } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ التعديلات'; }
@@ -4812,10 +4840,265 @@ const renderSuperAdmins      = () => renderSuperUserRole('admin');
 const renderSuperReporters   = () => renderSuperUserRole('reporter');
 const openAddAdminModal      = () => openAddRoleModal('admin');
 const openAddReporterModal   = () => openAddRoleModal('reporter');
-const openEditAdminModal     = (uid, u) => openEditRoleModal('admin',    uid, u);
-const openEditReporterModal  = (uid, u) => openEditRoleModal('reporter', uid, u);
+const openEditAdminModal     = (uid, u, b) => openEditRoleModal('admin',    uid, u, b);
+const openEditReporterModal  = (uid, u, b) => openEditRoleModal('reporter', uid, u, b);
 const deleteAdmin            = (uid, u) => deleteRoleUser('admin',    uid, u);
 const deleteReporter         = (uid, u) => deleteRoleUser('reporter', uid, u);
+
+/* ══════════════════════════════════════════════════════
+   IMPORT SECTION — استيراد بيانات من CSV/Excel
+   ══════════════════════════════════════════════════════ */
+let _importPreviewData = null; // نحتفظ بالملف للـ confirm
+
+async function renderImportSection() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `
+    <div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:1.5rem">
+
+      <!-- Header cards -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div class="card" style="border-top:3px solid var(--primary)">
+          <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+            <div class="card-title">👨‍✈️ استيراد السائقين</div>
+          </div>
+          <div style="padding:0 1.25rem 1.25rem;color:var(--muted);font-size:.85rem">
+            ارفع ملف CSV أو Excel يحتوي على بيانات السائقين دفعة واحدة
+          </div>
+          <div style="padding:0 1.25rem 1.25rem">
+            <a href="/import/template/drivers" class="btn btn-outline btn-sm" download>
+              ⬇️ تحميل قالب CSV
+            </a>
+          </div>
+        </div>
+        <div class="card" style="border-top:3px solid var(--gold)">
+          <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+            <div class="card-title">🚙 استيراد المركبات</div>
+          </div>
+          <div style="padding:0 1.25rem 1.25rem;color:var(--muted);font-size:.85rem">
+            ارفع ملف CSV أو Excel يحتوي على بيانات المركبات دفعة واحدة
+          </div>
+          <div style="padding:0 1.25rem 1.25rem">
+            <a href="/import/template/cars" class="btn btn-outline btn-sm" download>
+              ⬇️ تحميل قالب CSV
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📥 رفع الملف</div>
+        </div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+            <div class="form-group" style="margin:0">
+              <label>نوع البيانات <span class="req">*</span></label>
+              <select id="importTypeSelect" class="form-control">
+                <option value="drivers">👨‍✈️ سائقين</option>
+                <option value="cars">🚙 مركبات</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>الملف (CSV أو Excel) <span class="req">*</span></label>
+              <input type="file" id="importFileInput" accept=".csv,.xlsx,.xls"
+                     style="padding:.5rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
+            </div>
+          </div>
+          <div style="display:flex;gap:.75rem;align-items:center">
+            <button class="btn btn-primary" id="importPreviewBtn" onclick="doImportPreview()">
+              🔍 استعراض البيانات
+            </button>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--muted);cursor:pointer">
+              <input type="checkbox" id="importSkipErrors" style="width:auto">
+              تجاهل الصفوف التي بها أخطاء عند التأكيد
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview Result -->
+      <div id="importPreviewArea"></div>
+    </div>`;
+}
+
+async function doImportPreview() {
+  const file = document.getElementById('importFileInput').files[0];
+  const importType = document.getElementById('importTypeSelect').value;
+  if(!file) return showNotification('يرجى اختيار ملف أولاً','error');
+
+  const btn = document.getElementById('importPreviewBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري التحليل...';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const token = localStorage.getItem('accessToken');
+  try {
+    const res = await fetch(`/import/preview?import_type=${importType}`, {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}` },
+      body: fd
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.detail || 'خطأ في التحليل');
+
+    _importPreviewData = { file, importType };
+    renderImportPreview(data);
+  } catch(e) {
+    showNotification(e.message,'error');
+  } finally {
+    btn.disabled=false; btn.textContent='🔍 استعراض البيانات';
+  }
+}
+
+function renderImportPreview(data) {
+  const { summary, rows, import_type } = data;
+  const isDrivers = import_type === 'drivers';
+  const area = document.getElementById('importPreviewArea');
+
+  const summaryColor = summary.invalid === 0 ? 'var(--success)' : summary.valid === 0 ? 'var(--danger)' : 'var(--warning)';
+
+  const cols = isDrivers
+    ? ['#','الاسم','اسم المستخدم','الهاتف','الفرع','الحالة','التحقق']
+    : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
+
+  const renderRow = (r) => {
+    const status = r.valid
+      ? `<span style="color:var(--success);font-weight:700">✅ صحيح</span>`
+      : `<span style="color:var(--danger);font-size:.8rem">❌ ${r.errors.join(' • ')}</span>`;
+    if(isDrivers) return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td>${r.name||'—'}</td>
+        <td>${r.username||'—'}</td>
+        <td>${r.phone||'—'}</td>
+        <td>${r.branch||'—'}</td>
+        <td><span class="badge ${r.status==='active'?'badge-green':'badge-yellow'}">${r.status||'active'}</span></td>
+        <td>${status}</td>
+      </tr>`;
+    else return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td>${r.plate||'—'}</td>
+        <td>${r.model||'—'}</td>
+        <td>${r.car_name||'—'}</td>
+        <td>${r.branch||'—'}</td>
+        <td><span class="badge badge-blue">${r.status||'available'}</span></td>
+        <td>${status}</td>
+      </tr>`;
+  };
+
+  area.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 نتيجة الاستعراض</div>
+        <div style="display:flex;gap:.75rem;align-items:center">
+          <span style="font-size:.85rem;color:var(--muted)">${summary.total} صف إجمالي</span>
+          <span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>
+          ${summary.invalid>0?`<span style="font-size:.85rem;font-weight:700;color:var(--danger)">❌ ${summary.invalid} خطأ</span>`:''}
+          <button class="btn btn-primary btn-sm" id="importConfirmBtn"
+                  onclick="doImportConfirm()"
+                  ${summary.valid===0?'disabled':''}>
+            ✅ تأكيد الرفع (${summary.valid} صف)
+          </button>
+        </div>
+      </div>
+
+      <!-- Progress bar -->
+      <div style="height:6px;background:var(--border);border-radius:3px;margin:0 1.25rem .5rem;overflow:hidden">
+        <div style="height:100%;width:${summary.total?Math.round(summary.valid/summary.total*100):0}%;
+                    background:${summaryColor};border-radius:3px;transition:width .5s"></div>
+      </div>
+
+      <div class="table-wrap" style="max-height:450px;overflow-y:auto">
+        <table>
+          <thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+          <tbody>${rows.map(r=>renderRow(r)).join('')}</tbody>
+        </table>
+      </div>
+      ${summary.invalid>0?`
+      <div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">
+        ⚠️ الصفوف الحمراء بها أخطاء — فعّل "تجاهل الأخطاء" أعلاه لرفع الصفوف الصحيحة فقط
+      </div>`:''}
+    </div>`;
+}
+
+async function doImportConfirm() {
+  if(!_importPreviewData) return;
+  const { file, importType } = _importPreviewData;
+  const skipErrors = document.getElementById('importSkipErrors')?.checked || false;
+
+  const btn = document.getElementById('importConfirmBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري الرفع...';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const token = localStorage.getItem('accessToken');
+  try {
+    const res = await fetch(`/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`, {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${token}` },
+      body: fd
+    });
+    const data = await res.json();
+    if(!res.ok) {
+      const detail = typeof data.detail === 'object' ? data.detail.message : data.detail;
+      throw new Error(detail || 'فشل الرفع');
+    }
+    showNotification(`✅ تم الرفع بنجاح: ${data.inserted} سجل${data.skipped>0?' (تجاهل '+data.skipped+')':''}`, 'success');
+    _importPreviewData = null;
+    renderImportResult(data, importType);
+  } catch(e) {
+    showNotification(e.message,'error');
+    btn.disabled=false; btn.textContent=`✅ تأكيد الرفع`;
+  }
+}
+
+function renderImportResult(data, importType) {
+  const area = document.getElementById('importPreviewArea');
+  area.innerHTML = `
+    <div class="card" style="border-top:3px solid var(--success)">
+      <div class="card-header">
+        <div class="card-title" style="color:var(--success)">✅ تم الرفع بنجاح</div>
+      </div>
+      <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
+        <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:var(--success)">${data.inserted}</div>
+          <div style="color:var(--muted);font-size:.85rem">سجل تم إضافته</div>
+        </div>
+        <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:var(--warning)">${data.skipped}</div>
+          <div style="color:var(--muted);font-size:.85rem">سجل تم تجاهله</div>
+        </div>
+        <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:var(--primary)">${data.inserted+data.skipped}</div>
+          <div style="color:var(--muted);font-size:.85rem">إجمالي الصفوف</div>
+        </div>
+      </div>
+      <div style="padding:.75rem 1.25rem 1.25rem;display:flex;gap:.75rem">
+        <button class="btn btn-primary btn-sm" onclick="renderImportSection()">📥 رفع ملف جديد</button>
+        <button class="btn btn-outline btn-sm" onclick="switchSection('${importType==='drivers'?'drivers':'cars'}')">
+          ${importType==='drivers'?'👨‍✈️ عرض السائقين':'🚙 عرض المركبات'}
+        </button>
+      </div>
+      ${data.skipped_items?.length>0?`
+      <div style="padding:0 1.25rem 1.25rem">
+        <details>
+          <summary style="cursor:pointer;color:var(--warning);font-size:.85rem;font-weight:600">
+            ⚠️ الصفوف التي تم تجاهلها (${data.skipped_items.length})
+          </summary>
+          <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.4rem">
+            ${data.skipped_items.map(r=>`
+              <div style="padding:.5rem .75rem;background:rgba(200,75,49,.06);border-radius:8px;font-size:.82rem">
+                <b>صف ${r.row_index}</b>: ${r.errors?.join(' • ')||'خطأ غير معروف'}
+              </div>`).join('')}
+          </div>
+        </details>
+      </div>`:''}
+    </div>`;
+}
 
 /* ══════════════════════════════════════════════════════
    SUPERUSER — سجل الدخول والإجراءات
@@ -4922,7 +5205,8 @@ function showLogin() {
       const data=await apiCall('/login','POST',{username,password});
       setToken(data.access_token);
       if(data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
-      const u={id:data.user.id,username:data.user.username,role:data.user.role,driver_id:data.user.driver_id};
+      const u={id:data.user.id,username:data.user.username,role:data.user.role,driver_id:data.user.driver_id,
+               branch: data.user.branch || ''};
       saveUser(u); currentUser=u;
       document.getElementById('loginOverlay').remove();
       initUI();
