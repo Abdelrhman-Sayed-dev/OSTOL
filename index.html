@@ -5150,7 +5150,13 @@ async function renderDriverSinglePage() {
     openModal(
       '<div class="modal-header"><div class="modal-title">🅿 دخول الجراج / نهاية اليوم</div><button class="modal-close" onclick="closeModal()">✕</button></div>'+
       (activeTrip?'<div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;padding:.7rem 1rem;margin-bottom:.8rem;font-size:.84rem;color:#92400e">⚡ يوجد رحلة نشطة #'+activeTrip.id+' — سيتم إنهاؤها تلقائياً بنفس عداد ووقت الجراج</div>':'')+
-      '<div class="form-group"><label>عداد الختام (كم) <span class="req">*</span></label><input type="number" id="dpGarOdo" placeholder="قراءة العداد الآن" min="'+minOdo+'"></div>'+
+      '<div class="form-group"><label style="font-size:1rem;font-weight:700">عداد الختام (كم) <span class="req">*</span></label>'+
+      '<input type="number" id="dpGarOdo" placeholder="أدخل الرقم" min="'+minOdo+'"'+
+      ' style="font-size:2rem;font-weight:900;text-align:center;padding:1rem;border-radius:14px;border:2px solid #e2e8f0;width:100%;color:#1e3a5f;letter-spacing:2px"'+
+      ' onfocus="this.style.borderColor=\'#ef4444\';this.style.boxShadow=\'0 0 0 3px rgba(239,68,68,.15)\'"'+
+      ' onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'\'"'+
+      (activeTrip?' oninput="const v=parseFloat(this.value);this.style.color=(!isNaN(v)&&v<='+activeTrip.start_odometer+')?\'#ef4444\':\'#1e3a5f\'"':'')+'></div>'+
+      (activeTrip?'<div style="font-size:.78rem;color:#94a3b8;margin-top:-.5rem;margin-bottom:.75rem;text-align:center">يجب أن يكون أكبر من <strong style="color:#1e3a5f">'+activeTrip.start_odometer+' كم</strong></div>':'')+
       '<div class="form-group"><label>ملاحظات</label><input type="text" id="dpGarNotes" placeholder="اختياري..."></div>'+
       '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-danger" id="dpGarOk">🅿 تسجيل الجراج</button></div>');
     document.getElementById('dpGarOk').onclick=async()=>{
