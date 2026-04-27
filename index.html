@@ -475,7 +475,7 @@ tbody tr:hover{background:rgba(30,58,95,.03);transition:.12s}
 }
 
 /* ── WORKSHOP ── */
-.workshop-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.8rem;margin-bottom:1.3rem}
+.workshop-items{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;margin-bottom:1.3rem}
 .workshop-item{background:var(--surface-2);border:1.5px solid var(--border);border-radius:10px;padding:.9rem;text-align:center;cursor:pointer;transition:.2s}
 .workshop-item:hover{border-color:var(--gold);transform:translateY(-2px);background:rgba(184,134,11,.04)}
 .workshop-item.selected{border-color:var(--primary);background:rgba(30,58,95,.05)}
@@ -1226,6 +1226,8 @@ function buildAdminNav() {
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
+    base.push({id:'super-fraud',       icon:'🔍', label:'كشف التلاعب'});
+    base.push({id:'super-voice',       icon:'🎙️', label:'رسائل صوتية'});
     base.push({id:'super-licenses',    icon:'⚠️', label:'تنبيهات الرخص'});
     base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
@@ -1285,6 +1287,8 @@ async function renderSection(id) {
     case 'monthly-report':   await renderMonthlyReport(); break;
     case 'super-supervisors':await renderSuperSupervisors(); break;
     case 'super-decisions':  await renderSuperDecisions(); break;
+    case 'super-fraud':      await renderSuperFraud(); break;
+    case 'super-voice':      await renderSuperVoice(); break;
     case 'super-licenses':  await renderSuperLicenses(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
@@ -1968,9 +1972,8 @@ function resetCarsFilter() {
 
 function onCarCategoryChange(cat) {
   const CAR_CATEGORIES = {
-    'عربات':           ['سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة','ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'],
-    'آلات ومعدات':    ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'],
-    'معدات وآلات ورش': ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'],
+    'عربات': ['سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة','ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'],
+    'آلات ومعدات': ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى']
   };
   const sel = document.getElementById('mCarSubType');
   if(!sel) return;
@@ -1983,9 +1986,14 @@ function openAddCarModal(editId='', editCar={}) {
   const isEdit = !!editId;
   // التصنيف الرئيسي + التصنيف الفرعي
   const CAR_CATEGORIES = {
-    'عربات':           ['سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة','ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'],
-    'آلات ومعدات':    ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'],
-    'معدات وآلات ورش': ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'],
+    'عربات': [
+      'سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة',
+      'ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'
+    ],
+    'آلات ومعدات': [
+      'معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل',
+      'معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'
+    ]
   };
   const currentCat = editCar.equipment_type?.split('|')[0]||'';
   const currentSub = editCar.equipment_type?.split('|')[1]||'';
@@ -1997,7 +2005,7 @@ function openAddCarModal(editId='', editCar={}) {
   }
 
   const catOptsHtml = '<option value="">— اختر التصنيف الرئيسي —</option>'
-    + Object.keys(CAR_CATEGORIES).map(k=>`<option value="${k}" ${k===currentCat?'selected':''}>${{عربات:'🚗 عربات','آلات ومعدات':'⚙️ آلات ومعدات','معدات وآلات ورش':'🔧 معدات وآلات ورش'}[k]||k}</option>`).join('');
+    + Object.keys(CAR_CATEGORIES).map(c=>`<option value="${c}" ${c===currentCat?'selected':''}>${c==='عربات'?'🚗 عربات':'⚙️ آلات ومعدات'}</option>`).join('');
   openModal(`
     <div class="modal-header">
       <div class="modal-title">${isEdit?'✏️ تعديل مركبة':'➕ إضافة مركبة جديدة'}</div>
@@ -2438,14 +2446,8 @@ function exportDriversCSV(){
 
 function exportCarsCSV(){
   const cars=window._carsCSVData||[];
-  const rows=[['#','رقم اللوحة','الموديل','اسم المركبة','الكود','الشاسيه','رقم المحرك',
-               'سنة الصنع','المشروع','الفرع','انتهاء رخصة السيارة','تصنيف المعدة','القطاع','الحالة']];
-  cars.forEach(c=>rows.push([
-    c.id, c.plate, c.model, c.car_name||'', c.car_code||'', c.chassis||'',
-    c.engine_number||'', c.year||'', c.project||'', c.branch||'',
-    c.car_license_expiry||'', c.equipment_type||'', c.sector||'',
-    carStatusLabel(c.status)
-  ]));
+  const rows=[['#','رقم اللوحة','الموديل','الحالة']];
+  cars.forEach(c=>rows.push([c.id,c.plate,c.model,c.status==='available'?'متاحة':'صيانة']));
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`المركبات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير المركبات ✅','success');
@@ -3465,7 +3467,7 @@ async function renderRequestsSection() {
   const isAdminRole = currentUser?.role === 'admin';
 
   const TYPE_LABELS = {
-    odometer_change:'🔢 تغيير العداد', permission:'🙋 طلب إذن',
+    odometer_change:'🔢 ادخال خاطئ', permission:'🙋 طلب إذن',
     leave:'🏖️ طلب إجازة', other:'📝 طلب آخر',
   };
   const STATUS_STYLE = {
@@ -3809,10 +3811,21 @@ async function renderDriverTrip() {
     ? '<option value="">-- اختر المركبة --</option>'+allowedCars.map(c=>`<option value="${c.id}" ${activeTrip&&activeTrip.car_id===c.id?'selected':''}>${c.plate} — ${c.model}</option>`).join('')
     : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
 
+  // جيب آخر عداد للمركبة النشطة
+  let lastOdo = null;
+  if(activeTrip) {
+    lastOdo = activeTrip.start_odometer;
+  } else if(allowedCars.length === 1) {
+    try {
+      const r = await apiCall(`/cars/${allowedCars[0].id}/last-odometer`);
+      lastOdo = r.last_odometer;
+    } catch(e) {}
+  }
+
   document.getElementById('pageContent').innerHTML=`
     <div class="driver-hero">
       <div class="driver-hero-icon">🚗</div>
-      <div><h2>تسجيل رحلة</h2><p>أدخل قراءة العداد — الموقع يُسحب تلقائياً</p></div>
+      <div><h2>تسجيل رحلة</h2><p>الموقع يُسحب تلقائياً</p></div>
     </div>
 
     ${activeTrip ? `
@@ -3821,7 +3834,14 @@ async function renderDriverTrip() {
         <span style="font-size:2rem">🟢</span>
         <div>
           <div style="font-weight:800;color:#065f46;font-size:1rem">رحلة نشطة — #${activeTrip.id}</div>
-          <div style="font-size:.82rem;color:#047857">بدأت: ${fmtDT(activeTrip.start_time)} | عداد البداية: ${activeTrip.start_odometer} كم</div>
+          <div style="font-size:.9rem;color:#047857;margin-top:.3rem">
+            بدأت: ${fmtDT(activeTrip.start_time)}
+          </div>
+          <div style="margin-top:.5rem;display:inline-flex;align-items:center;gap:.5rem;
+                      background:#dcfce7;border-radius:10px;padding:.4rem .8rem">
+            <span style="font-size:.82rem;color:#065f46">عداد البداية</span>
+            <strong style="font-size:1.4rem;color:#059669;letter-spacing:1px">${activeTrip.start_odometer} كم</strong>
+          </div>
         </div>
       </div>
     </div>` : `
@@ -3834,29 +3854,65 @@ async function renderDriverTrip() {
 
     <div class="two-col">
       <!-- START TRIP -->
-      <div class="card" style="${activeTrip?'opacity:.5;pointer-events:none;':''}">
+      <div class="card" style="${activeTrip?'opacity:.45;pointer-events:none;':''}">
         <div class="card-header"><div class="card-title" style="color:#1e40af">🚀 بدء رحلة جديدة</div></div>
-        ${activeTrip?'<div style="text-align:center;padding:1rem;color:var(--muted);font-size:.9rem">يوجد رحلة نشطة بالفعل</div>':''}
-        <div class="form-group"><label>المركبة <span class="req">*</span></label>
-          <select id="startCarId">${carOpts}</select></div>
-        <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
-          <input type="number" id="startOdo" placeholder="مثال: 54200" min="0"></div>
 
-        <button class="btn btn-primary" id="startTripBtn" style="width:100%" ${activeTrip?'disabled':''}>
+        <div class="form-group"><label>المركبة <span class="req">*</span></label>
+          <select id="startCarId" style="font-size:1.1rem;padding:.7rem;height:auto" onchange="onCarSelectChange(this)">${carOpts}</select>
+        </div>
+
+        <!-- عداد البداية: يظهر للقراءة فقط -->
+        <div class="form-group" id="startOdoGroup">
+          <label style="font-size:.9rem;color:#64748b">عداد البداية (كم)</label>
+          <div style="display:flex;align-items:center;gap:.75rem;background:#f1f5f9;
+                      border-radius:12px;padding:.9rem 1rem;border:2px solid #e2e8f0">
+            <span style="font-size:1rem;color:#94a3b8">📍</span>
+            <span id="startOdoDisplay" style="font-size:1.8rem;font-weight:900;
+                   color:#1e3a5f;letter-spacing:2px;direction:ltr">
+              ${lastOdo !== null ? lastOdo+' كم' : '— يُجلب عند اختيار المركبة'}
+            </span>
+          </div>
+          <input type="hidden" id="startOdo" value="${lastOdo ?? ''}">
+          <div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">🔒 يُحدَّد تلقائياً من آخر رحلة</div>
+        </div>
+
+        <button class="btn btn-primary" id="startTripBtn"
+                style="width:100%;font-size:1.15rem;padding:1rem;border-radius:14px"
+                ${activeTrip?'disabled':''}>
           🚀 بدء الرحلة
         </button>
       </div>
 
       <!-- END TRIP -->
-      <div class="card" style="${!activeTrip?'opacity:.5;pointer-events:none;':''}">
+      <div class="card" style="${!activeTrip?'opacity:.45;pointer-events:none;':''}">
         <div class="card-header"><div class="card-title" style="color:#b45309">🏁 إنهاء الرحلة الحالية</div></div>
-        ${!activeTrip?'<div style="text-align:center;padding:1rem;color:var(--muted);font-size:.9rem">لا توجد رحلة نشطة</div>':''}
-        <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
-          <input type="number" id="endOdo" placeholder="مثال: 54350" min="${activeTrip?activeTrip.start_odometer+1:0}"></div>
-        <div class="form-group"><label>ملاحظات</label>
-          <input type="text" id="endNotes" placeholder="ملاحظات اختيارية..."></div>
 
-        <button class="btn btn-warning" id="endTripBtn" style="width:100%" ${!activeTrip?'disabled':''}>
+        <div class="form-group">
+          <label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
+          <input type="number" id="endOdo"
+                 placeholder="${activeTrip ? 'أدخل رقم أكبر من '+(activeTrip.start_odometer||0) : 'مثال: 54350'}"
+                 min="${activeTrip?activeTrip.start_odometer+1:0}"
+                 style="font-size:2rem;font-weight:900;text-align:center;
+                        padding:1rem;border-radius:14px;letter-spacing:2px;
+                        border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
+                        transition:border-color .2s"
+                 onfocus="this.style.borderColor='#f59e0b';this.style.boxShadow='0 0 0 3px rgba(245,158,11,.15)'"
+                 onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow=''"
+                 oninput="validateEndOdo(this,${activeTrip?.start_odometer||0})">
+          ${activeTrip?`<div style="font-size:.8rem;color:#94a3b8;margin-top:.3rem;text-align:center">
+            يجب أن يكون أكبر من <strong>${activeTrip.start_odometer} كم</strong>
+          </div>`:''}
+        </div>
+
+        <div class="form-group">
+          <label style="font-size:.9rem">ملاحظات</label>
+          <input type="text" id="endNotes" placeholder="ملاحظات اختيارية..."
+                 style="font-size:1rem;padding:.8rem;border-radius:12px">
+        </div>
+
+        <button class="btn btn-warning" id="endTripBtn"
+                style="width:100%;font-size:1.15rem;padding:1rem;border-radius:14px"
+                ${!activeTrip?'disabled':''}>
           🏁 إنهاء الرحلة
         </button>
       </div>
@@ -3873,15 +3929,38 @@ async function renderDriverTrip() {
       </div>
     </div>`;
 
+  // ── onCarSelectChange: جيب آخر عداد لما السائق يختار عربية ──
+  window.onCarSelectChange = async function(sel) {
+    const carId = parseInt(sel.value);
+    if(!carId) { document.getElementById('startOdoDisplay').textContent='—'; document.getElementById('startOdo').value=''; return; }
+    document.getElementById('startOdoDisplay').textContent='⏳ جاري الجلب...';
+    try {
+      const r = await apiCall(`/cars/${carId}/last-odometer`);
+      const odo = r.last_odometer;
+      document.getElementById('startOdo').value = odo ?? '';
+      document.getElementById('startOdoDisplay').textContent = odo !== null ? odo+' كم' : 'لا توجد رحلات سابقة';
+    } catch(e) {
+      document.getElementById('startOdoDisplay').textContent = '— تعذّر الجلب';
+    }
+  };
+
+  // ── validate end odometer live ──
+  window.validateEndOdo = function(inp, startOdo) {
+    const v = parseFloat(inp.value);
+    if(!isNaN(v) && v <= startOdo) {
+      inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
+    } else {
+      inp.style.borderColor='#f59e0b'; inp.style.color='#1e3a5f';
+    }
+  };
+
   // ── START TRIP handler ──
   document.getElementById('startTripBtn')?.addEventListener('click', async () => {
-    const car_id  = parseInt(document.getElementById('startCarId').value);
+    const car_id    = parseInt(document.getElementById('startCarId').value);
     const start_odo = parseFloat(document.getElementById('startOdo').value);
     const btn = document.getElementById('startTripBtn');
-
-    if(!car_id)           return showNotification('اختر المركبة','error');
-    if(isNaN(start_odo))  return showNotification('أدخل عداد البداية','error');
-
+    if(!car_id)          return showNotification('اختر المركبة','error');
+    if(isNaN(start_odo)) return showNotification('لم يتم تحديد عداد البداية — اختر المركبة أولاً','error');
     btn.disabled=true; btn.textContent='🚀 جاري...';
     const location = await silentGetLocation();
     try{
@@ -3896,11 +3975,10 @@ async function renderDriverTrip() {
     const end_odo = parseFloat(document.getElementById('endOdo').value);
     const notes   = document.getElementById('endNotes').value.trim();
     const btn = document.getElementById('endTripBtn');
-
-    if(!activeTrip) return showNotification('لا توجد رحلة نشطة','error');
-    if(isNaN(end_odo)) return showNotification('أدخل عداد النهاية','error');
-    if(end_odo <= activeTrip.start_odometer) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+activeTrip.start_odometer+' كم)','error');
-
+    if(!activeTrip)      return showNotification('لا توجد رحلة نشطة','error');
+    if(isNaN(end_odo))   return showNotification('أدخل عداد النهاية','error');
+    if(end_odo <= activeTrip.start_odometer)
+      return showNotification('عداد النهاية يجب أن يكون أكبر من '+activeTrip.start_odometer+' كم','error');
     btn.disabled=true; btn.textContent='🏁 جاري...';
     const location = await silentGetLocation();
     try{
@@ -4643,9 +4721,15 @@ function initUI() {
     currentSection='overview'; renderNav(buildAdminNav()); renderSection('overview');
     notifPollInterval=setInterval(pollNotifications,20000);
     setTimeout(pollNotifications,3000);
+    // فحص الرسائل الصوتية كل دقيقة
+    setTimeout(checkAndShowVoiceNotes, 5000);
+    setInterval(checkAndShowVoiceNotes, 60000);
   } else {
     // Driver: single-page app, no sidebar
     renderDriverSinglePage();
+    // فحص الرسائل الصوتية للسائق
+    setTimeout(checkAndShowVoiceNotes, 5000);
+    setInterval(checkAndShowVoiceNotes, 60000);
   }
 }
 
@@ -5046,7 +5130,7 @@ async function renderDriverSinglePage() {
 
 /* ── DRIVER REQUESTS ── */
 const REQUEST_TYPE_LABELS = {
-  odometer_change: '🔢 تغيير قراءة العداد',
+  odometer_change: '🔢 ادخال خاطئ',
   permission:      '🙋 طلب إذن',
   leave:           '🏖️ طلب إجازة',
   other:           '📝 طلب آخر',
@@ -5154,7 +5238,7 @@ function openSubmitRequestModal() {
       <label>نوع الطلب <span class="req">*</span></label>
       <select id="reqType" onchange="toggleOdometerField()">
         <option value="">— اختر نوع الطلب —</option>
-        <option value="odometer_change">🔢 تغيير قراءة العداد</option>
+        <option value="odometer_change">🔢 ادخال خاطئ</option>
         <option value="permission">🙋 طلب إذن</option>
         <option value="leave">🏖️ طلب إجازة</option>
         <option value="other">📝 طلب آخر</option>
@@ -5840,7 +5924,7 @@ async function renderSuperDecisions() {
   try { reqs = await apiCall('/requests'); } catch(e) { reqs=[]; }
   const pending = reqs.filter(r=>r.status==='pending_super');
 
-  const TYPE_LABELS = {odometer_change:'🔢 تغيير العداد',permission:'🙋 طلب إذن',leave:'🏖️ طلب إجازة',other:'📝 طلب آخر'};
+  const TYPE_LABELS = {odometer_change:'🔢 ادخال خاطئ',permission:'🙋 طلب إذن',leave:'🏖️ طلب إجازة',other:'📝 طلب آخر'};
   const PRIORITY_LABELS = {urgent:'🔴 عاجل',medium:'🟡 متوسط',deferrable:'🟢 قابل للتأجيل'};
   const PRIORITY_COLORS = {urgent:'#ef4444',medium:'#f59e0b',deferrable:'#10b981'};
 
@@ -6036,104 +6120,110 @@ async function doImportPreview() {
 function renderImportPreview(data) {
   const { summary, rows, import_type } = data;
   const isDrivers     = import_type === 'drivers';
-  const isCars        = import_type === 'cars';
   const isPermissions = import_type === 'permissions';
   const area = document.getElementById('importPreviewArea');
-  const summaryColor = summary.invalid===0?'var(--success)':summary.valid===0?'var(--danger)':'var(--warning)';
-  const FL = {
-    phone:'التليفون',branch:'الفرع',driver_license_expiry:'رخصة السائق',
-    vehicle_license_expiry:'رخصة السيارة',national_id:'الرقم القومي',birth_date:'تاريخ الميلاد',
-    model:'الموديل',car_name:'اسم المركبة',car_code:'الكود',chassis:'الشاسيه',
-    engine_number:'رقم المحرك',year:'السنة',project:'المشروع',
-    car_license_expiry:'رخصة المركبة',equipment_type:'التصنيف',sector:'القطاع',
-  };
-  const cols = isPermissions ? ['#','الرقم الثابت','المركبة','الحالة']
-    : isDrivers ? ['#','الاسم','الرقم الثابت','الفرع','التليفون','رخصة السائق','الحالة']
-    : ['#','رقم اللوحة','الموديل','التصنيف','الفرع','الحالة'];
 
-  const tagBadge = (tag, fill) => {
-    if(tag==='new')         return `<span style="color:var(--success);font-weight:700">✅ جديد</span>`;
-    if(tag==='will_update') return `<span style="color:#f59e0b;font-weight:700">🔄 تكميل: ${(fill||[]).map(f=>FL[f]||f).join('، ')}</span>`;
-    if(tag==='duplicate')   return `<span style="color:var(--muted)">⏭️ مكتمل</span>`;
-    return `<span style="color:var(--danger);font-size:.8rem">❌ ${(arguments[2]||[]).join(' • ')}</span>`;
-  };
-  const rowBg = tag => tag==='will_update'?'background:rgba(245,158,11,.07)':tag==='duplicate'?'background:var(--surface-2)':'';
+  const summaryColor = summary.invalid === 0 ? 'var(--success)' : summary.valid === 0 ? 'var(--danger)' : 'var(--warning)';
+
+  const cols = isPermissions
+    ? ['#','الرقم الثابت','المركبة','التحقق']
+    : isDrivers
+      ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
+      : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
 
   const renderRow = (r) => {
-    if(isPermissions) {
-      const ok = r.valid?`<span style="color:var(--success);font-weight:700">✅</span>`:`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
-      return `<tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}"><td>${r.row_index}</td><td><code>${r.fixed_number||'—'}</code></td><td dir="ltr"><strong>${r.plate||'—'}</strong></td><td>${ok}</td></tr>`;
-    }
-    if(isDrivers) {
-      const st=r.status||(r.valid?'new':'error');
-      const errBadge = st==='error'?`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`:tagBadge(st,r.will_fill,r.errors);
-      return `<tr style="${rowBg(st)||(!r.valid?'background:rgba(200,75,49,.05)':'')}"><td>${r.row_index}</td><td>${r.name||'—'}</td><td><code>${r.fixed_number||'—'}</code></td><td style="font-size:.82rem">${r.branch||'—'}</td><td dir="ltr" style="font-size:.82rem">${r.phone||'—'}</td><td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td><td>${errBadge}</td></tr>`;
-    }
-    if(isCars) {
-      const st=r.status_tag||(r.valid?'new':'error');
-      const errBadge = st==='error'?`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`:tagBadge(st,r.will_fill,r.errors);
-      return `<tr style="${rowBg(st)||(!r.valid?'background:rgba(200,75,49,.05)':'')}"><td>${r.row_index}</td><td dir="ltr"><strong>${r.plate||'—'}</strong></td><td style="font-size:.82rem">${r.model||'—'}</td><td style="font-size:.78rem;color:var(--muted)">${r.equipment_type||'—'}</td><td style="font-size:.82rem">${r.branch||'—'}</td><td>${errBadge}</td></tr>`;
-    }
-    const ok=r.valid?`<span style="color:var(--success);font-weight:700">✅</span>`:`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
-    return `<tr><td>${r.row_index}</td><td>${r.plate||'—'}</td><td>${r.model||'—'}</td><td>${r.car_name||'—'}</td><td>${r.branch||'—'}</td><td>${ok}</td></tr>`;
+    const status = r.valid
+      ? `<span style="color:var(--success);font-weight:700">✅ صحيح</span>`
+      : `<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
+    if(isPermissions) return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td><code>${r.fixed_number||'—'}</code></td>
+        <td dir="ltr"><strong>${r.plate||'—'}</strong></td>
+        <td>${status}</td>
+      </tr>`;
+    if(isDrivers) return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td>${r.name||'—'}</td>
+        <td><code style="font-size:.82rem">${r.username||'—'}</code></td>
+        <td dir="ltr">${r.phone||'—'}</td>
+        <td><code>${r.fixed_number||'—'}</code></td>
+        <td>${r.branch||'—'}</td>
+        <td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td>
+        <td>${status}</td>
+      </tr>`;
+    return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td>${r.plate||'—'}</td>
+        <td>${r.model||'—'}</td>
+        <td>${r.car_name||'—'}</td>
+        <td>${r.branch||'—'}</td>
+        <td><span class="badge badge-blue">${r.status||'available'}</span></td>
+        <td>${status}</td>
+      </tr>`;
   };
-
-  const willUpd = rows.filter(r=>(r.status_tag||r.status)==='will_update').length;
-  const newCnt  = rows.filter(r=>(r.status_tag||r.status)==='new').length;
-  const hasUpsert = (isDrivers||isCars) && willUpd>0;
-  const statsExtra = hasUpsert
-    ? `<span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${newCnt} جديد</span><span style="font-size:.85rem;font-weight:700;color:#f59e0b">🔄 ${willUpd} تكميل</span>`
-    : `<span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>`;
-  const validForAction = summary.valid||0;
 
   area.innerHTML = `
     <div class="card">
       <div class="card-header">
         <div class="card-title">📋 نتيجة الاستعراض</div>
-        <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:.75rem;align-items:center">
           <span style="font-size:.85rem;color:var(--muted)">${summary.total} صف إجمالي</span>
-          ${statsExtra}
+          <span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>
           ${summary.invalid>0?`<span style="font-size:.85rem;font-weight:700;color:var(--danger)">❌ ${summary.invalid} خطأ</span>`:''}
-          ${validForAction===0?`<button class="btn btn-ghost btn-sm" disabled>لا يوجد صفوف صالحة</button>`
-          :summary.invalid===0?`<button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">✅ رفع الكل (${validForAction} صف)</button>`
-          :`<button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">✅ رفع الصح بس (${validForAction} صف)</button>
-            <button class="btn btn-outline btn-sm" id="importConfirmAllBtn" onclick="doImportConfirm(false,true)" title="يوقف لو في أي خطأ">⛔ الكل أو لا شيء</button>`}
+          <button class="btn btn-primary btn-sm" id="importConfirmBtn"
+                  onclick="doImportConfirm()"
+                  ${summary.valid===0?'disabled':''}>
+            ✅ تأكيد الرفع (${summary.valid} صف)
+          </button>
         </div>
       </div>
       <div style="height:6px;background:var(--border);border-radius:3px;margin:0 1.25rem .5rem;overflow:hidden">
-        <div style="height:100%;width:${summary.total?Math.round(validForAction/summary.total*100):0}%;background:${summaryColor};border-radius:3px;transition:width .5s"></div>
+        <div style="height:100%;width:${summary.total?Math.round(summary.valid/summary.total*100):0}%;
+                    background:${summaryColor};border-radius:3px;transition:width .5s"></div>
       </div>
       <div class="table-wrap" style="max-height:450px;overflow-y:auto">
-        <table><thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>renderRow(r)).join('')}</tbody></table>
+        <table>
+          <thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+          <tbody>${rows.map(r=>renderRow(r)).join('')}</tbody>
+        </table>
       </div>
-      ${summary.invalid>0?`<div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">⚠️ الصفوف الحمراء بها أخطاء — "رفع الصح بس" يتجاهلها تلقائياً</div>`:''}
-      ${hasUpsert?`<div style="padding:.75rem 1.25rem;background:rgba(245,158,11,.08);border-top:1px solid var(--border);font-size:.85rem;color:#92400e">🔄 الصفوف الصفراء موجودة — سيتم تكميل بياناتهم الناقصة فقط</div>`:''}
+      ${summary.invalid>0?`
+      <div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">
+        ⚠️ الصفوف الحمراء بها أخطاء — فعّل "تجاهل الأخطاء" أعلاه لرفع الصفوف الصحيحة فقط
+      </div>`:''}
     </div>`;
 }
 
-async function doImportConfirm(skipErrors=true, strictMode=false) {
+async function doImportConfirm() {
   if(!_importPreviewData) return;
   const { file, importType } = _importPreviewData;
-  const actualSkip = !strictMode;
-  const btn    = document.getElementById('importConfirmBtn');
-  const btnAll = document.getElementById('importConfirmAllBtn');
-  if(btn)    { btn.disabled=true;    btn.textContent='⏳ جاري الرفع...'; }
-  if(btnAll) { btnAll.disabled=true; }
-  const fd = new FormData(); fd.append('file', file);
+  const skipErrors = document.getElementById('importSkipErrors')?.checked || false;
+
+  const btn = document.getElementById('importConfirmBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري الرفع...';
+
+  const fd = new FormData();
+  fd.append('file', file);
   const token = getToken();
-  const url = importType==='permissions' ? `/import/permissions/confirm?skip_errors=${actualSkip}` : `/import/confirm?import_type=${importType}&skip_errors=${actualSkip}`;
+  const url = importType === 'permissions'
+    ? `/import/permissions/confirm?skip_errors=${skipErrors}`
+    : `/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`;
   try {
-    const res  = await fetch(url, {method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd});
+    const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
     const data = await res.json();
-    if(!res.ok) { const d=typeof data.detail==='object'?data.detail.message:data.detail; throw new Error(d||'فشل الرفع'); }
-    const updMsg = (data.updated||0)>0 ? ` | تكميل ${data.updated}` : '';
-    showNotification(`✅ تم: ${data.inserted} جديد${updMsg}${(data.skipped||0)>0?' | تجاهل '+data.skipped:''}`, 'success');
+    if(!res.ok) {
+      const detail = typeof data.detail === 'object' ? data.detail.message : data.detail;
+      throw new Error(detail || 'فشل الرفع');
+    }
+    showNotification(`✅ تم الرفع بنجاح: ${data.inserted} سجل${data.skipped>0?' (تجاهل '+data.skipped+')':''}`, 'success');
     _importPreviewData = null;
     renderImportResult(data, importType);
   } catch(e) {
     showNotification(e.message,'error');
-    if(btn)    { btn.disabled=false;    btn.textContent='✅ رفع الصح بس'; }
-    if(btnAll) { btnAll.disabled=false; }
+    btn.disabled=false; btn.textContent=`✅ تأكيد الرفع`;
   }
 }
 
@@ -6149,10 +6239,6 @@ function renderImportResult(data, importType) {
           <div style="font-size:2rem;font-weight:800;color:var(--success)">${data.inserted}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم إضافته</div>
         </div>
-        ${(data.updated||0)>0?`<div style="padding:1rem;background:var(--surface-2);border-radius:12px">
-          <div style="font-size:2rem;font-weight:800;color:#f59e0b">${data.updated}</div>
-          <div style="color:var(--muted);font-size:.85rem">سجل تم تكميله</div>
-        </div>`:''}
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
           <div style="font-size:2rem;font-weight:800;color:var(--warning)">${data.skipped}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم تجاهله</div>
@@ -6624,6 +6710,327 @@ function exportAttendanceCSV() {
   a.href = 'data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
   a.download = `attendance_${data.month}.csv`;
   a.click();
+}
+
+// ══════════════════════════════════════════════════════
+// SUPER — كشف التلاعب
+// ══════════════════════════════════════════════════════
+async function renderSuperFraud() {
+  const el = document.getElementById('pageContent');
+  el.innerHTML = `<div class="card"><div style="text-align:center;padding:2rem;color:var(--muted)">⏳ جاري تحليل البيانات...</div></div>`;
+  try {
+    const data = await apiCall('/reports/fraud-detection');
+    const { summary, odometer_reversed, high_distance, overlapping_driver,
+            car_overlap, impossible_speed, excess_fuel, repeated_odometer } = data;
+
+    const riskColor = summary.high_risk>0?'#ef4444': summary.total_alerts>0?'#f59e0b':'#10b981';
+
+    const section = (title, icon, risk, items, renderRow, headers) => {
+      if(!items||!items.length) return `
+        <div class="card" style="border-right:4px solid #10b981">
+          <div style="padding:.75rem 1.25rem;display:flex;align-items:center;gap:.5rem">
+            <span>${icon}</span>
+            <span style="font-weight:700">${title}</span>
+            <span class="badge badge-green" style="margin-right:auto">✅ لا يوجد</span>
+          </div>
+        </div>`;
+      const rColor = risk==='high'?'#ef4444':risk==='medium'?'#f59e0b':'#6366f1';
+      return `
+        <div class="card" style="border-right:4px solid ${rColor}">
+          <div class="card-header">
+            <div class="card-title">${icon} ${title}</div>
+            <span style="background:${rColor};color:#fff;padding:.2rem .75rem;border-radius:99px;font-size:.82rem;font-weight:700">${items.length} حالة</span>
+          </div>
+          <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+            <table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+            <tbody>${items.map(renderRow).join('')}</tbody></table>
+          </div>
+        </div>`;
+    };
+
+    el.innerHTML = `
+      <!-- Summary -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem">
+        <div class="stat-card" style="border-top:3px solid ${riskColor}">
+          <div class="stat-icon">🔍</div>
+          <div class="stat-value" style="color:${riskColor}">${summary.total_alerts}</div>
+          <div class="stat-label">إجمالي التنبيهات</div>
+        </div>
+        <div class="stat-card" style="border-top:3px solid #ef4444">
+          <div class="stat-icon">🚨</div>
+          <div class="stat-value" style="color:#ef4444">${summary.high_risk}</div>
+          <div class="stat-label">خطر عالٍ</div>
+        </div>
+        <div class="stat-card" style="border-top:3px solid #f59e0b">
+          <div class="stat-icon">⚠️</div>
+          <div class="stat-value" style="color:#f59e0b">${summary.medium_risk}</div>
+          <div class="stat-label">خطر متوسط</div>
+        </div>
+        <div class="stat-card" style="border-top:3px solid #6366f1">
+          <div class="stat-icon">📋</div>
+          <div class="stat-value" style="color:#6366f1">${summary.low_risk}</div>
+          <div class="stat-label">يستحق المتابعة</div>
+        </div>
+      </div>
+
+      ${section('عداد معكوس (نهاية < بداية)','🚨','high', odometer_reversed,
+        r=>`<tr style="background:rgba(239,68,68,.06)">
+          <td>#${r.id}</td><td><strong>${r.driver_name}</strong></td><td dir="ltr">${r.plate}</td>
+          <td style="color:#ef4444"><strong>${r.start_odometer} → ${r.end_odometer}</strong></td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,16)}</td></tr>`,
+        ['#رحلة','السائق','اللوحة','العداد (بداية → نهاية)','التاريخ'])}
+
+      ${section('رحلات بسرعة مستحيلة (>10كم في أقل من 3 دقائق)','💥','high', impossible_speed,
+        r=>`<tr style="background:rgba(239,68,68,.06)">
+          <td>#${r.id}</td><td><strong>${r.driver_name}</strong></td><td dir="ltr">${r.plate}</td>
+          <td style="color:#ef4444"><strong>${Math.round(r.distance)} كم</strong></td>
+          <td><strong>${Math.round(r.minutes)} دقيقة</strong></td></tr>`,
+        ['#رحلة','السائق','اللوحة','المسافة','الوقت'])}
+
+      ${section('تداخل مركبة بين سائقين','🔴','high', car_overlap,
+        r=>`<tr style="background:rgba(239,68,68,.06)">
+          <td dir="ltr"><strong>${r.plate}</strong></td>
+          <td>${r.driver1}</td><td>${r.driver2}</td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,16)}</td>
+          <td style="font-size:.8rem">${(r.start2||'').slice(0,16)}</td></tr>`,
+        ['اللوحة','سائق 1','سائق 2','بداية 1','بداية 2'])}
+
+      ${section('تداخل رحلات نفس السائق','⚠️','medium', overlapping_driver,
+        r=>`<tr style="background:rgba(245,158,11,.06)">
+          <td><strong>${r.driver_name}</strong></td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,16)}</td>
+          <td style="font-size:.8rem">${(r.end_time||'').slice(0,16)}</td>
+          <td style="font-size:.8rem">${(r.start2||'').slice(0,16)}</td></tr>`,
+        ['السائق','بداية 1','نهاية 1','بداية 2'])}
+
+      ${section('وقود زائد (+200 لتر/يوم)','⛽','medium', excess_fuel,
+        r=>`<tr style="background:rgba(245,158,11,.06)">
+          <td dir="ltr"><strong>${r.plate}</strong></td>
+          <td>${r.day}</td>
+          <td style="color:#f59e0b"><strong>${Math.round(r.total_liters)} لتر</strong></td>
+          <td>${r.refills} تعبئة</td></tr>`,
+        ['اللوحة','اليوم','إجمالي الوقود','عدد التعبئات'])}
+
+      ${section('طلبات تعديل عداد متكررة (+3 في أسبوع)','🔢','low', repeated_odometer,
+        r=>`<tr style="background:rgba(99,102,241,.06)">
+          <td><strong>${r.driver_name}</strong></td>
+          <td><code>${r.fixed_number}</code></td>
+          <td style="color:#6366f1"><strong>${r.requests} طلبات</strong></td>
+          <td style="font-size:.8rem">${(r.first_req||'').slice(0,10)}</td></tr>`,
+        ['السائق','الرقم الثابت','عدد الطلبات','أول طلب'])}
+
+      ${section('رحلات مسافة عالية (+500 كم)','📍','low', high_distance,
+        r=>`<tr>
+          <td>#${r.id}</td><td><strong>${r.driver_name}</strong></td>
+          <td dir="ltr">${r.plate}</td>
+          <td style="color:#6366f1"><strong>${Math.round(r.distance)} كم</strong></td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,10)}</td></tr>`,
+        ['#رحلة','السائق','اللوحة','المسافة','التاريخ'])}
+
+      <div style="padding:.5rem;text-align:center">
+        <button class="btn btn-outline btn-sm" onclick="renderSuperFraud()">🔄 تحديث التحليل</button>
+      </div>`;
+  } catch(e) {
+    el.innerHTML=`<div class="card"><div style="padding:2rem;text-align:center;color:var(--danger)">❌ ${e.message}</div></div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// SUPER — الرسائل الصوتية
+// ══════════════════════════════════════════════════════
+async function renderSuperVoice() {
+  const el = document.getElementById('pageContent');
+  let myNotes = [];
+  try { myNotes = await apiCall('/voice-notes'); } catch(e){}
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+
+      <!-- إرسال رسالة جديدة -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">🎙️ رسالة صوتية جديدة</div></div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+
+          <div class="form-group" style="margin:0">
+            <label>إرسال إلى</label>
+            <select id="voiceTarget" class="form-control">
+              <option value="admins">👨‍💼 الأدمنز فقط</option>
+              <option value="drivers">🚗 السائقين فقط</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin:0">
+            <label>مدة الظهور</label>
+            <select id="voiceTTL" class="form-control">
+              <option value="24">24 ساعة (ثم تُمسح)</option>
+              <option value="12">12 ساعة</option>
+              <option value="48">48 ساعة</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin:0">
+            <label>عدد مرات الاستماع</label>
+            <select id="voiceMaxPlays" class="form-control">
+              <option value="1">مرة واحدة فقط</option>
+              <option value="2" selected>مرتان</option>
+              <option value="3">3 مرات</option>
+            </select>
+          </div>
+
+          <!-- مؤشر التسجيل -->
+          <div id="voiceRecorderUI" style="border:2px dashed #e2e8f0;border-radius:14px;padding:1.5rem;text-align:center">
+            <div id="voiceRecStatus" style="color:var(--muted);font-size:.9rem;margin-bottom:.75rem">اضغط للتسجيل</div>
+            <div id="voiceTimer" style="font-size:2rem;font-weight:900;color:#1e3a5f;display:none">0:00</div>
+            <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;margin-top:.5rem">
+              <button class="btn btn-danger" id="voiceStartBtn" onclick="startVoiceRec()">🔴 بدء التسجيل</button>
+              <button class="btn btn-outline" id="voiceStopBtn" onclick="stopVoiceRec()" disabled>⏹ إيقاف</button>
+            </div>
+            <audio id="voicePreview" controls style="display:none;margin-top:1rem;width:100%;border-radius:8px"></audio>
+          </div>
+
+          <button class="btn btn-primary" id="voiceSendBtn" onclick="sendVoiceNote()" disabled style="width:100%">
+            📤 إرسال الرسالة
+          </button>
+        </div>
+      </div>
+
+      <!-- رسائلي المرسلة -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📬 رسائلي المرسلة</div>
+          <button class="btn btn-ghost btn-sm" onclick="renderSuperVoice()">🔄</button>
+        </div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem;max-height:500px;overflow-y:auto">
+          ${myNotes.length===0 ? '<div style="text-align:center;color:var(--muted);padding:2rem">لا توجد رسائل مرسلة</div>' :
+            myNotes.map(n=>{
+              const isExp = new Date(n.expires_at) < new Date();
+              const toLabel = n.target_group==='admins'?'👨‍💼 أدمنز':'🚗 سائقين';
+              const playsLeft = n.max_plays - n.play_count;
+              return `<div style="border:1.5px solid ${isExp||n.is_deleted?'#fca5a5':'#e2e8f0'};border-radius:12px;padding:.9rem">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+                  <span style="font-weight:700;font-size:.88rem">${toLabel}</span>
+                  <span style="font-size:.75rem;color:${isExp||n.is_deleted?'#ef4444':'#64748b'}">${isExp||n.is_deleted?'⛔ منتهية':playsLeft+' استماع متبقي'}</span>
+                </div>
+                <div style="font-size:.75rem;color:var(--muted)">${(n.created_at||'').slice(0,16)} — تنتهي ${(n.expires_at||'').slice(0,16)}</div>
+                ${!isExp&&!n.is_deleted?`<button class="btn btn-danger btn-sm" style="margin-top:.5rem;width:100%" onclick="deleteVoiceNote(${n.id})">🗑️ مسح الآن</button>`:''}
+              </div>`;
+            }).join('')}
+        </div>
+      </div>
+    </div>`;
+
+  // ── recorder state ──
+  let mediaRecorder = null, audioChunks = [], timerInterval = null, audioBlob = null;
+  let seconds = 0;
+
+  window.startVoiceRec = async function() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = []; seconds = 0;
+      mediaRecorder.ondataavailable = e => { if(e.data.size>0) audioChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        audioBlob = new Blob(audioChunks, {type:'audio/webm'});
+        const url = URL.createObjectURL(audioBlob);
+        const prev = document.getElementById('voicePreview');
+        prev.src = url; prev.style.display='block';
+        document.getElementById('voiceSendBtn').disabled = false;
+        document.getElementById('voiceRecStatus').textContent = '✅ جاهز للإرسال';
+        clearInterval(timerInterval);
+      };
+      mediaRecorder.start();
+      document.getElementById('voiceStartBtn').disabled=true;
+      document.getElementById('voiceStopBtn').disabled=false;
+      document.getElementById('voiceTimer').style.display='block';
+      document.getElementById('voiceRecStatus').textContent='🔴 جاري التسجيل...';
+      timerInterval = setInterval(()=>{
+        seconds++;
+        const m=Math.floor(seconds/60), s=seconds%60;
+        document.getElementById('voiceTimer').textContent=`${m}:${String(s).padStart(2,'0')}`;
+        if(seconds>=120){ stopVoiceRec(); showNotification('وصلت للحد الأقصى (دقيقتان)','error'); }
+      },1000);
+    } catch(e) { showNotification('تعذّر الوصول للمايك: '+e.message,'error'); }
+  };
+
+  window.stopVoiceRec = function() {
+    if(mediaRecorder&&mediaRecorder.state==='recording') mediaRecorder.stop();
+    document.getElementById('voiceStartBtn').disabled=false;
+    document.getElementById('voiceStopBtn').disabled=true;
+  };
+
+  window.sendVoiceNote = async function() {
+    if(!audioBlob) return showNotification('سجّل رسالة أولاً','error');
+    const target   = document.getElementById('voiceTarget').value;
+    const ttl      = parseInt(document.getElementById('voiceTTL').value);
+    const maxPlays = parseInt(document.getElementById('voiceMaxPlays').value);
+    const btn = document.getElementById('voiceSendBtn');
+    btn.disabled=true; btn.textContent='⏳ جاري الإرسال...';
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const b64 = e.target.result.split(',')[1];
+      try {
+        await apiCall('/voice-notes','POST',{
+          target_group:target, audio_data:b64,
+          duration_sec:seconds, max_plays:maxPlays, hours_ttl:ttl
+        });
+        showNotification('✅ تم إرسال الرسالة الصوتية','success');
+        await renderSuperVoice();
+      } catch(err) { showNotification(err.message,'error'); btn.disabled=false; btn.textContent='📤 إرسال الرسالة'; }
+    };
+    reader.readAsDataURL(audioBlob);
+  };
+
+  window.deleteVoiceNote = async function(id) {
+    if(!confirm('مسح الرسالة الصوتية؟')) return;
+    try { await apiCall(`/voice-notes/${id}`,'DELETE'); await renderSuperVoice(); }
+    catch(e) { showNotification(e.message,'error'); }
+  };
+}
+
+// ── رسائل صوتية عند الأدمن والسائق ──
+async function checkAndShowVoiceNotes() {
+  if(!currentUser) return;
+  const role = currentUser.role;
+  if(!['admin','driver','reporter','supervisor_workshop','supervisor_field'].includes(role)) return;
+  try {
+    const notes = await apiCall('/voice-notes');
+    if(!notes||!notes.length) return;
+    // اعرض أول رسالة غير مسموعة
+    const note = notes[0];
+    showVoiceNotePopup(note);
+  } catch(e) {}
+}
+
+function showVoiceNotePopup(note) {
+  const existing = document.getElementById('voiceNotePopup');
+  if(existing) existing.remove();
+  const div = document.createElement('div');
+  div.id = 'voiceNotePopup';
+  div.style.cssText = `position:fixed;bottom:1.5rem;left:1.5rem;z-index:9999;
+    background:#1e3a5f;color:#fff;border-radius:16px;padding:1.25rem 1.5rem;
+    box-shadow:0 8px 32px rgba(0,0,0,.3);max-width:340px;animation:slideInLeft .3s ease`;
+  div.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+      <span style="font-size:1.5rem">🎙️</span>
+      <div>
+        <div style="font-weight:800;font-size:.95rem">رسالة من الإدارة</div>
+        <div style="font-size:.72rem;opacity:.7">${(note.created_at||'').slice(0,16)}</div>
+      </div>
+      <button onclick="document.getElementById('voiceNotePopup').remove()"
+              style="margin-right:auto;background:rgba(255,255,255,.15);border:none;
+                     color:#fff;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:1rem">✕</button>
+    </div>
+    <audio id="vn_audio_${note.id}" src="data:audio/webm;base64,${note.audio_data}"
+           style="width:100%;border-radius:8px" controls></audio>
+    <div style="font-size:.72rem;opacity:.7;margin-top:.5rem;text-align:center">
+      متبقي ${note.max_plays-note.play_count} استماع — تنتهي ${(note.expires_at||'').slice(0,16)}
+    </div>`;
+  document.body.appendChild(div);
+  // سجّل التشغيل عند الضغط play
+  const audio = div.querySelector('audio');
+  audio.addEventListener('play', async () => {
+    try { await apiCall(`/voice-notes/${note.id}/play`,'POST'); } catch(e){}
+  }, {once:true});
 }
 
 // ── Poll maintenance alerts ──

@@ -257,6 +257,22 @@ def migrate_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_logs(user_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)")
 
+        # VOICE NOTES (سوبر يوزر → أدمنز أو سائقين)
+        c.execute("""CREATE TABLE IF NOT EXISTS voice_notes(
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id    INTEGER NOT NULL,
+            target_group TEXT NOT NULL CHECK(target_group IN('admins','drivers')),
+            audio_data   TEXT NOT NULL,
+            duration_sec REAL DEFAULT 0,
+            created_at   TEXT NOT NULL,
+            expires_at   TEXT NOT NULL,
+            play_count   INTEGER DEFAULT 0,
+            max_plays    INTEGER DEFAULT 2,
+            is_deleted   INTEGER DEFAULT 0
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
+
         # Safe migrations for existing columns
         _safe_add_columns(c)
 
@@ -786,12 +802,18 @@ SUPERUSERS = [
 ]
 
 def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
-    """Ensure the given hardcoded accounts exist for a role.
-    ⚠️ لا تمسح — فقط تضيف اللي ناقص من الحسابات الثابتة.
-    الحسابات المضافة من الـ superuser panel لا تُمس.
+    """Ensure exactly the given accounts exist for a role.
+    Removes accounts no longer in the list, adds missing ones.
+    Skips rehashing on restart for accounts that already exist.
     """
-    c.execute("SELECT username FROM users WHERE role=?", (role,))
-    existing = {r["username"] for r in c.fetchall()}
+    c.execute("SELECT id, username FROM users WHERE role=?", (role,))
+    existing = {r["username"]: r["id"] for r in c.fetchall()}
+    allowed  = {u for u, _ in accounts}
+
+    for uname, uid in list(existing.items()):
+        if uname not in allowed:
+            c.execute("DELETE FROM users WHERE id=?", (uid,))
+            log.info(f"Removed old {role}: {uname}")
 
     for uname, pw in accounts:
         if uname not in existing:
@@ -3187,6 +3209,233 @@ async def import_permissions_template(cu: dict = Depends(require_admin)):
 
 
 # ══════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# 31. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
+# ══════════════════════════════════════════════════════
+@app.get("/cars/{car_id}/last-odometer")
+async def get_last_odometer(car_id: int, cu: dict = Depends(require_driver)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT end_odometer FROM trips
+                     WHERE car_id=? AND end_odometer IS NOT NULL AND end_odometer > 0
+                     ORDER BY end_time DESC LIMIT 1""", (car_id,))
+        row = c.fetchone()
+    return {"car_id": car_id, "last_odometer": row["end_odometer"] if row else None}
+
+
+# ══════════════════════════════════════════════════════
+# 32. FRAUD DETECTION — كشف التلاعب
+# ══════════════════════════════════════════════════════
+@app.get("/reports/fraud-detection")
+async def fraud_detection(cu: dict = Depends(require_superuser)):
+    """تحليل شامل لكشف التلاعب المحتمل في البيانات."""
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # 1. عداد النهاية أقل من عداد البداية (تلاعب صريح)
+        c.execute("""SELECT t.id, t.start_odometer, t.end_odometer,
+                            t.start_time, t.end_time,
+                            d.name driver_name, d.fixed_number,
+                            ca.plate
+                     FROM trips t
+                     JOIN drivers d ON d.id=t.driver_id
+                     JOIN cars ca ON ca.id=t.car_id
+                     WHERE t.end_odometer IS NOT NULL
+                       AND t.start_odometer IS NOT NULL
+                       AND t.end_odometer < t.start_odometer""")
+        odometer_reversed = [dict(r) for r in c.fetchall()]
+
+        # 2. رحلات بمسافة مشبوهة (أكثر من 500 كم في رحلة واحدة)
+        c.execute("""SELECT t.id, t.start_odometer, t.end_odometer,
+                            (t.end_odometer - t.start_odometer) AS distance,
+                            t.start_time, t.end_time,
+                            d.name driver_name, d.fixed_number, ca.plate
+                     FROM trips t
+                     JOIN drivers d ON d.id=t.driver_id
+                     JOIN cars ca ON ca.id=t.car_id
+                     WHERE t.end_odometer IS NOT NULL AND t.start_odometer IS NOT NULL
+                       AND (t.end_odometer - t.start_odometer) > 500
+                     ORDER BY distance DESC""")
+        high_distance = [dict(r) for r in c.fetchall()]
+
+        # 3. رحلتان متداخلتان لنفس السائق
+        c.execute("""SELECT a.id id1, b.id id2,
+                            a.start_time, a.end_time,
+                            b.start_time start2, b.end_time end2,
+                            d.name driver_name, d.fixed_number
+                     FROM trips a JOIN trips b ON a.driver_id=b.driver_id AND a.id<b.id
+                     JOIN drivers d ON d.id=a.driver_id
+                     WHERE a.end_time IS NOT NULL AND b.end_time IS NOT NULL
+                       AND a.start_time < b.end_time AND a.end_time > b.start_time""")
+        overlapping = [dict(r) for r in c.fetchall()]
+
+        # 4. رحلتان متداخلتان لنفس المركبة (مع سائقين مختلفين)
+        c.execute("""SELECT a.id id1, b.id id2, ca.plate,
+                            da.name driver1, db.name driver2,
+                            a.start_time, a.end_time,
+                            b.start_time start2, b.end_time end2
+                     FROM trips a JOIN trips b ON a.car_id=b.car_id AND a.id<b.id
+                     JOIN cars ca ON ca.id=a.car_id
+                     JOIN drivers da ON da.id=a.driver_id
+                     JOIN drivers db ON db.id=b.driver_id
+                     WHERE a.end_time IS NOT NULL AND b.end_time IS NOT NULL
+                       AND a.start_time < b.end_time AND a.end_time > b.start_time
+                       AND a.driver_id != b.driver_id""")
+        car_overlap = [dict(r) for r in c.fetchall()]
+
+        # 5. رحلة وقتها قصير جداً (<3 دقائق) لكن مسافة كبيرة (>10 كم)
+        c.execute("""SELECT t.id,
+                            (julianday(t.end_time)-julianday(t.start_time))*1440 AS minutes,
+                            (t.end_odometer - t.start_odometer) AS distance,
+                            d.name driver_name, ca.plate,
+                            t.start_time, t.end_time
+                     FROM trips t
+                     JOIN drivers d ON d.id=t.driver_id
+                     JOIN cars ca ON ca.id=t.car_id
+                     WHERE t.end_time IS NOT NULL AND t.end_odometer IS NOT NULL
+                       AND t.start_odometer IS NOT NULL
+                       AND (julianday(t.end_time)-julianday(t.start_time))*1440 < 3
+                       AND (t.end_odometer - t.start_odometer) > 10""")
+        impossible_speed = [dict(r) for r in c.fetchall()]
+
+        # 6. وقود كثير في فترة قصيرة (أكثر من 200 لتر في يوم واحد لنفس المركبة)
+        c.execute("""SELECT vehicle_id, DATE(created_at) AS day,
+                            SUM(quantity) AS total_liters, COUNT(*) AS refills,
+                            ca.plate
+                     FROM workshop_records w
+                     JOIN cars ca ON ca.id=w.vehicle_id
+                     WHERE type LIKE 'fuel_%' AND quantity IS NOT NULL
+                     GROUP BY vehicle_id, day
+                     HAVING total_liters > 200
+                     ORDER BY total_liters DESC""")
+        excess_fuel = [dict(r) for r in c.fetchall()]
+
+        # 7. سائق عدّل طلب عداد أكثر من 3 مرات في أسبوع
+        c.execute("""SELECT driver_id, COUNT(*) AS requests,
+                            d.name driver_name, d.fixed_number,
+                            MIN(created_at) AS first_req
+                     FROM driver_requests
+                     JOIN drivers d ON d.id=driver_requests.driver_id
+                     WHERE type='odometer_change'
+                       AND created_at >= datetime('now','-7 days')
+                     GROUP BY driver_id HAVING requests > 3
+                     ORDER BY requests DESC""")
+        repeated_odometer = [dict(r) for r in c.fetchall()]
+
+    total_alerts = (len(odometer_reversed) + len(overlapping) + len(car_overlap) +
+                    len(impossible_speed) + len(excess_fuel) + len(repeated_odometer))
+    high_risk   = len(odometer_reversed) + len(impossible_speed) + len(car_overlap)
+
+    return {
+        "summary": {
+            "total_alerts": total_alerts,
+            "high_risk":    high_risk,
+            "medium_risk":  len(overlapping) + len(excess_fuel),
+            "low_risk":     len(repeated_odometer) + len(high_distance),
+        },
+        "odometer_reversed":  odometer_reversed,
+        "high_distance":      high_distance,
+        "overlapping_driver": overlapping,
+        "car_overlap":        car_overlap,
+        "impossible_speed":   impossible_speed,
+        "excess_fuel":        excess_fuel,
+        "repeated_odometer":  repeated_odometer,
+    }
+
+
+# ══════════════════════════════════════════════════════
+# 33. VOICE NOTES — رسائل صوتية من السوبر
+# ══════════════════════════════════════════════════════
+class VoiceNoteCreate(BaseModel):
+    target_group: str          # 'admins' | 'drivers'
+    audio_data:   str          # base64
+    duration_sec: float = 0
+    max_plays:    int   = 2    # مرتين افتراضياً
+    hours_ttl:    int   = 24   # يتمسح بعد 24 ساعة
+
+@app.post("/voice-notes")
+async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_superuser)):
+    if body.target_group not in ("admins", "drivers"):
+        raise HTTPException(400, "target_group يجب أن يكون admins أو drivers")
+    now      = datetime.utcnow()
+    expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""INSERT INTO voice_notes(sender_id,target_group,audio_data,
+                     duration_sec,created_at,expires_at,max_plays)
+                     VALUES(?,?,?,?,?,?,?)""",
+                  (cu["user_id"], body.target_group, body.audio_data,
+                   body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+        note_id = c.lastrowid
+    return {"id": note_id, "expires_at": expires}
+
+@app.get("/voice-notes")
+async def list_voice_notes(cu: dict = Depends(get_current_user)):
+    role   = cu["role"]
+    now    = datetime.utcnow().isoformat() + "Z"
+
+    # السوبر يشوف اللي أرسلها هو
+    if role == "superuser":
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("""SELECT id, target_group, duration_sec, created_at,
+                                expires_at, play_count, max_plays, is_deleted
+                         FROM voice_notes WHERE sender_id=?
+                         ORDER BY created_at DESC""", (cu["user_id"],))
+            return [dict(r) for r in c.fetchall()]
+
+    # أدمن → يشوف اللي للـ admins
+    if role in ("admin","reporter","superuser","supervisor_workshop","supervisor_field"):
+        group = "admins"
+    elif role == "driver":
+        group = "drivers"
+    else:
+        return []
+
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT id, duration_sec, created_at, expires_at,
+                            play_count, max_plays, audio_data
+                     FROM voice_notes
+                     WHERE target_group=? AND is_deleted=0
+                       AND expires_at > ? AND play_count < max_plays
+                     ORDER BY created_at DESC""", (group, now))
+        return [dict(r) for r in c.fetchall()]
+
+@app.post("/voice-notes/{note_id}/play")
+async def play_voice_note(note_id: int, cu: dict = Depends(get_current_user)):
+    """تسجّل تشغيل — وتمسح لو وصلت الحد."""
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT play_count, max_plays, is_deleted, expires_at FROM voice_notes WHERE id=?", (note_id,))
+        row = c.fetchone()
+        if not row:                    raise HTTPException(404, "الرسالة غير موجودة")
+        if row["is_deleted"]:          raise HTTPException(410, "الرسالة تم حذفها")
+        if row["expires_at"] < now:    raise HTTPException(410, "انتهت صلاحية الرسالة")
+        new_count = row["play_count"] + 1
+        if new_count >= row["max_plays"]:
+            c.execute("UPDATE voice_notes SET play_count=?, is_deleted=1 WHERE id=?", (new_count, note_id))
+        else:
+            c.execute("UPDATE voice_notes SET play_count=? WHERE id=?", (new_count, note_id))
+    return {"play_count": new_count, "deleted": new_count >= row["max_plays"]}
+
+@app.delete("/voice-notes/{note_id}")
+async def delete_voice_note(note_id: int, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        conn.cursor().execute("UPDATE voice_notes SET is_deleted=1 WHERE id=? AND sender_id=?",
+                              (note_id, cu["user_id"]))
+    return {"deleted": True}
+
+@app.delete("/voice-notes/cleanup/expired")
+async def cleanup_expired_notes(cu: dict = Depends(require_superuser)):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM voice_notes WHERE expires_at < ? OR is_deleted=1", (now,))
+        return {"deleted": c.rowcount}
+
+
 # 24. ENTRY POINT
 # ══════════════════════════════════════════════════════
 
