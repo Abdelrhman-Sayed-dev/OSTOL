@@ -1085,7 +1085,7 @@ function fmtDT(isoStr) {
   const d = new Date(s);
   if(isNaN(d.getTime())) return isoStr;
   const pad = n => String(n).padStart(2,'0');
-  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}  ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 /** Format a number in Arabic locale (1 decimal place); returns '—' for null/undefined. */
@@ -2163,8 +2163,8 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
     const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
     const garageLoc=t.garage_location||'';
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr">${cPlate}</td>
-      <td title="${t.start_time||''}">${t.start_time?fmtDate(t.start_time):'—'}</td>
-      <td title="${t.end_time||''}">${t.end_time?fmtDate(t.end_time):'—'}</td>
+      <td title="${t.start_time||''}">${t.start_time?(isSuperuser()?fmtDT(t.start_time):fmtDate(t.start_time)):'—'}</td>
+      <td title="${t.end_time||''}">${t.end_time?(isSuperuser()?fmtDT(t.end_time):fmtDate(t.end_time)):'—'}</td>
       <td><strong>${t.start_odometer!=null?t.start_odometer+' كم':'—'}</strong></td>
       <td><strong>${t.end_odometer!=null?t.end_odometer+' كم':'—'}</strong></td>
       <td>${formatLocation(t.start_location)}</td><td>${formatLocation(t.end_location)}</td><td>${formatLocation(garageLoc, true)}</td>
