@@ -3024,12 +3024,14 @@ async def import_confirm(
                             ("project",          row["project"]),
                             ("branch",           row["branch"]),
                             ("car_license_expiry", row["car_license_expiry"]),
-                            ("equipment_type",   row["equipment_type"]),
                             ("sector",           row["sector"]),
                         ]:
                             old = ex[field] if ex and field in ex.keys() else ""
                             if new_val and not str(old or "").strip():
                                 upd.append(f"{field}=?"); params.append(new_val)
+                        # equipment_type يتحدّث دائماً لو الملف جاب قيمة
+                        if row["equipment_type"]:
+                            upd.append("equipment_type=?"); params.append(row["equipment_type"])
                         if upd:
                             c.execute(f"UPDATE cars SET {','.join(upd)} WHERE id=?", params + [car_id])
                             updated.append({"row_index": row["row_index"], "plate": row["plate"],
