@@ -393,6 +393,23 @@ def _safe_add_columns(c):
                 except Exception:
                     pass
 
+    # ── جدول الصيانة الدورية ──
+    c.execute("""CREATE TABLE IF NOT EXISTS maintenance_schedule (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_id            INTEGER NOT NULL,
+        maintenance_type  TEXT    NOT NULL,
+        interval_km       REAL,
+        interval_days     INTEGER,
+        last_done_km      REAL,
+        last_done_date    TEXT,
+        alert_km_before   REAL    DEFAULT 500,
+        alert_days_before INTEGER DEFAULT 7,
+        notes             TEXT    DEFAULT '',
+        created_at        TEXT    NOT NULL,
+        updated_at        TEXT    NOT NULL,
+        FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
 
     # ── تصحيح السجلات القديمة: price كان سعر/وحدة، دلوقتي يبقى إجمالي ──
     # نضرب السجلات اللي price فيها صغيرة (< 200) وعندها كمية > 0
@@ -1529,6 +1546,26 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             c.execute("SELECT plate FROM cars WHERE id=?", (rec.vehicle_id,))
             cv = c.fetchone()
             vp = cv["plate"] if cv else None
+        # ── تحديث جدول الصيانة الدورية تلقائياً ──
+        if rec.vehicle_id and rec.odometer_reading:
+            MAINT_MAP = {
+                "oil":    ["تغيير زيت","فلتر زيت"],
+                "filter": ["فلتر هواء","فلتر وقود","فلتر مكيف"],
+                "tire":   ["إطارات"],
+                "battery":["بطارية"],
+                "belt":   ["سير توزيع"],
+            }
+            related_types = MAINT_MAP.get(rec.type, [])
+            if related_types:
+                placeholders_m = ",".join("?" * len(related_types))
+                c.execute(f"""UPDATE maintenance_schedule
+                              SET last_done_km=?, last_done_date=?, updated_at=?
+                              WHERE car_id=? AND maintenance_type IN ({placeholders_m})""",
+                          [rec.odometer_reading, now[:10], now, rec.vehicle_id] + related_types)
+                updated_m = conn.execute("SELECT changes()").fetchone()[0]
+                if updated_m:
+                    log_event("maintenance_auto_updated",
+                              car_id=rec.vehicle_id, types=related_types, km=rec.odometer_reading)
 
         return {"id":rid,"driver_id":rec.driver_id,"type":rec.type,"quantity":rec.quantity,
                 "price":final_price,"notes":rec.notes or "","created_at":now,
@@ -2295,6 +2332,38 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
 
 
 # ══════════════════════════════════════════════════════
+# 27. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
+# ══════════════════════════════════════════════════════
+
+MAINTENANCE_TYPES = [
+    "تغيير زيت", "فلتر زيت", "فلتر هواء", "فلتر وقود",
+    "فلتر مكيف", "إطارات", "بطارية", "فرامل أمامية",
+    "فرامل خلفية", "سير توزيع", "ترمس", "ماء تبريد",
+    "سائل فرامل", "فحص دوري عام", "أخرى",
+]
+
+class MaintenanceScheduleCreate(BaseModel):
+    car_id:           int
+    maintenance_type: str
+    interval_km:      Optional[float] = None   # كل كام كم
+    interval_days:    Optional[int]   = None   # أو كل كام يوم
+    last_done_km:     Optional[float] = None   # آخر عداد عند الصيانة
+    last_done_date:   Optional[str]   = None   # تاريخ آخر صيانة (YYYY-MM-DD)
+    alert_km_before:  Optional[float] = 500.0  # إنذار قبل كام كم
+    alert_days_before:Optional[int]   = 7      # إنذار قبل كام يوم
+    notes:            Optional[str]   = ""
+
+class MaintenanceScheduleUpdate(BaseModel):
+    maintenance_type: Optional[str]   = None
+    interval_km:      Optional[float] = None
+    interval_days:    Optional[int]   = None
+    last_done_km:     Optional[float] = None
+    last_done_date:   Optional[str]   = None
+    alert_km_before:  Optional[float] = None
+    alert_days_before:Optional[int]   = None
+    notes:            Optional[str]   = None
+
+# ══════════════════════════════════════════════════════
 # 24-B. BRANCHES LIST — لقائمة الفروع المتاحة
 # ══════════════════════════════════════════════════════
 
@@ -3006,96 +3075,320 @@ if __name__ == "__main__":
         reload=(ENVIRONMENT != "production"),
         workers=1 if ENVIRONMENT != "production" else 4,
     )
+# ══════════════════════════════════════════════════════
+# 27. MAINTENANCE SCHEDULE — CRUD + ALERTS
+# ══════════════════════════════════════════════════════
+
+def _maintenance_row(row: dict, cars_map: dict) -> dict:
+    """Enrich a maintenance_schedule row with computed fields."""
+    d = dict(row)
+    d.setdefault("notes", "")
+    car = cars_map.get(d.get("car_id"), {})
+    d["car_plate"]  = car.get("plate", "—")
+    d["car_model"]  = car.get("model", "—")
+    d["car_branch"] = car.get("branch", "")
+
+    # Last known odometer from trips
+    d["current_km"] = d.get("_current_km", None)
+
+    # Compute next due
+    next_km = None
+    if d.get("last_done_km") is not None and d.get("interval_km"):
+        next_km = float(d["last_done_km"]) + float(d["interval_km"])
+    d["next_due_km"] = next_km
+
+    next_date = None
+    if d.get("last_done_date") and d.get("interval_days"):
+        from datetime import timedelta
+        try:
+            ld = datetime.fromisoformat(d["last_done_date"])
+            next_date = (ld + timedelta(days=int(d["interval_days"]))).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    d["next_due_date"] = next_date
+
+    # Alert status
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    alert_km_before   = float(d.get("alert_km_before") or 500)
+    alert_days_before = int(d.get("alert_days_before") or 7)
+    cur_km = d.get("current_km")
+
+    status = "ok"
+    if next_km is not None and cur_km is not None:
+        remaining_km = next_km - float(cur_km)
+        if remaining_km <= 0:
+            status = "overdue"
+        elif remaining_km <= alert_km_before:
+            status = "warning"
+
+    if next_date and status == "ok":
+        from datetime import timedelta
+        try:
+            nd = datetime.fromisoformat(next_date)
+            days_left = (nd - datetime.utcnow()).days
+            if days_left <= 0:
+                status = "overdue"
+            elif days_left <= alert_days_before:
+                status = "warning"
+        except Exception:
+            pass
+
+    d["alert_status"] = status
+    d.pop("_current_km", None)
+    return d
+
+
+@app.get("/maintenance/schedule")
+async def get_maintenance_schedule(cu: dict = Depends(require_admin_or_reporter)):
+    branch = _branch_filter(cu)
+    with get_db() as conn:
+        c = conn.cursor()
+        # جيب أحدث عداد لكل عربية من الرحلات المنتهية
+        c.execute("""SELECT car_id, MAX(end_odometer) as max_odo
+                     FROM trips WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL
+                     GROUP BY car_id""")
+        odo_map = {r["car_id"]: r["max_odo"] for r in c.fetchall()}
+
+        # جيب العربيات
+        if branch:
+            c.execute("SELECT id,plate,model,branch FROM cars WHERE branch=?", (branch,))
+        else:
+            c.execute("SELECT id,plate,model,branch FROM cars")
+        cars_map = {r["id"]: dict(r) for r in c.fetchall()}
+
+        # جيب الجدول
+        car_ids = list(cars_map.keys())
+        if not car_ids:
+            return []
+        placeholders = ",".join("?" * len(car_ids))
+        c.execute(f"""SELECT * FROM maintenance_schedule
+                      WHERE car_id IN ({placeholders})
+                      ORDER BY car_id, maintenance_type""", car_ids)
+        rows = []
+        for r in c.fetchall():
+            d = dict(r)
+            d["_current_km"] = odo_map.get(d["car_id"])
+            rows.append(_maintenance_row(d, cars_map))
+        return rows
+
+
+@app.get("/maintenance/alerts")
+async def get_maintenance_alerts(cu: dict = Depends(require_admin_or_reporter)):
+    """يرجع فقط السجلات اللي status فيها warning أو overdue."""
+    all_rows = await get_maintenance_schedule(cu)
+    return [r for r in all_rows if r["alert_status"] in ("warning", "overdue")]
+
+
+@app.post("/maintenance/schedule", status_code=201)
+async def create_maintenance(rec: MaintenanceScheduleCreate, cu: dict = Depends(require_admin)):
+    if rec.maintenance_type not in MAINTENANCE_TYPES:
+        raise HTTPException(400, f"نوع صيانة غير صالح. الأنواع المتاحة: {MAINTENANCE_TYPES}")
+    if not rec.interval_km and not rec.interval_days:
+        raise HTTPException(400, "يجب تحديد interval_km أو interval_days على الأقل")
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM cars WHERE id=?", (rec.car_id,))
+        if not c.fetchone():
+            raise HTTPException(404, "المركبة غير موجودة")
+        # منع تكرار نفس النوع لنفس العربية
+        c.execute("SELECT id FROM maintenance_schedule WHERE car_id=? AND maintenance_type=?",
+                  (rec.car_id, rec.maintenance_type))
+        if c.fetchone():
+            raise HTTPException(400, "يوجد جدول صيانة لهذا النوع لهذه المركبة بالفعل")
+        c.execute("""INSERT INTO maintenance_schedule
+                     (car_id,maintenance_type,interval_km,interval_days,
+                      last_done_km,last_done_date,alert_km_before,alert_days_before,notes,created_at,updated_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                  (rec.car_id, rec.maintenance_type, rec.interval_km, rec.interval_days,
+                   rec.last_done_km, rec.last_done_date,
+                   rec.alert_km_before or 500, rec.alert_days_before or 7,
+                   rec.notes or "", now, now))
+        rid = c.lastrowid
+        log_event("maintenance_created", id=rid, car_id=rec.car_id, type=rec.maintenance_type)
+        return {"id": rid, "ok": True}
+
+
+@app.put("/maintenance/schedule/{mid}")
+async def update_maintenance(mid: int, rec: MaintenanceScheduleUpdate, cu: dict = Depends(require_admin)):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM maintenance_schedule WHERE id=?", (mid,))
+        row = c.fetchone()
+        if not row:
+            raise HTTPException(404, "السجل غير موجود")
+        updates = {k: v for k, v in rec.dict(exclude_none=True).items()}
+        if not updates:
+            raise HTTPException(400, "لا توجد بيانات للتحديث")
+        updates["updated_at"] = now
+        set_clause = ", ".join(f"{k}=?" for k in updates)
+        c.execute(f"UPDATE maintenance_schedule SET {set_clause} WHERE id=?",
+                  list(updates.values()) + [mid])
+        log_event("maintenance_updated", id=mid, changes=list(updates.keys()))
+        return {"ok": True}
+
+
+@app.delete("/maintenance/schedule/{mid}")
+async def delete_maintenance(mid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM maintenance_schedule WHERE id=?", (mid,))
+        if conn.execute("SELECT changes()").fetchone()[0] == 0:
+            raise HTTPException(404, "السجل غير موجود")
+        log_event("maintenance_deleted", id=mid)
+        return {"ok": True}
+
 
 # ══════════════════════════════════════════════════════
 # 29. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
+#     — للسوبر يوزر فقط —
+#     يستخدم منهجية Fill-to-Fill الصحيحة:
+#       • التفويلة الأولى = نقطة مرجعية فقط، لا تُحسب
+#       • الكفاءة بين كل تفويلتين = km_diff / liters_of_new_fill
+#       • يجب وجود ≥ 2 تفويلات حتى تظهر النتيجة
 # ══════════════════════════════════════════════════════
+
+def _fill_to_fill_efficiency(fills: list) -> dict:
+    """
+    fills: list of dicts مرتبة تصاعدياً بـ odometer_reading
+           كل dict: {odometer_reading, quantity, price, created_at}
+
+    يرجع:
+        total_km      : مجموع المسافات بين التفويلات
+        total_liters  : مجموع اللترات (من التفويلة الثانية فصاعداً)
+        total_cost    : مجموع التكلفة  (من التفويلة الثانية فصاعداً)
+        refills       : عدد التفويلات اللي دخلت في الحساب (الأولى مش محسوبة)
+        efficiency    : كم/لتر  (None لو أقل من 2 تفويلات أو لترات=0)
+        cost_per_km   : جنيه/كم (None لو لا يوجد)
+        segments      : تفاصيل كل فترة بين تفويلتين
+    """
+    if len(fills) < 2:
+        return {
+            "total_km": 0, "total_liters": 0, "total_cost": 0,
+            "refills": 0, "efficiency": None, "cost_per_km": None,
+            "segments": [], "note": "بيانات غير كافية — تحتاج ≥ 2 تفويلات"
+        }
+
+    total_km     = 0.0
+    total_liters = 0.0
+    total_cost   = 0.0
+    segments     = []
+
+    for i in range(1, len(fills)):
+        prev = fills[i - 1]
+        curr = fills[i]
+        odo_prev = prev.get("odometer_reading") or 0
+        odo_curr = curr.get("odometer_reading") or 0
+        km_diff  = max(odo_curr - odo_prev, 0)
+        liters   = float(curr.get("quantity") or 0)
+        cost     = float(curr.get("price")    or 0)
+
+        if km_diff > 0 and liters > 0:
+            seg_eff = round(km_diff / liters, 2)
+        else:
+            seg_eff = None
+
+        total_km     += km_diff
+        total_liters += liters
+        total_cost   += cost
+
+        segments.append({
+            "from_odometer": odo_prev,
+            "to_odometer":   odo_curr,
+            "km":            round(km_diff, 1),
+            "liters":        round(liters, 2),
+            "cost":          round(cost, 2),
+            "efficiency_km_per_liter": seg_eff,
+            "date": curr.get("created_at", "")[:10],
+        })
+
+    efficiency  = round(total_km / total_liters, 2) if total_liters > 0 else None
+    cost_per_km = round(total_cost / total_km, 2)   if total_km    > 0 else None
+
+    return {
+        "total_km":     round(total_km, 1),
+        "total_liters": round(total_liters, 2),
+        "total_cost":   round(total_cost, 2),
+        "refills":      len(fills) - 1,   # الأولى reference فقط
+        "efficiency":   efficiency,
+        "cost_per_km":  cost_per_km,
+        "segments":     segments,
+    }
+
 
 @app.get("/reports/fuel-efficiency")
 async def fuel_efficiency_report(
     date_from: Optional[str] = None,   # YYYY-MM-DD
     date_to:   Optional[str] = None,   # YYYY-MM-DD
     car_id:    Optional[int] = None,
-    cu: dict = Depends(require_admin_or_reporter)
+    cu: dict = Depends(require_superuser)   # ← سوبر يوزر فقط
 ):
     """
-    لكل عربية:
-    - إجمالي المسافة من الرحلات المنتهية (كم)
-    - إجمالي الوقود المستهلك من سجلات الورش (لتر)
-    - الكفاءة = المسافة / الوقود (كم/لتر)
-    - إجمالي تكلفة الوقود
+    تقرير كفاءة الوقود — Fill-to-Fill Method
+    ─────────────────────────────────────────
+    المنهجية:
+      1. نجيب كل سجلات الوقود للعربية مرتبة بعداد المسافة
+      2. نتجاهل التفويلة الأولى (reference point)
+      3. من التفويلة الثانية: كفاءة_القطعة = km_diff / liters_هذه_التفويلة
+      4. الكفاءة الإجمالية = مجموع_الكم / مجموع_اللترات (من الثانية فصاعداً)
+
+    ملاحظة: العربية اللي عندها تفويلة واحدة فقط لن تظهر لها كفاءة.
     """
     today = datetime.utcnow().strftime("%Y-%m-%d")
     if not date_from:
-        # آخر 30 يوم بشكل افتراضي
-        from datetime import timedelta
         date_from = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
     if not date_to:
         date_to = today
 
-    branch = _branch_filter(cu)
+    fuel_types = [t for t in WORKSHOP_TYPES if t.startswith("fuel_")]
+    fuel_types_ph = ",".join("?" * len(fuel_types))
+
     with get_db() as conn:
         c = conn.cursor()
 
-        # جيب العربيات
-        if branch:
-            c.execute("SELECT id,plate,model,car_name,branch,equipment_type FROM cars WHERE branch=? ORDER BY plate",
-                      (branch,))
+        # ── العربيات ──
+        if car_id:
+            c.execute("SELECT id,plate,model,car_name,branch,equipment_type FROM cars WHERE id=?", (car_id,))
         else:
             c.execute("SELECT id,plate,model,car_name,branch,equipment_type FROM cars ORDER BY plate")
         cars_list = [dict(r) for r in c.fetchall()]
-        if car_id:
-            cars_list = [c2 for c2 in cars_list if c2["id"] == car_id]
-        cars_map = {c2["id"]: c2 for c2 in cars_list}
+        cars_map  = {car["id"]: car for car in cars_list}
 
         if not cars_map:
             return {"date_from": date_from, "date_to": date_to, "cars": []}
 
-        car_ids = list(cars_map.keys())
+        car_ids      = list(cars_map.keys())
         placeholders = ",".join("?" * len(car_ids))
 
-        # رحلات منتهية في الفترة
-        c.execute(f"""SELECT car_id,
-                             SUM(CASE WHEN end_odometer > start_odometer
-                                      THEN end_odometer - start_odometer ELSE 0 END) as total_km
-                      FROM trips
-                      WHERE car_id IN ({placeholders})
-                        AND end_time IS NOT NULL
-                        AND end_time >= ? AND end_time <= ?
-                        AND end_odometer IS NOT NULL AND start_odometer IS NOT NULL
-                      GROUP BY car_id""",
-                  car_ids + [date_from + "T00:00:00Z", date_to + "T23:59:59Z"])
-        km_map = {r["car_id"]: float(r["total_km"] or 0) for r in c.fetchall()}
+        # ── جيب كل تفويلات الوقود للعربيات في الفترة
+        #    مرتبة بـ odometer_reading تصاعدياً عشان fill-to-fill يشتغل صح
+        #    لو مفيش عداد نرتب بـ created_at
+        c.execute(f"""
+            SELECT vehicle_id, odometer_reading, quantity, price, created_at
+            FROM   workshop_records
+            WHERE  vehicle_id IN ({placeholders})
+              AND  type IN ({fuel_types_ph})
+              AND  created_at >= ?
+              AND  created_at <= ?
+              AND  quantity IS NOT NULL AND quantity > 0
+            ORDER BY vehicle_id,
+                     COALESCE(odometer_reading, 0),
+                     created_at
+        """, car_ids + fuel_types + [date_from + "T00:00:00", date_to + "T23:59:59"])
 
-        # سجلات وقود في الفترة
-        fuel_types_ph = ",".join("?" * len([t for t in WORKSHOP_TYPES if t.startswith("fuel_")]))
-        fuel_types = [t for t in WORKSHOP_TYPES if t.startswith("fuel_")]
-        c.execute(f"""SELECT vehicle_id,
-                             SUM(COALESCE(quantity,0)) as total_liters,
-                             SUM(COALESCE(price,0))    as total_cost,
-                             COUNT(*)                  as refills
-                      FROM workshop_records
-                      WHERE vehicle_id IN ({placeholders})
-                        AND type IN ({fuel_types_ph})
-                        AND created_at >= ? AND created_at <= ?
-                      GROUP BY vehicle_id""",
-                  car_ids + fuel_types + [date_from + "T00:00:00Z", date_to + "T23:59:59Z"])
-        fuel_map = {r["vehicle_id"]: {
-            "liters": float(r["total_liters"] or 0),
-            "cost":   float(r["total_cost"]   or 0),
-            "refills": int(r["refills"] or 0),
-        } for r in c.fetchall()}
+        # نجمع التفويلات لكل عربية
+        fills_by_car: dict = {}
+        for row in c.fetchall():
+            vid = row["vehicle_id"]
+            fills_by_car.setdefault(vid, []).append(dict(row))
 
     result = []
     for cid, car in cars_map.items():
-        km     = km_map.get(cid, 0)
-        fuel   = fuel_map.get(cid, {"liters": 0, "cost": 0, "refills": 0})
-        liters = fuel["liters"]
-        cost   = fuel["cost"]
-        eff    = round(km / liters, 2) if liters > 0 else None   # كم/لتر
-        cost_per_km = round(cost / km, 2) if km > 0 else None    # جنيه/كم
+        fills = fills_by_car.get(cid, [])
+        stats = _fill_to_fill_efficiency(fills)
+        eq    = (car.get("equipment_type") or "").split("|")
 
-        eq = (car.get("equipment_type") or "").split("|")
         result.append({
             "car_id":       cid,
             "plate":        car["plate"],
@@ -3103,17 +3396,28 @@ async def fuel_efficiency_report(
             "car_name":     car.get("car_name", ""),
             "branch":       car.get("branch", ""),
             "category":     eq[0] if eq else "",
-            "km":           round(km, 1),
-            "liters":       round(liters, 1),
-            "cost":         round(cost, 2),
-            "refills":      fuel["refills"],
-            "efficiency_km_per_liter": eff,
-            "cost_per_km":  cost_per_km,
+            "total_km":     stats["total_km"],
+            "total_liters": stats["total_liters"],
+            "total_cost":   stats["total_cost"],
+            "refills":      stats["refills"],
+            "efficiency_km_per_liter": stats["efficiency"],
+            "cost_per_km":  stats["cost_per_km"],
+            "segments":     stats["segments"],
+            "note":         stats.get("note", ""),
         })
 
-    # رتّب من الأعلى كفاءةً للأقل
-    result.sort(key=lambda x: (x["efficiency_km_per_liter"] is None, -(x["efficiency_km_per_liter"] or 0)))
-    return {"date_from": date_from, "date_to": date_to, "cars": result}
+    # رتّب: الأعلى كفاءة أولاً، العربيات بدون بيانات في الآخر
+    result.sort(key=lambda x: (
+        x["efficiency_km_per_liter"] is None,
+        -(x["efficiency_km_per_liter"] or 0)
+    ))
+    return {
+        "date_from":  date_from,
+        "date_to":    date_to,
+        "method":     "fill_to_fill",
+        "note":       "التفويلة الأولى لكل عربية تُعتبر نقطة مرجعية فقط ولا تدخل في حساب الكفاءة",
+        "cars":       result,
+    }
 
 # ══════════════════════════════════════════════════════
 # 30. MONTHLY REPORT — تقرير شهري شامل
