@@ -1229,7 +1229,6 @@ function buildAdminNav() {
     base.push({id:'super-licenses',    icon:'⚠️', label:'تنبيهات الرخص'});
     base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
-    base.push({id:'super-supervisors', icon:'🎯', label:'المشرفين'});
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
   }
@@ -1282,7 +1281,6 @@ async function renderSection(id) {
     case 'permissions':    await renderPermissionsSection(); break;
     case 'fuel-report':     await renderFuelEfficiencyReport(); break;
     case 'monthly-report':   await renderMonthlyReport(); break;
-    case 'super-supervisors':await renderSuperSupervisors(); break;
     case 'super-decisions':  await renderSuperDecisions(); break;
     case 'super-licenses':  await renderSuperLicenses(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
@@ -1490,7 +1488,6 @@ async function renderOverview() {
   }).join('');
 
   // ملاحظة: تنبيهات الرخص انتقلت لتاب 'تنبيهات الرخص' عند السوبر يوزر
-  // جيب تنبيهات الصيانة المتأخرة أو القريبة
 
   const _overviewWrap = document.getElementById('pageContent');
   if(!isSuperuser()) _overviewWrap.innerHTML='';
@@ -1524,23 +1521,6 @@ async function renderOverview() {
           <table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>الوقت</th><th>الحالة</th></tr></thead>
           <tbody>${latestRows}</tbody></table></div></div>
     </div>
-  ${maintAlerts.length > 0 ? `
-    <div class="card" style="border:2px solid #f97316;margin-top:1rem">
-      <div class="card-header" style="background:#fff7ed">
-        <div class="card-title" style="color:#c2410c">🔧 صيانة تحتاج انتباه (${maintAlerts.length})</div>
-      </div>
-      <div class="table-wrap">
-        <table><thead><tr><th>اللوحة</th><th>نوع الصيانة</th><th>الحالة</th><th>الموعد القادم</th></tr></thead><tbody>
-        ${maintAlerts.slice(0,5).map(r=>{
-          const ac = r.alert_status==='overdue'
-            ? {color:'#ef4444',label:'🔴 متأخرة'}
-            : {color:'#f97316',label:'🟠 قريبة'};
-            +'<td><span style="color:'+ac.color+';font-weight:700">'+ac.label+'</span></td>'
-            +'<td style="font-size:.82rem">'+(r.next_due_date||'—')+'</td></tr>';
-        }).join('')}
-        </tbody></table>
-      </div>
-    </div>` : ''}
   `;
   _overviewWrap.appendChild(_overviewEl);
 
@@ -6534,7 +6514,6 @@ function exportFuelCSV() {
   a.click();
 }
 
-}
 </script>
 
 <script>
@@ -6806,164 +6785,4 @@ function exportMonthlyCSV() {
   a.click();
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SUPERVISORS MANAGEMENT — إدارة المشرفين (سوبر يوزر فقط)
-// ═══════════════════════════════════════════════════════════════
-async function renderSuperSupervisors() {
-  const c = document.getElementById('pageContent');
-  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
-
-  // جيب كل المستخدمين ذوي صلاحيات مشرف
-  const users = await apiCall('/users/list').catch(()=>[]);
-  const branches = await loadBranches();
-  const supervisors = users.filter(u=>u.role==='supervisor_workshop'||u.role==='supervisor_field');
-
-  const ROLE_LABELS = {
-    supervisor_workshop: {label:'🔧 مشرف ورشة', color:'#7c3aed', bg:'#ede9fe',
-      desc:'يرى: الورش + المركبات + الصيانة'},
-    supervisor_field:    {label:'🗺️ مشرف ميدان', color:'#0369a1', bg:'#e0f2fe',
-      desc:'يرى: الرحلات + الخريطة + الطوارئ + السائقون'},
-  };
-
-  const branchOpts = branches.map(b=>`<option value="${b}">${b}</option>`).join('');
-
-  c.innerHTML = `
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">🎯 إدارة المشرفين (${supervisors.length})</div>
-        <button class="btn btn-primary btn-sm" onclick="openAddSupervisorModal('${branchOpts.replace(/'/g,"\\'")}')">➕ إضافة مشرف</button>
-      </div>
-
-      <!-- شرح الصلاحيات -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:1rem 1.2rem;border-bottom:1px solid var(--border)">
-        ${Object.entries(ROLE_LABELS).map(([role,info])=>`
-          <div style="background:${info.bg};border-radius:10px;padding:.8rem 1rem">
-            <div style="font-weight:700;color:${info.color};margin-bottom:.3rem">${info.label}</div>
-            <div style="font-size:.8rem;color:var(--muted)">${info.desc}</div>
-          </div>`).join('')}
-      </div>
-
-      <!-- جدول المشرفين -->
-      <div class="table-wrap">
-        <table><thead><tr>
-          <th>#</th><th>اسم المستخدم</th><th>النوع</th><th>الفرع</th><th>آخر دخول</th><th>إجراءات</th>
-        </tr></thead><tbody>
-        ${supervisors.map((u,i)=>{
-          const info = ROLE_LABELS[u.role]||{};
-          return `<tr>
-            <td>${i+1}</td>
-            <td><strong>${u.username}</strong></td>
-            <td><span style="background:${info.bg||'#f1f5f9'};color:${info.color||'#475569'};border-radius:20px;font-size:.72rem;font-weight:700;padding:.15rem .55rem">${info.label||u.role}</span></td>
-            <td>${u.branch||'—'}</td>
-            <td style="font-size:.78rem;color:var(--muted)">${u.last_login?fmtDT(u.last_login):'لم يدخل'}</td>
-            <td>
-              <button class="btn btn-ghost btn-sm" onclick="openEditSupervisorModal(${u.id},'${u.username.replace(/'/g,"\\'")}','${u.role}','${(u.branch||'').replace(/'/g,"\\'")}','${branchOpts.replace(/'/g,"\\'")}')">✏️ تعديل</button>
-              <button class="btn btn-danger btn-sm" onclick="deleteSupervisor(${u.id},'${u.username.replace(/'/g,"\\'")}')">🗑️</button>
-            </td>
-          </tr>`;
-        }).join('')}
-        ${!supervisors.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem">لا يوجد مشرفون — انقر ➕ لإضافة أول مشرف</td></tr>':''}
-        </tbody></table>
-      </div>
-    </div>`;
-}
-
-function openAddSupervisorModal(branchOpts) {
-  openModal(`
-    <div class="modal-header"><div class="modal-title">➕ إضافة مشرف جديد</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div class="form-group">
-      <label>نوع الصلاحية <span class="req">*</span></label>
-      <select id="svRole" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
-        <option value="">— اختر النوع —</option>
-        <option value="supervisor_workshop">🔧 مشرف ورشة (الورش + المركبات + الصيانة)</option>
-        <option value="supervisor_field">🗺️ مشرف ميدان (الرحلات + الخريطة + الطوارئ)</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>الفرع / الإدارة <span class="req">*</span></label>
-      <select id="svBranch" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
-        <option value="">— اختر الفرع —</option>
-        ${branchOpts}
-      </select>
-    </div>
-    <div class="two-col">
-      <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label><input id="svUser" placeholder="مثال: supervisor_cairo"></div>
-      <div class="form-group"><label>كلمة المرور <span class="req">*</span></label><input id="svPass" type="password" placeholder="كلمة مرور قوية"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="svSave">✅ إنشاء المشرف</button>
-    </div>`);
-
-  document.getElementById('svSave').onclick = async () => {
-    const role     = document.getElementById('svRole').value;
-    const branch   = document.getElementById('svBranch').value;
-    const username = document.getElementById('svUser').value.trim();
-    const password = document.getElementById('svPass').value;
-    if(!role)     return showNotification('اختر نوع الصلاحية','error');
-    if(!branch)   return showNotification('اختر الفرع','error');
-    if(!username) return showNotification('أدخل اسم المستخدم','error');
-    if(password.length<6) return showNotification('كلمة المرور يجب أن تكون 6 أحرف على الأقل','error');
-    const btn = document.getElementById('svSave');
-    btn.disabled=true; btn.textContent='جاري...';
-    try {
-      await apiCall('/users','POST',{username, password, role, branch});
-      showNotification('✅ تم إنشاء المشرف','success');
-      closeModal(); await renderSuperSupervisors();
-    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✅ إنشاء المشرف'; }
-  };
-}
-
-function openEditSupervisorModal(uid, oldUser, oldRole, oldBranch, branchOpts) {
-  openModal(`
-    <div class="modal-header"><div class="modal-title">✏️ تعديل المشرف: ${oldUser}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div class="form-group">
-      <label>نوع الصلاحية</label>
-      <select id="svEditRole" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
-        <option value="supervisor_workshop" ${oldRole==='supervisor_workshop'?'selected':''}>🔧 مشرف ورشة</option>
-        <option value="supervisor_field"    ${oldRole==='supervisor_field'?'selected':''}>🗺️ مشرف ميدان</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>الفرع / الإدارة</label>
-      <select id="svEditBranch" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
-        <option value="">— اختر الفرع —</option>
-        ${branchOpts.replace(`value="${oldBranch}"`,`value="${oldBranch}" selected`)}
-      </select>
-    </div>
-    <div class="two-col">
-      <div class="form-group"><label>اسم المستخدم</label><input id="svEditUser" value="${oldUser}"></div>
-      <div class="form-group"><label>كلمة مرور جديدة (اتركها فاضية للإبقاء)</label><input id="svEditPass" type="password" placeholder="(اختياري)"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="svEditSave">💾 حفظ التعديلات</button>
-    </div>`);
-
-  document.getElementById('svEditSave').onclick = async () => {
-    const body = {
-      role:     document.getElementById('svEditRole').value,
-      branch:   document.getElementById('svEditBranch').value,
-      username: document.getElementById('svEditUser').value.trim(),
-    };
-    const pw = document.getElementById('svEditPass').value;
-    if(pw) body.password = pw;
-    const btn = document.getElementById('svEditSave');
-    btn.disabled=true; btn.textContent='جاري...';
-    try {
-      await apiCall(`/superuser/admins/${uid}`,'PUT',body);
-      showNotification('✅ تم التحديث','success');
-      closeModal(); await renderSuperSupervisors();
-    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ'; }
-  };
-}
-
-async function deleteSupervisor(uid, name) {
-  if(!confirm(`هل تريد حذف المشرف "${name}"؟`)) return;
-  try {
-    await apiCall(`/superuser/admins/${uid}`,'DELETE');
-    showNotification('تم الحذف','success');
-    await renderSuperSupervisors();
-  } catch(e) { showNotification(e.message,'error'); }
-}
 </script>
