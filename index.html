@@ -4847,7 +4847,7 @@ async function renderDriverSinglePage() {
           </div>`).join('');
       })()}
 
-      <!-- MY STATS -->
+      <!-- MY STATS — بطاقة الإنجاز -->
       ${(()=>{
         const myTrips = allTrips.filter(t=>t.driver_id===currentUser.driver_id);
         const myCompleted = myTrips.filter(t=>t.end_time);
@@ -4855,22 +4855,59 @@ async function renderDriverSinglePage() {
           .reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
         const weekAgo = new Date(Date.now()-7*864e5).toISOString();
         const weeklyTrips = myCompleted.filter(t=>t.end_time>=weekAgo).length;
-        if(!myTrips.length) return '';
+
+        // رسالة تحفيزية بناءً على الأداء
+        let motivMsg = '', motivColor = '#10b981';
+        if(weeklyTrips === 0)        { motivMsg = '💪 ابدأ أسبوعك بقوة!';         motivColor = '#6366f1'; }
+        else if(weeklyTrips <= 2)    { motivMsg = '🚀 استمر، أنت في البداية!';     motivColor = '#f59e0b'; }
+        else if(weeklyTrips <= 5)    { motivMsg = '🔥 أداء ممتاز هذا الأسبوع!';   motivColor = '#10b981'; }
+        else                         { motivMsg = '🏆 أنت من أفضل السائقين!';      motivColor = '#8b5cf6'; }
+
         return `
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin:.75rem 0">
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.3rem;font-weight:700;color:#fff">${weeklyTrips}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">رحلات هذا الأسبوع</div>
+        <div style="margin:.8rem .85rem 0;border-radius:18px;overflow:hidden;
+                    box-shadow:0 4px 20px rgba(0,0,0,.10)">
+          <!-- هيدر التحفيز -->
+          <div style="background:linear-gradient(135deg,#1e3a5f,#2d6a4f);
+                      padding:.8rem 1.1rem;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:.82rem;font-weight:700;color:rgba(255,255,255,.9)">📊 إنجازاتك</span>
+            <span style="font-size:.78rem;font-weight:800;color:#f59e0b;
+                         background:rgba(245,158,11,.15);padding:.2rem .7rem;
+                         border-radius:50px;border:1px solid rgba(245,158,11,.35)">${motivMsg}</span>
+          </div>
+          <!-- الأرقام -->
+          <div style="background:#fff;display:grid;grid-template-columns:repeat(3,1fr)">
+            <!-- رحلات الأسبوع -->
+            <div style="padding:.9rem .5rem;text-align:center;border-left:1px solid #f1f5f9;position:relative">
+              <div style="font-size:1.7rem;font-weight:900;
+                          background:linear-gradient(135deg,#f59e0b,#d97706);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+                          line-height:1">${weeklyTrips}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">رحلات الأسبوع</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#f59e0b;border-radius:99px"></div>
             </div>
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.3rem;font-weight:700;color:#fff">${myCompleted.length}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي الرحلات</div>
+            <!-- إجمالي الرحلات -->
+            <div style="padding:.9rem .5rem;text-align:center;border-left:1px solid #f1f5f9;position:relative">
+              <div style="font-size:1.7rem;font-weight:900;
+                          background:linear-gradient(135deg,#1e3a5f,#3b82f6);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+                          line-height:1">${myCompleted.length}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">إجمالي الرحلات</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#1e3a5f;border-radius:99px"></div>
             </div>
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.1rem;font-weight:700;color:#fff">${Math.round(myKm).toLocaleString('ar-EG')}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي كم</div>
+            <!-- إجمالي كم -->
+            <div style="padding:.9rem .5rem;text-align:center;position:relative">
+              <div style="font-size:${myKm>=10000?'1.3':'1.7'}rem;font-weight:900;
+                          background:linear-gradient(135deg,#059669,#10b981);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+                          line-height:1">${Math.round(myKm).toLocaleString('ar-EG')}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">إجمالي كم</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#10b981;border-radius:99px"></div>
             </div>
-          </div>`;
+          </div>
+        </div>`;
       })()}
 
       <!-- TRIP BUTTONS -->
@@ -5991,6 +6028,10 @@ async function renderImportSection() {
             <button class="btn btn-primary" id="importPreviewBtn" onclick="doImportPreview()">
               🔍 استعراض البيانات
             </button>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--muted);cursor:pointer">
+              <input type="checkbox" id="importSkipErrors" style="width:auto">
+              تجاهل الصفوف التي بها أخطاء عند التأكيد
+            </label>
           </div>
         </div>
       </div>
@@ -6032,88 +6073,108 @@ function renderImportPreview(data) {
   const isDrivers     = import_type === 'drivers';
   const isPermissions = import_type === 'permissions';
   const area = document.getElementById('importPreviewArea');
+
   const summaryColor = summary.invalid === 0 ? 'var(--success)' : summary.valid === 0 ? 'var(--danger)' : 'var(--warning)';
-  const fieldLabels = {phone:'التليفون',branch:'الفرع',driver_license_expiry:'رخصة السائق',vehicle_license_expiry:'رخصة السيارة',national_id:'الرقم القومي',birth_date:'تاريخ الميلاد'};
 
   const cols = isPermissions
-    ? ['#','الرقم الثابت','المركبة','الحالة']
+    ? ['#','الرقم الثابت','المركبة','التحقق']
     : isDrivers
-      ? ['#','الاسم','الرقم الثابت','الفرع','التليفون','رخصة السائق','الحالة']
+      ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
       : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
 
   const renderRow = (r) => {
-    if(isPermissions) {
-      const ok = r.valid ? `<span style="color:var(--success);font-weight:700">✅ صحيح</span>` : `<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
-      return `<tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}"><td>${r.row_index}</td><td><code>${r.fixed_number||'—'}</code></td><td dir="ltr"><strong>${r.plate||'—'}</strong></td><td>${ok}</td></tr>`;
-    }
-    if(isDrivers) {
-      const st = r.status || (r.valid?'new':'error');
-      let badge, rowStyle='';
-      if(st==='new')         { badge=`<span style="color:var(--success);font-weight:700">✅ جديد</span>`; }
-      else if(st==='will_update') { badge=`<span style="color:#f59e0b;font-weight:700">🔄 تكميل: ${(r.will_fill||[]).map(f=>fieldLabels[f]||f).join('، ')}</span>`; rowStyle='background:rgba(245,158,11,.07)'; }
-      else if(st==='duplicate')   { badge=`<span style="color:var(--muted)">⏭️ مكتمل — تجاهل</span>`; rowStyle='background:var(--surface-2)'; }
-      else                        { badge=`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`; rowStyle='background:rgba(200,75,49,.05)'; }
-      return `<tr style="${rowStyle}"><td>${r.row_index}</td><td>${r.name||'—'}</td><td><code>${r.fixed_number||'—'}</code></td><td style="font-size:.82rem">${r.branch||'—'}</td><td style="font-size:.82rem" dir="ltr">${r.phone||'—'}</td><td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td><td>${badge}</td></tr>`;
-    }
-    const ok = r.valid ? `<span style="color:var(--success);font-weight:700">✅ صحيح</span>` : `<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
-    return `<tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}"><td>${r.row_index}</td><td>${r.plate||'—'}</td><td>${r.model||'—'}</td><td>${r.car_name||'—'}</td><td>${r.branch||'—'}</td><td><span class="badge badge-blue">${r.status||'available'}</span></td><td>${ok}</td></tr>`;
+    const status = r.valid
+      ? `<span style="color:var(--success);font-weight:700">✅ صحيح</span>`
+      : `<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
+    if(isPermissions) return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td><code>${r.fixed_number||'—'}</code></td>
+        <td dir="ltr"><strong>${r.plate||'—'}</strong></td>
+        <td>${status}</td>
+      </tr>`;
+    if(isDrivers) return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td>${r.name||'—'}</td>
+        <td><code style="font-size:.82rem">${r.username||'—'}</code></td>
+        <td dir="ltr">${r.phone||'—'}</td>
+        <td><code>${r.fixed_number||'—'}</code></td>
+        <td>${r.branch||'—'}</td>
+        <td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td>
+        <td>${status}</td>
+      </tr>`;
+    return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td>${r.plate||'—'}</td>
+        <td>${r.model||'—'}</td>
+        <td>${r.car_name||'—'}</td>
+        <td>${r.branch||'—'}</td>
+        <td><span class="badge badge-blue">${r.status||'available'}</span></td>
+        <td>${status}</td>
+      </tr>`;
   };
-
-  const statsExtra = (isDrivers && summary.will_update != null)
-    ? `<span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.new||0} جديد</span>
-       <span style="font-size:.85rem;font-weight:700;color:#f59e0b">🔄 ${summary.will_update} تكميل</span>`
-    : `<span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>`;
-
-  const validForAction = summary.valid || 0;
 
   area.innerHTML = `
     <div class="card">
       <div class="card-header">
         <div class="card-title">📋 نتيجة الاستعراض</div>
-        <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:.75rem;align-items:center">
           <span style="font-size:.85rem;color:var(--muted)">${summary.total} صف إجمالي</span>
-          ${statsExtra}
+          <span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>
           ${summary.invalid>0?`<span style="font-size:.85rem;font-weight:700;color:var(--danger)">❌ ${summary.invalid} خطأ</span>`:''}
-          ${validForAction===0 ? `<button class="btn btn-ghost btn-sm" disabled>لا يوجد صفوف صالحة</button>`
-          : summary.invalid===0 ? `<button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">✅ رفع الكل (${validForAction} صف)</button>`
-          : `<button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">✅ رفع الصح بس (${validForAction} صف)</button>
-             <button class="btn btn-outline btn-sm" id="importConfirmAllBtn" onclick="doImportConfirm(false,true)" title="يوقف لو في أي خطأ">⛔ الكل أو لا شيء</button>`}
+          <button class="btn btn-primary btn-sm" id="importConfirmBtn"
+                  onclick="doImportConfirm()"
+                  ${summary.valid===0?'disabled':''}>
+            ✅ تأكيد الرفع (${summary.valid} صف)
+          </button>
         </div>
       </div>
       <div style="height:6px;background:var(--border);border-radius:3px;margin:0 1.25rem .5rem;overflow:hidden">
-        <div style="height:100%;width:${summary.total?Math.round(validForAction/summary.total*100):0}%;background:${summaryColor};border-radius:3px;transition:width .5s"></div>
+        <div style="height:100%;width:${summary.total?Math.round(summary.valid/summary.total*100):0}%;
+                    background:${summaryColor};border-radius:3px;transition:width .5s"></div>
       </div>
       <div class="table-wrap" style="max-height:450px;overflow-y:auto">
-        <table><thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>renderRow(r)).join('')}</tbody></table>
+        <table>
+          <thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+          <tbody>${rows.map(r=>renderRow(r)).join('')}</tbody>
+        </table>
       </div>
-      ${summary.invalid>0?`<div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">⚠️ الصفوف الحمراء بها أخطاء — "رفع الصح بس" يتجاهلها تلقائياً</div>`:''}
-      ${isDrivers&&(summary.will_update||0)>0?`<div style="padding:.75rem 1.25rem;background:rgba(245,158,11,.08);border-top:1px solid var(--border);font-size:.85rem;color:#92400e">🔄 الصفوف الصفراء سائقين موجودين — سيتم تكميل بياناتهم الناقصة فقط</div>`:''}
+      ${summary.invalid>0?`
+      <div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">
+        ⚠️ الصفوف الحمراء بها أخطاء — فعّل "تجاهل الأخطاء" أعلاه لرفع الصفوف الصحيحة فقط
+      </div>`:''}
     </div>`;
 }
 
-async function doImportConfirm(skipErrors=true, strictMode=false) {
+async function doImportConfirm() {
   if(!_importPreviewData) return;
   const { file, importType } = _importPreviewData;
-  const actualSkip = !strictMode;
-  const btn    = document.getElementById('importConfirmBtn');
-  const btnAll = document.getElementById('importConfirmAllBtn');
-  if(btn)    { btn.disabled=true;    btn.textContent='⏳ جاري الرفع...'; }
-  if(btnAll) { btnAll.disabled=true; }
-  const fd = new FormData(); fd.append('file', file);
+  const skipErrors = document.getElementById('importSkipErrors')?.checked || false;
+
+  const btn = document.getElementById('importConfirmBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري الرفع...';
+
+  const fd = new FormData();
+  fd.append('file', file);
   const token = getToken();
-  const url = importType==='permissions' ? `/import/permissions/confirm?skip_errors=${actualSkip}` : `/import/confirm?import_type=${importType}&skip_errors=${actualSkip}`;
+  const url = importType === 'permissions'
+    ? `/import/permissions/confirm?skip_errors=${skipErrors}`
+    : `/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`;
   try {
-    const res  = await fetch(url, {method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd});
+    const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
     const data = await res.json();
-    if(!res.ok) { const d=typeof data.detail==='object'?data.detail.message:data.detail; throw new Error(d||'فشل الرفع'); }
-    const updMsg = data.updated>0 ? ` | تكميل ${data.updated}` : '';
-    showNotification(`✅ تم: ${data.inserted} جديد${updMsg}${data.skipped>0?' | تجاهل '+data.skipped:''}`, 'success');
+    if(!res.ok) {
+      const detail = typeof data.detail === 'object' ? data.detail.message : data.detail;
+      throw new Error(detail || 'فشل الرفع');
+    }
+    showNotification(`✅ تم الرفع بنجاح: ${data.inserted} سجل${data.skipped>0?' (تجاهل '+data.skipped+')':''}`, 'success');
     _importPreviewData = null;
     renderImportResult(data, importType);
   } catch(e) {
     showNotification(e.message,'error');
-    if(btn)    { btn.disabled=false;    btn.textContent='✅ رفع الصح بس'; }
-    if(btnAll) { btnAll.disabled=false; btnAll.textContent='⛔ الكل أو لا شيء'; }
+    btn.disabled=false; btn.textContent=`✅ تأكيد الرفع`;
   }
 }
 
@@ -6124,21 +6185,17 @@ function renderImportResult(data, importType) {
       <div class="card-header">
         <div class="card-title" style="color:var(--success)">✅ تم الرفع بنجاح</div>
       </div>
-      <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(${data.updated!=null?'4':'3'},1fr);gap:1rem;text-align:center">
+      <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
           <div style="font-size:2rem;font-weight:800;color:var(--success)">${data.inserted}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم إضافته</div>
         </div>
-        ${data.updated!=null?`<div style="padding:1rem;background:var(--surface-2);border-radius:12px">
-          <div style="font-size:2rem;font-weight:800;color:#f59e0b">${data.updated}</div>
-          <div style="color:var(--muted);font-size:.85rem">سجل تم تكميله</div>
-        </div>`:''}
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
           <div style="font-size:2rem;font-weight:800;color:var(--warning)">${data.skipped}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم تجاهله</div>
         </div>
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
-          <div style="font-size:2rem;font-weight:800;color:var(--primary)">${data.inserted+(data.updated||0)+data.skipped}</div>
+          <div style="font-size:2rem;font-weight:800;color:var(--primary)">${data.inserted+data.skipped}</div>
           <div style="color:var(--muted);font-size:.85rem">إجمالي الصفوف</div>
         </div>
       </div>
