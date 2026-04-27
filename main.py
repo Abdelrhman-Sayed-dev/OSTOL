@@ -2996,56 +2996,19 @@ async def import_confirm(
             for row in valid_rows:
                 try:
                     c.execute("SELECT id FROM cars WHERE plate=?", (row["plate"],))
-                    existing_car = c.fetchone()
-
-                    if existing_car:
-                        # ── موجودة: كمّل الفاضي + equipment_type دايماً override ──
-                        car_id = existing_car["id"]
-                        c.execute("""SELECT model,car_name,car_code,chassis,engine_number,
-                                            year,project,branch,car_license_expiry,sector
-                                     FROM cars WHERE id=?""", (car_id,))
-                        ex = c.fetchone()
-                        upd, params = [], []
-                        # حقول تتكمل بس لو فاضية
-                        for field, new_val in [
-                            ("model",              row["model"]),
-                            ("car_name",           row["car_name"]),
-                            ("car_code",           row["car_code"]),
-                            ("chassis",            row["chassis"]),
-                            ("engine_number",      row["engine_number"]),
-                            ("year",               row["year"]),
-                            ("project",            row["project"]),
-                            ("branch",             row["branch"]),
-                            ("car_license_expiry", row["car_license_expiry"]),
-                            ("sector",             row["sector"]),
-                        ]:
-                            if new_val and not str(ex[field] if ex else "" or "").strip():
-                                upd.append(f"{field}=?"); params.append(new_val)
-                        # equipment_type يتحدّث دايماً لو الملف جاب قيمة
-                        if row["equipment_type"]:
-                            upd.append("equipment_type=?"); params.append(row["equipment_type"])
-                        # status يتحدّث دايماً
-                        if row["status"]:
-                            upd.append("status=?"); params.append(row["status"])
-
-                        if upd:
-                            c.execute(f"UPDATE cars SET {','.join(upd)} WHERE id=?", params + [car_id])
-                            updated.append({"row_index": row["row_index"], "plate": row["plate"],
-                                            "filled_fields": [u.split("=")[0] for u in upd]})
-                        else:
-                            row["errors"] = [f"اللوحة '{row['plate']}' موجودة ومكتملة"]
-                            skipped_rows.append(row)
-                    else:
-                        # ── جديدة ──
-                        c.execute("""INSERT INTO cars(plate,model,status,car_name,car_code,chassis,
-                                     engine_number,year,project,branch,
-                                     car_license_expiry,equipment_type,sector)
-                                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                                  (row["plate"], row["model"], row["status"],
-                                   row["car_name"], row["car_code"], row["chassis"],
-                                   row["engine_number"], row["year"], row["project"], row["branch"],
-                                   row["car_license_expiry"], row["equipment_type"], row["sector"]))
-                        inserted.append({"row_index": row["row_index"], "plate": row["plate"]})
+                    if c.fetchone():
+                        row["errors"] = [f"رقم اللوحة '{row['plate']}' موجود مسبقاً"]
+                        skipped_rows.append(row)
+                        continue
+                    c.execute("""INSERT INTO cars(plate,model,status,car_name,car_code,chassis,
+                                 engine_number,year,project,branch,
+                                 car_license_expiry,equipment_type,sector)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              (row["plate"], row["model"], row["status"],
+                               row["car_name"], row["car_code"], row["chassis"],
+                               row["engine_number"], row["year"], row["project"], row["branch"],
+                               row["car_license_expiry"], row["equipment_type"], row["sector"]))
+                    inserted.append({"row_index": row["row_index"], "plate": row["plate"]})
                 except Exception as e:
                     row["errors"] = [str(e)]
                     skipped_rows.append(row)
