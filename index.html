@@ -6470,20 +6470,18 @@ async function loadFuelReport() {
           <div style="font-size:.78rem;color:var(--muted)">${worst.km} كم — ${worst.liters} لتر</div>
         </div>
       </div>` : ''}
-      <div class="srch-bar" style="margin-bottom:.5rem;border-radius:10px;border:1px solid var(--border)">
-        <input placeholder="🔍 بحث باللوحة أو الموديل..." style="flex:1" oninput="liveSearch(this,'fuelBody',[0,1,2])">
-      </div>
       <div class="table-wrap">
         <table><thead><tr>
-          <th>اللوحة</th><th>الموديل</th><th>الفرع</th>
+          <th>#</th><th>اللوحة</th><th>الموديل</th><th>الفرع</th>
           <th>المسافة (كم)</th><th>الوقود (لتر)</th><th>عدد التعبئات</th>
           <th>التكلفة (جنيه)</th><th>⚡ كم/لتر</th><th>جنيه/كم</th>
         </tr></thead><tbody id="fuelBody">
-        ${cars.map(c=>{
+        ${cars.slice(0,5).map((c,idx)=>{
           const eff = c.efficiency_km_per_liter;
           const effColor = !eff ? '#94a3b8' : eff >= 8 ? '#10b981' : eff >= 5 ? '#f59e0b' : '#ef4444';
           const effBadge = !eff ? '—' : `<strong style="color:${effColor}">${eff} كم/لتر</strong>`;
           return `<tr>
+            <td><strong style="color:var(--gold)">${idx+1}</strong></td>
             <td dir="ltr"><strong>${c.plate}</strong></td>
             <td>${c.model}</td>
             <td style="font-size:.8rem">${c.branch||'—'}</td>
