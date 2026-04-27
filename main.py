@@ -3213,7 +3213,7 @@ async def import_permissions_template(cu: dict = Depends(require_admin)):
 # 31. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
 # ══════════════════════════════════════════════════════
 @app.get("/cars/{car_id}/last-odometer")
-async def get_last_odometer(car_id: int, cu: dict = Depends(require_driver)):
+async def get_last_odometer(car_id: int, cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""SELECT end_odometer FROM trips
@@ -3370,7 +3370,7 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_su
     return {"id": note_id, "expires_at": expires}
 
 @app.get("/voice-notes")
-async def list_voice_notes(cu: dict = Depends(get_current_user)):
+async def list_voice_notes(cu: dict = Depends(get_user)):
     role   = cu["role"]
     now    = datetime.utcnow().isoformat() + "Z"
 
@@ -3403,7 +3403,7 @@ async def list_voice_notes(cu: dict = Depends(get_current_user)):
         return [dict(r) for r in c.fetchall()]
 
 @app.post("/voice-notes/{note_id}/play")
-async def play_voice_note(note_id: int, cu: dict = Depends(get_current_user)):
+async def play_voice_note(note_id: int, cu: dict = Depends(get_user)):
     """تسجّل تشغيل — وتمسح لو وصلت الحد."""
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
