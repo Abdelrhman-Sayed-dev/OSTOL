@@ -1057,6 +1057,18 @@ function showNotification(msg, type='success', duration=3200) {
   setTimeout(() => el.remove(), duration);
 }
 
+
+  // ── Car Status Config ──
+  const CAR_STATUS = {
+    available:        { label: '● متاحة',      badge: 'badge-green',  icon: '🟢' },
+    maintenance:      { label: '🔧 صيانة',      badge: 'badge-yellow', icon: '🔧' },
+    breakdown:        { label: '⚠️ أعطال',      badge: 'badge-orange', icon: '⚠️' },
+    tire_issue:       { label: '🔴 عطل كاوتش', badge: 'badge-red',    icon: '🔴' },
+    major_breakdown:  { label: '💥 عطل جسيم',  badge: 'badge-red',    icon: '💥' },
+  };
+  function carStatusLabel(s) { return (CAR_STATUS[s]||CAR_STATUS.available).label; }
+  function carStatusBadge(s) { return (CAR_STATUS[s]||CAR_STATUS.available).badge; }
+
 async function apiCall(endpoint, method='GET', body=null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   const tok = getToken();
@@ -1882,15 +1894,9 @@ async function renderCarsSection() {
           ${!isReporter() ? `<button class="btn btn-primary btn-sm" onclick="openAddCarModal()">➕ إضافة مركبة</button>` : ''}
         </div>
       </div>
-      <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:.75rem">
+      <div class="stats-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:1rem">
         <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value">${cars.filter(c=>c.status==='available').length}</div><div class="stat-label">متاحة</div></div>
-        <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status==='maintenance').length}</div><div class="stat-label">صيانة</div></div>
-        <div class="stat-card"><div class="stat-icon">⚠️</div><div class="stat-value" style="color:#ea580c">${cars.filter(c=>c.status==='breakdown'||c.status==='flat_tire'||c.status==='major_breakdown').length}</div><div class="stat-label">أعطال</div></div>
-      </div>
-      <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:1rem">
-        <div class="stat-card" style="padding:.6rem"><div class="stat-icon" style="font-size:1rem">⚠️</div><div class="stat-value" style="font-size:1.2rem;color:#ea580c">${cars.filter(c=>c.status==='breakdown').length}</div><div class="stat-label" style="font-size:.7rem">عطل</div></div>
-        <div class="stat-card" style="padding:.6rem"><div class="stat-icon" style="font-size:1rem">🔴</div><div class="stat-value" style="font-size:1.2rem;color:#dc2626">${cars.filter(c=>c.status==='flat_tire').length}</div><div class="stat-label" style="font-size:.7rem">عطل كاوتش</div></div>
-        <div class="stat-card" style="padding:.6rem"><div class="stat-icon" style="font-size:1rem">💥</div><div class="stat-value" style="font-size:1.2rem;color:#dc2626">${cars.filter(c=>c.status==='major_breakdown').length}</div><div class="stat-label" style="font-size:.7rem">عطل جسيم</div></div>
+        <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${cars.filter(c=>c.status!=='available').length}</div><div class="stat-label">صيانة</div></div>
       </div>
       <div class="srch-bar">
         <input data-tsearch placeholder="🔍 بحث باللوحة / الموديل / الاسم / الفرع..."
@@ -1904,10 +1910,9 @@ async function renderCarsSection() {
           <option value="">كل الحالات</option>
           <option value="available">🟢 متاحة</option>
           <option value="maintenance">🔧 صيانة</option>
-          <option value="breakdown">⚠️ عطل</option>
-          <option value="flat_tire">🔴 عطل كاوتش</option>
+          <option value="breakdown">⚠️ أعطال</option>
+          <option value="tire_issue">🔴 عطل كاوتش</option>
           <option value="major_breakdown">💥 عطل جسيم</option>
-          <option value="inactive">⛔ غير نشطة</option>
         </select>
         <span class="srch-count" id="carsCount">${cars.length}</span>
         <button class="srch-reset" onclick="resetCarsFilter()">✕ مسح</button>
@@ -1936,7 +1941,7 @@ async function renderCarsSection() {
             <td>${catBadge}</td>
             <td style="font-size:.82rem">${sub}</td>
             <td style="font-size:.82rem">${c.branch||'—'}</td>
-            <td>${carStatusBadge(c.status)}</td>
+            <td><span class="badge ${carStatusBadge(c.status)}">${carStatusLabel(c.status)}</span></td>
             <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
             <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
           </tr>`;
@@ -2093,12 +2098,11 @@ function openAddCarModal(editId='', editCar={}) {
       <div class="form-group" style="margin-bottom:0">
         <label>الحالة</label>
         <select id="mCarStatus">
-          <option value="available"       ${(editCar.status||'available')==='available'      ?'selected':''}>🟢 متاحة</option>
-          <option value="maintenance"     ${editCar.status==='maintenance'    ?'selected':''}>🔧 صيانة</option>
-          <option value="breakdown"       ${editCar.status==='breakdown'       ?'selected':''}>⚠️ عطل</option>
-          <option value="flat_tire"       ${editCar.status==='flat_tire'       ?'selected':''}>🔴 عطل كاوتش</option>
-          <option value="major_breakdown" ${editCar.status==='major_breakdown' ?'selected':''}>💥 عطل جسيم</option>
-          <option value="inactive"        ${editCar.status==='inactive'        ?'selected':''}>⛔ غير نشطة</option>
+          <option value="available"       ${(editCar.status||'available')==='available'?'selected':''}>🟢 متاحة</option>
+          <option value="maintenance"     ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
+          <option value="breakdown"       ${editCar.status==='breakdown'?'selected':''}>⚠️ أعطال</option>
+          <option value="tire_issue"      ${editCar.status==='tire_issue'?'selected':''}>🔴 عطل كاوتش</option>
+          <option value="major_breakdown" ${editCar.status==='major_breakdown'?'selected':''}>💥 عطل جسيم</option>
         </select>
       </div>
     </div>
@@ -2149,7 +2153,11 @@ function openEditCarModal(id,plate,model,status) {
     <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات المركبة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="mEditCarPlate" value="${plate}"></div>
     <div class="form-group"><label>الموديل <span class="req">*</span></label><input id="mEditCarModel" value="${model}"></div>
-    <div class="form-group"><label>الحالة</label><select id="mEditCarStatus"><option value="available"       ${status==='available'      ?'selected':''}>🟢 متاحة</option><option value="maintenance"     ${status==='maintenance'    ?'selected':''}>🔧 صيانة</option><option value="breakdown"       ${status==='breakdown'      ?'selected':''}>⚠️ عطل</option><option value="flat_tire"       ${status==='flat_tire'      ?'selected':''}>🔴 عطل كاوتش</option><option value="major_breakdown" ${status==='major_breakdown'?'selected':''}>💥 عطل جسيم</option><option value="inactive"        ${status==='inactive'       ?'selected':''}>⛔ غير نشطة</option></select></div>
+    <div class="form-group"><label>الحالة</label><select id="mEditCarStatus"><option value="available"       ${status==='available'?'selected':''}>🟢 متاحة</option>
+<option value="maintenance"     ${status==='maintenance'?'selected':''}>🔧 صيانة</option>
+<option value="breakdown"       ${status==='breakdown'?'selected':''}>⚠️ أعطال</option>
+<option value="tire_issue"      ${status==='tire_issue'?'selected':''}>🔴 عطل كاوتش</option>
+<option value="major_breakdown" ${status==='major_breakdown'?'selected':''}>💥 عطل جسيم</option></select></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mEditCarSave">💾 حفظ</button>
@@ -2457,8 +2465,7 @@ function exportDriversCSV(){
 function exportCarsCSV(){
   const cars=window._carsCSVData||[];
   const rows=[['#','رقم اللوحة','الموديل','الحالة']];
-  const stMap={'available':'متاحة','maintenance':'صيانة','breakdown':'عطل','flat_tire':'عطل كاوتش','major_breakdown':'عطل جسيم','inactive':'غير نشطة'};
-  cars.forEach(c=>rows.push([c.id,c.plate,c.model,stMap[c.status]||c.status]));
+  cars.forEach(c=>rows.push([c.id,c.plate,c.model,carStatusLabel(c.status)]));
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`المركبات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير المركبات ✅','success');
@@ -2485,20 +2492,6 @@ const WT = {
   belt:      {icon:'🔩',label:'سيور'},
   other:     {icon:'🔨',label:'أخرى'},
 };
-
-const CAR_STATUS = {
-  available:        { label:'● متاحة',      badge:'badge-green',  icon:'🟢' },
-  maintenance:      { label:'🔧 صيانة',      badge:'badge-yellow', icon:'🔧' },
-  breakdown:        { label:'⚠️ عطل',        badge:'badge-orange', icon:'⚠️' },
-  flat_tire:        { label:'🔴 عطل كاوتش', badge:'badge-red',    icon:'🔴' },
-  major_breakdown:  { label:'💥 عطل جسيم',  badge:'badge-red',    icon:'💥' },
-  inactive:         { label:'⛔ غير نشطة',  badge:'badge-red',    icon:'⛔' },
-};
-function carStatusBadge(status) {
-  const s = CAR_STATUS[status] || { label: status||'—', badge:'badge-yellow', icon:'❓' };
-  return `<span class="badge ${s.badge}">${s.label}</span>`;
-}
-
 const TIRE_ACTIONS = { puncture:'ثقب', replacement:'استبدال', repair:'تصليح' };
 
 async function renderAdminWorkshops() {

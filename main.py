@@ -653,6 +653,8 @@ WORKSHOP_TYPES = [
     "oil", "filter", "tire", "battery", "belt", "other",
 ]
 
+CAR_STATUSES = {"available", "maintenance", "breakdown", "tire_issue", "major_breakdown"}
+
 class CarCreate(BaseModel):
     plate: str; model: str; status: str = "available"
     car_name: Optional[str] = ""
@@ -1204,6 +1206,8 @@ async def get_cars(cu: dict = Depends(get_user), branch: Optional[str] = None):
 
 @app.post("/cars", response_model=CarResp)
 async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
+    if car.status not in CAR_STATUSES:
+        raise HTTPException(400, f"حالة غير صالحة — الحالات المتاحة: {', '.join(CAR_STATUSES)}")
     # لو الأدمن عنده فرع، المركبة الجديدة لازم تكون نفس الفرع
     if cu["role"] == "admin" and cu.get("branch"):
         car_branch = cu["branch"]
@@ -1228,6 +1232,8 @@ async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
 
 @app.put("/cars/{cid}", response_model=CarResp)
 async def update_car(cid: int, car: CarUpdate, cu: dict = Depends(require_admin)):
+    if car.status not in CAR_STATUSES:
+        raise HTTPException(400, f"حالة غير صالحة — الحالات المتاحة: {', '.join(CAR_STATUSES)}")
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""UPDATE cars SET plate=?,model=?,status=?,car_name=?,car_code=?,
@@ -2860,32 +2866,15 @@ def _validate_driver_row(row: dict, idx: int, admin_branch: Optional[str]) -> di
 
 def _validate_car_row(row: dict, idx: int, admin_branch: Optional[str]) -> dict:
     """Validate a single car row."""
-    # خريطة تحويل أي قيمة حالة للقيم المعتمدة في النظام
-    STATUS_NORM = {
-        "available":        "available",
-        "عاملة":            "available",
-        "متاحة":            "available",
-        "maintenance":      "maintenance",
-        "صيانة":            "maintenance",
-        "عطل":              "breakdown",
-        "breakdown":        "breakdown",
-        "عطل كاوتش":        "flat_tire",
-        "flat_tire":        "flat_tire",
-        "كاوتش":            "flat_tire",
-        "عطل جسيم":         "major_breakdown",
-        "major_breakdown":  "major_breakdown",
-        "جسيم":             "major_breakdown",
-        "inactive":         "inactive",
-        "غير نشطة":         "inactive",
-    }
     errors = []
     plate = row.get("plate", "").strip()
     model = row.get("model", "").strip()
     if not plate: errors.append("رقم اللوحة مطلوب")
     if not model: errors.append("الموديل مطلوب")
     branch = admin_branch if admin_branch else row.get("branch", "").strip()
-    raw_status = (row.get("status", "") or "").strip()
-    status = STATUS_NORM.get(raw_status, STATUS_NORM.get(raw_status.lower(), "available"))
+    status = row.get("status", "available").strip() or "available"
+    if status not in CAR_STATUSES:
+        errors.append(f"حالة غير صالحة: '{status}'")
     return {
         "row_index":       idx,
         "valid":           len(errors) == 0,
