@@ -1194,7 +1194,6 @@ function buildSupervisorNav() {
   // مشرف الورشة: يشوف الورش + المركبات + الصيانة فقط
   if(isSupervisorWS()) return [
     {id:'workshops',   icon:'🛠️', label:'الورش'},
-    {id:'maintenance', icon:'🔧', label:'الصيانة الدورية'},
     {id:'cars',        icon:'🚙', label:'المركبات'},
     {id:'fuel-report', icon:'⛽', label:'كفاءة الوقود'},
   ];
@@ -1222,7 +1221,6 @@ function buildAdminNav() {
     {id:'workshops',  icon:'🛠️', label:'الورش'},              // 8. الصيانة والوقود
     {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'}, // 9. التقارير
     {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
-    {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
     {id:'fuel-report',   icon:'⛽', label:'كفاءة الوقود'},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
   ];
@@ -1252,7 +1250,6 @@ function renderNav(items) {
       ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
       ${item.id==='requests' && window._pendingRequestsCount>0 ? `<span class="nav-badge">${window._pendingRequestsCount}</span>` : ''}
       ${item.id==='super-decisions' && window._pendingSuperCount>0 ? `<span class="nav-badge">${window._pendingSuperCount}</span>` : ''}
-      ${item.id==='maintenance' && window._maintenanceAlertCount>0 ? `<span class="nav-badge" style="background:#ef4444">${window._maintenanceAlertCount}</span>` : ''}
       ${item.id==='super-licenses' && window._licenseAlertsCount>0 ? `<span class="nav-badge" style="background:#f97316">${window._licenseAlertsCount}</span>` : ''}
     </button>`).join('');
 }
@@ -1283,7 +1280,6 @@ async function renderSection(id) {
     case 'requests':       await renderRequestsSection(); break;
     case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
-    case 'maintenance':     await renderMaintenanceSection(); break;
     case 'fuel-report':     await renderFuelEfficiencyReport(); break;
     case 'monthly-report':   await renderMonthlyReport(); break;
     case 'super-supervisors':await renderSuperSupervisors(); break;
@@ -1495,8 +1491,6 @@ async function renderOverview() {
 
   // ملاحظة: تنبيهات الرخص انتقلت لتاب 'تنبيهات الرخص' عند السوبر يوزر
   // جيب تنبيهات الصيانة المتأخرة أو القريبة
-  const maintAlerts = await apiCall('/maintenance/alerts').catch(()=>[]);
-  window._maintenanceAlertCount = maintAlerts.length;
 
   const _overviewWrap = document.getElementById('pageContent');
   if(!isSuperuser()) _overviewWrap.innerHTML='';
@@ -1534,7 +1528,6 @@ async function renderOverview() {
     <div class="card" style="border:2px solid #f97316;margin-top:1rem">
       <div class="card-header" style="background:#fff7ed">
         <div class="card-title" style="color:#c2410c">🔧 صيانة تحتاج انتباه (${maintAlerts.length})</div>
-        <button class="btn btn-ghost btn-sm" onclick="switchSection('maintenance')">عرض الكل ←</button>
       </div>
       <div class="table-wrap">
         <table><thead><tr><th>اللوحة</th><th>نوع الصيانة</th><th>الحالة</th><th>الموعد القادم</th></tr></thead><tbody>
@@ -1542,7 +1535,6 @@ async function renderOverview() {
           const ac = r.alert_status==='overdue'
             ? {color:'#ef4444',label:'🔴 متأخرة'}
             : {color:'#f97316',label:'🟠 قريبة'};
-          return '<tr><td dir="ltr"><strong>'+r.car_plate+'</strong></td><td>'+r.maintenance_type+'</td>'
             +'<td><span style="color:'+ac.color+';font-weight:700">'+ac.label+'</span></td>'
             +'<td style="font-size:.82rem">'+(r.next_due_date||'—')+'</td></tr>';
         }).join('')}
@@ -3493,7 +3485,7 @@ async function renderRequestsSection() {
   ];
 
   const filterBtns = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
-    ${filterOpts.map(o=>`<button class="btn btn-ghost btn-sm req-filter-btn ${o.v==='all'?'active':''}" 
+    ${filterOpts.map(o=>`<button class="btn btn-ghost btn-sm req-filter-btn ${o.v==='all'?'active':''}"
       data-filter="${o.v}" onclick="filterRequests('${o.v}',this)">${o.l}</button>`).join('')}
   </div>`;
 
@@ -4619,9 +4611,7 @@ async function pollNotifications() {
       window._licenseAlertsCount = drvAlerts + carAlerts;
     }catch(e){}
   }
-  // Poll maintenance alerts
-  await pollMaintenanceAlerts();
-  renderNav(buildAdminNav());
+    renderNav(buildAdminNav());
 }
 
 /* ── INIT ── */
@@ -6301,209 +6291,13 @@ showLogin();
 </html>
 <script>
 // ═══════════════════════════════════════════════════════════════
-// FEATURE 1: MAINTENANCE SCHEDULE — صيانة دورية
-// ═══════════════════════════════════════════════════════════════
-const MAINTENANCE_TYPES_FE = [
-  "تغيير زيت","فلتر زيت","فلتر هواء","فلتر وقود",
-  "فلتر مكيف","إطارات","بطارية","فرامل أمامية",
-  "فرامل خلفية","سير توزيع","ترمس","ماء تبريد",
-  "سائل فرامل","فحص دوري عام","أخرى"
-];
-
-const ALERT_COLORS = {
-  overdue: {bg:'#fef2f2',border:'#fca5a5',badge:'#ef4444',label:'🔴 متأخرة'},
-  warning: {bg:'#fff7ed',border:'#fed7aa',badge:'#f97316',label:'🟠 قريبة'},
-  ok:      {bg:'#f0fdf4',border:'#6ee7b7',badge:'#10b981',label:'✅ سليمة'},
-};
-
-async function renderMaintenanceSection() {
-  const c = document.getElementById('pageContent');
-  c.innerHTML='<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
-  
-  const [records, cars] = await Promise.all([
-    apiCall('/maintenance/schedule').catch(()=>[]),
-    loadCars()
-  ]);
-  // تحديث الكاش دايماً
-  window._carsCache = cars;
-  
-  window._maintenanceAlertCount = records.filter(r=>r.alert_status!=='ok').length;
-  
-  const overdue = records.filter(r=>r.alert_status==='overdue');
-  const warning = records.filter(r=>r.alert_status==='warning');
-  const ok      = records.filter(r=>r.alert_status==='ok');
-
-  function buildRow(r) {
-    const ac = ALERT_COLORS[r.alert_status] || ALERT_COLORS.ok;
-    const nextKmDisplay = r.next_due_km ? Math.round(r.next_due_km).toLocaleString('ar-EG')+' كم' : '—';
-    const curKmDisplay  = r.current_km  ? Math.round(r.current_km).toLocaleString('ar-EG')+' كم'  : '—';
-    const remKm = (r.next_due_km && r.current_km) 
-      ? Math.round(r.next_due_km - r.current_km) : null;
-    const remDisplay = remKm !== null 
-      ? (remKm > 0 ? `${remKm.toLocaleString('ar-EG')} كم متبقي` : `${Math.abs(remKm).toLocaleString('ar-EG')} كم تأخير`)
-      : '—';
-    return `<tr>
-      <td dir="ltr"><strong>${r.car_plate}</strong></td>
-      <td style="font-size:.82rem">${r.car_model}</td>
-      <td>${r.maintenance_type}</td>
-      <td>${r.interval_km ? Math.round(r.interval_km).toLocaleString('ar-EG')+' كم' : '—'}${r.interval_days ? ' / '+r.interval_days+' يوم' : ''}</td>
-      <td>${r.last_done_km ? Math.round(r.last_done_km).toLocaleString('ar-EG')+' كم' : '—'}</td>
-      <td>${curKmDisplay}</td>
-      <td><strong style="color:${ac.badge}">${remDisplay}</strong></td>
-      <td>${r.next_due_date||'—'}</td>
-      <td><span style="background:${ac.badge};color:white;border-radius:20px;font-size:.7rem;padding:.15rem .55rem;font-weight:700">${ac.label}</span></td>
-      <td>
-        ${!isReporter()?`
-        <button class="btn btn-ghost btn-sm" onclick="openMaintenanceDoneModal(${r.id},'${r.car_plate}','${r.maintenance_type}')">✅ تم</button>
-        <button class="btn btn-ghost btn-sm" onclick="openEditMaintenanceModal(${r.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteMaintenanceRecord(${r.id})">🗑️</button>
-        `:'—'}
-      </td>
-    </tr>`;
-  }
-
-  function buildGroup(title, list, color) {
-    if(!list.length) return '';
-    return `<div class="card" style="border:1.5px solid ${color};margin-bottom:1rem">
-      <div class="card-header" style="background:${list[0]?ALERT_COLORS[list[0].alert_status]?.bg:''}">
-        <div class="card-title" style="color:${color}">${title} (${list.length})</div>
-      </div>
-      <div class="table-wrap">
-        <table><thead><tr>
-          <th>اللوحة</th><th>الموديل</th><th>نوع الصيانة</th><th>الفاصل الزمني</th>
-          <th>آخر صيانة (كم)</th><th>العداد الحالي</th><th>المتبقي</th>
-          <th>الموعد القادم</th><th>الحالة</th><th>إجراء</th>
-        </tr></thead><tbody>
-        ${list.map(buildRow).join('')}
-        </tbody></table>
-      </div>
-    </div>`;
-  }
-
-  c.innerHTML = `
-    <div class="stats-row" style="margin-bottom:1rem">
-      <div class="stat-card"><div class="stat-icon" style="color:#ef4444">🔴</div><div class="stat-value" style="color:#ef4444">${overdue.length}</div><div class="stat-label">متأخرة</div></div>
-      <div class="stat-card"><div class="stat-icon" style="color:#f97316">🟠</div><div class="stat-value" style="color:#f97316">${warning.length}</div><div class="stat-label">قريبة</div></div>
-      <div class="stat-card"><div class="stat-icon" style="color:#10b981">✅</div><div class="stat-value" style="color:#10b981">${ok.length}</div><div class="stat-label">سليمة</div></div>
-      <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${records.length}</div><div class="stat-label">إجمالي السجلات</div></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <div style="font-size:.88rem;color:var(--muted)">تتبع مواعيد الصيانة الدورية لكل مركبة تلقائياً</div>
-      ${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>`:''}
-    </div>
-    ${buildGroup('🔴 صيانة متأخرة', overdue, '#ef4444')}
-    ${buildGroup('🟠 تقترب مواعيد الصيانة', warning, '#f97316')}
-    ${buildGroup('✅ صيانة سليمة', ok, '#10b981')}
-    ${records.length===0?'<div class="empty-state"><div class="empty-icon">🔧</div><p>لا توجد جداول صيانة بعد — أضف أول جدول</p></div>':''}
-  `;
-}
-
-async function openAddMaintenanceModal() {
-  // جيب العربيات لو مش محملة
-  if(!window._carsCache || !window._carsCache.length) {
-    window._carsCache = await loadCars();
-  }
-  const carsOpts = (window._carsCache||[]).map(c=>`<option value="${c.id}">${c.plate} — ${c.model}${c.car_name?' ('+c.car_name+')':''}</option>`).join('');
-  const typeOpts = MAINTENANCE_TYPES_FE.map(t=>`<option value="${t}">${t}</option>`).join('');
-  openModal(`
-    <div class="modal-header"><div class="modal-title">➕ إضافة جدول صيانة دورية</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div class="two-col">
-      <div class="form-group"><label>المركبة <span class="req">*</span></label><select id="mMaintCar"><option value="">— اختر —</option>${carsOpts}</select></div>
-      <div class="form-group"><label>نوع الصيانة <span class="req">*</span></label><select id="mMaintType"><option value="">— اختر —</option>${typeOpts}</select></div>
-    </div>
-    <div class="two-col">
-      <div class="form-group"><label>كل كام كم</label><input type="number" id="mMaintKmInt" placeholder="مثال: 5000" min="0" step="100"></div>
-      <div class="form-group"><label>أو كل كام يوم</label><input type="number" id="mMaintDayInt" placeholder="مثال: 90" min="0"></div>
-    </div>
-    <div class="two-col">
-      <div class="form-group"><label>آخر قراءة عداد عند الصيانة (كم)</label><input type="number" id="mMaintLastKm" placeholder="مثال: 45000" min="0"></div>
-      <div class="form-group"><label>تاريخ آخر صيانة</label><input type="date" id="mMaintLastDate"></div>
-    </div>
-    <div class="two-col">
-      <div class="form-group"><label>إنذار قبل (كم)</label><input type="number" id="mMaintAlertKm" value="500" min="0"></div>
-      <div class="form-group"><label>إنذار قبل (يوم)</label><input type="number" id="mMaintAlertDay" value="7" min="0"></div>
-    </div>
-    <div class="form-group"><label>ملاحظات</label><textarea id="mMaintNotes" rows="2" style="width:100%;resize:vertical;padding:.55rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="mMaintSave">💾 حفظ</button>
-    </div>`);
-
-  document.getElementById('mMaintSave').onclick = async () => {
-    const car_id = parseInt(document.getElementById('mMaintCar').value);
-    const maintenance_type = document.getElementById('mMaintType').value;
-    const interval_km  = parseFloat(document.getElementById('mMaintKmInt').value)||null;
-    const interval_days= parseInt(document.getElementById('mMaintDayInt').value)||null;
-    if(!car_id) return showNotification('اختر المركبة','error');
-    if(!maintenance_type) return showNotification('اختر نوع الصيانة','error');
-    if(!interval_km && !interval_days) return showNotification('حدد الفاصل الزمني (كم أو يوم)','error');
-    const body = {
-      car_id, maintenance_type, interval_km, interval_days,
-      last_done_km:    parseFloat(document.getElementById('mMaintLastKm').value)||null,
-      last_done_date:  document.getElementById('mMaintLastDate').value||null,
-      alert_km_before: parseFloat(document.getElementById('mMaintAlertKm').value)||500,
-      alert_days_before:parseInt(document.getElementById('mMaintAlertDay').value)||7,
-      notes:           document.getElementById('mMaintNotes').value.trim(),
-    };
-    const btn = document.getElementById('mMaintSave');
-    btn.disabled=true; btn.textContent='جاري...';
-    try {
-      await apiCall('/maintenance/schedule','POST',body);
-      showNotification('✅ تم إضافة جدول الصيانة','success');
-      closeModal(); await renderMaintenanceSection();
-    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ'; }
-  };
-}
-
-function openMaintenanceDoneModal(id, plate, type) {
-  openModal(`
-    <div class="modal-header"><div class="modal-title">✅ تسجيل إتمام الصيانة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div style="background:#f0fdf4;border:1px solid #6ee7b7;border-radius:10px;padding:.8rem;margin-bottom:1rem;font-size:.88rem">
-      <strong>${plate}</strong> — ${type}
-    </div>
-    <div class="two-col">
-      <div class="form-group"><label>قراءة العداد الآن (كم) <span class="req">*</span></label><input type="number" id="doneKm" placeholder="مثال: 50000" min="0"></div>
-      <div class="form-group"><label>تاريخ الصيانة <span class="req">*</span></label><input type="date" id="doneDate" value="${new Date().toISOString().split('T')[0]}"></div>
-    </div>
-    <div class="form-group"><label>ملاحظات</label><textarea id="doneNotes" rows="2" style="width:100%;resize:vertical;padding:.55rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="doneSave">✅ تأكيد الصيانة</button>
-    </div>`);
-  
-  document.getElementById('doneSave').onclick = async () => {
-    const last_done_km   = parseFloat(document.getElementById('doneKm').value)||null;
-    const last_done_date = document.getElementById('doneDate').value||null;
-    const notes          = document.getElementById('doneNotes').value.trim();
-    if(!last_done_km) return showNotification('أدخل قراءة العداد','error');
-    if(!last_done_date) return showNotification('أدخل تاريخ الصيانة','error');
-    const btn = document.getElementById('doneSave');
-    btn.disabled=true; btn.textContent='جاري...';
-    try {
-      await apiCall(`/maintenance/schedule/${id}`,'PUT',{last_done_km, last_done_date, notes});
-      showNotification('✅ تم تسجيل الصيانة','success');
-      closeModal(); await renderMaintenanceSection();
-    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✅ تأكيد'; }
-  };
-}
-
-async function deleteMaintenanceRecord(id) {
-  if(!confirm('هل تريد حذف هذا الجدول؟')) return;
-  try {
-    await apiCall(`/maintenance/schedule/${id}`,'DELETE');
-    showNotification('تم الحذف','success');
-    await renderMaintenanceSection();
-  } catch(e) { showNotification(e.message,'error'); }
-}
-
-// ═══════════════════════════════════════════════════════════════
 // FEATURE 2: ATTENDANCE REPORT — الحضور والانصراف
 // ═══════════════════════════════════════════════════════════════
 async function renderAttendanceReport() {
   const c = document.getElementById('pageContent');
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  
+
   c.innerHTML = `
     <div class="card">
       <div class="card-header"><div class="card-title">📅 تقرير الحضور والانصراف</div></div>
@@ -6520,7 +6314,7 @@ async function renderAttendanceReport() {
         <div class="empty-state"><div class="empty-icon">📅</div><p>اختر الشهر وانقر "عرض التقرير"</p></div>
       </div>
     </div>`;
-  
+
   await loadAttendanceReport();
 }
 
@@ -6529,18 +6323,18 @@ async function loadAttendanceReport() {
   if(!month) return;
   const el = document.getElementById('attContent');
   el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
-  
+
   try {
     const data = await apiCall(`/reports/attendance?month=${month}`);
     window._attData = data;
     const drivers = data.drivers || [];
     document.getElementById('attCount').textContent = `${drivers.length} سائق`;
-    
+
     if(!drivers.length) {
       el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات في هذا الشهر</p></div>';
       return;
     }
-    
+
     const totalDays   = drivers.reduce((s,d)=>s+d.work_days,0);
     const totalTrips  = drivers.reduce((s,d)=>s+d.total_trips,0);
     const totalKm     = drivers.reduce((s,d)=>s+d.total_km,0);
@@ -6620,7 +6414,7 @@ async function renderFuelEfficiencyReport() {
   const c = document.getElementById('pageContent');
   const today = new Date().toISOString().split('T')[0];
   const d30 = new Date(Date.now()-30*864e5).toISOString().split('T')[0];
-  
+
   c.innerHTML = `
     <div class="card">
       <div class="card-header"><div class="card-title">⛽ تقرير كفاءة استهلاك الوقود</div></div>
@@ -6641,7 +6435,7 @@ async function renderFuelEfficiencyReport() {
         <div class="empty-state"><div class="empty-icon">⛽</div><p>اختر الفترة وانقر "تحليل"</p></div>
       </div>
     </div>`;
-  
+
   await loadFuelReport();
 }
 
@@ -6651,29 +6445,29 @@ async function loadFuelReport() {
   if(!from || !to) return;
   const el = document.getElementById('fuelContent');
   el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحليل...</p></div>';
-  
+
   try {
     const data = await apiCall(`/reports/fuel-efficiency?date_from=${from}&date_to=${to}`);
     window._fuelData = data;
     const cars = data.cars || [];
     document.getElementById('fuelCount').textContent = `${cars.length} مركبة`;
-    
+
     if(!cars.length) {
       el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد بيانات في هذه الفترة</p></div>';
       return;
     }
-    
+
     const withData = cars.filter(c=>c.liters>0 && c.km>0);
     const totalKm = cars.reduce((s,c)=>s+c.km,0);
     const totalL  = cars.reduce((s,c)=>s+c.liters,0);
     const totalCost = cars.reduce((s,c)=>s+c.cost,0);
     const avgEff = totalL>0 ? (totalKm/totalL).toFixed(2) : '—';
-    
+
     // أفضل وأسوأ كفاءة
     const ranked = withData.sort((a,b)=>(b.efficiency_km_per_liter||0)-(a.efficiency_km_per_liter||0));
     const best  = ranked[0];
     const worst = ranked[ranked.length-1];
-    
+
     el.innerHTML = `
       <div class="stats-row" style="margin-bottom:1rem">
         <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value">${Math.round(totalKm).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي كم</div></div>
@@ -6740,14 +6534,6 @@ function exportFuelCSV() {
   a.click();
 }
 
-// ── Poll maintenance alerts ──
-async function pollMaintenanceAlerts() {
-  if(!isSuperuser() && !isAdminLike()) return;
-  try {
-    const alerts = await apiCall('/maintenance/alerts').catch(()=>[]);
-    window._maintenanceAlertCount = alerts.length;
-    renderNav(buildAdminNav());
-  } catch(e) {}
 }
 </script>
 
