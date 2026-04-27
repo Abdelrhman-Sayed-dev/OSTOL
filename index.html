@@ -5991,10 +5991,6 @@ async function renderImportSection() {
             <button class="btn btn-primary" id="importPreviewBtn" onclick="doImportPreview()">
               🔍 استعراض البيانات
             </button>
-            <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:var(--muted);cursor:pointer">
-              <input type="checkbox" id="importSkipErrors" style="width:auto">
-              تجاهل الصفوف التي بها أخطاء عند التأكيد
-            </label>
           </div>
         </div>
       </div>
@@ -6083,15 +6079,26 @@ function renderImportPreview(data) {
     <div class="card">
       <div class="card-header">
         <div class="card-title">📋 نتيجة الاستعراض</div>
-        <div style="display:flex;gap:.75rem;align-items:center">
+        <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
           <span style="font-size:.85rem;color:var(--muted)">${summary.total} صف إجمالي</span>
           <span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>
-          ${summary.invalid>0?`<span style="font-size:.85rem;font-weight:700;color:var(--danger)">❌ ${summary.invalid} خطأ</span>`:''}
-          <button class="btn btn-primary btn-sm" id="importConfirmBtn"
-                  onclick="doImportConfirm()"
-                  ${summary.valid===0?'disabled':''}>
-            ✅ تأكيد الرفع (${summary.valid} صف)
-          </button>
+          ${summary.invalid>0?`<span style="font-size:.85rem;font-weight:700;color:var(--danger)">❌ ${summary.invalid} غلط / مكرر</span>`:''}
+
+          ${summary.valid===0 ? `
+            <button class="btn btn-ghost btn-sm" disabled>لا يوجد صفوف صالحة للرفع</button>
+          ` : summary.invalid===0 ? `
+            <button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">
+              ✅ رفع الكل (${summary.valid} صف)
+            </button>
+          ` : `
+            <button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">
+              ✅ رفع الصح بس (${summary.valid} صف)
+            </button>
+            <button class="btn btn-outline btn-sm" id="importConfirmAllBtn" onclick="doImportConfirm(false, true)"
+              title="يوقف عند أول خطأ">
+              ⛔ رفع الكل أو لا شيء
+            </button>
+          `}
         </div>
       </div>
       <div style="height:6px;background:var(--border);border-radius:3px;margin:0 1.25rem .5rem;overflow:hidden">
@@ -6106,25 +6113,28 @@ function renderImportPreview(data) {
       </div>
       ${summary.invalid>0?`
       <div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">
-        ⚠️ الصفوف الحمراء بها أخطاء — فعّل "تجاهل الأخطاء" أعلاه لرفع الصفوف الصحيحة فقط
+        ⚠️ الصفوف الحمراء بها أخطاء أو مكررة — زر "رفع الصح بس" يتجاهلها تلقائياً
       </div>`:''}
     </div>`;
 }
 
-async function doImportConfirm() {
+async function doImportConfirm(skipErrors=true, strictMode=false) {
   if(!_importPreviewData) return;
   const { file, importType } = _importPreviewData;
-  const skipErrors = document.getElementById('importSkipErrors')?.checked || false;
+  // "رفع الصح بس" = skip_errors=true | "رفع الكل أو لا شيء" = skip_errors=false
+  const actualSkip = !strictMode;
 
-  const btn = document.getElementById('importConfirmBtn');
-  btn.disabled=true; btn.textContent='⏳ جاري الرفع...';
+  const btn     = document.getElementById('importConfirmBtn');
+  const btnAll  = document.getElementById('importConfirmAllBtn');
+  if(btn)    { btn.disabled=true;    btn.textContent='⏳ جاري الرفع...'; }
+  if(btnAll) { btnAll.disabled=true; }
 
   const fd = new FormData();
   fd.append('file', file);
   const token = getToken();
   const url = importType === 'permissions'
-    ? `/import/permissions/confirm?skip_errors=${skipErrors}`
-    : `/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`;
+    ? `/import/permissions/confirm?skip_errors=${actualSkip}`
+    : `/import/confirm?import_type=${importType}&skip_errors=${actualSkip}`;
   try {
     const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
     const data = await res.json();
@@ -6137,7 +6147,8 @@ async function doImportConfirm() {
     renderImportResult(data, importType);
   } catch(e) {
     showNotification(e.message,'error');
-    btn.disabled=false; btn.textContent=`✅ تأكيد الرفع`;
+    if(btn)    { btn.disabled=false;    btn.textContent='✅ رفع الصح بس'; }
+    if(btnAll) { btnAll.disabled=false; btnAll.textContent='⛔ رفع الكل أو لا شيء'; }
   }
 }
 
