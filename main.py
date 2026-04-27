@@ -653,8 +653,6 @@ WORKSHOP_TYPES = [
     "oil", "filter", "tire", "battery", "belt", "other",
 ]
 
-CAR_STATUSES = {"available", "maintenance", "breakdown", "tire_issue", "major_breakdown"}
-
 class CarCreate(BaseModel):
     plate: str; model: str; status: str = "available"
     car_name: Optional[str] = ""
@@ -1206,8 +1204,6 @@ async def get_cars(cu: dict = Depends(get_user), branch: Optional[str] = None):
 
 @app.post("/cars", response_model=CarResp)
 async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
-    if car.status not in CAR_STATUSES:
-        raise HTTPException(400, f"حالة غير صالحة — الحالات المتاحة: {', '.join(CAR_STATUSES)}")
     # لو الأدمن عنده فرع، المركبة الجديدة لازم تكون نفس الفرع
     if cu["role"] == "admin" and cu.get("branch"):
         car_branch = cu["branch"]
@@ -1232,8 +1228,6 @@ async def create_car(car: CarCreate, cu: dict = Depends(require_admin)):
 
 @app.put("/cars/{cid}", response_model=CarResp)
 async def update_car(cid: int, car: CarUpdate, cu: dict = Depends(require_admin)):
-    if car.status not in CAR_STATUSES:
-        raise HTTPException(400, f"حالة غير صالحة — الحالات المتاحة: {', '.join(CAR_STATUSES)}")
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""UPDATE cars SET plate=?,model=?,status=?,car_name=?,car_code=?,
@@ -2872,9 +2866,6 @@ def _validate_car_row(row: dict, idx: int, admin_branch: Optional[str]) -> dict:
     if not plate: errors.append("رقم اللوحة مطلوب")
     if not model: errors.append("الموديل مطلوب")
     branch = admin_branch if admin_branch else row.get("branch", "").strip()
-    status = row.get("status", "available").strip() or "available"
-    if status not in CAR_STATUSES:
-        errors.append(f"حالة غير صالحة: '{status}'")
     return {
         "row_index":       idx,
         "valid":           len(errors) == 0,
@@ -2891,7 +2882,7 @@ def _validate_car_row(row: dict, idx: int, admin_branch: Optional[str]) -> dict:
         "car_license_expiry": _normalize_date(row.get("car_license_expiry", "")),
         "equipment_type":  row.get("equipment_type", "").strip(),
         "sector":          row.get("sector", "").strip(),
-        "status":          status,
+        "status":          row.get("status", "available").strip() or "available",
     }
 
 
@@ -2975,7 +2966,7 @@ async def import_confirm(
         })
 
     valid_rows = [r for r in rows if r["valid"]]
-    inserted, skipped_rows = [], []
+    inserted, updated, skipped_rows = [], [], []
     now = datetime.utcnow().isoformat() + "Z"
 
     with get_db() as conn:
@@ -3011,19 +3002,52 @@ async def import_confirm(
             for row in valid_rows:
                 try:
                     c.execute("SELECT id FROM cars WHERE plate=?", (row["plate"],))
-                    if c.fetchone():
-                        row["errors"] = [f"رقم اللوحة '{row['plate']}' موجود مسبقاً"]
-                        skipped_rows.append(row)
-                        continue
-                    c.execute("""INSERT INTO cars(plate,model,status,car_name,car_code,chassis,
-                                 engine_number,year,project,branch,
-                                 car_license_expiry,equipment_type,sector)
-                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                              (row["plate"], row["model"], row["status"],
-                               row["car_name"], row["car_code"], row["chassis"],
-                               row["engine_number"], row["year"], row["project"], row["branch"],
-                               row["car_license_expiry"], row["equipment_type"], row["sector"]))
-                    inserted.append({"row_index": row["row_index"], "plate": row["plate"]})
+                    existing_car = c.fetchone()
+
+                    if existing_car:
+                        # ── موجودة: كمّل الحقول الفاضية فقط ──
+                        car_id = existing_car["id"]
+                        c.execute("""SELECT model,status,car_name,car_code,chassis,
+                                            engine_number,year,project,branch,
+                                            car_license_expiry,equipment_type,sector
+                                     FROM cars WHERE id=?""", (car_id,))
+                        ex = c.fetchone()
+                        upd, params = [], []
+                        for field, new_val in [
+                            ("model",            row["model"]),
+                            ("status",           row["status"]),
+                            ("car_name",         row["car_name"]),
+                            ("car_code",         row["car_code"]),
+                            ("chassis",          row["chassis"]),
+                            ("engine_number",    row["engine_number"]),
+                            ("year",             row["year"]),
+                            ("project",          row["project"]),
+                            ("branch",           row["branch"]),
+                            ("car_license_expiry", row["car_license_expiry"]),
+                            ("equipment_type",   row["equipment_type"]),
+                            ("sector",           row["sector"]),
+                        ]:
+                            old = ex[field] if ex and field in ex.keys() else ""
+                            if new_val and not str(old or "").strip():
+                                upd.append(f"{field}=?"); params.append(new_val)
+                        if upd:
+                            c.execute(f"UPDATE cars SET {','.join(upd)} WHERE id=?", params + [car_id])
+                            updated.append({"row_index": row["row_index"], "plate": row["plate"],
+                                            "filled_fields": [u.split("=")[0] for u in upd]})
+                        else:
+                            row["errors"] = [f"اللوحة '{row['plate']}' موجودة ومكتملة البيانات"]
+                            skipped_rows.append(row)
+                    else:
+                        # ── جديدة: أضفها ──
+                        c.execute("""INSERT INTO cars(plate,model,status,car_name,car_code,chassis,
+                                     engine_number,year,project,branch,
+                                     car_license_expiry,equipment_type,sector)
+                                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                  (row["plate"], row["model"], row["status"],
+                                   row["car_name"], row["car_code"], row["chassis"],
+                                   row["engine_number"], row["year"], row["project"], row["branch"],
+                                   row["car_license_expiry"], row["equipment_type"], row["sector"]))
+                        inserted.append({"row_index": row["row_index"], "plate": row["plate"]})
                 except Exception as e:
                     row["errors"] = [str(e)]
                     skipped_rows.append(row)
@@ -3035,10 +3059,12 @@ async def import_confirm(
     log_event("import_confirmed", import_type=import_type,
               inserted=len(inserted), skipped=len(skipped_rows), admin=cu["username"])
     return {
-        "import_type": import_type,
-        "inserted": len(inserted),
-        "skipped":  len(skipped_rows),
+        "import_type":    import_type,
+        "inserted":       len(inserted),
+        "updated":        len(updated),
+        "skipped":        len(skipped_rows),
         "inserted_items": inserted,
+        "updated_items":  updated,
         "skipped_items":  skipped_rows,
     }
 
