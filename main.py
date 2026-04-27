@@ -786,18 +786,12 @@ SUPERUSERS = [
 ]
 
 def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
-    """Ensure exactly the given accounts exist for a role.
-    Removes accounts no longer in the list, adds missing ones.
-    Skips rehashing on restart for accounts that already exist.
+    """Ensure the given hardcoded accounts exist for a role.
+    ⚠️ لا تمسح — فقط تضيف اللي ناقص من الحسابات الثابتة.
+    الحسابات المضافة من الـ superuser panel لا تُمس.
     """
-    c.execute("SELECT id, username FROM users WHERE role=?", (role,))
-    existing = {r["username"]: r["id"] for r in c.fetchall()}
-    allowed  = {u for u, _ in accounts}
-
-    for uname, uid in list(existing.items()):
-        if uname not in allowed:
-            c.execute("DELETE FROM users WHERE id=?", (uid,))
-            log.info(f"Removed old {role}: {uname}")
+    c.execute("SELECT username FROM users WHERE role=?", (role,))
+    existing = {r["username"] for r in c.fetchall()}
 
     for uname, pw in accounts:
         if uname not in existing:
@@ -2966,7 +2960,7 @@ async def import_confirm(
         })
 
     valid_rows = [r for r in rows if r["valid"]]
-    inserted, updated, skipped_rows = [], [], []
+    inserted, skipped_rows = [], []
     now = datetime.utcnow().isoformat() + "Z"
 
     with get_db() as conn:
@@ -3002,54 +2996,19 @@ async def import_confirm(
             for row in valid_rows:
                 try:
                     c.execute("SELECT id FROM cars WHERE plate=?", (row["plate"],))
-                    existing_car = c.fetchone()
-
-                    if existing_car:
-                        # ── موجودة: كمّل الحقول الفاضية فقط ──
-                        car_id = existing_car["id"]
-                        c.execute("""SELECT model,status,car_name,car_code,chassis,
-                                            engine_number,year,project,branch,
-                                            car_license_expiry,equipment_type,sector
-                                     FROM cars WHERE id=?""", (car_id,))
-                        ex = c.fetchone()
-                        upd, params = [], []
-                        for field, new_val in [
-                            ("model",            row["model"]),
-                            ("status",           row["status"]),
-                            ("car_name",         row["car_name"]),
-                            ("car_code",         row["car_code"]),
-                            ("chassis",          row["chassis"]),
-                            ("engine_number",    row["engine_number"]),
-                            ("year",             row["year"]),
-                            ("project",          row["project"]),
-                            ("branch",           row["branch"]),
-                            ("car_license_expiry", row["car_license_expiry"]),
-                            ("sector",           row["sector"]),
-                        ]:
-                            old = ex[field] if ex and field in ex.keys() else ""
-                            if new_val and not str(old or "").strip():
-                                upd.append(f"{field}=?"); params.append(new_val)
-                        # equipment_type يتحدّث دائماً لو الملف جاب قيمة
-                        if row["equipment_type"]:
-                            upd.append("equipment_type=?"); params.append(row["equipment_type"])
-                        if upd:
-                            c.execute(f"UPDATE cars SET {','.join(upd)} WHERE id=?", params + [car_id])
-                            updated.append({"row_index": row["row_index"], "plate": row["plate"],
-                                            "filled_fields": [u.split("=")[0] for u in upd]})
-                        else:
-                            row["errors"] = [f"اللوحة '{row['plate']}' موجودة ومكتملة البيانات"]
-                            skipped_rows.append(row)
-                    else:
-                        # ── جديدة: أضفها ──
-                        c.execute("""INSERT INTO cars(plate,model,status,car_name,car_code,chassis,
-                                     engine_number,year,project,branch,
-                                     car_license_expiry,equipment_type,sector)
-                                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                                  (row["plate"], row["model"], row["status"],
-                                   row["car_name"], row["car_code"], row["chassis"],
-                                   row["engine_number"], row["year"], row["project"], row["branch"],
-                                   row["car_license_expiry"], row["equipment_type"], row["sector"]))
-                        inserted.append({"row_index": row["row_index"], "plate": row["plate"]})
+                    if c.fetchone():
+                        row["errors"] = [f"رقم اللوحة '{row['plate']}' موجود مسبقاً"]
+                        skipped_rows.append(row)
+                        continue
+                    c.execute("""INSERT INTO cars(plate,model,status,car_name,car_code,chassis,
+                                 engine_number,year,project,branch,
+                                 car_license_expiry,equipment_type,sector)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              (row["plate"], row["model"], row["status"],
+                               row["car_name"], row["car_code"], row["chassis"],
+                               row["engine_number"], row["year"], row["project"], row["branch"],
+                               row["car_license_expiry"], row["equipment_type"], row["sector"]))
+                    inserted.append({"row_index": row["row_index"], "plate": row["plate"]})
                 except Exception as e:
                     row["errors"] = [str(e)]
                     skipped_rows.append(row)
@@ -3061,12 +3020,10 @@ async def import_confirm(
     log_event("import_confirmed", import_type=import_type,
               inserted=len(inserted), skipped=len(skipped_rows), admin=cu["username"])
     return {
-        "import_type":    import_type,
-        "inserted":       len(inserted),
-        "updated":        len(updated),
-        "skipped":        len(skipped_rows),
+        "import_type": import_type,
+        "inserted": len(inserted),
+        "skipped":  len(skipped_rows),
         "inserted_items": inserted,
-        "updated_items":  updated,
         "skipped_items":  skipped_rows,
     }
 
