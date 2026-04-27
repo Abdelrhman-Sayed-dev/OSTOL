@@ -393,23 +393,6 @@ def _safe_add_columns(c):
                 except Exception:
                     pass
 
-    # ── جدول الصيانة الدورية ──
-    c.execute("""CREATE TABLE IF NOT EXISTS maintenance_schedule (
-        id                INTEGER PRIMARY KEY AUTOINCREMENT,
-        car_id            INTEGER NOT NULL,
-        maintenance_type  TEXT    NOT NULL,
-        interval_km       REAL,
-        interval_days     INTEGER,
-        last_done_km      REAL,
-        last_done_date    TEXT,
-        alert_km_before   REAL    DEFAULT 500,
-        alert_days_before INTEGER DEFAULT 7,
-        notes             TEXT    DEFAULT '',
-        created_at        TEXT    NOT NULL,
-        updated_at        TEXT    NOT NULL,
-        FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
-    )""")
-    c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
 
     # ── تصحيح السجلات القديمة: price كان سعر/وحدة، دلوقتي يبقى إجمالي ──
     # نضرب السجلات اللي price فيها صغيرة (< 200) وعندها كمية > 0
@@ -1546,26 +1529,6 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             c.execute("SELECT plate FROM cars WHERE id=?", (rec.vehicle_id,))
             cv = c.fetchone()
             vp = cv["plate"] if cv else None
-        # ── تحديث جدول الصيانة الدورية تلقائياً ──
-        if rec.vehicle_id and rec.odometer_reading:
-            MAINT_MAP = {
-                "oil":    ["تغيير زيت","فلتر زيت"],
-                "filter": ["فلتر هواء","فلتر وقود","فلتر مكيف"],
-                "tire":   ["إطارات"],
-                "battery":["بطارية"],
-                "belt":   ["سير توزيع"],
-            }
-            related_types = MAINT_MAP.get(rec.type, [])
-            if related_types:
-                placeholders_m = ",".join("?" * len(related_types))
-                c.execute(f"""UPDATE maintenance_schedule
-                              SET last_done_km=?, last_done_date=?, updated_at=?
-                              WHERE car_id=? AND maintenance_type IN ({placeholders_m})""",
-                          [rec.odometer_reading, now[:10], now, rec.vehicle_id] + related_types)
-                updated_m = conn.execute("SELECT changes()").fetchone()[0]
-                if updated_m:
-                    log_event("maintenance_auto_updated",
-                              car_id=rec.vehicle_id, types=related_types, km=rec.odometer_reading)
 
         return {"id":rid,"driver_id":rec.driver_id,"type":rec.type,"quantity":rec.quantity,
                 "price":final_price,"notes":rec.notes or "","created_at":now,
@@ -2332,38 +2295,6 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
 
 
 # ══════════════════════════════════════════════════════
-# 27. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
-# ══════════════════════════════════════════════════════
-
-MAINTENANCE_TYPES = [
-    "تغيير زيت", "فلتر زيت", "فلتر هواء", "فلتر وقود",
-    "فلتر مكيف", "إطارات", "بطارية", "فرامل أمامية",
-    "فرامل خلفية", "سير توزيع", "ترمس", "ماء تبريد",
-    "سائل فرامل", "فحص دوري عام", "أخرى",
-]
-
-class MaintenanceScheduleCreate(BaseModel):
-    car_id:           int
-    maintenance_type: str
-    interval_km:      Optional[float] = None   # كل كام كم
-    interval_days:    Optional[int]   = None   # أو كل كام يوم
-    last_done_km:     Optional[float] = None   # آخر عداد عند الصيانة
-    last_done_date:   Optional[str]   = None   # تاريخ آخر صيانة (YYYY-MM-DD)
-    alert_km_before:  Optional[float] = 500.0  # إنذار قبل كام كم
-    alert_days_before:Optional[int]   = 7      # إنذار قبل كام يوم
-    notes:            Optional[str]   = ""
-
-class MaintenanceScheduleUpdate(BaseModel):
-    maintenance_type: Optional[str]   = None
-    interval_km:      Optional[float] = None
-    interval_days:    Optional[int]   = None
-    last_done_km:     Optional[float] = None
-    last_done_date:   Optional[str]   = None
-    alert_km_before:  Optional[float] = None
-    alert_days_before:Optional[int]   = None
-    notes:            Optional[str]   = None
-
-# ══════════════════════════════════════════════════════
 # 24-B. BRANCHES LIST — لقائمة الفروع المتاحة
 # ══════════════════════════════════════════════════════
 
@@ -3075,170 +3006,6 @@ if __name__ == "__main__":
         reload=(ENVIRONMENT != "production"),
         workers=1 if ENVIRONMENT != "production" else 4,
     )
-# ══════════════════════════════════════════════════════
-# 27. MAINTENANCE SCHEDULE — CRUD + ALERTS
-# ══════════════════════════════════════════════════════
-
-def _maintenance_row(row: dict, cars_map: dict) -> dict:
-    """Enrich a maintenance_schedule row with computed fields."""
-    d = dict(row)
-    d.setdefault("notes", "")
-    car = cars_map.get(d.get("car_id"), {})
-    d["car_plate"]  = car.get("plate", "—")
-    d["car_model"]  = car.get("model", "—")
-    d["car_branch"] = car.get("branch", "")
-
-    # Last known odometer from trips
-    d["current_km"] = d.get("_current_km", None)
-
-    # Compute next due
-    next_km = None
-    if d.get("last_done_km") is not None and d.get("interval_km"):
-        next_km = float(d["last_done_km"]) + float(d["interval_km"])
-    d["next_due_km"] = next_km
-
-    next_date = None
-    if d.get("last_done_date") and d.get("interval_days"):
-        from datetime import timedelta
-        try:
-            ld = datetime.fromisoformat(d["last_done_date"])
-            next_date = (ld + timedelta(days=int(d["interval_days"]))).strftime("%Y-%m-%d")
-        except Exception:
-            pass
-    d["next_due_date"] = next_date
-
-    # Alert status
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    alert_km_before   = float(d.get("alert_km_before") or 500)
-    alert_days_before = int(d.get("alert_days_before") or 7)
-    cur_km = d.get("current_km")
-
-    status = "ok"
-    if next_km is not None and cur_km is not None:
-        remaining_km = next_km - float(cur_km)
-        if remaining_km <= 0:
-            status = "overdue"
-        elif remaining_km <= alert_km_before:
-            status = "warning"
-
-    if next_date and status == "ok":
-        from datetime import timedelta
-        try:
-            nd = datetime.fromisoformat(next_date)
-            days_left = (nd - datetime.utcnow()).days
-            if days_left <= 0:
-                status = "overdue"
-            elif days_left <= alert_days_before:
-                status = "warning"
-        except Exception:
-            pass
-
-    d["alert_status"] = status
-    d.pop("_current_km", None)
-    return d
-
-
-@app.get("/maintenance/schedule")
-async def get_maintenance_schedule(cu: dict = Depends(require_admin_or_reporter)):
-    branch = _branch_filter(cu)
-    with get_db() as conn:
-        c = conn.cursor()
-        # جيب أحدث عداد لكل عربية من الرحلات المنتهية
-        c.execute("""SELECT car_id, MAX(end_odometer) as max_odo
-                     FROM trips WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL
-                     GROUP BY car_id""")
-        odo_map = {r["car_id"]: r["max_odo"] for r in c.fetchall()}
-
-        # جيب العربيات
-        if branch:
-            c.execute("SELECT id,plate,model,branch FROM cars WHERE branch=?", (branch,))
-        else:
-            c.execute("SELECT id,plate,model,branch FROM cars")
-        cars_map = {r["id"]: dict(r) for r in c.fetchall()}
-
-        # جيب الجدول
-        car_ids = list(cars_map.keys())
-        if not car_ids:
-            return []
-        placeholders = ",".join("?" * len(car_ids))
-        c.execute(f"""SELECT * FROM maintenance_schedule
-                      WHERE car_id IN ({placeholders})
-                      ORDER BY car_id, maintenance_type""", car_ids)
-        rows = []
-        for r in c.fetchall():
-            d = dict(r)
-            d["_current_km"] = odo_map.get(d["car_id"])
-            rows.append(_maintenance_row(d, cars_map))
-        return rows
-
-
-@app.get("/maintenance/alerts")
-async def get_maintenance_alerts(cu: dict = Depends(require_admin_or_reporter)):
-    """يرجع فقط السجلات اللي status فيها warning أو overdue."""
-    all_rows = await get_maintenance_schedule(cu)
-    return [r for r in all_rows if r["alert_status"] in ("warning", "overdue")]
-
-
-@app.post("/maintenance/schedule", status_code=201)
-async def create_maintenance(rec: MaintenanceScheduleCreate, cu: dict = Depends(require_admin)):
-    if rec.maintenance_type not in MAINTENANCE_TYPES:
-        raise HTTPException(400, f"نوع صيانة غير صالح. الأنواع المتاحة: {MAINTENANCE_TYPES}")
-    if not rec.interval_km and not rec.interval_days:
-        raise HTTPException(400, "يجب تحديد interval_km أو interval_days على الأقل")
-    now = datetime.utcnow().isoformat() + "Z"
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id FROM cars WHERE id=?", (rec.car_id,))
-        if not c.fetchone():
-            raise HTTPException(404, "المركبة غير موجودة")
-        # منع تكرار نفس النوع لنفس العربية
-        c.execute("SELECT id FROM maintenance_schedule WHERE car_id=? AND maintenance_type=?",
-                  (rec.car_id, rec.maintenance_type))
-        if c.fetchone():
-            raise HTTPException(400, "يوجد جدول صيانة لهذا النوع لهذه المركبة بالفعل")
-        c.execute("""INSERT INTO maintenance_schedule
-                     (car_id,maintenance_type,interval_km,interval_days,
-                      last_done_km,last_done_date,alert_km_before,alert_days_before,notes,created_at,updated_at)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                  (rec.car_id, rec.maintenance_type, rec.interval_km, rec.interval_days,
-                   rec.last_done_km, rec.last_done_date,
-                   rec.alert_km_before or 500, rec.alert_days_before or 7,
-                   rec.notes or "", now, now))
-        rid = c.lastrowid
-        log_event("maintenance_created", id=rid, car_id=rec.car_id, type=rec.maintenance_type)
-        return {"id": rid, "ok": True}
-
-
-@app.put("/maintenance/schedule/{mid}")
-async def update_maintenance(mid: int, rec: MaintenanceScheduleUpdate, cu: dict = Depends(require_admin)):
-    now = datetime.utcnow().isoformat() + "Z"
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM maintenance_schedule WHERE id=?", (mid,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(404, "السجل غير موجود")
-        updates = {k: v for k, v in rec.dict(exclude_none=True).items()}
-        if not updates:
-            raise HTTPException(400, "لا توجد بيانات للتحديث")
-        updates["updated_at"] = now
-        set_clause = ", ".join(f"{k}=?" for k in updates)
-        c.execute(f"UPDATE maintenance_schedule SET {set_clause} WHERE id=?",
-                  list(updates.values()) + [mid])
-        log_event("maintenance_updated", id=mid, changes=list(updates.keys()))
-        return {"ok": True}
-
-
-@app.delete("/maintenance/schedule/{mid}")
-async def delete_maintenance(mid: int, cu: dict = Depends(require_admin)):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("DELETE FROM maintenance_schedule WHERE id=?", (mid,))
-        if conn.execute("SELECT changes()").fetchone()[0] == 0:
-            raise HTTPException(404, "السجل غير موجود")
-        log_event("maintenance_deleted", id=mid)
-        return {"ok": True}
-
 
 # ══════════════════════════════════════════════════════
 # 29. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
