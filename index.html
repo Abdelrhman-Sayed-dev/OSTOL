@@ -6476,7 +6476,7 @@ async function loadFuelReport() {
           <th>المسافة (كم)</th><th>الوقود (لتر)</th><th>عدد التعبئات</th>
           <th>التكلفة (جنيه)</th><th>⚡ كم/لتر</th><th>جنيه/كم</th>
         </tr></thead><tbody id="fuelBody">
-        ${cars.slice(0,5).map((c,idx)=>{
+        ${ranked.slice(0,5).map((c,idx)=>{
           const eff = c.efficiency_km_per_liter;
           const effColor = !eff ? '#94a3b8' : eff >= 8 ? '#10b981' : eff >= 5 ? '#f59e0b' : '#ef4444';
           const effBadge = !eff ? '—' : `<strong style="color:${effColor}">${eff} كم/لتر</strong>`;
