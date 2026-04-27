@@ -6838,51 +6838,73 @@ async function loadMonthlyReport() {
           </div>
         </div>
 
-        <!-- أداء السائقين -->
-        <div style="margin-bottom:1.2rem">
-          <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;border-right:3px solid #3b82f6;padding-right:.6rem">👨‍✈️ أداء السائقين</div>
-          <div class="table-wrap">
-            <table><thead><tr>
-              <th>#</th><th>السائق</th><th>الرقم الثابت</th><th>الفرع</th>
-              <th>عدد الرحلات</th><th>مكتملة</th><th>إجمالي كم</th><th>متوسط كم/رحلة</th>
-            </tr></thead><tbody>
-            ${data.drivers.map((d,i)=>`<tr>
-              <td>${i+1}</td>
-              <td><strong>${d.name}</strong></td>
-              <td><code>${d.fixed_number||'—'}</code></td>
-              <td style="font-size:.8rem">${d.branch||'—'}</td>
-              <td>${d.trips}</td>
-              <td>${d.completed}</td>
-              <td>${d.km>0?Math.round(d.km).toLocaleString('ar-EG'):'—'}</td>
-              <td>${d.trips>0?Math.round(d.km/d.trips).toLocaleString('ar-EG'):'—'}</td>
-            </tr>`).join('')}
-            ${!data.drivers.length?'<tr><td colspan="8" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
-            </tbody></table>
-          </div>
-        </div>
+        <!-- TOP 5 السائقين -->
+        ${(()=>{
+          const top5 = data.drivers.slice(0,5);
+          const medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
+          return `<div style="margin-bottom:1.2rem">
+            <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
+              <span style="background:#3b82f6;color:white;border-radius:6px;padding:.1rem .55rem;font-size:.75rem;font-weight:800">TOP 5</span>
+              السائقون — أعلى مسافة
+              <span style="font-size:.75rem;color:var(--muted);font-weight:400">(من ${data.drivers.length})</span>
+            </div>
+            <div class="table-wrap">
+              <table><thead><tr style="font-size:.8rem">
+                <th style="width:30px"></th><th>السائق</th><th>الرقم الثابت</th>
+                <th>رحلات</th><th>إجمالي كم</th><th>متوسط</th>
+              </tr></thead><tbody>
+              ${top5.map((d,i)=>{
+                const barW = data.drivers[0]?.km>0?Math.round((d.km/data.drivers[0].km)*100):0;
+                return `<tr>
+                  <td style="text-align:center;font-size:1rem">${medals[i]||i+1}</td>
+                  <td><strong>${d.name}</strong></td>
+                  <td style="font-size:.78rem"><code>${d.fixed_number||'—'}</code></td>
+                  <td>${d.trips}</td>
+                  <td>
+                    <div style="display:flex;align-items:center;gap:.45rem">
+                      <div style="width:60px;background:#e2e8f0;border-radius:3px;height:5px">
+                        <div style="width:${barW}%;background:#3b82f6;border-radius:3px;height:5px"></div>
+                      </div>
+                      <strong>${Math.round(d.km).toLocaleString('ar-EG')}</strong>
+                    </div>
+                  </td>
+                  <td style="font-size:.82rem">${d.trips>0?Math.round(d.km/d.trips):0} كم/رحلة</td>
+                </tr>`;
+              }).join('')}
+              ${!top5.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
+              </tbody></table>
+            </div>
+          </div>`;
+        })()}
 
-        <!-- تكاليف المركبات -->
-        <div style="margin-bottom:1.2rem">
-          <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;border-right:3px solid #10b981;padding-right:.6rem">🚙 تكاليف المركبات</div>
-          <div class="table-wrap">
-            <table><thead><tr>
-              <th>#</th><th>اللوحة</th><th>الموديل</th><th>الفرع</th>
-              <th>وقود (لتر)</th><th>تكلفة وقود</th><th>تكلفة صيانة</th><th>الإجمالي (جنيه)</th>
-            </tr></thead><tbody>
-            ${data.cars.map((c,i)=>`<tr>
-              <td>${i+1}</td>
-              <td dir="ltr"><strong>${c.plate}</strong></td>
-              <td>${c.model}</td>
-              <td style="font-size:.8rem">${c.branch||'—'}</td>
-              <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
-              <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
-              <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
-              <td><strong>${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
-            </tr>`).join('')}
-            ${!data.cars.length?'<tr><td colspan="8" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
-            </tbody></table>
-          </div>
-        </div>
+        <!-- TOP 5 المركبات -->
+        ${(()=>{
+          const top5 = data.cars.slice(0,5);
+          return `<div style="margin-bottom:1.2rem">
+            <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
+              <span style="background:#10b981;color:white;border-radius:6px;padding:.1rem .55rem;font-size:.75rem;font-weight:800">TOP 5</span>
+              المركبات — أعلى تكلفة
+              <span style="font-size:.75rem;color:var(--muted);font-weight:400">(من ${data.cars.length})</span>
+            </div>
+            <div class="table-wrap">
+              <table><thead><tr style="font-size:.8rem">
+                <th>#</th><th>اللوحة</th><th>الموديل</th>
+                <th>وقود (لتر)</th><th>تكلفة وقود</th><th>صيانة</th><th>الإجمالي (جنيه)</th>
+              </tr></thead><tbody>
+              ${top5.map((c,i)=>`<tr>
+                <td>${i+1}</td>
+                <td dir="ltr"><strong>${c.plate}</strong></td>
+                <td style="font-size:.8rem">${c.model}</td>
+                <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
+                <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
+                <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
+                <td><strong style="color:var(--primary)">${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
+              </tr>`).join('')}
+              ${!top5.length?'<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
+              </tbody></table>
+            </div>
+          </div>`;
+        })()}
       </div>`;
   } catch(e) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
@@ -6891,28 +6913,94 @@ async function loadMonthlyReport() {
 }
 
 function printMonthlyReport() {
-  const area = document.getElementById('mrPrintArea');
-  if(!area) return showNotification('أنشئ التقرير أولاً','error');
+  const d = window._mrData;
+  if(!d) return showNotification('أنشئ التقرير أولاً','error');
+  const s = d.summary;
+  const [yr, mo] = d.month.split('-');
+  const monthName = new Date(yr, mo-1, 1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+  const top5D = d.drivers.slice(0,5);
+  const top5C = d.cars.slice(0,5);
+  const medals = ['🥇','🥈','🥉','4','5'];
+
+  const drvRows = top5D.map((dr,i) => {
+    const barW = d.drivers[0]?.km>0 ? Math.round((dr.km/d.drivers[0].km)*100) : 0;
+    return `<tr>
+      <td style="text-align:center">${medals[i]}</td>
+      <td>${dr.name}</td><td>${dr.fixed_number||'—'}</td>
+      <td style="text-align:center">${dr.trips}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:5px">
+          <div style="width:50px;background:#e2e8f0;border-radius:3px;height:5px">
+            <div style="width:${barW}%;background:#3b82f6;border-radius:3px;height:5px"></div>
+          </div>
+          <strong>${Math.round(dr.km).toLocaleString('ar-EG')}</strong>
+        </div>
+      </td>
+      <td>${dr.trips>0?Math.round(dr.km/dr.trips):0} كم</td>
+    </tr>`;
+  }).join('');
+
+  const carRows = top5C.map((c,i) => `<tr>
+    <td style="text-align:center">${i+1}</td>
+    <td dir="ltr"><strong>${c.plate}</strong></td>
+    <td>${c.model}</td>
+    <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
+    <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
+    <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
+    <td><strong>${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
+  </tr>`).join('');
+
   const win = window.open('','_blank');
-  win.document.write(`
-    <!DOCTYPE html><html lang="ar" dir="rtl"><head>
-    <meta charset="UTF-8">
-    <title>التقرير الشهري</title>
-    <style>
-      body{font-family:Arial,sans-serif;direction:rtl;margin:20px;font-size:13px;color:#1a1a2e}
-      table{width:100%;border-collapse:collapse;margin-bottom:16px}
-      th,td{border:1px solid #ddd;padding:6px 8px;text-align:right}
-      th{background:#f8fafc;font-weight:700}
-      .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
-      .stat-box{border:1px solid #e2e8f0;border-radius:8px;padding:10px;text-align:center}
-      .stat-n{font-size:1.4rem;font-weight:700}
-      .stat-l{font-size:.72rem;color:#64748b}
-      h2{border-right:4px solid #1a1a2e;padding-right:8px;font-size:1rem;margin:16px 0 8px}
-      @media print{@page{margin:15mm}}
-    </style></head><body>
-    ${area.innerHTML.replace(/class="stats-row"/g,'class="stats-grid"').replace(/class="stat-card"/g,'class="stat-box"').replace(/class="stat-value"/g,'class="stat-n"').replace(/class="stat-label"/g,'class="stat-l"').replace(/class="table-wrap"/g,'').replace(/style="border-right:3px solid[^"]*"/g,'')}
-    <script>window.onload=()=>{ window.print(); window.onafterprint=()=>window.close(); }<\/script>
-    </body></html>`);
+  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head>
+  <meta charset="UTF-8"><title>تقرير شهري — ${d.month}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;direction:rtl;padding:15mm;font-size:10pt;color:#1e293b}
+    h1{font-size:13pt;font-weight:700;text-align:center;margin-bottom:3px}
+    .sub{font-size:9pt;color:#64748b;text-align:center;margin-bottom:12px;padding-bottom:10px;border-bottom:1.5px solid #1e293b}
+    .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px}
+    .sbox{border:1px solid #e2e8f0;border-radius:6px;padding:8px;text-align:center}
+    .sbox.hi{border:2px solid #10b981;background:#f0fdf4}
+    .sn{font-size:13pt;font-weight:700}.sl{font-size:7.5pt;color:#64748b;margin-top:2px}
+    .sbox.hi .sn{color:#065f46}
+    .sec-title{font-size:9pt;font-weight:700;margin:12px 0 5px;padding-right:7px;border-right:3px solid #3b82f6}
+    .sec-title.g{border-color:#10b981}
+    .badge{display:inline-block;background:#3b82f6;color:#fff;border-radius:4px;padding:0 5px;font-size:7pt;font-weight:800;margin-left:4px}
+    .badge.g{background:#10b981}
+    .note{font-size:7.5pt;color:#94a3b8;margin-right:6px}
+    table{width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px}
+    th,td{border:0.5px solid #cbd5e1;padding:4px 6px;text-align:right}
+    th{background:#f8fafc;font-weight:700;font-size:8pt}
+    tr:nth-child(even){background:#f8fafc}
+    .footer{margin-top:14px;border-top:0.5px solid #e2e8f0;padding-top:7px;font-size:7pt;color:#94a3b8;text-align:center}
+    @page{size:A4;margin:12mm}
+  </style></head><body>
+  <h1>🚛 إدارة الأسطول — التقرير الشهري</h1>
+  <div class="sub">${monthName} &nbsp;|&nbsp; ${d.branch}</div>
+
+  <div class="summary">
+    <div class="sbox"><div class="sn">${s.total_drivers}</div><div class="sl">سائق نشط</div></div>
+    <div class="sbox"><div class="sn">${s.total_cars}</div><div class="sl">مركبة</div></div>
+    <div class="sbox"><div class="sn">${s.total_trips}</div><div class="sl">رحلة</div></div>
+    <div class="sbox hi"><div class="sn">${Math.round(s.total_cost).toLocaleString('ar-EG')}</div><div class="sl">إجمالي التكاليف (جنيه)</div></div>
+  </div>
+  <div class="summary" style="grid-template-columns:1fr 1fr 1fr">
+    <div class="sbox"><div class="sn" style="font-size:11pt">${Math.round(s.total_km).toLocaleString('ar-EG')}</div><div class="sl">إجمالي كم</div></div>
+    <div class="sbox"><div class="sn" style="font-size:11pt">${Math.round(s.total_fuel_cost).toLocaleString('ar-EG')}</div><div class="sl">تكلفة وقود (جنيه)</div></div>
+    <div class="sbox"><div class="sn" style="font-size:11pt">${Math.round(s.total_maint_cost).toLocaleString('ar-EG')}</div><div class="sl">تكلفة صيانة (جنيه)</div></div>
+  </div>
+
+  <div class="sec-title"><span class="badge">TOP 5</span> السائقون — أعلى مسافة <span class="note">من ${d.drivers.length} سائق</span></div>
+  <table><thead><tr><th></th><th>السائق</th><th>الرقم الثابت</th><th>رحلات</th><th>إجمالي كم</th><th>متوسط/رحلة</th></tr></thead>
+  <tbody>${drvRows}</tbody></table>
+
+  <div class="sec-title g"><span class="badge g">TOP 5</span> المركبات — أعلى تكلفة <span class="note">من ${d.cars.length} مركبة</span></div>
+  <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>وقود (لتر)</th><th>تكلفة وقود</th><th>صيانة</th><th>الإجمالي (جنيه)</th></tr></thead>
+  <tbody>${carRows}</tbody></table>
+
+  <div class="footer">صدر بتاريخ: ${new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})} — إدارة الأسطول</div>
+  <script>window.onload=function(){ window.print(); window.onafterprint=function(){ window.close(); }; }<\/script>
+  </body></html>`);
   win.document.close();
 }
 
