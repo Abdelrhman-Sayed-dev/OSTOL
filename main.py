@@ -251,7 +251,7 @@ def migrate_db():
             role       TEXT NOT NULL,
             action     TEXT NOT NULL,
             details    TEXT DEFAULT '',
-            ip_address TEXT DEFAULT '',
+            device_id  TEXT DEFAULT '',
             created_at TEXT NOT NULL
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_logs(user_id)")
@@ -384,6 +384,8 @@ def _safe_add_columns(c):
                                ("car_code","TEXT DEFAULT ''"),("engine_number","TEXT DEFAULT ''"),
                                ("year","TEXT DEFAULT ''"),("project","TEXT DEFAULT ''"),
                                ("branch","TEXT DEFAULT ''"),("equipment_type","TEXT DEFAULT ''")],
+        # migration: أضف device_id لو مش موجود (قديم كان ip_address)
+        "audit_logs":         [("device_id","TEXT DEFAULT ''")],
     }
     for tbl, cols in additions.items():
         for col, col_type in cols:
@@ -531,17 +533,18 @@ def _effective_branch(cu: dict, super_branch: Optional[str] = None) -> Optional[
     return cu.get("branch") or None
 
 def write_audit_log(user_id: int, username: str, role: str,
-                    action: str, details: str = "", ip: str = "",
+                    action: str, details: str = "", device_id: str = "",
                     cursor=None):
     """Write an audit log entry.
     Pass an existing cursor to reuse the same transaction,
     or leave None to open a new connection.
+    device_id = browser fingerprint بعتته الـ frontend (ثابت على نفس الجهاز)
     """
     try:
         now = datetime.utcnow().isoformat() + "Z"
-        sql = """INSERT INTO audit_logs(user_id,username,role,action,details,ip_address,created_at)
+        sql = """INSERT INTO audit_logs(user_id,username,role,action,details,device_id,created_at)
                  VALUES(?,?,?,?,?,?,?)"""
-        params = (user_id, username, role, action, details, ip, now)
+        params = (user_id, username, role, action, details, device_id, now)
         if cursor is not None:
             cursor.execute(sql, params)
         else:
@@ -930,7 +933,7 @@ async def login(request: Request, data: LoginReq):
                 u = candidate
                 break
         if not u:
-            log_event("login_failed", username=data.username, ip=request.client.host)
+            log_event("login_failed", username=data.username)
             raise HTTPException(401, "اسم المستخدم أو كلمة المرور غير صحيحة")
 
         driver_id = None
@@ -951,11 +954,12 @@ async def login(request: Request, data: LoginReq):
                   (refresh_token, refresh_exp, datetime.utcnow().isoformat() + "Z", u["id"]))
 
         log_event("login_success", user_id=u["id"], role=u["role"])
-        # ── Audit log — pass cursor to avoid nested get_db() conflict ──
+        # ── Audit log — device_id من header بعته الـ frontend (browser fingerprint) ──
+        device_id = request.headers.get("X-Device-ID", "")
         write_audit_log(
             user_id=u["id"], username=u["username"], role=u["role"],
             action="login", details="تسجيل دخول ناجح",
-            ip=request.client.host if request.client else "",
+            device_id=device_id,
             cursor=c
         )
         return LoginResp(
