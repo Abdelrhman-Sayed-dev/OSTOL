@@ -697,59 +697,62 @@ body.driver-mode { background:#f5f5f5; }
 .dp-wrap {
   width:100%;
   min-height:100vh;
-  max-width:640px;
+  max-width:480px;
   margin:0 auto;
-  padding:0 0 40px;
+  padding:0 0 60px;
   display:flex;
   flex-direction:column;
-  background:#f0ede8;
+  background:#f4f6fb;
 }
 
 /* ── TOP SECTION: greeting + date + car ── */
 .dp-top {
   background:#fff;
-  padding:1.8rem 1.4rem 1.4rem;
-  border-bottom:1px solid #e8e4df;
+  padding:2rem 1.4rem 1.5rem;
+  border-bottom:1px solid #eef0f6;
   text-align:center;
+  position:relative;
 }
 /* ── DRIVER INTERFACE REDESIGN ── */
 .dp-greeting {
-  font-size:1.2rem;
-  font-weight:800;
+  font-size:1.35rem;
+  font-weight:900;
   color:#1a1a2e;
-  margin-bottom:.25rem;
+  margin-bottom:.3rem;
 }
 .dp-date {
   font-size:.82rem;
   color:#8a8a9a;
-  font-weight:400;
+  font-weight:500;
+  display:flex;align-items:center;justify-content:center;gap:.35rem;
 }
 .dp-divider { display:none; }
 .dp-avatar {
-  width:56px; height:56px;
+  width:68px; height:68px;
   border-radius:50%;
-  background:#f59e0b;
+  background:linear-gradient(135deg,#f59e0b,#fbbf24);
   color:#fff;
-  font-size:22px;
-  font-weight:800;
+  font-size:28px;
+  font-weight:900;
   display:flex; align-items:center; justify-content:center;
-  margin:0 auto .75rem;
-  box-shadow:0 4px 14px rgba(245,158,11,.35);
+  margin:0 auto .85rem;
+  box-shadow:0 6px 20px rgba(245,158,11,.4);
 }
 .dp-car {
   display:inline-flex;
   align-items:center;
-  gap:.5rem;
-  border:1.5px solid #e8e4df;
+  gap:.55rem;
+  border:1.5px solid #eef0f6;
   border-radius:50px;
-  padding:.55rem 1.2rem;
+  padding:.6rem 1.3rem;
   font-size:.95rem;
   font-weight:700;
   color:#1a1a2e;
-  background:#fff;
-  margin-top:.75rem;
+  background:#f8faff;
+  margin-top:.85rem;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
 }
-.dp-car span { color:#8a8a9a; font-weight:400; }
+.dp-car span { color:#94a3b8; font-weight:400; }
 .dp-logout {
   position:fixed;
   top:.75rem;
@@ -788,97 +791,114 @@ body.driver-mode { background:#f5f5f5; }
 /* ── CARD SECTIONS ── */
 .dp-section {
   background:#fff;
-  margin:.65rem .85rem 0;
-  border-radius:16px;
-  padding:1rem;
+  margin:.7rem .85rem 0;
+  border-radius:20px;
+  padding:1.1rem;
   display:flex;
   flex-direction:column;
-  gap:.55rem;
-  box-shadow:0 2px 10px rgba(0,0,0,.05);
+  gap:.6rem;
+  box-shadow:0 2px 12px rgba(0,0,0,.06);
 }
 .dp-label {
-  font-size:.68rem;
-  font-weight:700;
-  color:#8a8a9a;
-  text-transform:uppercase;
+  font-size:.7rem;
+  font-weight:800;
+  color:#94a3b8;
   letter-spacing:.8px;
-  margin-bottom:.1rem;
+  margin-bottom:.15rem;
+  display:flex;align-items:center;gap:.35rem;
 }
 
 /* Main trip button — GOLDEN */
 .dp-btn-main {
   width:100%;
-  padding:1rem 1rem;
+  padding:1.2rem 1rem;
   border:none;
-  border-radius:12px;
-  font-size:1.05rem;
-  font-weight:800;
+  border-radius:16px;
+  font-size:1.15rem;
+  font-weight:900;
   cursor:pointer;
   font-family:inherit;
-  transition:.15s;
-  box-shadow:0 4px 14px rgba(184,134,11,.3);
+  transition:.18s;
+  letter-spacing:.3px;
+  position:relative;
+  overflow:hidden;
 }
-.dp-btn-main:active { transform:scale(.98); }
-.dp-btn-start { background:linear-gradient(135deg,var(--primary),var(--primary-light)); color:#fff; }
-.dp-btn-start:hover { box-shadow:0 6px 18px rgba(30,58,95,.45); }
-.dp-btn-end   { background:linear-gradient(135deg,#b8860b,#c99a1a); color:#fff; box-shadow:0 4px 14px rgba(184,134,11,.3); }
-.dp-btn-end:hover { box-shadow:0 6px 18px rgba(184,134,11,.45); }
+.dp-btn-main:active { transform:scale(.97); }
+.dp-btn-start {
+  background:linear-gradient(135deg,#1e3a5f 0%,#2d5a8e 100%);
+  color:#fff;
+  box-shadow:0 6px 20px rgba(30,58,95,.35);
+}
+.dp-btn-start:hover { box-shadow:0 8px 24px rgba(30,58,95,.5); }
+.dp-btn-end {
+  background:linear-gradient(135deg,#b8860b 0%,#d4a017 100%);
+  color:#fff;
+  box-shadow:0 6px 20px rgba(184,134,11,.35);
+}
+.dp-btn-end:hover { box-shadow:0 8px 24px rgba(184,134,11,.5); }
 
 /* Garage button — outlined */
 .dp-btn-garage {
   width:100%;
-  padding:.8rem 1rem;
-  border:1.5px solid #e8e4df;
-  border-radius:12px;
-  font-size:.88rem;
-  font-weight:600;
+  padding:.95rem 1rem;
+  border:1.5px solid #eef0f6;
+  border-radius:14px;
+  font-size:.92rem;
+  font-weight:700;
   cursor:pointer;
   font-family:inherit;
   background:#fff;
   color:#1a1a2e;
-  transition:.15s;
-  box-shadow:none;
+  transition:.18s;
+  box-shadow:0 1px 4px rgba(0,0,0,.04);
 }
-.dp-btn-garage:hover { border-color:#1e3a5f; background:#f7f8ff; }
+.dp-btn-garage:hover { border-color:#1e3a5f; background:#f0f4ff; color:#1e3a5f; }
 .dp-btn-garage:active { transform:scale(.98); }
 
 /* ── 4 QUICK BUTTONS — 2x2 grid ── */
 .dp-quick {
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:.6rem;
+  gap:.65rem;
 }
 .dp-qbtn {
   border:none;
-  border-radius:14px;
-  padding:1rem .5rem .85rem;
+  border-radius:18px;
+  padding:1.1rem .75rem 1rem;
   cursor:pointer;
   font-family:inherit;
   display:flex;
   flex-direction:column;
-  align-items:center;
-  gap:.5rem;
-  transition:.15s;
+  align-items:flex-start;
+  gap:.6rem;
+  transition:.18s;
+  box-shadow:0 2px 8px rgba(0,0,0,.05);
+  position:relative;
+  overflow:hidden;
 }
 .dp-qbtn:active { transform:scale(.95); }
 .dp-qbtn .qi-wrap {
-  width:40px; height:40px;
-  border-radius:11px;
+  width:44px; height:44px;
+  border-radius:13px;
   display:flex; align-items:center; justify-content:center;
-  font-size:1.2rem;
+  font-size:1.35rem;
 }
-.dp-qbtn .qi   { font-size:1.4rem; }
-.dp-qbtn .ql   { font-size:.82rem; font-weight:700; color:#1a1a2e; }
+.dp-qbtn .ql   { font-size:.88rem; font-weight:800; color:#1a1a2e; }
+.dp-qbtn .qs   { font-size:.72rem; font-weight:500; color:#94a3b8; margin-top:-.2rem; }
+.dp-qbtn .qi-arrow {
+  position:absolute; bottom:.75rem; left:.75rem;
+  font-size:.75rem; color:#94a3b8;
+}
 .dp-qbtn-fuel  { background:#eef3ff; }
-.dp-qbtn-fuel  .qi-wrap { background:rgba(59,95,192,.12); }
+.dp-qbtn-fuel  .qi-wrap { background:rgba(59,95,192,.14); }
 .dp-qbtn-oil   { background:#edfaf5; }
-.dp-qbtn-oil   .qi-wrap { background:rgba(16,185,129,.12); }
-.dp-qbtn-acc   { background:#fff0f0; }
-.dp-qbtn-acc   .qi-wrap { background:rgba(229,57,53,.1); }
-.dp-qbtn-emg   { background:#fff8e8; }
-.dp-qbtn-emg   .qi-wrap { background:rgba(245,158,11,.14); }
-@keyframes emgBlink{0%,100%{opacity:1}50%{opacity:.78}}
-.dp-qbtn-emg { animation:emgBlink 2.8s ease-in-out infinite; }
+.dp-qbtn-oil   .qi-wrap { background:rgba(16,185,129,.14); }
+.dp-qbtn-acc   { background:#fff3f3; }
+.dp-qbtn-acc   .qi-wrap { background:rgba(239,68,68,.12); }
+.dp-qbtn-emg   { background:#fffbeb; }
+.dp-qbtn-emg   .qi-wrap { background:rgba(245,158,11,.16); }
+@keyframes emgBlink{0%,100%{opacity:1}50%{opacity:.85}}
+.dp-qbtn-emg { animation:emgBlink 2.5s ease-in-out infinite; }
 
 /* ── WORKSHOP SERVICES — pill style ── */
 .dp-ws-grid {
@@ -887,20 +907,20 @@ body.driver-mode { background:#f5f5f5; }
   gap:.5rem;
 }
 .dp-ws-btn {
-  padding:.5rem 1rem;
-  border:1.5px solid #e8e4df;
+  padding:.55rem 1.1rem;
+  border:1.5px solid #eef0f6;
   border-radius:50px;
-  background:#fff;
+  background:#f8faff;
   cursor:pointer;
   font-family:inherit;
   font-size:.85rem;
-  font-weight:600;
+  font-weight:700;
   color:#1a1a2e;
-  transition:.15s;
+  transition:.18s;
   white-space:nowrap;
 }
-.dp-ws-btn:hover  { border-color:#b8860b; color:#b8860b; background:#fff8e8; }
-.dp-ws-btn:active { background:#b8860b; color:#fff; border-color:#b8860b; }
+.dp-ws-btn:hover  { border-color:#1e3a5f; color:#1e3a5f; background:#eef2ff; }
+.dp-ws-btn:active { background:#1e3a5f; color:#fff; border-color:#1e3a5f; }
 
 /* ── REQUESTS BUTTONS ── */
 .dp-req-grid {
@@ -909,39 +929,69 @@ body.driver-mode { background:#f5f5f5; }
   gap:.6rem;
 }
 .dp-btn-new-req {
-  padding:.85rem;
-  border-radius:12px;
+  padding:1rem;
+  border-radius:14px;
   border:none;
-  background:#1e3a5f;
+  background:linear-gradient(135deg,#1e3a5f,#2d5a8e);
   color:#fff;
   font-family:inherit;
-  font-size:.88rem;
-  font-weight:700;
+  font-size:.9rem;
+  font-weight:800;
   cursor:pointer;
-  display:flex; align-items:center; justify-content:center; gap:.4rem;
-  transition:.15s;
+  display:flex; flex-direction:column; align-items:flex-start; gap:.15rem;
+  transition:.18s;
+  box-shadow:0 4px 14px rgba(30,58,95,.3);
 }
-.dp-btn-new-req:hover { background:#264870; transform:translateY(-1px); }
+.dp-btn-new-req .req-sub { font-size:.72rem; font-weight:500; opacity:.75; }
+.dp-btn-new-req:hover { background:linear-gradient(135deg,#264870,#3568a0); transform:translateY(-1px); }
 .dp-btn-my-req {
-  padding:.85rem;
-  border-radius:12px;
-  border:1.5px solid #e8e4df;
-  background:#fff;
+  padding:1rem;
+  border-radius:14px;
+  border:1.5px solid #eef0f6;
+  background:#f8faff;
   color:#1a1a2e;
   font-family:inherit;
-  font-size:.88rem;
-  font-weight:600;
+  font-size:.9rem;
+  font-weight:700;
   cursor:pointer;
-  display:flex; align-items:center; justify-content:center; gap:.4rem;
-  transition:.15s;
+  display:flex; flex-direction:column; align-items:flex-start; gap:.15rem;
+  transition:.18s;
 }
-.dp-btn-my-req:hover { border-color:#1e3a5f; }
+.dp-btn-my-req .req-sub { font-size:.72rem; font-weight:500; color:#94a3b8; }
+.dp-btn-my-req:hover { border-color:#1e3a5f; background:#eef2ff; }
+
+/* ── Large ODO Input for driver modals ── */
+.odo-input {
+  font-size:2.8rem !important;
+  font-weight:900 !important;
+  text-align:center !important;
+  padding:1.2rem !important;
+  border-radius:16px !important;
+  border:2px solid #eef0f6 !important;
+  width:100% !important;
+  color:#1e3a5f !important;
+  letter-spacing:3px !important;
+  direction:ltr !important;
+  background:#f8faff !important;
+  transition:border-color .2s, box-shadow .2s !important;
+  -webkit-appearance:none;
+}
+.odo-input:focus {
+  outline:none !important;
+  border-color:#f59e0b !important;
+  box-shadow:0 0 0 4px rgba(245,158,11,.12) !important;
+  background:#fff !important;
+}
+.odo-input.invalid {
+  border-color:#ef4444 !important;
+  color:#ef4444 !important;
+  box-shadow:0 0 0 4px rgba(239,68,68,.1) !important;
+}
 
 /* Responsive */
 @media(min-width:700px){
   .dp-wrap { box-shadow:0 0 40px rgba(0,0,0,.08); }
   .dp-quick { grid-template-columns:repeat(4,1fr); }
-  .dp-ws-grid { gap:.55rem; }
 }
 
 
@@ -4896,7 +4946,7 @@ async function renderDriverSinglePage() {
       <div class="dp-top">
         <div class="dp-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
         <div class="dp-greeting">مرحباً، ${currentUser.username}</div>
-        <div class="dp-date">${dayName}، ${dateStr}</div>
+        <div class="dp-date"><span>📅</span><span>${dayName}، ${dateStr}</span></div>
         <div class="dp-car">
           <span>${primaryCar ? primaryCar.plate : '—'}</span>
           <span>—</span>
@@ -4989,10 +5039,10 @@ async function renderDriverSinglePage() {
 
       <!-- TRIP BUTTONS -->
       <div class="dp-section">
-        <div class="dp-label">الرحلة</div>
+        <div class="dp-label">🚗 الرحلة</div>
         ${!activeTrip
-          ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶  بدء الرحلة</button>`
-          : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔  إنهاء الرحلة</button>`}
+          ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶ ابدأ الرحلة<br><small style="font-size:.75rem;font-weight:500;opacity:.8">جاهز للانطلاق؟ ابدأ رحلتك الآن</small></button>`
+          : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔ إنهاء الرحلة<br><small style="font-size:.75rem;font-weight:500;opacity:.8">هل وصلت؟ سجّل نهاية رحلتك</small></button>`}
         <button class="dp-btn-garage" id="dpGarage">🏠  إنهاء رحلات اليوم / دخول الجراج</button>
       </div>
 
@@ -5004,35 +5054,53 @@ async function renderDriverSinglePage() {
 
       <!-- 4 QUICK BUTTONS — 2x2 -->
       <div class="dp-section">
-        <div class="dp-label">إجراء سريع</div>
+        <div class="dp-label">⚡ إجراءات سريعة</div>
         <div class="dp-quick">
-          <button class="dp-qbtn dp-qbtn-acc"  onclick="dpQuick('accident')">
-            <div class="qi-wrap">⚠️</div><span class="ql">حادث</span>
-          </button>
-          <button class="dp-qbtn dp-qbtn-emg"  onclick="dpQuick('emergency')">
-            <div class="qi-wrap">🚨</div><span class="ql">طارئ</span>
-          </button>
           <button class="dp-qbtn dp-qbtn-fuel" onclick="dpQuick('fuel')">
-            <div class="qi-wrap">⛽</div><span class="ql">وقود</span>
+            <div class="qi-wrap">⛽</div>
+            <span class="ql">وقود</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
           </button>
           <button class="dp-qbtn dp-qbtn-oil"  onclick="dpQuick('oil')">
-            <div class="qi-wrap">🛢️</div><span class="ql">زيت</span>
+            <div class="qi-wrap">🛢️</div>
+            <span class="ql">زيت</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
+          </button>
+          <button class="dp-qbtn dp-qbtn-emg"  onclick="dpQuick('emergency')">
+            <div class="qi-wrap">🚨</div>
+            <span class="ql">طارئ</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
+          </button>
+          <button class="dp-qbtn dp-qbtn-acc"  onclick="dpQuick('accident')">
+            <div class="qi-wrap">⚠️</div>
+            <span class="ql">حادث</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
           </button>
         </div>
       </div>
 
       <!-- REQUESTS -->
       <div class="dp-section">
-        <div class="dp-label">الطلبات</div>
+        <div class="dp-label">🔧 الطلبات</div>
         <div class="dp-req-grid">
-          <button class="dp-btn-new-req" onclick="openSubmitRequestModal()">+ تقديم طلب جديد</button>
-          <button class="dp-btn-my-req"  onclick="openMyRequestsModal()">📋 طلباتي</button>
+          <button class="dp-btn-new-req" onclick="openSubmitRequestModal()">
+            <span>+ تقديم طلب جديد</span>
+            <span class="req-sub">أنشئ طلب خدمة جديد</span>
+          </button>
+          <button class="dp-btn-my-req"  onclick="openMyRequestsModal()">
+            <span>📋 طلباتي</span>
+            <span class="req-sub">عرض جميع الطلبات</span>
+          </button>
         </div>
       </div>
 
       <!-- WORKSHOP -->
       <div class="dp-section">
-        <div class="dp-label">خدمات الصيانة</div>
+        <div class="dp-label">🔩 خدمات الصيانة</div>
         <div class="dp-ws-grid">
           ${wsTypes.map(([k,v])=>`
             <button class="dp-ws-btn" onclick="dpWsModal('${k}')">${v.label}</button>`).join('')}
@@ -5076,9 +5144,7 @@ async function renderDriverSinglePage() {
         <div style="font-size:.75rem;color:#94a3b8;text-align:center">🔒 يُحدَّد تلقائياً من آخر رحلة</div>
         ` : `
         <input type="number" id="dpStartOdo" placeholder="أدخل قراءة العداد" min="0"
-               style="font-size:2rem;font-weight:900;text-align:center;padding:1rem;
-                      border-radius:14px;border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
-                      letter-spacing:2px"
+               class="odo-input"
                onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#e2e8f0'">
         `}
       </div>
@@ -5112,12 +5178,9 @@ async function renderDriverSinglePage() {
       </div>
       <div class="form-group"><label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
         <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}"
-               style="font-size:2rem;font-weight:900;text-align:center;padding:1rem;
-                      border-radius:14px;border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
-                      letter-spacing:2px"
-               onfocus="this.style.borderColor='#f59e0b';this.style.boxShadow='0 0 0 3px rgba(245,158,11,.15)'"
-               onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow=''"
-               oninput="const v=parseFloat(this.value);this.style.color=(!isNaN(v)&&v<=${startOdo})?'#ef4444':'#1e3a5f'">
+               class="odo-input"
+               
+               oninput="this.classList.toggle('invalid',!isNaN(parseFloat(this.value))&&parseFloat(this.value)<=${startOdo})">
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem;text-align:center">
           يجب أن يكون أكبر من <strong style="color:#1e3a5f">${startOdo} كم</strong>
         </div>
@@ -5152,7 +5215,7 @@ async function renderDriverSinglePage() {
       (activeTrip?'<div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;padding:.7rem 1rem;margin-bottom:.8rem;font-size:.84rem;color:#92400e">⚡ يوجد رحلة نشطة #'+activeTrip.id+' — سيتم إنهاؤها تلقائياً بنفس عداد ووقت الجراج</div>':'')+
       '<div class="form-group"><label style="font-size:1rem;font-weight:700">عداد الختام (كم) <span class="req">*</span></label>'+
       '<input type="number" id="dpGarOdo" placeholder="أدخل الرقم" min="'+minOdo+'"'+
-      ' style="font-size:2rem;font-weight:900;text-align:center;padding:1rem;border-radius:14px;border:2px solid #e2e8f0;width:100%;color:#1e3a5f;letter-spacing:2px"'+
+      ' class="odo-input"'+
       ' onfocus="this.style.borderColor=\'#ef4444\';this.style.boxShadow=\'0 0 0 3px rgba(239,68,68,.15)\'"'+
       ' onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'\'"'+
       (activeTrip?' oninput="const v=parseFloat(this.value);this.style.color=(!isNaN(v)&&v<='+activeTrip.start_odometer+')?\'#ef4444\':\'#1e3a5f\'"':'')+'></div>'+
