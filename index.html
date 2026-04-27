@@ -475,7 +475,7 @@ tbody tr:hover{background:rgba(30,58,95,.03);transition:.12s}
 }
 
 /* ── WORKSHOP ── */
-.workshop-items{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;margin-bottom:1.3rem}
+.workshop-items{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.8rem;margin-bottom:1.3rem}
 .workshop-item{background:var(--surface-2);border:1.5px solid var(--border);border-radius:10px;padding:.9rem;text-align:center;cursor:pointer;transition:.2s}
 .workshop-item:hover{border-color:var(--gold);transform:translateY(-2px);background:rgba(184,134,11,.04)}
 .workshop-item.selected{border-color:var(--primary);background:rgba(30,58,95,.05)}
@@ -1056,18 +1056,6 @@ function showNotification(msg, type='success', duration=3200) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), duration);
 }
-
-
-  // ── Car Status Config ──
-  const CAR_STATUS = {
-    available:        { label: '● متاحة',      badge: 'badge-green',  icon: '🟢' },
-    maintenance:      { label: '🔧 صيانة',      badge: 'badge-yellow', icon: '🔧' },
-    breakdown:        { label: '⚠️ أعطال',      badge: 'badge-orange', icon: '⚠️' },
-    tire_issue:       { label: '🔴 عطل كاوتش', badge: 'badge-red',    icon: '🔴' },
-    major_breakdown:  { label: '💥 عطل جسيم',  badge: 'badge-red',    icon: '💥' },
-  };
-  function carStatusLabel(s) { return (CAR_STATUS[s]||CAR_STATUS.available).label; }
-  function carStatusBadge(s) { return (CAR_STATUS[s]||CAR_STATUS.available).badge; }
 
 async function apiCall(endpoint, method='GET', body=null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -1908,11 +1896,8 @@ async function renderCarsSection() {
         </select>
         <select id="carsFilterStatus" onchange="filterCarsTable()">
           <option value="">كل الحالات</option>
-          <option value="available">🟢 متاحة</option>
+          <option value="available">● متاحة</option>
           <option value="maintenance">🔧 صيانة</option>
-          <option value="breakdown">⚠️ أعطال</option>
-          <option value="tire_issue">🔴 عطل كاوتش</option>
-          <option value="major_breakdown">💥 عطل جسيم</option>
         </select>
         <span class="srch-count" id="carsCount">${cars.length}</span>
         <button class="srch-reset" onclick="resetCarsFilter()">✕ مسح</button>
@@ -1941,7 +1926,7 @@ async function renderCarsSection() {
             <td>${catBadge}</td>
             <td style="font-size:.82rem">${sub}</td>
             <td style="font-size:.82rem">${c.branch||'—'}</td>
-            <td><span class="badge ${carStatusBadge(c.status)}">${carStatusLabel(c.status)}</span></td>
+            <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
             <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
             <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
           </tr>`;
@@ -2098,11 +2083,8 @@ function openAddCarModal(editId='', editCar={}) {
       <div class="form-group" style="margin-bottom:0">
         <label>الحالة</label>
         <select id="mCarStatus">
-          <option value="available"       ${(editCar.status||'available')==='available'?'selected':''}>🟢 متاحة</option>
-          <option value="maintenance"     ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
-          <option value="breakdown"       ${editCar.status==='breakdown'?'selected':''}>⚠️ أعطال</option>
-          <option value="tire_issue"      ${editCar.status==='tire_issue'?'selected':''}>🔴 عطل كاوتش</option>
-          <option value="major_breakdown" ${editCar.status==='major_breakdown'?'selected':''}>💥 عطل جسيم</option>
+          <option value="available" ${(editCar.status||'available')==='available'?'selected':''}>● متاحة</option>
+          <option value="maintenance" ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
         </select>
       </div>
     </div>
@@ -2153,11 +2135,7 @@ function openEditCarModal(id,plate,model,status) {
     <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات المركبة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="mEditCarPlate" value="${plate}"></div>
     <div class="form-group"><label>الموديل <span class="req">*</span></label><input id="mEditCarModel" value="${model}"></div>
-    <div class="form-group"><label>الحالة</label><select id="mEditCarStatus"><option value="available"       ${status==='available'?'selected':''}>🟢 متاحة</option>
-<option value="maintenance"     ${status==='maintenance'?'selected':''}>🔧 صيانة</option>
-<option value="breakdown"       ${status==='breakdown'?'selected':''}>⚠️ أعطال</option>
-<option value="tire_issue"      ${status==='tire_issue'?'selected':''}>🔴 عطل كاوتش</option>
-<option value="major_breakdown" ${status==='major_breakdown'?'selected':''}>💥 عطل جسيم</option></select></div>
+    <div class="form-group"><label>الحالة</label><select id="mEditCarStatus"><option value="available" ${status==='available'?'selected':''}>متاحة</option><option value="maintenance" ${status!=='available'?'selected':''}>صيانة</option></select></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mEditCarSave">💾 حفظ</button>
@@ -2464,8 +2442,14 @@ function exportDriversCSV(){
 
 function exportCarsCSV(){
   const cars=window._carsCSVData||[];
-  const rows=[['#','رقم اللوحة','الموديل','الحالة']];
-  cars.forEach(c=>rows.push([c.id,c.plate,c.model,carStatusLabel(c.status)]));
+  const rows=[['#','رقم اللوحة','الموديل','اسم المركبة','الكود','الشاسيه','رقم المحرك',
+               'سنة الصنع','المشروع','الفرع','انتهاء رخصة السيارة','تصنيف المعدة','القطاع','الحالة']];
+  cars.forEach(c=>rows.push([
+    c.id, c.plate, c.model, c.car_name||'', c.car_code||'', c.chassis||'',
+    c.engine_number||'', c.year||'', c.project||'', c.branch||'',
+    c.car_license_expiry||'', c.equipment_type||'', c.sector||'',
+    carStatusLabel(c.status)
+  ]));
   const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`المركبات_${new Date().toLocaleDateString('ar-EG').replace(/\//g,'-')}.csv`; a.click();
   showNotification('تم تصدير المركبات ✅','success');
@@ -6056,110 +6040,104 @@ async function doImportPreview() {
 function renderImportPreview(data) {
   const { summary, rows, import_type } = data;
   const isDrivers     = import_type === 'drivers';
+  const isCars        = import_type === 'cars';
   const isPermissions = import_type === 'permissions';
   const area = document.getElementById('importPreviewArea');
+  const summaryColor = summary.invalid===0?'var(--success)':summary.valid===0?'var(--danger)':'var(--warning)';
+  const FL = {
+    phone:'التليفون',branch:'الفرع',driver_license_expiry:'رخصة السائق',
+    vehicle_license_expiry:'رخصة السيارة',national_id:'الرقم القومي',birth_date:'تاريخ الميلاد',
+    model:'الموديل',car_name:'اسم المركبة',car_code:'الكود',chassis:'الشاسيه',
+    engine_number:'رقم المحرك',year:'السنة',project:'المشروع',
+    car_license_expiry:'رخصة المركبة',equipment_type:'التصنيف',sector:'القطاع',
+  };
+  const cols = isPermissions ? ['#','الرقم الثابت','المركبة','الحالة']
+    : isDrivers ? ['#','الاسم','الرقم الثابت','الفرع','التليفون','رخصة السائق','الحالة']
+    : ['#','رقم اللوحة','الموديل','التصنيف','الفرع','الحالة'];
 
-  const summaryColor = summary.invalid === 0 ? 'var(--success)' : summary.valid === 0 ? 'var(--danger)' : 'var(--warning)';
-
-  const cols = isPermissions
-    ? ['#','الرقم الثابت','المركبة','التحقق']
-    : isDrivers
-      ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
-      : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
+  const tagBadge = (tag, fill) => {
+    if(tag==='new')         return `<span style="color:var(--success);font-weight:700">✅ جديد</span>`;
+    if(tag==='will_update') return `<span style="color:#f59e0b;font-weight:700">🔄 تكميل: ${(fill||[]).map(f=>FL[f]||f).join('، ')}</span>`;
+    if(tag==='duplicate')   return `<span style="color:var(--muted)">⏭️ مكتمل</span>`;
+    return `<span style="color:var(--danger);font-size:.8rem">❌ ${(arguments[2]||[]).join(' • ')}</span>`;
+  };
+  const rowBg = tag => tag==='will_update'?'background:rgba(245,158,11,.07)':tag==='duplicate'?'background:var(--surface-2)':'';
 
   const renderRow = (r) => {
-    const status = r.valid
-      ? `<span style="color:var(--success);font-weight:700">✅ صحيح</span>`
-      : `<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
-    if(isPermissions) return `
-      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
-        <td>${r.row_index}</td>
-        <td><code>${r.fixed_number||'—'}</code></td>
-        <td dir="ltr"><strong>${r.plate||'—'}</strong></td>
-        <td>${status}</td>
-      </tr>`;
-    if(isDrivers) return `
-      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
-        <td>${r.row_index}</td>
-        <td>${r.name||'—'}</td>
-        <td><code style="font-size:.82rem">${r.username||'—'}</code></td>
-        <td dir="ltr">${r.phone||'—'}</td>
-        <td><code>${r.fixed_number||'—'}</code></td>
-        <td>${r.branch||'—'}</td>
-        <td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td>
-        <td>${status}</td>
-      </tr>`;
-    return `
-      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
-        <td>${r.row_index}</td>
-        <td>${r.plate||'—'}</td>
-        <td>${r.model||'—'}</td>
-        <td>${r.car_name||'—'}</td>
-        <td>${r.branch||'—'}</td>
-        <td><span class="badge badge-blue">${r.status||'available'}</span></td>
-        <td>${status}</td>
-      </tr>`;
+    if(isPermissions) {
+      const ok = r.valid?`<span style="color:var(--success);font-weight:700">✅</span>`:`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
+      return `<tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}"><td>${r.row_index}</td><td><code>${r.fixed_number||'—'}</code></td><td dir="ltr"><strong>${r.plate||'—'}</strong></td><td>${ok}</td></tr>`;
+    }
+    if(isDrivers) {
+      const st=r.status||(r.valid?'new':'error');
+      const errBadge = st==='error'?`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`:tagBadge(st,r.will_fill,r.errors);
+      return `<tr style="${rowBg(st)||(!r.valid?'background:rgba(200,75,49,.05)':'')}"><td>${r.row_index}</td><td>${r.name||'—'}</td><td><code>${r.fixed_number||'—'}</code></td><td style="font-size:.82rem">${r.branch||'—'}</td><td dir="ltr" style="font-size:.82rem">${r.phone||'—'}</td><td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td><td>${errBadge}</td></tr>`;
+    }
+    if(isCars) {
+      const st=r.status_tag||(r.valid?'new':'error');
+      const errBadge = st==='error'?`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`:tagBadge(st,r.will_fill,r.errors);
+      return `<tr style="${rowBg(st)||(!r.valid?'background:rgba(200,75,49,.05)':'')}"><td>${r.row_index}</td><td dir="ltr"><strong>${r.plate||'—'}</strong></td><td style="font-size:.82rem">${r.model||'—'}</td><td style="font-size:.78rem;color:var(--muted)">${r.equipment_type||'—'}</td><td style="font-size:.82rem">${r.branch||'—'}</td><td>${errBadge}</td></tr>`;
+    }
+    const ok=r.valid?`<span style="color:var(--success);font-weight:700">✅</span>`:`<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
+    return `<tr><td>${r.row_index}</td><td>${r.plate||'—'}</td><td>${r.model||'—'}</td><td>${r.car_name||'—'}</td><td>${r.branch||'—'}</td><td>${ok}</td></tr>`;
   };
+
+  const willUpd = rows.filter(r=>(r.status_tag||r.status)==='will_update').length;
+  const newCnt  = rows.filter(r=>(r.status_tag||r.status)==='new').length;
+  const hasUpsert = (isDrivers||isCars) && willUpd>0;
+  const statsExtra = hasUpsert
+    ? `<span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${newCnt} جديد</span><span style="font-size:.85rem;font-weight:700;color:#f59e0b">🔄 ${willUpd} تكميل</span>`
+    : `<span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>`;
+  const validForAction = summary.valid||0;
 
   area.innerHTML = `
     <div class="card">
       <div class="card-header">
         <div class="card-title">📋 نتيجة الاستعراض</div>
-        <div style="display:flex;gap:.75rem;align-items:center">
+        <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
           <span style="font-size:.85rem;color:var(--muted)">${summary.total} صف إجمالي</span>
-          <span style="font-size:.85rem;font-weight:700;color:var(--success)">✅ ${summary.valid} صحيح</span>
+          ${statsExtra}
           ${summary.invalid>0?`<span style="font-size:.85rem;font-weight:700;color:var(--danger)">❌ ${summary.invalid} خطأ</span>`:''}
-          <button class="btn btn-primary btn-sm" id="importConfirmBtn"
-                  onclick="doImportConfirm()"
-                  ${summary.valid===0?'disabled':''}>
-            ✅ تأكيد الرفع (${summary.valid} صف)
-          </button>
+          ${validForAction===0?`<button class="btn btn-ghost btn-sm" disabled>لا يوجد صفوف صالحة</button>`
+          :summary.invalid===0?`<button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">✅ رفع الكل (${validForAction} صف)</button>`
+          :`<button class="btn btn-primary btn-sm" id="importConfirmBtn" onclick="doImportConfirm(false)">✅ رفع الصح بس (${validForAction} صف)</button>
+            <button class="btn btn-outline btn-sm" id="importConfirmAllBtn" onclick="doImportConfirm(false,true)" title="يوقف لو في أي خطأ">⛔ الكل أو لا شيء</button>`}
         </div>
       </div>
       <div style="height:6px;background:var(--border);border-radius:3px;margin:0 1.25rem .5rem;overflow:hidden">
-        <div style="height:100%;width:${summary.total?Math.round(summary.valid/summary.total*100):0}%;
-                    background:${summaryColor};border-radius:3px;transition:width .5s"></div>
+        <div style="height:100%;width:${summary.total?Math.round(validForAction/summary.total*100):0}%;background:${summaryColor};border-radius:3px;transition:width .5s"></div>
       </div>
       <div class="table-wrap" style="max-height:450px;overflow-y:auto">
-        <table>
-          <thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-          <tbody>${rows.map(r=>renderRow(r)).join('')}</tbody>
-        </table>
+        <table><thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>renderRow(r)).join('')}</tbody></table>
       </div>
-      ${summary.invalid>0?`
-      <div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">
-        ⚠️ الصفوف الحمراء بها أخطاء — فعّل "تجاهل الأخطاء" أعلاه لرفع الصفوف الصحيحة فقط
-      </div>`:''}
+      ${summary.invalid>0?`<div style="padding:.75rem 1.25rem;background:rgba(217,119,6,.08);border-top:1px solid var(--border);font-size:.85rem;color:var(--warning)">⚠️ الصفوف الحمراء بها أخطاء — "رفع الصح بس" يتجاهلها تلقائياً</div>`:''}
+      ${hasUpsert?`<div style="padding:.75rem 1.25rem;background:rgba(245,158,11,.08);border-top:1px solid var(--border);font-size:.85rem;color:#92400e">🔄 الصفوف الصفراء موجودة — سيتم تكميل بياناتهم الناقصة فقط</div>`:''}
     </div>`;
 }
 
-async function doImportConfirm() {
+async function doImportConfirm(skipErrors=true, strictMode=false) {
   if(!_importPreviewData) return;
   const { file, importType } = _importPreviewData;
-  const skipErrors = document.getElementById('importSkipErrors')?.checked || false;
-
-  const btn = document.getElementById('importConfirmBtn');
-  btn.disabled=true; btn.textContent='⏳ جاري الرفع...';
-
-  const fd = new FormData();
-  fd.append('file', file);
+  const actualSkip = !strictMode;
+  const btn    = document.getElementById('importConfirmBtn');
+  const btnAll = document.getElementById('importConfirmAllBtn');
+  if(btn)    { btn.disabled=true;    btn.textContent='⏳ جاري الرفع...'; }
+  if(btnAll) { btnAll.disabled=true; }
+  const fd = new FormData(); fd.append('file', file);
   const token = getToken();
-  const url = importType === 'permissions'
-    ? `/import/permissions/confirm?skip_errors=${skipErrors}`
-    : `/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`;
+  const url = importType==='permissions' ? `/import/permissions/confirm?skip_errors=${actualSkip}` : `/import/confirm?import_type=${importType}&skip_errors=${actualSkip}`;
   try {
-    const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
+    const res  = await fetch(url, {method:'POST',headers:{Authorization:`Bearer ${token}`},body:fd});
     const data = await res.json();
-    if(!res.ok) {
-      const detail = typeof data.detail === 'object' ? data.detail.message : data.detail;
-      throw new Error(detail || 'فشل الرفع');
-    }
-    showNotification(`✅ تم الرفع بنجاح: ${data.inserted} سجل${data.skipped>0?' (تجاهل '+data.skipped+')':''}`, 'success');
+    if(!res.ok) { const d=typeof data.detail==='object'?data.detail.message:data.detail; throw new Error(d||'فشل الرفع'); }
+    const updMsg = (data.updated||0)>0 ? ` | تكميل ${data.updated}` : '';
+    showNotification(`✅ تم: ${data.inserted} جديد${updMsg}${(data.skipped||0)>0?' | تجاهل '+data.skipped:''}`, 'success');
     _importPreviewData = null;
     renderImportResult(data, importType);
   } catch(e) {
     showNotification(e.message,'error');
-    btn.disabled=false; btn.textContent=`✅ تأكيد الرفع`;
+    if(btn)    { btn.disabled=false;    btn.textContent='✅ رفع الصح بس'; }
+    if(btnAll) { btnAll.disabled=false; }
   }
 }
 
@@ -6175,6 +6153,10 @@ function renderImportResult(data, importType) {
           <div style="font-size:2rem;font-weight:800;color:var(--success)">${data.inserted}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم إضافته</div>
         </div>
+        ${(data.updated||0)>0?`<div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:#f59e0b">${data.updated}</div>
+          <div style="color:var(--muted);font-size:.85rem">سجل تم تكميله</div>
+        </div>`:''}
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
           <div style="font-size:2rem;font-weight:800;color:var(--warning)">${data.skipped}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم تجاهله</div>
