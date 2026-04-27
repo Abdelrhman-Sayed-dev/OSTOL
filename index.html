@@ -4933,7 +4933,7 @@ async function renderDriverSinglePage() {
           </div>`).join('');
       })()}
 
-      <!-- MY STATS -->
+      <!-- MY STATS — خارج dp-top عشان تكون ظاهرة -->
       ${(()=>{
         const myTrips = allTrips.filter(t=>t.driver_id===currentUser.driver_id);
         const myCompleted = myTrips.filter(t=>t.end_time);
@@ -4941,22 +4941,50 @@ async function renderDriverSinglePage() {
           .reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
         const weekAgo = new Date(Date.now()-7*864e5).toISOString();
         const weeklyTrips = myCompleted.filter(t=>t.end_time>=weekAgo).length;
-        if(!myTrips.length) return '';
+
+        let motivMsg='', motivColor='#10b981';
+        if(weeklyTrips===0)       { motivMsg='💪 ابدأ أسبوعك بقوة!';          motivColor='#6366f1'; }
+        else if(weeklyTrips<=2)   { motivMsg='🚀 استمر، أنت في البداية!';      motivColor='#f59e0b'; }
+        else if(weeklyTrips<=5)   { motivMsg='🔥 أداء ممتاز هذا الأسبوع!';    motivColor='#10b981'; }
+        else                      { motivMsg='🏆 أنت من أفضل السائقين!';       motivColor='#8b5cf6'; }
+
         return `
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin:.75rem 0">
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.3rem;font-weight:700;color:#fff">${weeklyTrips}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">رحلات هذا الأسبوع</div>
+        <div style="margin:.8rem .85rem 0;border-radius:18px;overflow:hidden;
+                    box-shadow:0 4px 20px rgba(0,0,0,.10)">
+          <div style="background:linear-gradient(135deg,#1e3a5f,#2d6a4f);
+                      padding:.8rem 1.1rem;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:.82rem;font-weight:700;color:rgba(255,255,255,.9)">📊 إنجازاتك</span>
+            <span style="font-size:.78rem;font-weight:800;color:#f59e0b;
+                         background:rgba(245,158,11,.15);padding:.2rem .7rem;
+                         border-radius:50px;border:1px solid rgba(245,158,11,.35)">${motivMsg}</span>
+          </div>
+          <div style="background:#fff;display:grid;grid-template-columns:repeat(3,1fr)">
+            <div style="padding:.9rem .5rem;text-align:center;border-left:1px solid #f1f5f9;position:relative">
+              <div style="font-size:1.7rem;font-weight:900;
+                          background:linear-gradient(135deg,#f59e0b,#d97706);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1">${weeklyTrips}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">رحلات الأسبوع</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#f59e0b;border-radius:99px"></div>
             </div>
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.3rem;font-weight:700;color:#fff">${myCompleted.length}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي الرحلات</div>
+            <div style="padding:.9rem .5rem;text-align:center;border-left:1px solid #f1f5f9;position:relative">
+              <div style="font-size:1.7rem;font-weight:900;
+                          background:linear-gradient(135deg,#1e3a5f,#3b82f6);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1">${myCompleted.length}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">إجمالي الرحلات</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#1e3a5f;border-radius:99px"></div>
             </div>
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.1rem;font-weight:700;color:#fff">${Math.round(myKm).toLocaleString('ar-EG')}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي كم</div>
+            <div style="padding:.9rem .5rem;text-align:center;position:relative">
+              <div style="font-size:${myKm>=10000?'1.3':'1.7'}rem;font-weight:900;
+                          background:linear-gradient(135deg,#059669,#10b981);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1">${Math.round(myKm).toLocaleString('ar-EG')}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">إجمالي كم</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#10b981;border-radius:99px"></div>
             </div>
-          </div>`;
+          </div>
+        </div>`;
       })()}
 
       <!-- TRIP BUTTONS -->
@@ -5020,19 +5048,45 @@ async function renderDriverSinglePage() {
   };
 
   // Start trip
-  document.getElementById('dpStart')?.addEventListener('click',()=>{
+  document.getElementById('dpStart')?.addEventListener('click', async () => {
     if(!primaryCar) return showNotification('لا توجد مركبة مخصصة','error');
+
+    // جيب آخر عداد
+    let lastOdo = null;
+    try {
+      const r = await apiCall(`/cars/${primaryCar.id}/last-odometer`);
+      lastOdo = r.last_odometer;
+    } catch(e) {}
+
     openModal(`
       <div class="modal-header"><div class="modal-title">▶ بدء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-weight:700;color:#166534;font-size:.92rem">
         🚗 ${primaryCar.plate} — ${primaryCar.model}
       </div>
-      <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpStartOdo" placeholder="مثال: 54200" min="0"></div>
+      <div class="form-group">
+        <label style="font-size:1rem;font-weight:700">عداد البداية (كم)</label>
+        ${lastOdo !== null ? `
+        <div style="display:flex;align-items:center;gap:.75rem;background:#f1f5f9;
+                    border-radius:12px;padding:.9rem 1.1rem;border:2px solid #e2e8f0;margin-bottom:.5rem">
+          <span style="font-size:.82rem;color:#64748b;white-space:nowrap">📍 آخر عداد</span>
+          <strong style="font-size:2rem;font-weight:900;color:#1e3a5f;letter-spacing:2px;direction:ltr">${lastOdo}</strong>
+          <span style="font-size:.82rem;color:#64748b">كم</span>
+        </div>
+        <input type="hidden" id="dpStartOdo" value="${lastOdo}">
+        <div style="font-size:.75rem;color:#94a3b8;text-align:center">🔒 يُحدَّد تلقائياً من آخر رحلة</div>
+        ` : `
+        <input type="number" id="dpStartOdo" placeholder="أدخل قراءة العداد" min="0"
+               style="font-size:2rem;font-weight:900;text-align:center;padding:1rem;
+                      border-radius:14px;border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
+                      letter-spacing:2px"
+               onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#e2e8f0'">
+        `}
+      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-primary" id="dpStartOk">تأكيد وبدء</button>
+        <button class="btn btn-primary" id="dpStartOk" style="font-size:1rem;padding:.75rem 1.5rem">تأكيد وبدء ▶</button>
       </div>`);
+
     document.getElementById('dpStartOk').onclick=async()=>{
       const odo=parseFloat(document.getElementById('dpStartOdo').value);
       if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
@@ -5043,7 +5097,7 @@ async function renderDriverSinglePage() {
         await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc});
         showNotification('✅ بدأت الرحلة!','success');
         closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء'; }
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء ▶'; }
     };
   });
 
@@ -5056,8 +5110,18 @@ async function renderDriverSinglePage() {
         🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
         <span style="font-size:.8rem;opacity:.8">📍 سيتم تسجيل موقعك الحالي تلقائياً</span>
       </div>
-      <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpEndOdo" placeholder="مثال: 54350" min="${startOdo+1}"></div>
+      <div class="form-group"><label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
+        <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}"
+               style="font-size:2rem;font-weight:900;text-align:center;padding:1rem;
+                      border-radius:14px;border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
+                      letter-spacing:2px"
+               onfocus="this.style.borderColor='#f59e0b';this.style.boxShadow='0 0 0 3px rgba(245,158,11,.15)'"
+               onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow=''"
+               oninput="const v=parseFloat(this.value);this.style.color=(!isNaN(v)&&v<=${startOdo})?'#ef4444':'#1e3a5f'">
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem;text-align:center">
+          يجب أن يكون أكبر من <strong style="color:#1e3a5f">${startOdo} كم</strong>
+        </div>
+      </div>
       <div class="form-group"><label>ملاحظات</label>
         <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
       <div class="modal-footer">
