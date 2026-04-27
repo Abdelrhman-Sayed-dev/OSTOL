@@ -2914,18 +2914,41 @@ async def import_preview(
 
     if import_type == "drivers":
         rows = [_validate_driver_row(r, i+1, admin_branch) for i, r in enumerate(raw_rows)]
+        # علّم الموجودين — هيتكملوا مش هيترفعوا جديد
+        with get_db() as conn2:
+            c2 = conn2.cursor()
+            for r in rows:
+                if r["valid"] and r["fixed_number"]:
+                    c2.execute("""SELECT id, phone, branch, driver_license_expiry,
+                                         vehicle_license_expiry, national_id, birth_date
+                                  FROM drivers WHERE fixed_number=?""", (r["fixed_number"],))
+                    ex = c2.fetchone()
+                    if ex:
+                        will_fill = [f for f, nv in [
+                            ("phone", r["phone"]), ("branch", r["branch"]),
+                            ("driver_license_expiry", r["driver_license_expiry"]),
+                            ("vehicle_license_expiry", r["vehicle_license_expiry"]),
+                            ("national_id", r["national_id"]), ("birth_date", r["birth_date"]),
+                        ] if nv and not str(ex[f] or "").strip()]
+                        r["status"] = "will_update" if will_fill else "duplicate"
+                        r["will_fill"] = will_fill
+                    else:
+                        r["status"] = "new"
     else:
         rows = [_validate_car_row(r, i+1, admin_branch) for i, r in enumerate(raw_rows)]
 
     valid_count   = sum(1 for r in rows if r["valid"])
     invalid_count = len(rows) - valid_count
+    update_count  = sum(1 for r in rows if r.get("status") == "will_update")
+    new_count     = sum(1 for r in rows if r.get("status") == "new")
 
     log_event("import_preview", import_type=import_type,
               total=len(rows), valid=valid_count, admin=cu["username"])
     return {
         "import_type": import_type,
         "rows": rows,
-        "summary": {"total": len(rows), "valid": valid_count, "invalid": invalid_count},
+        "summary": {"total": len(rows), "valid": valid_count, "invalid": invalid_count,
+                    "new": new_count, "will_update": update_count},
     }
 
 
@@ -2966,7 +2989,7 @@ async def import_confirm(
         })
 
     valid_rows = [r for r in rows if r["valid"]]
-    inserted, skipped_rows = [], []
+    inserted, updated, skipped_rows = [], [], []
     now = datetime.utcnow().isoformat() + "Z"
 
     with get_db() as conn:
@@ -2974,26 +2997,55 @@ async def import_confirm(
         if import_type == "drivers":
             for row in valid_rows:
                 try:
-                    # اللي مش ممكن يتكرر هو الرقم الثابت — مش اسم المستخدم
+                    existing = None
                     if row["fixed_number"]:
-                        c.execute("SELECT id FROM drivers WHERE fixed_number=?", (row["fixed_number"],))
-                        if c.fetchone():
-                            row["errors"] = [f"الرقم الثابت '{row['fixed_number']}' موجود مسبقاً"]
+                        c.execute("""SELECT id, phone, branch, driver_license_expiry,
+                                            vehicle_license_expiry, national_id, birth_date, user_id
+                                     FROM drivers WHERE fixed_number=?""", (row["fixed_number"],))
+                        existing = c.fetchone()
+
+                    if existing:
+                        # ── موجود: كمّل الحقول الفاضية فقط ──
+                        drv_id  = existing["id"]
+                        user_id = existing["user_id"]
+                        upd, params = [], []
+                        for field, new_val in [
+                            ("phone",                  row["phone"]),
+                            ("branch",                 row["branch"]),
+                            ("driver_license_expiry",  row["driver_license_expiry"]),
+                            ("vehicle_license_expiry", row["vehicle_license_expiry"]),
+                            ("national_id",            row["national_id"]),
+                            ("birth_date",             row["birth_date"]),
+                        ]:
+                            old = existing[field] or ""
+                            if new_val and not str(old).strip():
+                                upd.append(f"{field}=?"); params.append(new_val)
+                        if upd:
+                            c.execute(f"UPDATE drivers SET {','.join(upd)} WHERE id=?", params + [drv_id])
+                            if "branch=?" in upd and user_id:
+                                c.execute("UPDATE users SET branch=? WHERE id=? AND (branch='' OR branch IS NULL)",
+                                          (row["branch"], user_id))
+                            updated.append({"row_index": row["row_index"], "name": row["name"],
+                                            "fixed_number": row["fixed_number"],
+                                            "filled_fields": [u.split("=")[0] for u in upd]})
+                        else:
+                            row["errors"] = [f"الرقم الثابت '{row['fixed_number']}' موجود ومكتمل البيانات"]
                             skipped_rows.append(row)
-                            continue
-                    c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
-                              (row["username"], _hash(row["password"]), "driver"))
-                    uid = c.lastrowid
-                    c.execute("""INSERT INTO drivers(name,phone,status,user_id,national_id,
-                                 birth_date,driver_license_expiry,vehicle_license_expiry,
-                                 branch,fixed_number)
-                                 VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                              (row["name"], row["phone"], row["status"], uid,
-                               row["national_id"], row["birth_date"],
-                               row["driver_license_expiry"], row["vehicle_license_expiry"],
-                               row["branch"], row["fixed_number"]))
-                    inserted.append({"row_index": row["row_index"], "name": row["name"],
-                                     "fixed_number": row["fixed_number"]})
+                    else:
+                        # ── جديد: أضفه ──
+                        c.execute("INSERT INTO users(username,password,role,branch) VALUES(?,?,?,?)",
+                                  (row["username"], _hash(row["password"]), "driver", row["branch"]))
+                        uid = c.lastrowid
+                        c.execute("""INSERT INTO drivers(name,phone,status,user_id,national_id,
+                                     birth_date,driver_license_expiry,vehicle_license_expiry,
+                                     branch,fixed_number)
+                                     VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                                  (row["name"], row["phone"], row["status"], uid,
+                                   row["national_id"], row["birth_date"],
+                                   row["driver_license_expiry"], row["vehicle_license_expiry"],
+                                   row["branch"], row["fixed_number"]))
+                        inserted.append({"row_index": row["row_index"], "name": row["name"],
+                                         "fixed_number": row["fixed_number"]})
                 except Exception as e:
                     row["errors"] = [str(e)]
                     skipped_rows.append(row)
@@ -3021,17 +3073,20 @@ async def import_confirm(
 
     write_audit_log(cu["user_id"], cu["username"], cu["role"],
                     f"bulk_import_{import_type}",
-                    f"استيراد {len(inserted)} {import_type} من ملف",
-                    request.client.host if request.client else "")
+                    f"استيراد {len(inserted)} جديد + {len(updated if import_type=='drivers' else [])} تحديث من ملف")
     log_event("import_confirmed", import_type=import_type,
               inserted=len(inserted), skipped=len(skipped_rows), admin=cu["username"])
-    return {
+    result = {
         "import_type": import_type,
         "inserted": len(inserted),
         "skipped":  len(skipped_rows),
         "inserted_items": inserted,
         "skipped_items":  skipped_rows,
     }
+    if import_type == "drivers":
+        result["updated"]       = len(updated)
+        result["updated_items"] = updated
+    return result
 
 
 @app.get("/import/template/{import_type}")
