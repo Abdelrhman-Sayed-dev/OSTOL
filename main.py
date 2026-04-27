@@ -251,7 +251,7 @@ def migrate_db():
             role       TEXT NOT NULL,
             action     TEXT NOT NULL,
             details    TEXT DEFAULT '',
-            device_id  TEXT DEFAULT '',
+            ip_address TEXT DEFAULT '',
             created_at TEXT NOT NULL
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_logs(user_id)")
@@ -384,8 +384,6 @@ def _safe_add_columns(c):
                                ("car_code","TEXT DEFAULT ''"),("engine_number","TEXT DEFAULT ''"),
                                ("year","TEXT DEFAULT ''"),("project","TEXT DEFAULT ''"),
                                ("branch","TEXT DEFAULT ''"),("equipment_type","TEXT DEFAULT ''")],
-        # migration: أضف device_id لو مش موجود (قديم كان ip_address)
-        "audit_logs":         [("device_id","TEXT DEFAULT ''")],
     }
     for tbl, cols in additions.items():
         for col, col_type in cols:
@@ -533,18 +531,17 @@ def _effective_branch(cu: dict, super_branch: Optional[str] = None) -> Optional[
     return cu.get("branch") or None
 
 def write_audit_log(user_id: int, username: str, role: str,
-                    action: str, details: str = "", device_id: str = "",
+                    action: str, details: str = "", ip: str = "",
                     cursor=None):
     """Write an audit log entry.
     Pass an existing cursor to reuse the same transaction,
     or leave None to open a new connection.
-    device_id = browser fingerprint بعتته الـ frontend (ثابت على نفس الجهاز)
     """
     try:
         now = datetime.utcnow().isoformat() + "Z"
-        sql = """INSERT INTO audit_logs(user_id,username,role,action,details,device_id,created_at)
+        sql = """INSERT INTO audit_logs(user_id,username,role,action,details,ip_address,created_at)
                  VALUES(?,?,?,?,?,?,?)"""
-        params = (user_id, username, role, action, details, device_id, now)
+        params = (user_id, username, role, action, details, ip, now)
         if cursor is not None:
             cursor.execute(sql, params)
         else:
@@ -933,7 +930,7 @@ async def login(request: Request, data: LoginReq):
                 u = candidate
                 break
         if not u:
-            log_event("login_failed", username=data.username)
+            log_event("login_failed", username=data.username, ip=request.client.host)
             raise HTTPException(401, "اسم المستخدم أو كلمة المرور غير صحيحة")
 
         driver_id = None
@@ -954,12 +951,11 @@ async def login(request: Request, data: LoginReq):
                   (refresh_token, refresh_exp, datetime.utcnow().isoformat() + "Z", u["id"]))
 
         log_event("login_success", user_id=u["id"], role=u["role"])
-        # ── Audit log — device_id من header بعته الـ frontend (browser fingerprint) ──
-        device_id = request.headers.get("X-Device-ID", "")
+        # ── Audit log — pass cursor to avoid nested get_db() conflict ──
         write_audit_log(
             user_id=u["id"], username=u["username"], role=u["role"],
             action="login", details="تسجيل دخول ناجح",
-            device_id=device_id,
+            ip=request.client.host if request.client else "",
             cursor=c
         )
         return LoginResp(
@@ -3064,6 +3060,136 @@ async def import_template(import_type: str, cu: dict = Depends(require_admin)):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={import_type}_template.csv"}
     )
+
+
+# ══════════════════════════════════════════════════════
+# 30. PERMISSIONS BULK IMPORT — CSV / Excel
+#     الأعمدة: fixed_number + plate أو car_code
+# ══════════════════════════════════════════════════════
+
+def _validate_permission_row(row: dict, idx: int, drivers_map: dict,
+                              cars_map_plate: dict, cars_map_code: dict) -> dict:
+    errors = []
+    fixed = str(row.get("fixed_number") or row.get("رقم ثابت") or "").strip()
+    plate = str(row.get("plate") or row.get("رقم اللوحة") or "").strip()
+    code  = str(row.get("car_code") or row.get("كود المركبة") or "").strip()
+
+    driver_id = drivers_map.get(fixed)
+    if not fixed:
+        errors.append("الرقم الثابت مطلوب")
+    elif driver_id is None:
+        errors.append(f"لا يوجد سائق بالرقم الثابت '{fixed}'")
+
+    car_id = cars_map_plate.get(plate) or cars_map_code.get(code)
+    if not plate and not code:
+        errors.append("رقم اللوحة أو كود المركبة مطلوب")
+    elif car_id is None:
+        errors.append(f"لا توجد مركبة بـ '{plate or code}'")
+
+    return {
+        "row_index":    idx,
+        "fixed_number": fixed,
+        "plate":        plate or code,
+        "driver_id":    driver_id,
+        "car_id":       car_id,
+        "valid":        len(errors) == 0,
+        "errors":       errors,
+    }
+
+
+def _build_perm_maps(c):
+    c.execute("SELECT id, fixed_number FROM drivers WHERE fixed_number != ''")
+    drivers_map = {r["fixed_number"]: r["id"] for r in c.fetchall()}
+    c.execute("SELECT id, plate, car_code FROM cars")
+    cars_map_plate, cars_map_code = {}, {}
+    for r in c.fetchall():
+        if r["plate"]:    cars_map_plate[r["plate"]]   = r["id"]
+        if r["car_code"]: cars_map_code[r["car_code"]] = r["id"]
+    c.execute("SELECT driver_id, car_id FROM driver_car_permissions")
+    existing = {(r["driver_id"], r["car_id"]) for r in c.fetchall()}
+    return drivers_map, cars_map_plate, cars_map_code, existing
+
+
+@app.post("/import/permissions/preview")
+async def import_permissions_preview(
+    file: UploadFile = File(...),
+    cu: dict = Depends(require_admin)
+):
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(400, "حجم الملف يتجاوز 5 MB")
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ أو لا يحتوي على بيانات")
+
+    with get_db() as conn:
+        dm, cmp, cmc, existing = _build_perm_maps(conn.cursor())
+
+    rows = [_validate_permission_row(r, i+1, dm, cmp, cmc) for i, r in enumerate(raw_rows)]
+    for r in rows:
+        if r["valid"] and (r["driver_id"], r["car_id"]) in existing:
+            r["valid"] = False; r["errors"] = ["الصلاحية موجودة مسبقاً"]
+
+    valid = sum(1 for r in rows if r["valid"])
+    return {
+        "import_type": "permissions",
+        "rows": rows,
+        "summary": {"total": len(rows), "valid": valid, "invalid": len(rows) - valid},
+    }
+
+
+@app.post("/import/permissions/confirm")
+async def import_permissions_confirm(
+    file: UploadFile = File(...),
+    skip_errors: bool = False,
+    cu: dict = Depends(require_admin)
+):
+    content = await file.read()
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ")
+
+    with get_db() as conn:
+        dm, cmp, cmc, existing = _build_perm_maps(conn.cursor())
+
+    rows = [_validate_permission_row(r, i+1, dm, cmp, cmc) for i, r in enumerate(raw_rows)]
+    for r in rows:
+        if r["valid"] and (r["driver_id"], r["car_id"]) in existing:
+            r["valid"] = False; r["errors"] = ["الصلاحية موجودة مسبقاً"]
+
+    invalid = [r for r in rows if not r["valid"]]
+    if invalid and not skip_errors:
+        raise HTTPException(422, {"message": f"يوجد {len(invalid)} صف بأخطاء", "invalid_rows": invalid})
+
+    inserted, skipped_rows = [], []
+    with get_db() as conn:
+        c = conn.cursor()
+        for row in [r for r in rows if r["valid"]]:
+            try:
+                c.execute("INSERT INTO driver_car_permissions(driver_id,car_id) VALUES(?,?)",
+                          (row["driver_id"], row["car_id"]))
+                inserted.append({"row_index": row["row_index"],
+                                  "fixed_number": row["fixed_number"], "plate": row["plate"]})
+            except Exception as e:
+                row["errors"] = [str(e)]; skipped_rows.append(row)
+
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "bulk_import_permissions", f"استيراد {len(inserted)} صلاحية من ملف")
+    return {
+        "import_type": "permissions", "inserted": len(inserted), "skipped": len(skipped_rows),
+        "inserted_items": inserted, "skipped_items": skipped_rows,
+    }
+
+
+@app.get("/import/template/permissions")
+async def import_permissions_template(cu: dict = Depends(require_admin)):
+    cols   = ["رقم ثابت", "رقم اللوحة", "كود المركبة"]
+    sample = ["123456", "أ-ب-1234", ""]
+    output = io.StringIO()
+    csv.writer(output).writerows([cols, sample])
+    from fastapi.responses import Response
+    return Response(content=output.getvalue().encode("utf-8-sig"), media_type="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=permissions_template.csv"})
 
 
 # ══════════════════════════════════════════════════════

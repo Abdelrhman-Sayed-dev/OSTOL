@@ -1057,38 +1057,8 @@ function showNotification(msg, type='success', duration=3200) {
   setTimeout(() => el.remove(), duration);
 }
 
-// ── Device Fingerprint — ثابت على نفس الجهاز/المتصفح ──
-function getDeviceId() {
-  let did = localStorage.getItem('_device_id');
-  if (!did) {
-    // ابني fingerprint من خصائص الجهاز الثابتة
-    const nav = window.navigator;
-    const scr = window.screen;
-    const raw = [
-      nav.userAgent,
-      nav.language,
-      nav.platform,
-      scr.width + 'x' + scr.height,
-      scr.colorDepth,
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-      nav.hardwareConcurrency || '',
-    ].join('|');
-    // hash بسيط → string hex
-    let hash = 0;
-    for (let i = 0; i < raw.length; i++) {
-      hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
-    }
-    did = 'dev_' + Math.abs(hash).toString(16).padStart(8,'0');
-    localStorage.setItem('_device_id', did);
-  }
-  return did;
-}
-
 async function apiCall(endpoint, method='GET', body=null) {
-  const opts = { method, headers: {
-    'Content-Type': 'application/json',
-    'X-Device-ID': getDeviceId(),
-  }};
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
   const tok = getToken();
   if (tok) opts.headers['Authorization'] = `Bearer ${tok}`;
   if (body) opts.body = JSON.stringify(body);
@@ -5954,7 +5924,7 @@ async function renderImportSection() {
     <div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:1.5rem">
 
       <!-- Header cards -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem">
         <div class="card" style="border-top:3px solid var(--primary)">
           <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
             <div class="card-title">👨‍✈️ استيراد السائقين</div>
@@ -5981,6 +5951,19 @@ async function renderImportSection() {
             </a>
           </div>
         </div>
+        <div class="card" style="border-top:3px solid #10b981">
+          <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+            <div class="card-title">🔗 استيراد الصلاحيات</div>
+          </div>
+          <div style="padding:0 1.25rem 1.25rem;color:var(--muted);font-size:.85rem">
+            عيّن صلاحيات السائقين على المركبات بالجملة عبر الرقم الثابت + اللوحة أو الكود
+          </div>
+          <div style="padding:0 1.25rem 1.25rem">
+            <a href="/import/template/permissions" class="btn btn-outline btn-sm" download>
+              ⬇️ تحميل قالب CSV
+            </a>
+          </div>
+        </div>
       </div>
 
       <!-- Upload Card -->
@@ -5995,6 +5978,7 @@ async function renderImportSection() {
               <select id="importTypeSelect" class="form-control">
                 <option value="drivers">👨‍✈️ سائقين</option>
                 <option value="cars">🚙 مركبات</option>
+                <option value="permissions">🔗 صلاحيات</option>
               </select>
             </div>
             <div class="form-group" style="margin:0">
@@ -6030,17 +6014,14 @@ async function doImportPreview() {
 
   const fd = new FormData();
   fd.append('file', file);
-
   const token = getToken();
+  const url = importType === 'permissions'
+    ? `/import/permissions/preview`
+    : `/import/preview?import_type=${importType}`;
   try {
-    const res = await fetch(`/import/preview?import_type=${importType}`, {
-      method:'POST',
-      headers:{ Authorization:`Bearer ${token}` },
-      body: fd
-    });
+    const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
     const data = await res.json();
     if(!res.ok) throw new Error(data.detail || 'خطأ في التحليل');
-
     _importPreviewData = { file, importType };
     renderImportPreview(data);
   } catch(e) {
@@ -6052,19 +6033,29 @@ async function doImportPreview() {
 
 function renderImportPreview(data) {
   const { summary, rows, import_type } = data;
-  const isDrivers = import_type === 'drivers';
+  const isDrivers     = import_type === 'drivers';
+  const isPermissions = import_type === 'permissions';
   const area = document.getElementById('importPreviewArea');
 
   const summaryColor = summary.invalid === 0 ? 'var(--success)' : summary.valid === 0 ? 'var(--danger)' : 'var(--warning)';
 
-  const cols = isDrivers
-    ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
-    : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
+  const cols = isPermissions
+    ? ['#','الرقم الثابت','المركبة','التحقق']
+    : isDrivers
+      ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
+      : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
 
   const renderRow = (r) => {
     const status = r.valid
       ? `<span style="color:var(--success);font-weight:700">✅ صحيح</span>`
-      : `<span style="color:var(--danger);font-size:.8rem">❌ ${r.errors.join(' • ')}</span>`;
+      : `<span style="color:var(--danger);font-size:.8rem">❌ ${(r.errors||[]).join(' • ')}</span>`;
+    if(isPermissions) return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td><code>${r.fixed_number||'—'}</code></td>
+        <td dir="ltr"><strong>${r.plate||'—'}</strong></td>
+        <td>${status}</td>
+      </tr>`;
     if(isDrivers) return `
       <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
         <td>${r.row_index}</td>
@@ -6076,7 +6067,7 @@ function renderImportPreview(data) {
         <td style="font-size:.8rem">${r.driver_license_expiry||'—'}</td>
         <td>${status}</td>
       </tr>`;
-    else return `
+    return `
       <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
         <td>${r.row_index}</td>
         <td>${r.plate||'—'}</td>
@@ -6103,13 +6094,10 @@ function renderImportPreview(data) {
           </button>
         </div>
       </div>
-
-      <!-- Progress bar -->
       <div style="height:6px;background:var(--border);border-radius:3px;margin:0 1.25rem .5rem;overflow:hidden">
         <div style="height:100%;width:${summary.total?Math.round(summary.valid/summary.total*100):0}%;
                     background:${summaryColor};border-radius:3px;transition:width .5s"></div>
       </div>
-
       <div class="table-wrap" style="max-height:450px;overflow-y:auto">
         <table>
           <thead><tr>${cols.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
@@ -6133,14 +6121,12 @@ async function doImportConfirm() {
 
   const fd = new FormData();
   fd.append('file', file);
-
   const token = getToken();
+  const url = importType === 'permissions'
+    ? `/import/permissions/confirm?skip_errors=${skipErrors}`
+    : `/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`;
   try {
-    const res = await fetch(`/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`, {
-      method:'POST',
-      headers:{ Authorization:`Bearer ${token}` },
-      body: fd
-    });
+    const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
     const data = await res.json();
     if(!res.ok) {
       const detail = typeof data.detail === 'object' ? data.detail.message : data.detail;
@@ -6178,8 +6164,8 @@ function renderImportResult(data, importType) {
       </div>
       <div style="padding:.75rem 1.25rem 1.25rem;display:flex;gap:.75rem">
         <button class="btn btn-primary btn-sm" onclick="renderImportSection()">📥 رفع ملف جديد</button>
-        <button class="btn btn-outline btn-sm" onclick="switchSection('${importType==='drivers'?'drivers':'cars'}')">
-          ${importType==='drivers'?'👨‍✈️ عرض السائقين':'🚙 عرض المركبات'}
+        <button class="btn btn-outline btn-sm" onclick="switchSection('${importType==='drivers'?'drivers':importType==='cars'?'cars':'permissions'}')">
+          ${importType==='drivers'?'👨‍✈️ عرض السائقين':importType==='cars'?'🚙 عرض المركبات':'🔗 عرض الصلاحيات'}
         </button>
       </div>
       ${data.skipped_items?.length>0?`
@@ -6237,7 +6223,7 @@ async function renderSuperLogs() {
           <td><span class="badge ${roleColors[r.role]||'badge-blue'}">${roleLabels[r.role]||r.role}</span></td>
           <td><span class="badge badge-green">${actionLabels[r.action]||r.action}</span></td>
           <td style="font-size:.8rem;color:var(--muted)">${r.details||'—'}</td>
-          <td style="font-family:monospace;font-size:.72rem;color:var(--muted)">${r.device_id||'—'}</td>
+          <td style="font-family:monospace;font-size:.72rem;color:var(--muted)">${r.ip_address||'—'}</td>
         </tr>`).join('');
 
   c.innerHTML = `
@@ -6260,7 +6246,7 @@ async function renderSuperLogs() {
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>التاريخ والوقت</th><th>المستخدم</th><th>الدور</th><th>الإجراء</th><th>التفاصيل</th><th>معرّف الجهاز</th>
+            <th>التاريخ والوقت</th><th>المستخدم</th><th>الدور</th><th>الإجراء</th><th>التفاصيل</th><th>IP</th>
           </tr></thead>
           <tbody id="logsTableBody">${tableRows(window._allLogs)}</tbody>
         </table>
@@ -6287,7 +6273,7 @@ function filterLogs() {
           <td><span class="badge ${roleColors[r.role]||'badge-blue'}">${roleLabels[r.role]||r.role}</span></td>
           <td><span class="badge badge-green">${actionLabels[r.action]||r.action}</span></td>
           <td style="font-size:.8rem;color:var(--muted)">${r.details||'—'}</td>
-          <td style="font-family:monospace;font-size:.72rem;color:var(--muted)">${r.device_id||'—'}</td>
+          <td style="font-family:monospace;font-size:.72rem;color:var(--muted)">${r.ip_address||'—'}</td>
         </tr>`).join('');
 }
 
@@ -6526,6 +6512,120 @@ async function deleteMaintenanceRecord(id) {
 // ═══════════════════════════════════════════════════════════════
 // FEATURE 2: ATTENDANCE REPORT — الحضور والانصراف
 // ═══════════════════════════════════════════════════════════════
+async function renderAttendanceReport() {
+  const c = document.getElementById('pageContent');
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header"><div class="card-title">📅 تقرير الحضور والانصراف</div></div>
+      <div class="srch-bar" style="border-radius:0">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">الشهر:</label>
+          <input type="month" id="attMonth" value="${defaultMonth}" style="padding:.42rem .75rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.85rem">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadAttendanceReport()">🔍 عرض التقرير</button>
+        <button class="btn btn-outline btn-sm" onclick="exportAttendanceCSV()">⬇️ تصدير CSV</button>
+        <span class="srch-count" id="attCount"></span>
+      </div>
+      <div id="attContent" style="padding:1rem">
+        <div class="empty-state"><div class="empty-icon">📅</div><p>اختر الشهر وانقر "عرض التقرير"</p></div>
+      </div>
+    </div>`;
+
+  await loadAttendanceReport();
+}
+
+async function loadAttendanceReport() {
+  const month = document.getElementById('attMonth')?.value;
+  if(!month) return;
+  const el = document.getElementById('attContent');
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+  try {
+    const data = await apiCall(`/reports/attendance?month=${month}`);
+    window._attData = data;
+    const drivers = data.drivers || [];
+    document.getElementById('attCount').textContent = `${drivers.length} سائق`;
+
+    if(!drivers.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات في هذا الشهر</p></div>';
+      return;
+    }
+
+    const totalDays   = drivers.reduce((s,d)=>s+d.work_days,0);
+    const totalTrips  = drivers.reduce((s,d)=>s+d.total_trips,0);
+    const totalKm     = drivers.reduce((s,d)=>s+d.total_km,0);
+
+    el.innerHTML = `
+      <div class="stats-row" style="margin-bottom:1rem">
+        <div class="stat-card"><div class="stat-icon">👨‍✈️</div><div class="stat-value">${drivers.length}</div><div class="stat-label">سائق نشط</div></div>
+        <div class="stat-card"><div class="stat-icon">📆</div><div class="stat-value">${totalDays}</div><div class="stat-label">إجمالي أيام العمل</div></div>
+        <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value">${totalTrips}</div><div class="stat-label">إجمالي الرحلات</div></div>
+        <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value">${Math.round(totalKm).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي كم</div></div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr>
+          <th>السائق</th><th>الرقم الثابت</th><th>الفرع</th>
+          <th>أيام العمل</th><th>عدد الرحلات</th><th>إجمالي كم</th>
+          <th>متوسط كم/يوم</th><th>تفاصيل</th>
+        </tr></thead><tbody>
+        ${drivers.map(d=>`<tr>
+          <td><strong>${d.driver_name}</strong></td>
+          <td><code>${d.fixed_number||'—'}</code></td>
+          <td style="font-size:.8rem">${d.branch||'—'}</td>
+          <td><strong>${d.work_days}</strong> يوم</td>
+          <td>${d.total_trips}</td>
+          <td>${Math.round(d.total_km).toLocaleString('ar-EG')} كم</td>
+          <td>${d.work_days>0?Math.round(d.total_km/d.work_days).toLocaleString('ar-EG'):0} كم</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="showAttDetails(${d.driver_id})">📋 التفاصيل</button></td>
+        </tr>`).join('')}
+        </tbody></table>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+function showAttDetails(driverId) {
+  const data = window._attData;
+  if(!data) return;
+  const driver = data.drivers.find(d=>d.driver_id===driverId);
+  if(!driver) return;
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📋 تفاصيل حضور: ${driver.driver_name} — ${data.month}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="table-wrap" style="max-height:60vh;overflow-y:auto">
+      <table><thead><tr><th>التاريخ</th><th>وقت الحضور</th><th>وقت الانصراف</th><th>عدد الرحلات</th><th>المسافة (كم)</th></tr></thead><tbody>
+      ${driver.days.map(d=>`<tr>
+        <td><strong>${d.date}</strong></td>
+        <td>${d.check_in?fmtDT(d.check_in):'—'}</td>
+        <td>${d.check_out?fmtDT(d.check_out):'—'}</td>
+        <td>${d.trips_count} (منتهية: ${d.completed})</td>
+        <td>${d.km>0?Math.round(d.km).toLocaleString('ar-EG'):'—'}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button></div>`);
+}
+
+function exportAttendanceCSV() {
+  const data = window._attData;
+  if(!data?.drivers?.length) return showNotification('لا توجد بيانات للتصدير','error');
+  const rows = [['السائق','الرقم الثابت','الفرع','أيام العمل','عدد الرحلات','إجمالي كم']];
+  data.drivers.forEach(d=>{
+    rows.push([d.driver_name, d.fixed_number||'', d.branch||'', d.work_days, d.total_trips, Math.round(d.total_km)]);
+  });
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download = `attendance_${data.month}.csv`;
+  a.click();
+}
+
 // ── Poll maintenance alerts ──
 async function pollMaintenanceAlerts() {
   if(!isSuperuser() && !isAdminLike()) return;
