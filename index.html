@@ -3756,13 +3756,16 @@ async function previewMaintImport() {
 
     const validRows   = rows.filter(r=>r.valid);
     const invalidRows = rows.filter(r=>!r.valid);
+    const warnRows    = rows.filter(r=>r.valid && r.warnings && r.warnings.length>0);
+    const cleanRows   = rows.filter(r=>r.valid && (!r.warnings || r.warnings.length===0));
 
     let html = `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;margin-bottom:1rem">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.7rem;margin-bottom:1rem">
         ${[
-          {label:'إجمالي الصفوف', val:summary.total, color:'#3b82f6'},
-          {label:'صالح للرفع',    val:summary.valid, color:'#10b981'},
-          {label:'يحتوي أخطاء',   val:summary.invalid, color:'#ef4444'},
+          {label:'إجمالي الصفوف', val:summary.total,                                    color:'#3b82f6'},
+          {label:'سيُرفع',         val:validRows.filter(r=>r.car_id).length,             color:'#10b981'},
+          {label:'تحذير (لوحة)',   val:warnRows.length,                                  color:'#d97706'},
+          {label:'خطأ',            val:invalidRows.length,                               color:'#ef4444'},
         ].map(s=>`
           <div style="background:white;border:2px solid ${s.color}33;border-radius:12px;padding:.8rem;text-align:center">
             <div style="font-size:1.4rem;font-weight:900;color:${s.color}">${s.val}</div>
@@ -3770,9 +3773,23 @@ async function previewMaintImport() {
           </div>`).join('')}
       </div>`;
 
+    if(warnRows.length) {
+      html += `<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:1rem;margin-bottom:1rem">
+        <div style="font-weight:700;margin-bottom:.6rem;color:#d97706">&#x26A0;&#xFE0F; تحذير — ${warnRows.length} لوحة غير مسجلة في السيستم (ستُتجاهل):</div>
+        ${warnRows.slice(0,10).map(r=>`
+          <div style="font-size:.8rem;margin-bottom:.2rem;color:#92400e">
+            &bull; صف ${r.row_index}: <strong>${r.plate}</strong>
+          </div>`).join('')}
+        ${warnRows.length>10?`<div style="font-size:.78rem;color:#b45309">... و ${warnRows.length-10} أخرى</div>`:''}
+        <div style="font-size:.78rem;color:#78350f;margin-top:.5rem;font-style:italic">
+          &#x1F4A1; سجّل هذه المركبات في السيستم أولاً ثم أعد رفع الملف لتحديث بياناتها
+        </div>
+      </div>`;
+    }
+
     if(invalidRows.length) {
       html += `<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:1rem;margin-bottom:1rem">
-        <div style="font-weight:700;margin-bottom:.6rem;color:#dc2626">&#x26A0;&#xFE0F; صفوف بها أخطاء (${invalidRows.length}):</div>
+        <div style="font-weight:700;margin-bottom:.6rem;color:#dc2626">&#x274C; صفوف بها أخطاء (${invalidRows.length}):</div>
         ${invalidRows.map(r=>`
           <div style="font-size:.8rem;margin-bottom:.3rem">
             &bull; صف ${r.row_index}: <strong>${r.plate||'&mdash;'}</strong> &mdash; ${r.errors.join(' | ')}
