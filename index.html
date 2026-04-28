@@ -1230,7 +1230,6 @@ function buildAdminNav() {
     base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
     base.push({id:'import-batches',    icon:'🗂️', label:'سجل الاستيرادات'});
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
-    base.push({id:'super-supervisors', icon:'🎯', label:'المشرفين'});
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
   }
@@ -1284,7 +1283,6 @@ async function renderSection(id) {
     case 'permissions':    await renderPermissionsSection(); break;
     case 'maintenance':     await renderMaintenanceSection(); break;
     case 'monthly-report':   await renderMonthlyReport(); break;
-    case 'super-supervisors':await renderSuperSupervisors(); break;
     case 'super-decisions':  await renderSuperDecisions(); break;
     case 'super-licenses':  await renderSuperLicenses(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
@@ -6944,13 +6942,33 @@ async function renderMaintenanceSection() {
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
       <div style="font-size:.88rem;color:var(--muted)">تتبع مواعيد الصيانة الدورية لكل مركبة تلقائياً</div>
-      ${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>`:''}
+      ${!isReporter()?`
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>
+          <button class="btn btn-sm" style="background:#fef2f2;border:1.5px solid #fca5a5;color:#dc2626;font-weight:700"
+                  onclick="deleteAllMaintenance()">🗑️ مسح كل السجلات</button>
+        </div>`:''}
     </div>
     ${buildGroup('🔴 صيانة متأخرة', overdue, '#ef4444')}
     ${buildGroup('🟠 تقترب مواعيد الصيانة', warning, '#f97316')}
     ${buildGroup('✅ صيانة سليمة', ok, '#10b981')}
     ${records.length===0?'<div class="empty-state"><div class="empty-icon">🔧</div><p>لا توجد جداول صيانة بعد — أضف أول جدول</p></div>':''}
   `;
+}
+
+async function deleteAllMaintenance() {
+  const confirmed = confirm(
+    'هل أنت متأكد من مسح جميع سجلات الصيانة؟\n\n' +
+    '⚠️ هذا الإجراء لا يمكن التراجع عنه!'
+  );
+  if(!confirmed) return;
+  try {
+    const data = await apiCall('/maintenance/schedule/all', 'DELETE');
+    showNotification(data.message || 'تم المسح بنجاح', 'success');
+    await renderMaintenanceSection();
+  } catch(e) {
+    showNotification(e.message || 'حدث خطأ', 'error');
+  }
 }
 
 async function openAddMaintenanceModal() {
