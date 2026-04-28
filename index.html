@@ -3772,10 +3772,10 @@ async function previewMaintImport() {
 
     if(invalidRows.length) {
       html += `<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:1rem;margin-bottom:1rem">
-        <div style="font-weight:700;margin-bottom:.6rem;color:#dc2626">⚠️ صفوف بها أخطاء (${invalidRows.length}):</div>
+        <div style="font-weight:700;margin-bottom:.6rem;color:#dc2626">&#x26A0;&#xFE0F; صفوف بها أخطاء (${invalidRows.length}):</div>
         ${invalidRows.map(r=>`
           <div style="font-size:.8rem;margin-bottom:.3rem">
-            • صف ${r.row_index}: <strong>${r.plate||'—'}</strong> — ${r.errors.join(' | ')}
+            &bull; صف ${r.row_index}: <strong>${r.plate||'&mdash;'}</strong> &mdash; ${r.errors.join(' | ')}
           </div>`).join('')}
       </div>`;
     }
@@ -3794,15 +3794,15 @@ async function previewMaintImport() {
               </tr>
             </thead>
             <tbody>
-              ${validRows.slice(0,20).map((r,i)=>`
+              ${validRows.slice(0,20).map((r,idx)=>`
                 <tr>
                   <td style="text-align:center;color:#94a3b8">${r.row_index}</td>
                   <td style="font-weight:700">${r.plate}</td>
-                  <td>${r.vehicle_type||'—'}</td>
-                  <td style="text-align:center">${r.last_oil_change_odo!=null?r.last_oil_change_odo.toLocaleString('ar-EG'):'—'}</td>
-                  <td style="text-align:center">${r.oil_interval||'—'}</td>
-                  <td style="text-align:center">${r.last_tire_odo!=null?r.last_tire_odo.toLocaleString('ar-EG'):'—'}</td>
-                  <td style="text-align:center">${r.last_battery_odo!=null?r.last_battery_odo.toLocaleString('ar-EG'):'—'}</td>
+                  <td>${r.vehicle_type||'&mdash;'}</td>
+                  <td style="text-align:center">${r.last_oil_change_odo!=null?r.last_oil_change_odo.toLocaleString('ar-EG'):'&mdash;'}</td>
+                  <td style="text-align:center">${r.oil_interval||'&mdash;'}</td>
+                  <td style="text-align:center">${r.last_tire_odo!=null?r.last_tire_odo.toLocaleString('ar-EG'):'&mdash;'}</td>
+                  <td style="text-align:center">${r.last_battery_odo!=null?r.last_battery_odo.toLocaleString('ar-EG'):'&mdash;'}</td>
                 </tr>`).join('')}
               ${validRows.length>20?`<tr><td colspan="7" style="text-align:center;color:#94a3b8">... و ${validRows.length-20} صف آخر</td></tr>`:''}
             </tbody>
@@ -3810,10 +3810,10 @@ async function previewMaintImport() {
         </div>
         <div style="display:flex;gap:.7rem">
           <button class="btn btn-primary" onclick="confirmMaintImport(false)">
-            ✅ رفع الصالح فقط (${validRows.length})
+            &#x2705; رفع الصالح فقط (${validRows.length})
           </button>
           ${invalidRows.length?`<button class="btn btn-warning" onclick="confirmMaintImport(true)">
-            ⚡ رفع الكل وتجاهل الأخطاء
+            &#x26A1; رفع الكل وتجاهل الأخطاء
           </button>`:''}
         </div>`;
     }
@@ -3841,83 +3841,13 @@ async function confirmMaintImport(skipErrors=false) {
     const data = await res.json();
     resEl.innerHTML = `
       <div style="background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:1.3rem;text-align:center">
-        <div style="font-size:2rem;margin-bottom:.5rem">✅</div>
+        <div style="font-size:2rem;margin-bottom:.5rem">&#x2705;</div>
         <div style="font-weight:800;font-size:1.1rem;color:#16a34a">${data.message}</div>
         <div style="font-size:.8rem;color:#64748b;margin-top:.5rem">
           جديد: ${data.inserted} &nbsp;|&nbsp; محدَّث: ${data.updated} &nbsp;|&nbsp; متجاهل: ${data.skipped}
         </div>
       </div>`;
     showNotification('تم رفع خطة الصيانة بنجاح','success');
-  } catch(e){ resEl.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; }
-}
-
-
-    const { rows, summary } = data;
-
-    const validRows   = rows.filter(r=>r.valid);
-    const invalidRows = rows.filter(r=>!r.valid);
-
-    let html = `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.7rem;margin-bottom:1rem">
-        ${[
-          {label:'إجمالي الصفوف', val:summary.total, color:'#3b82f6'},
-          {label:'صالح للرفع',    val:summary.valid, color:'#10b981'},
-          {label:'يحتوي أخطاء',   val:summary.invalid, color:'#ef4444'},
-        ].map(s=>`
-          <div style="background:white;border:2px solid ${s.color}33;border-radius:12px;padding:.8rem;text-align:center">
-            <div style="font-size:1.4rem;font-weight:900;color:${s.color}">${s.val}</div>
-            <div style="font-size:.75rem;color:#64748b">${s.label}</div>
-          </div>`).join('')}
-      </div>`;
-
-    if(invalidRows.length) {
-      html += `<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:1rem;margin-bottom:1rem">
-        <div style="font-weight:700;margin-bottom:.6rem;color:#dc2626">⚠️ صفوف بها أخطاء (${invalidRows.length}):</div>
-        ${invalidRows.map(r=>`
-          <div style="font-size:.8rem;margin-bottom:.3rem">
-            • صف ${r.row_index}: <strong>${r.plate||'—'}</strong> — ${r.errors.join(' | ')}
-          </div>`).join('')}
-      </div>`;
-    }
-
-    if(validRows.length) {
-      html += `
-        <div style="overflow-x:auto;margin-bottom:1rem">
-          <table class="op-table">
-            <thead>
-              <tr>
-                <th>#</th><th>اللوحة</th><th>النوع</th>
-                <th style="text-align:center">عداد آخر زيت</th>
-                <th style="text-align:center">معدل الزيت</th>
-                <th style="text-align:center">آخر كاوتش</th>
-                <th style="text-align:center">آخر بطارية</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${validRows.slice(0,20).map((r,i)=>`
-                <tr>
-                  <td style="text-align:center;color:#94a3b8">${r.row_index}</td>
-                  <td style="font-weight:700">${r.plate}</td>
-                  <td>${r.vehicle_type||'—'}</td>
-                  <td style="text-align:center">${r.last_oil_change_odo!=null?r.last_oil_change_odo.toLocaleString('ar-EG'):'—'}</td>
-                  <td style="text-align:center">${r.oil_interval||'—'}</td>
-                  <td style="text-align:center">${r.last_tire_odo!=null?r.last_tire_odo.toLocaleString('ar-EG'):'—'}</td>
-                  <td style="text-align:center">${r.last_battery_odo!=null?r.last_battery_odo.toLocaleString('ar-EG'):'—'}</td>
-                </tr>`).join('')}
-              ${validRows.length>20?`<tr><td colspan="7" style="text-align:center;color:#94a3b8">... و ${validRows.length-20} صف آخر</td></tr>`:''}
-            </tbody>
-          </table>
-        </div>
-        <div style="display:flex;gap:.7rem">
-          <button class="btn btn-primary" onclick="confirmMaintImport(false)">
-            ✅ رفع الصالح فقط (${validRows.length})
-          </button>
-          ${invalidRows.length?`<button class="btn btn-warning" onclick="confirmMaintImport(true)">
-            ⚡ رفع الكل وتجاهل الأخطاء
-          </button>`:''}
-        </div>`;
-    }
-    resEl.innerHTML = html;
   } catch(e){ resEl.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; }
 }
 
