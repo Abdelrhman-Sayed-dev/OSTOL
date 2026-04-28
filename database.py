@@ -163,6 +163,66 @@ def create_database():
         )
     """)
 
+    # ── جدول خطة الصيانة الدورية ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_plan (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id              INTEGER,
+            plate                   TEXT NOT NULL,
+            branch                  TEXT DEFAULT '',
+            vehicle_type            TEXT DEFAULT '',
+            vehicle_code            TEXT DEFAULT '',
+            status                  TEXT DEFAULT 'active',
+
+            -- الصيانة الدورية (زيت + فلاتر)
+            current_odometer        REAL,
+            last_oil_change_odo     REAL,
+            oil_change_interval     REAL DEFAULT 3500,
+            last_oil_filter_odo     REAL,
+            oil_filter_price        REAL DEFAULT 0,
+            oil_filter_interval     REAL DEFAULT 7000,
+            last_gas_filter_odo     REAL,
+            gas_filter_price        REAL DEFAULT 0,
+            gas_filter_interval     REAL DEFAULT 3500,
+            last_air_filter_odo     REAL,
+            air_filter_price        REAL DEFAULT 0,
+            air_filter_interval     REAL DEFAULT 10000,
+
+            -- الكاوتش
+            last_tire_change_odo    REAL,
+            tire_price              REAL DEFAULT 0,
+            tire_notes              TEXT DEFAULT '',
+
+            -- البطارية
+            last_battery_change_odo REAL,
+            battery_price           REAL DEFAULT 0,
+            battery_notes           TEXT DEFAULT '',
+
+            -- ميتا
+            notes                   TEXT DEFAULT '',
+            updated_at              TEXT DEFAULT(datetime('now')),
+            updated_by              TEXT DEFAULT '',
+
+            FOREIGN KEY (vehicle_id) REFERENCES cars(id) ON DELETE SET NULL
+        )
+    """)
+
+    # ── جدول سجل تغييرات الصيانة ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS maintenance_history (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id      INTEGER,
+            plate           TEXT NOT NULL,
+            maintenance_type TEXT NOT NULL,
+            odometer        REAL,
+            cost            REAL DEFAULT 0,
+            notes           TEXT DEFAULT '',
+            done_by         TEXT DEFAULT '',
+            created_at      TEXT DEFAULT(datetime('now')),
+            FOREIGN KEY (vehicle_id) REFERENCES cars(id) ON DELETE SET NULL
+        )
+    """)
+
     # ── جدول طلبات السائقين ──
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS driver_requests (
@@ -221,6 +281,9 @@ def create_database():
         "CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_logs(created_at)",
         # الرقم الثابت يجب أن يكون فريداً (unique) — اللي ممكن يتكرر هو اسم المستخدم فقط
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_fixed_number ON drivers(fixed_number) WHERE fixed_number IS NOT NULL AND fixed_number != ''",
+        "CREATE INDEX IF NOT EXISTS idx_maint_vehicle  ON maintenance_plan(vehicle_id)",
+        "CREATE INDEX IF NOT EXISTS idx_maint_plate    ON maintenance_plan(plate)",
+        "CREATE INDEX IF NOT EXISTS idx_maint_hist_vid ON maintenance_history(vehicle_id)",
     ]
     for idx in indexes:
         cursor.execute(idx)
