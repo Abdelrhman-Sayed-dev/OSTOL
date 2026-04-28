@@ -3090,13 +3090,17 @@ MAINT_CSV_COLS = [
 ]
 
 def _parse_maint_row(row: dict, idx: int, cars_map: dict) -> dict:
-    """تحقق وتحويل صف واحد من CSV الصيانة."""
-    errors = []
-    plate  = str(row.get("رقم_اللوحة") or "").strip()
+    """تحويل صف CSV — الصف valid دائماً طالما فيه لوحة.
+    البيانات الناقصة تترفع NULL.
+    اللوحة غير المسجلة = warning فقط، تتجاهل عند الرفع.
+    """
+    errors   = []
+    warnings = []
+    plate    = str(row.get("رقم_اللوحة") or "").strip()
 
     def _n(key):
         v = row.get(key)
-        if v is None or str(v).strip() in ("", "nan", "None", "—"):
+        if v is None or str(v).strip() in ("", "nan", "None", "—", "-"):
             return None
         try:
             return float(str(v).replace(",", "").strip())
@@ -3107,7 +3111,7 @@ def _parse_maint_row(row: dict, idx: int, cars_map: dict) -> dict:
     if not plate:
         errors.append("رقم اللوحة مطلوب")
     elif car_id is None:
-        errors.append(f"لا توجد مركبة برقم اللوحة '{plate}' — تأكد من رفع المركبات أولاً")
+        warnings.append(f"اللوحة '{plate}' غير مسجلة في السيستم — سيتم تجاهلها")
 
     last_maint_odo = _n("عداد_آخر_صيانة_زيت")
     oil_interval   = _n("معدل_تغيير_الزيت_كم") or 3500
@@ -3135,6 +3139,7 @@ def _parse_maint_row(row: dict, idx: int, cars_map: dict) -> dict:
         "battery_price":        _n("سعر_البطارية_جنيه") or 0,
         "valid":                len(errors) == 0,
         "errors":               errors,
+        "warnings":             warnings,
     }
 
 
@@ -3209,9 +3214,10 @@ async def import_maintenance_confirm(
         cars_map = {r["plate"]: r["id"] for r in c.fetchall()}
         rows = [_parse_maint_row(r, i+1, cars_map) for i, r in enumerate(raw_rows)]
 
-        invalid = [r for r in rows if not r["valid"]]
-        if invalid and not skip_errors:
-            raise HTTPException(422, {"message": "يوجد صفوف تحتوي أخطاء", "errors": invalid})
+        # الصفوف اللي فيها errors حقيقية (لوحة فاضية)
+        hard_errors = [r for r in rows if not r["valid"]]
+        if hard_errors and not skip_errors:
+            raise HTTPException(422, {"message": "يوجد صفوف تحتوي أخطاء", "errors": hard_errors})
 
         inserted = updated = skipped = 0
         MAINT_MAP = [
@@ -3224,7 +3230,8 @@ async def import_maintenance_confirm(
         ]
 
         for r in rows:
-            if not r["valid"]:
+            # تجاهل الصفوف اللي لوحتها مش موجودة في السيستم (warnings)
+            if not r["valid"] or r.get("car_id") is None:
                 skipped += 1
                 continue
             car_id = r["car_id"]
