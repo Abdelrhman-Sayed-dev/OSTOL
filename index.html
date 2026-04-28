@@ -697,59 +697,62 @@ body.driver-mode { background:#f5f5f5; }
 .dp-wrap {
   width:100%;
   min-height:100vh;
-  max-width:640px;
+  max-width:480px;
   margin:0 auto;
-  padding:0 0 40px;
+  padding:0 0 60px;
   display:flex;
   flex-direction:column;
-  background:#f0ede8;
+  background:#f4f6fb;
 }
 
 /* ── TOP SECTION: greeting + date + car ── */
 .dp-top {
   background:#fff;
-  padding:1.8rem 1.4rem 1.4rem;
-  border-bottom:1px solid #e8e4df;
+  padding:2rem 1.4rem 1.5rem;
+  border-bottom:1px solid #eef0f6;
   text-align:center;
+  position:relative;
 }
 /* ── DRIVER INTERFACE REDESIGN ── */
 .dp-greeting {
-  font-size:1.2rem;
-  font-weight:800;
+  font-size:1.35rem;
+  font-weight:900;
   color:#1a1a2e;
-  margin-bottom:.25rem;
+  margin-bottom:.3rem;
 }
 .dp-date {
   font-size:.82rem;
   color:#8a8a9a;
-  font-weight:400;
+  font-weight:500;
+  display:flex;align-items:center;justify-content:center;gap:.35rem;
 }
 .dp-divider { display:none; }
 .dp-avatar {
-  width:56px; height:56px;
+  width:68px; height:68px;
   border-radius:50%;
-  background:#f59e0b;
+  background:linear-gradient(135deg,#f59e0b,#fbbf24);
   color:#fff;
-  font-size:22px;
-  font-weight:800;
+  font-size:28px;
+  font-weight:900;
   display:flex; align-items:center; justify-content:center;
-  margin:0 auto .75rem;
-  box-shadow:0 4px 14px rgba(245,158,11,.35);
+  margin:0 auto .85rem;
+  box-shadow:0 6px 20px rgba(245,158,11,.4);
 }
 .dp-car {
   display:inline-flex;
   align-items:center;
-  gap:.5rem;
-  border:1.5px solid #e8e4df;
+  gap:.55rem;
+  border:1.5px solid #eef0f6;
   border-radius:50px;
-  padding:.55rem 1.2rem;
+  padding:.6rem 1.3rem;
   font-size:.95rem;
   font-weight:700;
   color:#1a1a2e;
-  background:#fff;
-  margin-top:.75rem;
+  background:#f8faff;
+  margin-top:.85rem;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
 }
-.dp-car span { color:#8a8a9a; font-weight:400; }
+.dp-car span { color:#94a3b8; font-weight:400; }
 .dp-logout {
   position:fixed;
   top:.75rem;
@@ -788,97 +791,114 @@ body.driver-mode { background:#f5f5f5; }
 /* ── CARD SECTIONS ── */
 .dp-section {
   background:#fff;
-  margin:.65rem .85rem 0;
-  border-radius:16px;
-  padding:1rem;
+  margin:.7rem .85rem 0;
+  border-radius:20px;
+  padding:1.1rem;
   display:flex;
   flex-direction:column;
-  gap:.55rem;
-  box-shadow:0 2px 10px rgba(0,0,0,.05);
+  gap:.6rem;
+  box-shadow:0 2px 12px rgba(0,0,0,.06);
 }
 .dp-label {
-  font-size:.68rem;
-  font-weight:700;
-  color:#8a8a9a;
-  text-transform:uppercase;
+  font-size:.7rem;
+  font-weight:800;
+  color:#94a3b8;
   letter-spacing:.8px;
-  margin-bottom:.1rem;
+  margin-bottom:.15rem;
+  display:flex;align-items:center;gap:.35rem;
 }
 
 /* Main trip button — GOLDEN */
 .dp-btn-main {
   width:100%;
-  padding:1rem 1rem;
+  padding:1.2rem 1rem;
   border:none;
-  border-radius:12px;
-  font-size:1.05rem;
-  font-weight:800;
+  border-radius:16px;
+  font-size:1.15rem;
+  font-weight:900;
   cursor:pointer;
   font-family:inherit;
-  transition:.15s;
-  box-shadow:0 4px 14px rgba(184,134,11,.3);
+  transition:.18s;
+  letter-spacing:.3px;
+  position:relative;
+  overflow:hidden;
 }
-.dp-btn-main:active { transform:scale(.98); }
-.dp-btn-start { background:linear-gradient(135deg,var(--primary),var(--primary-light)); color:#fff; }
-.dp-btn-start:hover { box-shadow:0 6px 18px rgba(30,58,95,.45); }
-.dp-btn-end   { background:linear-gradient(135deg,#b8860b,#c99a1a); color:#fff; box-shadow:0 4px 14px rgba(184,134,11,.3); }
-.dp-btn-end:hover { box-shadow:0 6px 18px rgba(184,134,11,.45); }
+.dp-btn-main:active { transform:scale(.97); }
+.dp-btn-start {
+  background:linear-gradient(135deg,#1e3a5f 0%,#2d5a8e 100%);
+  color:#fff;
+  box-shadow:0 6px 20px rgba(30,58,95,.35);
+}
+.dp-btn-start:hover { box-shadow:0 8px 24px rgba(30,58,95,.5); }
+.dp-btn-end {
+  background:linear-gradient(135deg,#b8860b 0%,#d4a017 100%);
+  color:#fff;
+  box-shadow:0 6px 20px rgba(184,134,11,.35);
+}
+.dp-btn-end:hover { box-shadow:0 8px 24px rgba(184,134,11,.5); }
 
 /* Garage button — outlined */
 .dp-btn-garage {
   width:100%;
-  padding:.8rem 1rem;
-  border:1.5px solid #e8e4df;
-  border-radius:12px;
-  font-size:.88rem;
-  font-weight:600;
+  padding:.95rem 1rem;
+  border:1.5px solid #eef0f6;
+  border-radius:14px;
+  font-size:.92rem;
+  font-weight:700;
   cursor:pointer;
   font-family:inherit;
   background:#fff;
   color:#1a1a2e;
-  transition:.15s;
-  box-shadow:none;
+  transition:.18s;
+  box-shadow:0 1px 4px rgba(0,0,0,.04);
 }
-.dp-btn-garage:hover { border-color:#1e3a5f; background:#f7f8ff; }
+.dp-btn-garage:hover { border-color:#1e3a5f; background:#f0f4ff; color:#1e3a5f; }
 .dp-btn-garage:active { transform:scale(.98); }
 
 /* ── 4 QUICK BUTTONS — 2x2 grid ── */
 .dp-quick {
   display:grid;
   grid-template-columns:1fr 1fr;
-  gap:.6rem;
+  gap:.65rem;
 }
 .dp-qbtn {
   border:none;
-  border-radius:14px;
-  padding:1rem .5rem .85rem;
+  border-radius:18px;
+  padding:1.1rem .75rem 1rem;
   cursor:pointer;
   font-family:inherit;
   display:flex;
   flex-direction:column;
-  align-items:center;
-  gap:.5rem;
-  transition:.15s;
+  align-items:flex-start;
+  gap:.6rem;
+  transition:.18s;
+  box-shadow:0 2px 8px rgba(0,0,0,.05);
+  position:relative;
+  overflow:hidden;
 }
 .dp-qbtn:active { transform:scale(.95); }
 .dp-qbtn .qi-wrap {
-  width:40px; height:40px;
-  border-radius:11px;
+  width:44px; height:44px;
+  border-radius:13px;
   display:flex; align-items:center; justify-content:center;
-  font-size:1.2rem;
+  font-size:1.35rem;
 }
-.dp-qbtn .qi   { font-size:1.4rem; }
-.dp-qbtn .ql   { font-size:.82rem; font-weight:700; color:#1a1a2e; }
+.dp-qbtn .ql   { font-size:.88rem; font-weight:800; color:#1a1a2e; }
+.dp-qbtn .qs   { font-size:.72rem; font-weight:500; color:#94a3b8; margin-top:-.2rem; }
+.dp-qbtn .qi-arrow {
+  position:absolute; bottom:.75rem; left:.75rem;
+  font-size:.75rem; color:#94a3b8;
+}
 .dp-qbtn-fuel  { background:#eef3ff; }
-.dp-qbtn-fuel  .qi-wrap { background:rgba(59,95,192,.12); }
+.dp-qbtn-fuel  .qi-wrap { background:rgba(59,95,192,.14); }
 .dp-qbtn-oil   { background:#edfaf5; }
-.dp-qbtn-oil   .qi-wrap { background:rgba(16,185,129,.12); }
-.dp-qbtn-acc   { background:#fff0f0; }
-.dp-qbtn-acc   .qi-wrap { background:rgba(229,57,53,.1); }
-.dp-qbtn-emg   { background:#fff8e8; }
-.dp-qbtn-emg   .qi-wrap { background:rgba(245,158,11,.14); }
-@keyframes emgBlink{0%,100%{opacity:1}50%{opacity:.78}}
-.dp-qbtn-emg { animation:emgBlink 2.8s ease-in-out infinite; }
+.dp-qbtn-oil   .qi-wrap { background:rgba(16,185,129,.14); }
+.dp-qbtn-acc   { background:#fff3f3; }
+.dp-qbtn-acc   .qi-wrap { background:rgba(239,68,68,.12); }
+.dp-qbtn-emg   { background:#fffbeb; }
+.dp-qbtn-emg   .qi-wrap { background:rgba(245,158,11,.16); }
+@keyframes emgBlink{0%,100%{opacity:1}50%{opacity:.85}}
+.dp-qbtn-emg { animation:emgBlink 2.5s ease-in-out infinite; }
 
 /* ── WORKSHOP SERVICES — pill style ── */
 .dp-ws-grid {
@@ -887,20 +907,20 @@ body.driver-mode { background:#f5f5f5; }
   gap:.5rem;
 }
 .dp-ws-btn {
-  padding:.5rem 1rem;
-  border:1.5px solid #e8e4df;
+  padding:.55rem 1.1rem;
+  border:1.5px solid #eef0f6;
   border-radius:50px;
-  background:#fff;
+  background:#f8faff;
   cursor:pointer;
   font-family:inherit;
   font-size:.85rem;
-  font-weight:600;
+  font-weight:700;
   color:#1a1a2e;
-  transition:.15s;
+  transition:.18s;
   white-space:nowrap;
 }
-.dp-ws-btn:hover  { border-color:#b8860b; color:#b8860b; background:#fff8e8; }
-.dp-ws-btn:active { background:#b8860b; color:#fff; border-color:#b8860b; }
+.dp-ws-btn:hover  { border-color:#1e3a5f; color:#1e3a5f; background:#eef2ff; }
+.dp-ws-btn:active { background:#1e3a5f; color:#fff; border-color:#1e3a5f; }
 
 /* ── REQUESTS BUTTONS ── */
 .dp-req-grid {
@@ -909,39 +929,69 @@ body.driver-mode { background:#f5f5f5; }
   gap:.6rem;
 }
 .dp-btn-new-req {
-  padding:.85rem;
-  border-radius:12px;
+  padding:1rem;
+  border-radius:14px;
   border:none;
-  background:#1e3a5f;
+  background:linear-gradient(135deg,#1e3a5f,#2d5a8e);
   color:#fff;
   font-family:inherit;
-  font-size:.88rem;
-  font-weight:700;
+  font-size:.9rem;
+  font-weight:800;
   cursor:pointer;
-  display:flex; align-items:center; justify-content:center; gap:.4rem;
-  transition:.15s;
+  display:flex; flex-direction:column; align-items:flex-start; gap:.15rem;
+  transition:.18s;
+  box-shadow:0 4px 14px rgba(30,58,95,.3);
 }
-.dp-btn-new-req:hover { background:#264870; transform:translateY(-1px); }
+.dp-btn-new-req .req-sub { font-size:.72rem; font-weight:500; opacity:.75; }
+.dp-btn-new-req:hover { background:linear-gradient(135deg,#264870,#3568a0); transform:translateY(-1px); }
 .dp-btn-my-req {
-  padding:.85rem;
-  border-radius:12px;
-  border:1.5px solid #e8e4df;
-  background:#fff;
+  padding:1rem;
+  border-radius:14px;
+  border:1.5px solid #eef0f6;
+  background:#f8faff;
   color:#1a1a2e;
   font-family:inherit;
-  font-size:.88rem;
-  font-weight:600;
+  font-size:.9rem;
+  font-weight:700;
   cursor:pointer;
-  display:flex; align-items:center; justify-content:center; gap:.4rem;
-  transition:.15s;
+  display:flex; flex-direction:column; align-items:flex-start; gap:.15rem;
+  transition:.18s;
 }
-.dp-btn-my-req:hover { border-color:#1e3a5f; }
+.dp-btn-my-req .req-sub { font-size:.72rem; font-weight:500; color:#94a3b8; }
+.dp-btn-my-req:hover { border-color:#1e3a5f; background:#eef2ff; }
+
+/* ── Large ODO Input for driver modals ── */
+.odo-input {
+  font-size:2.8rem !important;
+  font-weight:900 !important;
+  text-align:center !important;
+  padding:1.2rem !important;
+  border-radius:16px !important;
+  border:2px solid #eef0f6 !important;
+  width:100% !important;
+  color:#1e3a5f !important;
+  letter-spacing:3px !important;
+  direction:ltr !important;
+  background:#f8faff !important;
+  transition:border-color .2s, box-shadow .2s !important;
+  -webkit-appearance:none;
+}
+.odo-input:focus {
+  outline:none !important;
+  border-color:#f59e0b !important;
+  box-shadow:0 0 0 4px rgba(245,158,11,.12) !important;
+  background:#fff !important;
+}
+.odo-input.invalid {
+  border-color:#ef4444 !important;
+  color:#ef4444 !important;
+  box-shadow:0 0 0 4px rgba(239,68,68,.1) !important;
+}
 
 /* Responsive */
 @media(min-width:700px){
   .dp-wrap { box-shadow:0 0 40px rgba(0,0,0,.08); }
   .dp-quick { grid-template-columns:repeat(4,1fr); }
-  .dp-ws-grid { gap:.55rem; }
 }
 
 
@@ -1226,6 +1276,8 @@ function buildAdminNav() {
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
+    base.push({id:'super-fraud',       icon:'🔍', label:'كشف التلاعب'});
+    base.push({id:'super-voice',       icon:'🎙️', label:'رسائل صوتية'});
     base.push({id:'super-licenses',    icon:'⚠️', label:'تنبيهات الرخص'});
     base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
@@ -1285,6 +1337,8 @@ async function renderSection(id) {
     case 'monthly-report':   await renderMonthlyReport(); break;
     case 'super-supervisors':await renderSuperSupervisors(); break;
     case 'super-decisions':  await renderSuperDecisions(); break;
+    case 'super-fraud':      await renderSuperFraud(); break;
+    case 'super-voice':      await renderSuperVoice(); break;
     case 'super-licenses':  await renderSuperLicenses(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
@@ -2927,23 +2981,6 @@ async function renderOperationalCard() {
         <div style="margin-top:.7rem;font-size:.78rem;color:#94a3b8">
           💡 إجمالي = مجموع الكيلومترات لكل فترة &nbsp;|&nbsp; تفصيلي = تفصيل شهري أو يومي
         </div>
-
-        <!-- ═══ أزرار الصفحات الإضافية ═══ -->
-        <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:.6rem;align-items:center">
-          <span style="font-size:.78rem;font-weight:700;color:#475569">صفحات البطاقة التشغيلية:</span>
-          <button class="btn btn-ghost btn-sm" onclick="generateOpCard()"
-                  style="border:1.5px solid var(--primary);color:var(--primary)">
-            📄 أولاً: الرحلات والعداد
-          </button>
-          <button class="btn btn-ghost btn-sm" onclick="generateOilsCard()"
-                  style="border:1.5px solid #d97706;color:#d97706">
-            🛢️ خامساً: الزيوت والشحوم
-          </button>
-          <button class="btn btn-ghost btn-sm" onclick="generateTiresBatteryCard()"
-                  style="border:1.5px solid #7c3aed;color:#7c3aed">
-            🔄 سادساً: الكاوتش والبطاريات
-          </button>
-        </div>
       </div>
     </div>
 
@@ -3469,405 +3506,6 @@ async function downloadOpPDF() {
   window.print();
 }
 
-// ══════════════════════════════════════════════════════
-// البطاقة التشغيلية — صفحة 2: الزيوت والشحوم
-// ══════════════════════════════════════════════════════
-async function generateOilsCard() {
-  const car_id  = document.getElementById('opCar').value;
-  const res_el  = document.getElementById('opCardResult');
-  if(!car_id){ showNotification('يرجى اختيار مركبة','error'); return; }
-
-  res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تحميل بيانات الزيوت...</p></div>';
-
-  let maint=[], car=null;
-  try {
-    const all = await apiCall('/maintenance/schedule');
-    maint = all.filter(m=> String(m.car_id)===String(car_id));
-    const cars = await apiCall('/cars');
-    car = cars.find(c=>String(c.id)===String(car_id));
-  } catch(e){ res_el.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; return; }
-
-  const carStr = car ? `${car.plate} — ${car.model}${car.car_name?' ('+car.car_name+')':''}` : `مركبة #${car_id}`;
-  const fmt = n => n!=null ? (+n).toLocaleString('ar-EG',{maximumFractionDigits:0}) : '—';
-  const now = new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
-
-  const MAINT_OIL_TYPES = {
-    oil:        {label:'تغيير الزيت',          icon:'🛢️', unit:'كم'},
-    oil_filter: {label:'فلتر الزيت',           icon:'🔧', unit:'كم'},
-    gas_filter: {label:'فلتر الجاز (الديزل)', icon:'⛽', unit:'كم'},
-    air_filter: {label:'فلتر الهواء',          icon:'💨', unit:'كم'},
-    belt:       {label:'السير / الحزام',        icon:'⚙️', unit:'كم'},
-    other:      {label:'صيانة أخرى',            icon:'🔩', unit:'كم'},
-  };
-
-  const oilTypes = Object.keys(MAINT_OIL_TYPES);
-  const rows = oilTypes.map((t, i) => {
-    const rec = maint.find(m=>m.maintenance_type===t);
-    const cfg = MAINT_OIL_TYPES[t];
-    if(!rec) return `
-      <tr>
-        <td style="text-align:center;color:#94a3b8">${i+1}</td>
-        <td><span style="font-size:1.1rem">${cfg.icon}</span> ${cfg.label}</td>
-        <td colspan="5" style="text-align:center;color:#94a3b8;font-size:.8rem">لا يوجد سجل</td>
-      </tr>`;
-    const status = rec.alert_status;
-    const statusBadge = status==='overdue'
-      ? '<span style="background:#fef2f2;color:#dc2626;border-radius:20px;padding:.1rem .6rem;font-size:.75rem;font-weight:700">🔴 متأخرة</span>'
-      : status==='warning'
-      ? '<span style="background:#fffbeb;color:#d97706;border-radius:20px;padding:.1rem .6rem;font-size:.75rem;font-weight:700">🟡 قريبة</span>'
-      : '<span style="background:#f0fdf4;color:#16a34a;border-radius:20px;padding:.1rem .6rem;font-size:.75rem;font-weight:700">🟢 طبيعي</span>';
-    const remaining = rec.km_remaining!=null ? fmt(rec.km_remaining)+' كم' : '—';
-    const nextOdo   = rec.next_due_km!=null  ? fmt(rec.next_due_km)+' كم'  : '—';
-    const notes = rec.notes || '';
-    const price = notes.match(/سعر:\s*([\d.]+)/)?.[1] || '';
-    return `
-      <tr>
-        <td style="text-align:center;color:#94a3b8">${i+1}</td>
-        <td style="font-weight:700"><span style="font-size:1.1rem">${cfg.icon}</span> ${cfg.label}</td>
-        <td style="text-align:center">${fmt(rec.interval_km)} كم</td>
-        <td style="text-align:center">${fmt(rec.last_done_km)} كم</td>
-        <td style="text-align:center">${nextOdo}</td>
-        <td style="text-align:center">${remaining}</td>
-        <td style="text-align:center">${statusBadge}</td>
-        <td style="text-align:center;color:#64748b">${price ? price+' ج' : '—'}</td>
-      </tr>`;
-  }).join('');
-
-  const html = `
-    <div class="card" id="oilsCard" style="margin-top:1rem">
-      <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
-        <div>
-          <div class="card-title">🛢️ خامساً: الزيوت والشحوم — ${carStr}</div>
-          <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">تاريخ الإصدار: ${now}</div>
-        </div>
-        <div style="display:flex;gap:.5rem" class="no-print">
-          <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ طباعة</button>
-        </div>
-      </div>
-      <div style="padding:0 1.2rem 1.4rem;overflow-x:auto">
-        <table class="op-table">
-          <thead>
-            <tr>
-              <th style="width:36px">#</th>
-              <th>نوع الصيانة</th>
-              <th style="text-align:center">المعدل (كم)</th>
-              <th style="text-align:center">آخر تغيير عداد</th>
-              <th style="text-align:center">الموعد القادم</th>
-              <th style="text-align:center">المتبقي</th>
-              <th style="text-align:center">الحالة</th>
-              <th style="text-align:center">السعر</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div style="margin-top:.8rem;font-size:.78rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:.5rem">
-          💡 يتم احتساب الموعد القادم = آخر تغيير + المعدل المحدد &nbsp;|&nbsp;
-          🔴 متأخرة = تجاوز الموعد &nbsp;|&nbsp; 🟡 قريبة = أقل من 500 كم للموعد
-        </div>
-      </div>
-    </div>`;
-  res_el.innerHTML = html;
-}
-
-// ══════════════════════════════════════════════════════
-// البطاقة التشغيلية — صفحة 3: الكاوتش والبطاريات
-// ══════════════════════════════════════════════════════
-async function generateTiresBatteryCard() {
-  const car_id = document.getElementById('opCar').value;
-  const res_el = document.getElementById('opCardResult');
-  if(!car_id){ showNotification('يرجى اختيار مركبة','error'); return; }
-
-  res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تحميل البيانات...</p></div>';
-
-  let maint=[], car=null, wsRecs=[];
-  try {
-    const all = await apiCall('/maintenance/schedule');
-    maint = all.filter(m=>String(m.car_id)===String(car_id));
-    const cars = await apiCall('/cars');
-    car = cars.find(c=>String(c.id)===String(car_id));
-    wsRecs = await apiCall(`/workshops?car_id=${car_id}`);
-  } catch(e){ res_el.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; return; }
-
-  const carStr = car ? `${car.plate} — ${car.model}${car.car_name?' ('+car.car_name+')':''}` : `مركبة #${car_id}`;
-  const fmt = n => n!=null ? (+n).toLocaleString('ar-EG',{maximumFractionDigits:0}) : '—';
-  const fmtD = d => d ? new Date(d).toLocaleDateString('ar-EG') : '—';
-  const now = new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
-
-  // كاوتش
-  const tireRec = maint.find(m=>m.maintenance_type==='tire');
-  const tireHistory = wsRecs.filter(w=>w.type==='tire').sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-
-  // بطارية
-  const battRec = maint.find(m=>m.maintenance_type==='battery');
-  const battHistory = wsRecs.filter(w=>w.type==='battery').sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-
-  function buildSectionRow(label, icon, rec, history, priceFromNotes) {
-    const tileStyle = rec?.alert_status==='overdue'
-      ? 'border-color:#fca5a5;background:#fef2f2'
-      : rec?.alert_status==='warning'
-      ? 'border-color:#fde68a;background:#fffbeb'
-      : 'border-color:#e2e8f0;background:#f8fafc';
-
-    const statusBadge = !rec ? '—'
-      : rec.alert_status==='overdue'
-      ? '🔴 يحتاج تغيير عاجل'
-      : rec.alert_status==='warning'
-      ? '🟡 يقترب الموعد'
-      : '🟢 بحالة جيدة';
-
-    const price = rec?.notes?.match(/سعر:\s*([\d.]+)/)?.[1] || priceFromNotes || '—';
-
-    const histRows = history.slice(0,5).map((h,i)=>`
-      <tr>
-        <td style="text-align:center;color:#94a3b8">${i+1}</td>
-        <td style="text-align:center">${fmtD(h.created_at)}</td>
-        <td style="text-align:center">${fmt(h.odometer_reading)} كم</td>
-        <td style="text-align:center">${fmt(h.quantity)}</td>
-        <td style="text-align:center">${fmt(h.price)} ج</td>
-        <td>${h.notes||''}</td>
-      </tr>`).join('');
-
-    return `
-      <div style="border:2px solid;border-radius:14px;padding:1.2rem;margin-bottom:1.2rem;${tileStyle}">
-        <div style="display:flex;align-items:center;gap:.8rem;margin-bottom:1rem">
-          <span style="font-size:2rem">${icon}</span>
-          <div>
-            <div style="font-weight:800;font-size:1rem">${label}</div>
-            <div style="font-size:.8rem;color:#64748b;margin-top:.2rem">${statusBadge}</div>
-          </div>
-          ${price!=='—' ? `<div style="margin-right:auto;background:#1e3a5f;color:white;border-radius:8px;padding:.3rem .9rem;font-size:.82rem;font-weight:700">السعر: ${price} ج</div>` : ''}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.7rem;margin-bottom:1rem">
-          ${[
-            {label:'آخر تغيير (عداد)', val: fmt(rec?.last_done_km)+' كم'},
-            {label:'الموعد القادم',    val: fmt(rec?.next_due_km)+' كم'},
-            {label:'المتبقي',          val: rec?.km_remaining!=null ? fmt(rec.km_remaining)+' كم' : '—'},
-          ].map(s=>`
-            <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:.6rem;text-align:center">
-              <div style="font-size:.7rem;color:#64748b">${s.label}</div>
-              <div style="font-weight:800;color:#1e3a5f;margin-top:.2rem">${s.val}</div>
-            </div>`).join('')}
-        </div>
-        ${histRows ? `
-          <div style="font-weight:700;font-size:.82rem;margin-bottom:.5rem;color:#475569">📋 آخر ${history.slice(0,5).length} عمليات تغيير:</div>
-          <div style="overflow-x:auto">
-            <table class="op-table">
-              <thead>
-                <tr>
-                  <th style="width:36px">#</th>
-                  <th style="text-align:center">التاريخ</th>
-                  <th style="text-align:center">العداد</th>
-                  <th style="text-align:center">الكمية</th>
-                  <th style="text-align:center">التكلفة</th>
-                  <th>ملاحظات</th>
-                </tr>
-              </thead>
-              <tbody>${histRows}</tbody>
-            </table>
-          </div>` : '<div style="color:#94a3b8;font-size:.8rem">لا توجد سجلات سابقة</div>'}
-      </div>`;
-  }
-
-  const html = `
-    <div class="card" style="margin-top:1rem">
-      <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
-        <div>
-          <div class="card-title">🔄 سادساً: الكاوتش والبطاريات — ${carStr}</div>
-          <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">تاريخ الإصدار: ${now}</div>
-        </div>
-        <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">🖨️ طباعة</button>
-      </div>
-      <div style="padding:0 1.2rem 1.4rem">
-        ${buildSectionRow('الكاوتش (الإطارات)', '🚗', tireRec, tireHistory, '')}
-        ${buildSectionRow('البطارية', '🔋', battRec, battHistory, '')}
-        <div style="font-size:.78rem;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:.6rem">
-          💡 تاريخ السجلات من ورشة الصيانة &nbsp;|&nbsp;
-          يتم تحديث الحالة تلقائياً عند تسجيل عملية تغيير جديدة في الورشة
-        </div>
-      </div>
-    </div>`;
-  res_el.innerHTML = html;
-}
-
-// ══════════════════════════════════════════════════════
-// واجهة استيراد CSV خطة الصيانة
-// ══════════════════════════════════════════════════════
-async function renderMaintenanceImport() {
-  const container = document.getElementById('pageContent');
-  if(!container) return;
-
-  container.innerHTML = `
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">📥 استيراد خطة الصيانة من ملف CSV</div>
-      </div>
-      <div style="padding:1.2rem 1.4rem">
-        <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:1rem;margin-bottom:1.2rem;font-size:.85rem">
-          <strong>⚠️ تعليمات مهمة:</strong>
-          <ul style="margin-top:.5rem;padding-right:1.2rem;line-height:1.9">
-            <li>رفع ملف CSV بالشكل المرفق (نفس أعمدة الشيت الخارجي)</li>
-            <li>يجب أن تكون المركبات مسجلة في السيستم أولاً (رقم اللوحة مطابق)</li>
-            <li>يتم إضافة/تحديث جدول الصيانة تلقائياً لكل مركبة</li>
-          </ul>
-        </div>
-
-        <div style="display:flex;gap:.8rem;flex-wrap:wrap;margin-bottom:1.4rem">
-          <a href="/import/template/maintenance" class="btn btn-ghost btn-sm">
-            📄 تحميل قالب CSV
-          </a>
-        </div>
-
-        <div class="form-group">
-          <label style="font-weight:700;font-size:.88rem">رفع ملف CSV</label>
-          <input type="file" id="maintCsvFile" accept=".csv,.xlsx" style="margin-top:.4rem">
-        </div>
-
-        <div style="display:flex;gap:.7rem;margin-top:1rem">
-          <button class="btn btn-primary" onclick="previewMaintImport()">
-            👁️ معاينة قبل الرفع
-          </button>
-        </div>
-
-        <div id="maintImportResult" style="margin-top:1.2rem"></div>
-      </div>
-    </div>`;
-}
-
-async function previewMaintImport() {
-  const fileEl = document.getElementById('maintCsvFile');
-  const resEl  = document.getElementById('maintImportResult');
-  if(!fileEl?.files?.length){ showNotification('يرجى اختيار ملف أولاً','error'); return; }
-
-  resEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحليل...</p></div>';
-
-  const fd = new FormData();
-  fd.append('file', fileEl.files[0]);
-
-  try {
-    const tok = getToken();
-    const res = await fetch(`${API}/import/maintenance/preview`, {
-      method: 'POST',
-      headers: tok ? {'Authorization': `Bearer ${tok}`} : {},
-      body: fd
-    });
-    if(!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || `خطأ ${res.status}`); }
-    const data = await res.json();
-    const { rows, summary } = data;
-
-    const validRows   = rows.filter(r=>r.valid);
-    const invalidRows = rows.filter(r=>!r.valid);
-    const warnRows    = rows.filter(r=>r.valid && r.warnings && r.warnings.length>0);
-    const cleanRows   = rows.filter(r=>r.valid && (!r.warnings || r.warnings.length===0));
-
-    let html = `
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.7rem;margin-bottom:1rem">
-        ${[
-          {label:'إجمالي الصفوف', val:summary.total,                                    color:'#3b82f6'},
-          {label:'سيُرفع',         val:validRows.filter(r=>r.car_id).length,             color:'#10b981'},
-          {label:'تحذير (لوحة)',   val:warnRows.length,                                  color:'#d97706'},
-          {label:'خطأ',            val:invalidRows.length,                               color:'#ef4444'},
-        ].map(s=>`
-          <div style="background:white;border:2px solid ${s.color}33;border-radius:12px;padding:.8rem;text-align:center">
-            <div style="font-size:1.4rem;font-weight:900;color:${s.color}">${s.val}</div>
-            <div style="font-size:.75rem;color:#64748b">${s.label}</div>
-          </div>`).join('')}
-      </div>`;
-
-    if(warnRows.length) {
-      html += `<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:1rem;margin-bottom:1rem">
-        <div style="font-weight:700;margin-bottom:.6rem;color:#d97706">&#x26A0;&#xFE0F; تحذير — ${warnRows.length} لوحة غير مسجلة في السيستم (ستُتجاهل):</div>
-        ${warnRows.slice(0,10).map(r=>`
-          <div style="font-size:.8rem;margin-bottom:.2rem;color:#92400e">
-            &bull; صف ${r.row_index}: <strong>${r.plate}</strong>
-          </div>`).join('')}
-        ${warnRows.length>10?`<div style="font-size:.78rem;color:#b45309">... و ${warnRows.length-10} أخرى</div>`:''}
-        <div style="font-size:.78rem;color:#78350f;margin-top:.5rem;font-style:italic">
-          &#x1F4A1; سجّل هذه المركبات في السيستم أولاً ثم أعد رفع الملف لتحديث بياناتها
-        </div>
-      </div>`;
-    }
-
-    if(invalidRows.length) {
-      html += `<div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:1rem;margin-bottom:1rem">
-        <div style="font-weight:700;margin-bottom:.6rem;color:#dc2626">&#x274C; صفوف بها أخطاء (${invalidRows.length}):</div>
-        ${invalidRows.map(r=>`
-          <div style="font-size:.8rem;margin-bottom:.3rem">
-            &bull; صف ${r.row_index}: <strong>${r.plate||'&mdash;'}</strong> &mdash; ${r.errors.join(' | ')}
-          </div>`).join('')}
-      </div>`;
-    }
-
-    if(validRows.length) {
-      html += `
-        <div style="overflow-x:auto;margin-bottom:1rem">
-          <table class="op-table">
-            <thead>
-              <tr>
-                <th>#</th><th>اللوحة</th><th>النوع</th>
-                <th style="text-align:center">عداد آخر زيت</th>
-                <th style="text-align:center">معدل الزيت</th>
-                <th style="text-align:center">آخر كاوتش</th>
-                <th style="text-align:center">آخر بطارية</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${validRows.slice(0,20).map((r,idx)=>`
-                <tr>
-                  <td style="text-align:center;color:#94a3b8">${r.row_index}</td>
-                  <td style="font-weight:700">${r.plate}</td>
-                  <td>${r.vehicle_type||'&mdash;'}</td>
-                  <td style="text-align:center">${r.last_oil_change_odo!=null?r.last_oil_change_odo.toLocaleString('ar-EG'):'&mdash;'}</td>
-                  <td style="text-align:center">${r.oil_interval||'&mdash;'}</td>
-                  <td style="text-align:center">${r.last_tire_odo!=null?r.last_tire_odo.toLocaleString('ar-EG'):'&mdash;'}</td>
-                  <td style="text-align:center">${r.last_battery_odo!=null?r.last_battery_odo.toLocaleString('ar-EG'):'&mdash;'}</td>
-                </tr>`).join('')}
-              ${validRows.length>20?`<tr><td colspan="7" style="text-align:center;color:#94a3b8">... و ${validRows.length-20} صف آخر</td></tr>`:''}
-            </tbody>
-          </table>
-        </div>
-        <div style="display:flex;gap:.7rem">
-          <button class="btn btn-primary" onclick="confirmMaintImport(false)">
-            &#x2705; رفع الصالح فقط (${validRows.length})
-          </button>
-          ${invalidRows.length?`<button class="btn btn-warning" onclick="confirmMaintImport(true)">
-            &#x26A1; رفع الكل وتجاهل الأخطاء
-          </button>`:''}
-        </div>`;
-    }
-    resEl.innerHTML = html;
-  } catch(e){ resEl.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; }
-}
-
-async function confirmMaintImport(skipErrors=false) {
-  const fileEl = document.getElementById('maintCsvFile');
-  const resEl  = document.getElementById('maintImportResult');
-  if(!fileEl?.files?.length){ showNotification('يرجى اختيار ملف','error'); return; }
-
-  resEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري الرفع...</p></div>';
-  const fd = new FormData();
-  fd.append('file', fileEl.files[0]);
-
-  try {
-    const tok = getToken();
-    const res = await fetch(`${API}/import/maintenance/confirm?skip_errors=${skipErrors}`, {
-      method: 'POST',
-      headers: tok ? {'Authorization': `Bearer ${tok}`} : {},
-      body: fd
-    });
-    if(!res.ok){ const e = await res.json().catch(()=>({})); throw new Error(e.detail || `خطأ ${res.status}`); }
-    const data = await res.json();
-    resEl.innerHTML = `
-      <div style="background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:1.3rem;text-align:center">
-        <div style="font-size:2rem;margin-bottom:.5rem">&#x2705;</div>
-        <div style="font-weight:800;font-size:1.1rem;color:#16a34a">${data.message}</div>
-        <div style="font-size:.8rem;color:#64748b;margin-top:.5rem">
-          جديد: ${data.inserted} &nbsp;|&nbsp; محدَّث: ${data.updated} &nbsp;|&nbsp; متجاهل: ${data.skipped}
-        </div>
-      </div>`;
-    showNotification('تم رفع خطة الصيانة بنجاح','success');
-  } catch(e){ resEl.innerHTML=`<div style="color:#ef4444;padding:1rem">${e.message}</div>`; }
-}
-
 /* ── REQUESTS SECTION (Admin) ── */
 async function renderRequestsSection() {
   const c = document.getElementById('pageContent');
@@ -3879,7 +3517,7 @@ async function renderRequestsSection() {
   const isAdminRole = currentUser?.role === 'admin';
 
   const TYPE_LABELS = {
-    odometer_change:'🔢 تغيير العداد', permission:'🙋 طلب إذن',
+    odometer_change:'🔢 ادخال خاطئ', permission:'🙋 طلب إذن',
     leave:'🏖️ طلب إجازة', other:'📝 طلب آخر',
   };
   const STATUS_STYLE = {
@@ -4223,10 +3861,21 @@ async function renderDriverTrip() {
     ? '<option value="">-- اختر المركبة --</option>'+allowedCars.map(c=>`<option value="${c.id}" ${activeTrip&&activeTrip.car_id===c.id?'selected':''}>${c.plate} — ${c.model}</option>`).join('')
     : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
 
+  // جيب آخر عداد للمركبة النشطة
+  let lastOdo = null;
+  if(activeTrip) {
+    lastOdo = activeTrip.start_odometer;
+  } else if(allowedCars.length === 1) {
+    try {
+      const r = await apiCall(`/cars/${allowedCars[0].id}/last-odometer`);
+      lastOdo = r.last_odometer;
+    } catch(e) {}
+  }
+
   document.getElementById('pageContent').innerHTML=`
     <div class="driver-hero">
       <div class="driver-hero-icon">🚗</div>
-      <div><h2>تسجيل رحلة</h2><p>أدخل قراءة العداد — الموقع يُسحب تلقائياً</p></div>
+      <div><h2>تسجيل رحلة</h2><p>الموقع يُسحب تلقائياً</p></div>
     </div>
 
     ${activeTrip ? `
@@ -4235,7 +3884,14 @@ async function renderDriverTrip() {
         <span style="font-size:2rem">🟢</span>
         <div>
           <div style="font-weight:800;color:#065f46;font-size:1rem">رحلة نشطة — #${activeTrip.id}</div>
-          <div style="font-size:.82rem;color:#047857">بدأت: ${fmtDT(activeTrip.start_time)} | عداد البداية: ${activeTrip.start_odometer} كم</div>
+          <div style="font-size:.9rem;color:#047857;margin-top:.3rem">
+            بدأت: ${fmtDT(activeTrip.start_time)}
+          </div>
+          <div style="margin-top:.5rem;display:inline-flex;align-items:center;gap:.5rem;
+                      background:#dcfce7;border-radius:10px;padding:.4rem .8rem">
+            <span style="font-size:.82rem;color:#065f46">عداد البداية</span>
+            <strong style="font-size:1.4rem;color:#059669;letter-spacing:1px">${activeTrip.start_odometer} كم</strong>
+          </div>
         </div>
       </div>
     </div>` : `
@@ -4248,29 +3904,65 @@ async function renderDriverTrip() {
 
     <div class="two-col">
       <!-- START TRIP -->
-      <div class="card" style="${activeTrip?'opacity:.5;pointer-events:none;':''}">
+      <div class="card" style="${activeTrip?'opacity:.45;pointer-events:none;':''}">
         <div class="card-header"><div class="card-title" style="color:#1e40af">🚀 بدء رحلة جديدة</div></div>
-        ${activeTrip?'<div style="text-align:center;padding:1rem;color:var(--muted);font-size:.9rem">يوجد رحلة نشطة بالفعل</div>':''}
-        <div class="form-group"><label>المركبة <span class="req">*</span></label>
-          <select id="startCarId">${carOpts}</select></div>
-        <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
-          <input type="number" id="startOdo" placeholder="مثال: 54200" min="0"></div>
 
-        <button class="btn btn-primary" id="startTripBtn" style="width:100%" ${activeTrip?'disabled':''}>
+        <div class="form-group"><label>المركبة <span class="req">*</span></label>
+          <select id="startCarId" style="font-size:1.1rem;padding:.7rem;height:auto" onchange="onCarSelectChange(this)">${carOpts}</select>
+        </div>
+
+        <!-- عداد البداية: يظهر للقراءة فقط -->
+        <div class="form-group" id="startOdoGroup">
+          <label style="font-size:.9rem;color:#64748b">عداد البداية (كم)</label>
+          <div style="display:flex;align-items:center;gap:.75rem;background:#f1f5f9;
+                      border-radius:12px;padding:.9rem 1rem;border:2px solid #e2e8f0">
+            <span style="font-size:1rem;color:#94a3b8">📍</span>
+            <span id="startOdoDisplay" style="font-size:1.8rem;font-weight:900;
+                   color:#1e3a5f;letter-spacing:2px;direction:ltr">
+              ${lastOdo !== null ? lastOdo+' كم' : '— يُجلب عند اختيار المركبة'}
+            </span>
+          </div>
+          <input type="hidden" id="startOdo" value="${lastOdo ?? ''}">
+          <div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">🔒 يُحدَّد تلقائياً من آخر رحلة</div>
+        </div>
+
+        <button class="btn btn-primary" id="startTripBtn"
+                style="width:100%;font-size:1.15rem;padding:1rem;border-radius:14px"
+                ${activeTrip?'disabled':''}>
           🚀 بدء الرحلة
         </button>
       </div>
 
       <!-- END TRIP -->
-      <div class="card" style="${!activeTrip?'opacity:.5;pointer-events:none;':''}">
+      <div class="card" style="${!activeTrip?'opacity:.45;pointer-events:none;':''}">
         <div class="card-header"><div class="card-title" style="color:#b45309">🏁 إنهاء الرحلة الحالية</div></div>
-        ${!activeTrip?'<div style="text-align:center;padding:1rem;color:var(--muted);font-size:.9rem">لا توجد رحلة نشطة</div>':''}
-        <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
-          <input type="number" id="endOdo" placeholder="مثال: 54350" min="${activeTrip?activeTrip.start_odometer+1:0}"></div>
-        <div class="form-group"><label>ملاحظات</label>
-          <input type="text" id="endNotes" placeholder="ملاحظات اختيارية..."></div>
 
-        <button class="btn btn-warning" id="endTripBtn" style="width:100%" ${!activeTrip?'disabled':''}>
+        <div class="form-group">
+          <label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
+          <input type="number" id="endOdo"
+                 placeholder="${activeTrip ? 'أدخل رقم أكبر من '+(activeTrip.start_odometer||0) : 'مثال: 54350'}"
+                 min="${activeTrip?activeTrip.start_odometer+1:0}"
+                 style="font-size:2rem;font-weight:900;text-align:center;
+                        padding:1rem;border-radius:14px;letter-spacing:2px;
+                        border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
+                        transition:border-color .2s"
+                 onfocus="this.style.borderColor='#f59e0b';this.style.boxShadow='0 0 0 3px rgba(245,158,11,.15)'"
+                 onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow=''"
+                 oninput="validateEndOdo(this,${activeTrip?.start_odometer||0})">
+          ${activeTrip?`<div style="font-size:.8rem;color:#94a3b8;margin-top:.3rem;text-align:center">
+            يجب أن يكون أكبر من <strong>${activeTrip.start_odometer} كم</strong>
+          </div>`:''}
+        </div>
+
+        <div class="form-group">
+          <label style="font-size:.9rem">ملاحظات</label>
+          <input type="text" id="endNotes" placeholder="ملاحظات اختيارية..."
+                 style="font-size:1rem;padding:.8rem;border-radius:12px">
+        </div>
+
+        <button class="btn btn-warning" id="endTripBtn"
+                style="width:100%;font-size:1.15rem;padding:1rem;border-radius:14px"
+                ${!activeTrip?'disabled':''}>
           🏁 إنهاء الرحلة
         </button>
       </div>
@@ -4287,15 +3979,38 @@ async function renderDriverTrip() {
       </div>
     </div>`;
 
+  // ── onCarSelectChange: جيب آخر عداد لما السائق يختار عربية ──
+  window.onCarSelectChange = async function(sel) {
+    const carId = parseInt(sel.value);
+    if(!carId) { document.getElementById('startOdoDisplay').textContent='—'; document.getElementById('startOdo').value=''; return; }
+    document.getElementById('startOdoDisplay').textContent='⏳ جاري الجلب...';
+    try {
+      const r = await apiCall(`/cars/${carId}/last-odometer`);
+      const odo = r.last_odometer;
+      document.getElementById('startOdo').value = odo ?? '';
+      document.getElementById('startOdoDisplay').textContent = odo !== null ? odo+' كم' : 'لا توجد رحلات سابقة';
+    } catch(e) {
+      document.getElementById('startOdoDisplay').textContent = '— تعذّر الجلب';
+    }
+  };
+
+  // ── validate end odometer live ──
+  window.validateEndOdo = function(inp, startOdo) {
+    const v = parseFloat(inp.value);
+    if(!isNaN(v) && v <= startOdo) {
+      inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
+    } else {
+      inp.style.borderColor='#f59e0b'; inp.style.color='#1e3a5f';
+    }
+  };
+
   // ── START TRIP handler ──
   document.getElementById('startTripBtn')?.addEventListener('click', async () => {
-    const car_id  = parseInt(document.getElementById('startCarId').value);
+    const car_id    = parseInt(document.getElementById('startCarId').value);
     const start_odo = parseFloat(document.getElementById('startOdo').value);
     const btn = document.getElementById('startTripBtn');
-
-    if(!car_id)           return showNotification('اختر المركبة','error');
-    if(isNaN(start_odo))  return showNotification('أدخل عداد البداية','error');
-
+    if(!car_id)          return showNotification('اختر المركبة','error');
+    if(isNaN(start_odo)) return showNotification('لم يتم تحديد عداد البداية — اختر المركبة أولاً','error');
     btn.disabled=true; btn.textContent='🚀 جاري...';
     const location = await silentGetLocation();
     try{
@@ -4310,11 +4025,10 @@ async function renderDriverTrip() {
     const end_odo = parseFloat(document.getElementById('endOdo').value);
     const notes   = document.getElementById('endNotes').value.trim();
     const btn = document.getElementById('endTripBtn');
-
-    if(!activeTrip) return showNotification('لا توجد رحلة نشطة','error');
-    if(isNaN(end_odo)) return showNotification('أدخل عداد النهاية','error');
-    if(end_odo <= activeTrip.start_odometer) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+activeTrip.start_odometer+' كم)','error');
-
+    if(!activeTrip)      return showNotification('لا توجد رحلة نشطة','error');
+    if(isNaN(end_odo))   return showNotification('أدخل عداد النهاية','error');
+    if(end_odo <= activeTrip.start_odometer)
+      return showNotification('عداد النهاية يجب أن يكون أكبر من '+activeTrip.start_odometer+' كم','error');
     btn.disabled=true; btn.textContent='🏁 جاري...';
     const location = await silentGetLocation();
     try{
@@ -5057,9 +4771,15 @@ function initUI() {
     currentSection='overview'; renderNav(buildAdminNav()); renderSection('overview');
     notifPollInterval=setInterval(pollNotifications,20000);
     setTimeout(pollNotifications,3000);
+    // فحص الرسائل الصوتية كل دقيقة
+    setTimeout(checkAndShowVoiceNotes, 5000);
+    setInterval(checkAndShowVoiceNotes, 60000);
   } else {
     // Driver: single-page app, no sidebar
     renderDriverSinglePage();
+    // فحص الرسائل الصوتية للسائق
+    setTimeout(checkAndShowVoiceNotes, 5000);
+    setInterval(checkAndShowVoiceNotes, 60000);
   }
 }
 
@@ -5226,7 +4946,7 @@ async function renderDriverSinglePage() {
       <div class="dp-top">
         <div class="dp-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
         <div class="dp-greeting">مرحباً، ${currentUser.username}</div>
-        <div class="dp-date">${dayName}، ${dateStr}</div>
+        <div class="dp-date"><span>📅</span><span>${dayName}، ${dateStr}</span></div>
         <div class="dp-car">
           <span>${primaryCar ? primaryCar.plate : '—'}</span>
           <span>—</span>
@@ -5263,7 +4983,7 @@ async function renderDriverSinglePage() {
           </div>`).join('');
       })()}
 
-      <!-- MY STATS -->
+      <!-- MY STATS — خارج dp-top عشان تكون ظاهرة -->
       ${(()=>{
         const myTrips = allTrips.filter(t=>t.driver_id===currentUser.driver_id);
         const myCompleted = myTrips.filter(t=>t.end_time);
@@ -5271,30 +4991,58 @@ async function renderDriverSinglePage() {
           .reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
         const weekAgo = new Date(Date.now()-7*864e5).toISOString();
         const weeklyTrips = myCompleted.filter(t=>t.end_time>=weekAgo).length;
-        if(!myTrips.length) return '';
+
+        let motivMsg='', motivColor='#10b981';
+        if(weeklyTrips===0)       { motivMsg='💪 ابدأ أسبوعك بقوة!';          motivColor='#6366f1'; }
+        else if(weeklyTrips<=2)   { motivMsg='🚀 استمر، أنت في البداية!';      motivColor='#f59e0b'; }
+        else if(weeklyTrips<=5)   { motivMsg='🔥 أداء ممتاز هذا الأسبوع!';    motivColor='#10b981'; }
+        else                      { motivMsg='🏆 أنت من أفضل السائقين!';       motivColor='#8b5cf6'; }
+
         return `
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin:.75rem 0">
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.3rem;font-weight:700;color:#fff">${weeklyTrips}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">رحلات هذا الأسبوع</div>
+        <div style="margin:.8rem .85rem 0;border-radius:18px;overflow:hidden;
+                    box-shadow:0 4px 20px rgba(0,0,0,.10)">
+          <div style="background:linear-gradient(135deg,#1e3a5f,#2d6a4f);
+                      padding:.8rem 1.1rem;display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:.82rem;font-weight:700;color:rgba(255,255,255,.9)">📊 إنجازاتك</span>
+            <span style="font-size:.78rem;font-weight:800;color:#f59e0b;
+                         background:rgba(245,158,11,.15);padding:.2rem .7rem;
+                         border-radius:50px;border:1px solid rgba(245,158,11,.35)">${motivMsg}</span>
+          </div>
+          <div style="background:#fff;display:grid;grid-template-columns:repeat(3,1fr)">
+            <div style="padding:.9rem .5rem;text-align:center;border-left:1px solid #f1f5f9;position:relative">
+              <div style="font-size:1.7rem;font-weight:900;
+                          background:linear-gradient(135deg,#f59e0b,#d97706);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1">${weeklyTrips}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">رحلات الأسبوع</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#f59e0b;border-radius:99px"></div>
             </div>
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.3rem;font-weight:700;color:#fff">${myCompleted.length}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي الرحلات</div>
+            <div style="padding:.9rem .5rem;text-align:center;border-left:1px solid #f1f5f9;position:relative">
+              <div style="font-size:1.7rem;font-weight:900;
+                          background:linear-gradient(135deg,#1e3a5f,#3b82f6);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1">${myCompleted.length}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">إجمالي الرحلات</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#1e3a5f;border-radius:99px"></div>
             </div>
-            <div style="background:rgba(255,255,255,.12);border-radius:12px;padding:.7rem;text-align:center;backdrop-filter:blur(4px)">
-              <div style="font-size:1.1rem;font-weight:700;color:#fff">${Math.round(myKm).toLocaleString('ar-EG')}</div>
-              <div style="font-size:.7rem;color:rgba(255,255,255,.75);margin-top:2px">إجمالي كم</div>
+            <div style="padding:.9rem .5rem;text-align:center;position:relative">
+              <div style="font-size:${myKm>=10000?'1.3':'1.7'}rem;font-weight:900;
+                          background:linear-gradient(135deg,#059669,#10b981);
+                          -webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1">${Math.round(myKm).toLocaleString('ar-EG')}</div>
+              <div style="font-size:.65rem;color:#64748b;margin-top:.3rem;font-weight:600">إجمالي كم</div>
+              <div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+                          width:28px;height:3px;background:#10b981;border-radius:99px"></div>
             </div>
-          </div>`;
+          </div>
+        </div>`;
       })()}
 
       <!-- TRIP BUTTONS -->
       <div class="dp-section">
-        <div class="dp-label">الرحلة</div>
+        <div class="dp-label">🚗 الرحلة</div>
         ${!activeTrip
-          ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶  بدء الرحلة</button>`
-          : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔  إنهاء الرحلة</button>`}
+          ? `<button class="dp-btn-main dp-btn-start" id="dpStart">▶ ابدأ الرحلة<br><small style="font-size:.75rem;font-weight:500;opacity:.8">جاهز للانطلاق؟ ابدأ رحلتك الآن</small></button>`
+          : `<button class="dp-btn-main dp-btn-end"   id="dpEnd">✔ إنهاء الرحلة<br><small style="font-size:.75rem;font-weight:500;opacity:.8">هل وصلت؟ سجّل نهاية رحلتك</small></button>`}
         <button class="dp-btn-garage" id="dpGarage">🏠  إنهاء رحلات اليوم / دخول الجراج</button>
       </div>
 
@@ -5306,35 +5054,53 @@ async function renderDriverSinglePage() {
 
       <!-- 4 QUICK BUTTONS — 2x2 -->
       <div class="dp-section">
-        <div class="dp-label">إجراء سريع</div>
+        <div class="dp-label">⚡ إجراءات سريعة</div>
         <div class="dp-quick">
-          <button class="dp-qbtn dp-qbtn-acc"  onclick="dpQuick('accident')">
-            <div class="qi-wrap">⚠️</div><span class="ql">حادث</span>
-          </button>
-          <button class="dp-qbtn dp-qbtn-emg"  onclick="dpQuick('emergency')">
-            <div class="qi-wrap">🚨</div><span class="ql">طارئ</span>
-          </button>
           <button class="dp-qbtn dp-qbtn-fuel" onclick="dpQuick('fuel')">
-            <div class="qi-wrap">⛽</div><span class="ql">وقود</span>
+            <div class="qi-wrap">⛽</div>
+            <span class="ql">وقود</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
           </button>
           <button class="dp-qbtn dp-qbtn-oil"  onclick="dpQuick('oil')">
-            <div class="qi-wrap">🛢️</div><span class="ql">زيت</span>
+            <div class="qi-wrap">🛢️</div>
+            <span class="ql">زيت</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
+          </button>
+          <button class="dp-qbtn dp-qbtn-emg"  onclick="dpQuick('emergency')">
+            <div class="qi-wrap">🚨</div>
+            <span class="ql">طارئ</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
+          </button>
+          <button class="dp-qbtn dp-qbtn-acc"  onclick="dpQuick('accident')">
+            <div class="qi-wrap">⚠️</div>
+            <span class="ql">حادث</span>
+            <span class="qs">طلب خدمة</span>
+            <span class="qi-arrow">›</span>
           </button>
         </div>
       </div>
 
       <!-- REQUESTS -->
       <div class="dp-section">
-        <div class="dp-label">الطلبات</div>
+        <div class="dp-label">🔧 الطلبات</div>
         <div class="dp-req-grid">
-          <button class="dp-btn-new-req" onclick="openSubmitRequestModal()">+ تقديم طلب جديد</button>
-          <button class="dp-btn-my-req"  onclick="openMyRequestsModal()">📋 طلباتي</button>
+          <button class="dp-btn-new-req" onclick="openSubmitRequestModal()">
+            <span>+ تقديم طلب جديد</span>
+            <span class="req-sub">أنشئ طلب خدمة جديد</span>
+          </button>
+          <button class="dp-btn-my-req"  onclick="openMyRequestsModal()">
+            <span>📋 طلباتي</span>
+            <span class="req-sub">عرض جميع الطلبات</span>
+          </button>
         </div>
       </div>
 
       <!-- WORKSHOP -->
       <div class="dp-section">
-        <div class="dp-label">خدمات الصيانة</div>
+        <div class="dp-label">🔩 خدمات الصيانة</div>
         <div class="dp-ws-grid">
           ${wsTypes.map(([k,v])=>`
             <button class="dp-ws-btn" onclick="dpWsModal('${k}')">${v.label}</button>`).join('')}
@@ -5350,19 +5116,43 @@ async function renderDriverSinglePage() {
   };
 
   // Start trip
-  document.getElementById('dpStart')?.addEventListener('click',()=>{
+  document.getElementById('dpStart')?.addEventListener('click', async () => {
     if(!primaryCar) return showNotification('لا توجد مركبة مخصصة','error');
+
+    // جيب آخر عداد
+    let lastOdo = null;
+    try {
+      const r = await apiCall(`/cars/${primaryCar.id}/last-odometer`);
+      lastOdo = r.last_odometer;
+    } catch(e) {}
+
     openModal(`
       <div class="modal-header"><div class="modal-title">▶ بدء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-weight:700;color:#166534;font-size:.92rem">
         🚗 ${primaryCar.plate} — ${primaryCar.model}
       </div>
-      <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpStartOdo" placeholder="مثال: 54200" min="0"></div>
+      <div class="form-group">
+        <label style="font-size:1rem;font-weight:700">عداد البداية (كم)</label>
+        ${lastOdo !== null ? `
+        <div style="display:flex;align-items:center;gap:.75rem;background:#f1f5f9;
+                    border-radius:12px;padding:.9rem 1.1rem;border:2px solid #e2e8f0;margin-bottom:.5rem">
+          <span style="font-size:.82rem;color:#64748b;white-space:nowrap">📍 آخر عداد</span>
+          <strong style="font-size:2rem;font-weight:900;color:#1e3a5f;letter-spacing:2px;direction:ltr">${lastOdo}</strong>
+          <span style="font-size:.82rem;color:#64748b">كم</span>
+        </div>
+        <input type="hidden" id="dpStartOdo" value="${lastOdo}">
+        <div style="font-size:.75rem;color:#94a3b8;text-align:center">🔒 يُحدَّد تلقائياً من آخر رحلة</div>
+        ` : `
+        <input type="number" id="dpStartOdo" placeholder="أدخل قراءة العداد" min="0"
+               class="odo-input"
+               onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#e2e8f0'">
+        `}
+      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-        <button class="btn btn-primary" id="dpStartOk">تأكيد وبدء</button>
+        <button class="btn btn-primary" id="dpStartOk" style="font-size:1rem;padding:.75rem 1.5rem">تأكيد وبدء ▶</button>
       </div>`);
+
     document.getElementById('dpStartOk').onclick=async()=>{
       const odo=parseFloat(document.getElementById('dpStartOdo').value);
       if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
@@ -5373,7 +5163,7 @@ async function renderDriverSinglePage() {
         await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc});
         showNotification('✅ بدأت الرحلة!','success');
         closeModal(); await renderDriverSinglePage();
-      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء'; }
+      }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء ▶'; }
     };
   });
 
@@ -5386,8 +5176,15 @@ async function renderDriverSinglePage() {
         🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
         <span style="font-size:.8rem;opacity:.8">📍 سيتم تسجيل موقعك الحالي تلقائياً</span>
       </div>
-      <div class="form-group"><label>عداد النهاية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpEndOdo" placeholder="مثال: 54350" min="${startOdo+1}"></div>
+      <div class="form-group"><label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
+        <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}"
+               class="odo-input"
+
+               oninput="this.classList.toggle('invalid',!isNaN(parseFloat(this.value))&&parseFloat(this.value)<=${startOdo})">
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem;text-align:center">
+          يجب أن يكون أكبر من <strong style="color:#1e3a5f">${startOdo} كم</strong>
+        </div>
+      </div>
       <div class="form-group"><label>ملاحظات</label>
         <input type="text" id="dpEndNotes" placeholder="اختياري..."></div>
       <div class="modal-footer">
@@ -5416,7 +5213,13 @@ async function renderDriverSinglePage() {
     openModal(
       '<div class="modal-header"><div class="modal-title">🅿 دخول الجراج / نهاية اليوم</div><button class="modal-close" onclick="closeModal()">✕</button></div>'+
       (activeTrip?'<div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:10px;padding:.7rem 1rem;margin-bottom:.8rem;font-size:.84rem;color:#92400e">⚡ يوجد رحلة نشطة #'+activeTrip.id+' — سيتم إنهاؤها تلقائياً بنفس عداد ووقت الجراج</div>':'')+
-      '<div class="form-group"><label>عداد الختام (كم) <span class="req">*</span></label><input type="number" id="dpGarOdo" placeholder="قراءة العداد الآن" min="'+minOdo+'"></div>'+
+      '<div class="form-group"><label style="font-size:1rem;font-weight:700">عداد الختام (كم) <span class="req">*</span></label>'+
+      '<input type="number" id="dpGarOdo" placeholder="أدخل الرقم" min="'+minOdo+'"'+
+      ' class="odo-input"'+
+      ' onfocus="this.style.borderColor=\'#ef4444\';this.style.boxShadow=\'0 0 0 3px rgba(239,68,68,.15)\'"'+
+      ' onblur="this.style.borderColor=\'#e2e8f0\';this.style.boxShadow=\'\'"'+
+      (activeTrip?' oninput="const v=parseFloat(this.value);this.style.color=(!isNaN(v)&&v<='+activeTrip.start_odometer+')?\'#ef4444\':\'#1e3a5f\'"':'')+'></div>'+
+      (activeTrip?'<div style="font-size:.78rem;color:#94a3b8;margin-top:-.5rem;margin-bottom:.75rem;text-align:center">يجب أن يكون أكبر من <strong style="color:#1e3a5f">'+activeTrip.start_odometer+' كم</strong></div>':'')+
       '<div class="form-group"><label>ملاحظات</label><input type="text" id="dpGarNotes" placeholder="اختياري..."></div>'+
       '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-danger" id="dpGarOk">🅿 تسجيل الجراج</button></div>');
     document.getElementById('dpGarOk').onclick=async()=>{
@@ -5460,7 +5263,7 @@ async function renderDriverSinglePage() {
 
 /* ── DRIVER REQUESTS ── */
 const REQUEST_TYPE_LABELS = {
-  odometer_change: '🔢 تغيير قراءة العداد',
+  odometer_change: '🔢 ادخال خاطئ',
   permission:      '🙋 طلب إذن',
   leave:           '🏖️ طلب إجازة',
   other:           '📝 طلب آخر',
@@ -5568,7 +5371,7 @@ function openSubmitRequestModal() {
       <label>نوع الطلب <span class="req">*</span></label>
       <select id="reqType" onchange="toggleOdometerField()">
         <option value="">— اختر نوع الطلب —</option>
-        <option value="odometer_change">🔢 تغيير قراءة العداد</option>
+        <option value="odometer_change">🔢 ادخال خاطئ</option>
         <option value="permission">🙋 طلب إذن</option>
         <option value="leave">🏖️ طلب إجازة</option>
         <option value="other">📝 طلب آخر</option>
@@ -6254,7 +6057,7 @@ async function renderSuperDecisions() {
   try { reqs = await apiCall('/requests'); } catch(e) { reqs=[]; }
   const pending = reqs.filter(r=>r.status==='pending_super');
 
-  const TYPE_LABELS = {odometer_change:'🔢 تغيير العداد',permission:'🙋 طلب إذن',leave:'🏖️ طلب إجازة',other:'📝 طلب آخر'};
+  const TYPE_LABELS = {odometer_change:'🔢 ادخال خاطئ',permission:'🙋 طلب إذن',leave:'🏖️ طلب إجازة',other:'📝 طلب آخر'};
   const PRIORITY_LABELS = {urgent:'🔴 عاجل',medium:'🟡 متوسط',deferrable:'🟢 قابل للتأجيل'};
   const PRIORITY_COLORS = {urgent:'#ef4444',medium:'#f59e0b',deferrable:'#10b981'};
 
@@ -6379,34 +6182,6 @@ async function renderImportSection() {
               ⬇️ تحميل قالب CSV
             </a>
           </div>
-        </div>
-      </div>
-
-      <!-- Maintenance Import Card -->
-      <div class="card" style="border-top:3px solid #d97706">
-        <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
-          <div class="card-title">🛢️ استيراد خطة الصيانة (زيوت + فلاتر + كاوتش + بطاريات)</div>
-        </div>
-        <div style="padding:0 1.25rem 1.25rem">
-          <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">
-            ارفع ملف CSV المولَّد من الشيت الخارجي مباشرةً — يُضيف/يُحدّث جدول الصيانة لكل مركبة
-          </p>
-          <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
-            <a href="/import/template/maintenance" class="btn btn-outline btn-sm">
-              ⬇️ تحميل قالب CSV
-            </a>
-            <span style="font-size:.75rem;color:#94a3b8">
-              ← نفس أعمدة ملف maintenance_import.csv
-            </span>
-          </div>
-          <div class="form-group">
-            <label style="font-weight:700">رفع ملف خطة الصيانة</label>
-            <input type="file" id="maintCsvFile" accept=".csv,.xlsx" style="margin-top:.4rem">
-          </div>
-          <div style="display:flex;gap:.7rem;margin-top:1rem">
-            <button class="btn btn-warning" onclick="previewMaintImport()">👁️ معاينة قبل الرفع</button>
-          </div>
-          <div id="maintImportResult" style="margin-top:1.2rem"></div>
         </div>
       </div>
 
@@ -7068,6 +6843,327 @@ function exportAttendanceCSV() {
   a.href = 'data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
   a.download = `attendance_${data.month}.csv`;
   a.click();
+}
+
+// ══════════════════════════════════════════════════════
+// SUPER — كشف التلاعب
+// ══════════════════════════════════════════════════════
+async function renderSuperFraud() {
+  const el = document.getElementById('pageContent');
+  el.innerHTML = `<div class="card"><div style="text-align:center;padding:2rem;color:var(--muted)">⏳ جاري تحليل البيانات...</div></div>`;
+  try {
+    const data = await apiCall('/reports/fraud-detection');
+    const { summary, odometer_reversed, high_distance, overlapping_driver,
+            car_overlap, impossible_speed, excess_fuel, repeated_odometer } = data;
+
+    const riskColor = summary.high_risk>0?'#ef4444': summary.total_alerts>0?'#f59e0b':'#10b981';
+
+    const section = (title, icon, risk, items, renderRow, headers) => {
+      if(!items||!items.length) return `
+        <div class="card" style="border-right:4px solid #10b981">
+          <div style="padding:.75rem 1.25rem;display:flex;align-items:center;gap:.5rem">
+            <span>${icon}</span>
+            <span style="font-weight:700">${title}</span>
+            <span class="badge badge-green" style="margin-right:auto">✅ لا يوجد</span>
+          </div>
+        </div>`;
+      const rColor = risk==='high'?'#ef4444':risk==='medium'?'#f59e0b':'#6366f1';
+      return `
+        <div class="card" style="border-right:4px solid ${rColor}">
+          <div class="card-header">
+            <div class="card-title">${icon} ${title}</div>
+            <span style="background:${rColor};color:#fff;padding:.2rem .75rem;border-radius:99px;font-size:.82rem;font-weight:700">${items.length} حالة</span>
+          </div>
+          <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+            <table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+            <tbody>${items.map(renderRow).join('')}</tbody></table>
+          </div>
+        </div>`;
+    };
+
+    el.innerHTML = `
+      <!-- Summary -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem">
+        <div class="stat-card" style="border-top:3px solid ${riskColor}">
+          <div class="stat-icon">🔍</div>
+          <div class="stat-value" style="color:${riskColor}">${summary.total_alerts}</div>
+          <div class="stat-label">إجمالي التنبيهات</div>
+        </div>
+        <div class="stat-card" style="border-top:3px solid #ef4444">
+          <div class="stat-icon">🚨</div>
+          <div class="stat-value" style="color:#ef4444">${summary.high_risk}</div>
+          <div class="stat-label">خطر عالٍ</div>
+        </div>
+        <div class="stat-card" style="border-top:3px solid #f59e0b">
+          <div class="stat-icon">⚠️</div>
+          <div class="stat-value" style="color:#f59e0b">${summary.medium_risk}</div>
+          <div class="stat-label">خطر متوسط</div>
+        </div>
+        <div class="stat-card" style="border-top:3px solid #6366f1">
+          <div class="stat-icon">📋</div>
+          <div class="stat-value" style="color:#6366f1">${summary.low_risk}</div>
+          <div class="stat-label">يستحق المتابعة</div>
+        </div>
+      </div>
+
+      ${section('عداد معكوس (نهاية < بداية)','🚨','high', odometer_reversed,
+        r=>`<tr style="background:rgba(239,68,68,.06)">
+          <td>#${r.id}</td><td><strong>${r.driver_name}</strong></td><td dir="ltr">${r.plate}</td>
+          <td style="color:#ef4444"><strong>${r.start_odometer} → ${r.end_odometer}</strong></td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,16)}</td></tr>`,
+        ['#رحلة','السائق','اللوحة','العداد (بداية → نهاية)','التاريخ'])}
+
+      ${section('رحلات بسرعة مستحيلة (>10كم في أقل من 3 دقائق)','💥','high', impossible_speed,
+        r=>`<tr style="background:rgba(239,68,68,.06)">
+          <td>#${r.id}</td><td><strong>${r.driver_name}</strong></td><td dir="ltr">${r.plate}</td>
+          <td style="color:#ef4444"><strong>${Math.round(r.distance)} كم</strong></td>
+          <td><strong>${Math.round(r.minutes)} دقيقة</strong></td></tr>`,
+        ['#رحلة','السائق','اللوحة','المسافة','الوقت'])}
+
+      ${section('تداخل مركبة بين سائقين','🔴','high', car_overlap,
+        r=>`<tr style="background:rgba(239,68,68,.06)">
+          <td dir="ltr"><strong>${r.plate}</strong></td>
+          <td>${r.driver1}</td><td>${r.driver2}</td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,16)}</td>
+          <td style="font-size:.8rem">${(r.start2||'').slice(0,16)}</td></tr>`,
+        ['اللوحة','سائق 1','سائق 2','بداية 1','بداية 2'])}
+
+      ${section('تداخل رحلات نفس السائق','⚠️','medium', overlapping_driver,
+        r=>`<tr style="background:rgba(245,158,11,.06)">
+          <td><strong>${r.driver_name}</strong></td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,16)}</td>
+          <td style="font-size:.8rem">${(r.end_time||'').slice(0,16)}</td>
+          <td style="font-size:.8rem">${(r.start2||'').slice(0,16)}</td></tr>`,
+        ['السائق','بداية 1','نهاية 1','بداية 2'])}
+
+      ${section('وقود زائد (+200 لتر/يوم)','⛽','medium', excess_fuel,
+        r=>`<tr style="background:rgba(245,158,11,.06)">
+          <td dir="ltr"><strong>${r.plate}</strong></td>
+          <td>${r.day}</td>
+          <td style="color:#f59e0b"><strong>${Math.round(r.total_liters)} لتر</strong></td>
+          <td>${r.refills} تعبئة</td></tr>`,
+        ['اللوحة','اليوم','إجمالي الوقود','عدد التعبئات'])}
+
+      ${section('طلبات تعديل عداد متكررة (+3 في أسبوع)','🔢','low', repeated_odometer,
+        r=>`<tr style="background:rgba(99,102,241,.06)">
+          <td><strong>${r.driver_name}</strong></td>
+          <td><code>${r.fixed_number}</code></td>
+          <td style="color:#6366f1"><strong>${r.requests} طلبات</strong></td>
+          <td style="font-size:.8rem">${(r.first_req||'').slice(0,10)}</td></tr>`,
+        ['السائق','الرقم الثابت','عدد الطلبات','أول طلب'])}
+
+      ${section('رحلات مسافة عالية (+500 كم)','📍','low', high_distance,
+        r=>`<tr>
+          <td>#${r.id}</td><td><strong>${r.driver_name}</strong></td>
+          <td dir="ltr">${r.plate}</td>
+          <td style="color:#6366f1"><strong>${Math.round(r.distance)} كم</strong></td>
+          <td style="font-size:.8rem">${(r.start_time||'').slice(0,10)}</td></tr>`,
+        ['#رحلة','السائق','اللوحة','المسافة','التاريخ'])}
+
+      <div style="padding:.5rem;text-align:center">
+        <button class="btn btn-outline btn-sm" onclick="renderSuperFraud()">🔄 تحديث التحليل</button>
+      </div>`;
+  } catch(e) {
+    el.innerHTML=`<div class="card"><div style="padding:2rem;text-align:center;color:var(--danger)">❌ ${e.message}</div></div>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// SUPER — الرسائل الصوتية
+// ══════════════════════════════════════════════════════
+async function renderSuperVoice() {
+  const el = document.getElementById('pageContent');
+  let myNotes = [];
+  try { myNotes = await apiCall('/voice-notes'); } catch(e){}
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+
+      <!-- إرسال رسالة جديدة -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">🎙️ رسالة صوتية جديدة</div></div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+
+          <div class="form-group" style="margin:0">
+            <label>إرسال إلى</label>
+            <select id="voiceTarget" class="form-control">
+              <option value="admins">👨‍💼 الأدمنز فقط</option>
+              <option value="drivers">🚗 السائقين فقط</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin:0">
+            <label>مدة الظهور</label>
+            <select id="voiceTTL" class="form-control">
+              <option value="24">24 ساعة (ثم تُمسح)</option>
+              <option value="12">12 ساعة</option>
+              <option value="48">48 ساعة</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin:0">
+            <label>عدد مرات الاستماع</label>
+            <select id="voiceMaxPlays" class="form-control">
+              <option value="1">مرة واحدة فقط</option>
+              <option value="2" selected>مرتان</option>
+              <option value="3">3 مرات</option>
+            </select>
+          </div>
+
+          <!-- مؤشر التسجيل -->
+          <div id="voiceRecorderUI" style="border:2px dashed #e2e8f0;border-radius:14px;padding:1.5rem;text-align:center">
+            <div id="voiceRecStatus" style="color:var(--muted);font-size:.9rem;margin-bottom:.75rem">اضغط للتسجيل</div>
+            <div id="voiceTimer" style="font-size:2rem;font-weight:900;color:#1e3a5f;display:none">0:00</div>
+            <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;margin-top:.5rem">
+              <button class="btn btn-danger" id="voiceStartBtn" onclick="startVoiceRec()">🔴 بدء التسجيل</button>
+              <button class="btn btn-outline" id="voiceStopBtn" onclick="stopVoiceRec()" disabled>⏹ إيقاف</button>
+            </div>
+            <audio id="voicePreview" controls style="display:none;margin-top:1rem;width:100%;border-radius:8px"></audio>
+          </div>
+
+          <button class="btn btn-primary" id="voiceSendBtn" onclick="sendVoiceNote()" disabled style="width:100%">
+            📤 إرسال الرسالة
+          </button>
+        </div>
+      </div>
+
+      <!-- رسائلي المرسلة -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📬 رسائلي المرسلة</div>
+          <button class="btn btn-ghost btn-sm" onclick="renderSuperVoice()">🔄</button>
+        </div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem;max-height:500px;overflow-y:auto">
+          ${myNotes.length===0 ? '<div style="text-align:center;color:var(--muted);padding:2rem">لا توجد رسائل مرسلة</div>' :
+            myNotes.map(n=>{
+              const isExp = new Date(n.expires_at) < new Date();
+              const toLabel = n.target_group==='admins'?'👨‍💼 أدمنز':'🚗 سائقين';
+              const playsLeft = n.max_plays - n.play_count;
+              return `<div style="border:1.5px solid ${isExp||n.is_deleted?'#fca5a5':'#e2e8f0'};border-radius:12px;padding:.9rem">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+                  <span style="font-weight:700;font-size:.88rem">${toLabel}</span>
+                  <span style="font-size:.75rem;color:${isExp||n.is_deleted?'#ef4444':'#64748b'}">${isExp||n.is_deleted?'⛔ منتهية':playsLeft+' استماع متبقي'}</span>
+                </div>
+                <div style="font-size:.75rem;color:var(--muted)">${(n.created_at||'').slice(0,16)} — تنتهي ${(n.expires_at||'').slice(0,16)}</div>
+                ${!isExp&&!n.is_deleted?`<button class="btn btn-danger btn-sm" style="margin-top:.5rem;width:100%" onclick="deleteVoiceNote(${n.id})">🗑️ مسح الآن</button>`:''}
+              </div>`;
+            }).join('')}
+        </div>
+      </div>
+    </div>`;
+
+  // ── recorder state ──
+  let mediaRecorder = null, audioChunks = [], timerInterval = null, audioBlob = null;
+  let seconds = 0;
+
+  window.startVoiceRec = async function() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = []; seconds = 0;
+      mediaRecorder.ondataavailable = e => { if(e.data.size>0) audioChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        audioBlob = new Blob(audioChunks, {type:'audio/webm'});
+        const url = URL.createObjectURL(audioBlob);
+        const prev = document.getElementById('voicePreview');
+        prev.src = url; prev.style.display='block';
+        document.getElementById('voiceSendBtn').disabled = false;
+        document.getElementById('voiceRecStatus').textContent = '✅ جاهز للإرسال';
+        clearInterval(timerInterval);
+      };
+      mediaRecorder.start();
+      document.getElementById('voiceStartBtn').disabled=true;
+      document.getElementById('voiceStopBtn').disabled=false;
+      document.getElementById('voiceTimer').style.display='block';
+      document.getElementById('voiceRecStatus').textContent='🔴 جاري التسجيل...';
+      timerInterval = setInterval(()=>{
+        seconds++;
+        const m=Math.floor(seconds/60), s=seconds%60;
+        document.getElementById('voiceTimer').textContent=`${m}:${String(s).padStart(2,'0')}`;
+        if(seconds>=120){ stopVoiceRec(); showNotification('وصلت للحد الأقصى (دقيقتان)','error'); }
+      },1000);
+    } catch(e) { showNotification('تعذّر الوصول للمايك: '+e.message,'error'); }
+  };
+
+  window.stopVoiceRec = function() {
+    if(mediaRecorder&&mediaRecorder.state==='recording') mediaRecorder.stop();
+    document.getElementById('voiceStartBtn').disabled=false;
+    document.getElementById('voiceStopBtn').disabled=true;
+  };
+
+  window.sendVoiceNote = async function() {
+    if(!audioBlob) return showNotification('سجّل رسالة أولاً','error');
+    const target   = document.getElementById('voiceTarget').value;
+    const ttl      = parseInt(document.getElementById('voiceTTL').value);
+    const maxPlays = parseInt(document.getElementById('voiceMaxPlays').value);
+    const btn = document.getElementById('voiceSendBtn');
+    btn.disabled=true; btn.textContent='⏳ جاري الإرسال...';
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const b64 = e.target.result.split(',')[1];
+      try {
+        await apiCall('/voice-notes','POST',{
+          target_group:target, audio_data:b64,
+          duration_sec:seconds, max_plays:maxPlays, hours_ttl:ttl
+        });
+        showNotification('✅ تم إرسال الرسالة الصوتية','success');
+        await renderSuperVoice();
+      } catch(err) { showNotification(err.message,'error'); btn.disabled=false; btn.textContent='📤 إرسال الرسالة'; }
+    };
+    reader.readAsDataURL(audioBlob);
+  };
+
+  window.deleteVoiceNote = async function(id) {
+    if(!confirm('مسح الرسالة الصوتية؟')) return;
+    try { await apiCall(`/voice-notes/${id}`,'DELETE'); await renderSuperVoice(); }
+    catch(e) { showNotification(e.message,'error'); }
+  };
+}
+
+// ── رسائل صوتية عند الأدمن والسائق ──
+async function checkAndShowVoiceNotes() {
+  if(!currentUser) return;
+  const role = currentUser.role;
+  if(!['admin','driver','reporter','supervisor_workshop','supervisor_field'].includes(role)) return;
+  try {
+    const notes = await apiCall('/voice-notes');
+    if(!notes||!notes.length) return;
+    // اعرض أول رسالة غير مسموعة
+    const note = notes[0];
+    showVoiceNotePopup(note);
+  } catch(e) {}
+}
+
+function showVoiceNotePopup(note) {
+  const existing = document.getElementById('voiceNotePopup');
+  if(existing) existing.remove();
+  const div = document.createElement('div');
+  div.id = 'voiceNotePopup';
+  div.style.cssText = `position:fixed;bottom:1.5rem;left:1.5rem;z-index:9999;
+    background:#1e3a5f;color:#fff;border-radius:16px;padding:1.25rem 1.5rem;
+    box-shadow:0 8px 32px rgba(0,0,0,.3);max-width:340px;animation:slideInLeft .3s ease`;
+  div.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+      <span style="font-size:1.5rem">🎙️</span>
+      <div>
+        <div style="font-weight:800;font-size:.95rem">رسالة من الإدارة</div>
+        <div style="font-size:.72rem;opacity:.7">${(note.created_at||'').slice(0,16)}</div>
+      </div>
+      <button onclick="document.getElementById('voiceNotePopup').remove()"
+              style="margin-right:auto;background:rgba(255,255,255,.15);border:none;
+                     color:#fff;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:1rem">✕</button>
+    </div>
+    <audio id="vn_audio_${note.id}" src="data:audio/webm;base64,${note.audio_data}"
+           style="width:100%;border-radius:8px" controls></audio>
+    <div style="font-size:.72rem;opacity:.7;margin-top:.5rem;text-align:center">
+      متبقي ${note.max_plays-note.play_count} استماع — تنتهي ${(note.expires_at||'').slice(0,16)}
+    </div>`;
+  document.body.appendChild(div);
+  // سجّل التشغيل عند الضغط play
+  const audio = div.querySelector('audio');
+  audio.addEventListener('play', async () => {
+    try { await apiCall(`/voice-notes/${note.id}/play`,'POST'); } catch(e){}
+  }, {once:true});
 }
 
 // ── Poll maintenance alerts ──
