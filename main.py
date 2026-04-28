@@ -257,22 +257,6 @@ def migrate_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_logs(user_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)")
 
-        # VOICE NOTES (سوبر يوزر → أدمنز أو سائقين)
-        c.execute("""CREATE TABLE IF NOT EXISTS voice_notes(
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender_id    INTEGER NOT NULL,
-            target_group TEXT NOT NULL CHECK(target_group IN('admins','drivers')),
-            audio_data   TEXT NOT NULL,
-            duration_sec REAL DEFAULT 0,
-            created_at   TEXT NOT NULL,
-            expires_at   TEXT NOT NULL,
-            play_count   INTEGER DEFAULT 0,
-            max_plays    INTEGER DEFAULT 2,
-            is_deleted   INTEGER DEFAULT 0
-        )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
-
         # Safe migrations for existing columns
         _safe_add_columns(c)
 
@@ -426,6 +410,36 @@ def _safe_add_columns(c):
         FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
+
+    # ── جدول سجل تاريخ الصيانة (جديد — للكاوتش والبطارية والصيانة الخاصة) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS maintenance_history (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id       INTEGER,
+        plate            TEXT NOT NULL,
+        maintenance_type TEXT NOT NULL,
+        odometer         REAL,
+        cost             REAL DEFAULT 0,
+        notes            TEXT DEFAULT '',
+        done_by          TEXT DEFAULT '',
+        created_at       TEXT DEFAULT(datetime('now')),
+        FOREIGN KEY (vehicle_id) REFERENCES cars(id) ON DELETE SET NULL
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_maint_hist_vid ON maintenance_history(vehicle_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_maint_hist_type ON maintenance_history(maintenance_type)")
+
+    # ── جدول سجل دُفعات الاستيراد (لإمكانية التراجع والحذف) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS import_batches (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        import_type TEXT    NOT NULL,
+        filename    TEXT    DEFAULT '',
+        plates      TEXT    DEFAULT '',
+        row_count   INTEGER DEFAULT 0,
+        imported_by TEXT    DEFAULT '',
+        imported_at TEXT    DEFAULT(datetime('now')),
+        notes       TEXT    DEFAULT ''
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_batches_type ON import_batches(import_type)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_batches_at   ON import_batches(imported_at)")
 
     # ── تصحيح السجلات القديمة: price كان سعر/وحدة، دلوقتي يبقى إجمالي ──
     # نضرب السجلات اللي price فيها صغيرة (< 200) وعندها كمية > 0
@@ -802,18 +816,12 @@ SUPERUSERS = [
 ]
 
 def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
-    """Ensure exactly the given accounts exist for a role.
-    Removes accounts no longer in the list, adds missing ones.
-    Skips rehashing on restart for accounts that already exist.
+    """Ensure the given hardcoded accounts exist for a role.
+    ⚠️ لا تمسح — فقط تضيف اللي ناقص من الحسابات الثابتة.
+    الحسابات المضافة من الـ superuser panel لا تُمس.
     """
-    c.execute("SELECT id, username FROM users WHERE role=?", (role,))
-    existing = {r["username"]: r["id"] for r in c.fetchall()}
-    allowed  = {u for u, _ in accounts}
-
-    for uname, uid in list(existing.items()):
-        if uname not in allowed:
-            c.execute("DELETE FROM users WHERE id=?", (uid,))
-            log.info(f"Removed old {role}: {uname}")
+    c.execute("SELECT username FROM users WHERE role=?", (role,))
+    existing = {r["username"] for r in c.fetchall()}
 
     for uname, pw in accounts:
         if uname not in existing:
@@ -1890,6 +1898,100 @@ async def set_prices(body: dict, cu: dict = Depends(require_superuser)):
 # ══════════════════════════════════════════════════════
 # 22. ADMIN — RESET DATA (protected with password)
 # ══════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════
+# IMPORT BATCHES — سجل الاستيرادات مع إمكانية الحذف الكامل
+# ══════════════════════════════════════════════════════
+
+import json as _json
+
+@app.get("/import/batches")
+async def list_import_batches(cu: dict = Depends(require_admin)):
+    """عرض كل دُفعات الاستيراد السابقة."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT id, import_type, filename, row_count,
+                            imported_by, imported_at, notes
+                     FROM import_batches
+                     ORDER BY imported_at DESC LIMIT 100""")
+        rows = [dict(r) for r in c.fetchall()]
+    return rows
+
+
+@app.delete("/import/batches/{batch_id}")
+async def delete_import_batch(batch_id: int, cu: dict = Depends(require_admin)):
+    """حذف دُفعة استيراد كاملة — يمسح السيارات والصيانة المرتبطة."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM import_batches WHERE id=?", (batch_id,))
+        batch = c.fetchone()
+        if not batch:
+            raise HTTPException(404, "الدُفعة غير موجودة")
+
+        import_type = batch["import_type"]
+        plates_raw  = batch["plates"] or "[]"
+        try:
+            plates = _json.loads(plates_raw)
+        except Exception:
+            plates = []
+
+        deleted_cars = deleted_maint = 0
+
+        if import_type == "cars" and plates:
+            placeholders = ",".join("?" * len(plates))
+            # جيب الـ IDs أولاً
+            c.execute(f"SELECT id FROM cars WHERE plate IN ({placeholders})", plates)
+            car_ids = [r["id"] for r in c.fetchall()]
+            if car_ids:
+                ids_ph = ",".join("?" * len(car_ids))
+                # امسح الصيانة المرتبطة
+                c.execute(f"DELETE FROM maintenance_schedule WHERE car_id IN ({ids_ph})", car_ids)
+                deleted_maint += conn.execute("SELECT changes()").fetchone()[0]
+                c.execute(f"DELETE FROM maintenance_history WHERE vehicle_id IN ({ids_ph})", car_ids)
+                # امسح الصلاحيات والرحلات المرتبطة
+                c.execute(f"DELETE FROM driver_car_permissions WHERE car_id IN ({ids_ph})", car_ids)
+                c.execute(f"DELETE FROM trips WHERE car_id IN ({ids_ph})", car_ids)
+                c.execute(f"DELETE FROM workshop_records WHERE vehicle_id IN ({ids_ph})", car_ids)
+                # امسح السيارات
+                c.execute(f"DELETE FROM cars WHERE id IN ({ids_ph})", car_ids)
+                deleted_cars = conn.execute("SELECT changes()").fetchone()[0]
+
+        elif import_type == "maintenance" and plates:
+            placeholders = ",".join("?" * len(plates))
+            c.execute(f"SELECT id FROM cars WHERE plate IN ({placeholders})", plates)
+            car_ids = [r["id"] for r in c.fetchall()]
+            if car_ids:
+                ids_ph = ",".join("?" * len(car_ids))
+                c.execute(f"DELETE FROM maintenance_schedule WHERE car_id IN ({ids_ph})", car_ids)
+                deleted_maint = conn.execute("SELECT changes()").fetchone()[0]
+                c.execute(f"DELETE FROM maintenance_history WHERE vehicle_id IN ({ids_ph})", car_ids)
+
+        # امسح سجل الدُفعة
+        c.execute("DELETE FROM import_batches WHERE id=?", (batch_id,))
+
+        log_event("import_batch_deleted",
+                  batch_id=batch_id, import_type=import_type,
+                  deleted_cars=deleted_cars, deleted_maint=deleted_maint,
+                  admin=cu["username"])
+
+        return {
+            "ok": True,
+            "deleted_cars": deleted_cars,
+            "deleted_maintenance_records": deleted_maint,
+            "message": f"تم حذف {deleted_cars} سيارة و {deleted_maint} سجل صيانة"
+        }
+
+
+def _save_import_batch(import_type: str, filename: str,
+                       plates: list, row_count: int, username: str, notes: str = ""):
+    """يُسجّل عملية الاستيراد في import_batches."""
+    with get_db() as conn:
+        conn.execute("""INSERT INTO import_batches
+                        (import_type, filename, plates, row_count, imported_by, notes)
+                        VALUES (?,?,?,?,?,?)""",
+                     (import_type, filename, _json.dumps(plates, ensure_ascii=False),
+                      row_count, username, notes))
+
 
 @app.post("/admin/reset-data")
 @limiter.limit("3/hour")   # extra throttle on dangerous endpoint
@@ -3041,6 +3143,17 @@ async def import_confirm(
                     request.client.host if request.client else "")
     log_event("import_confirmed", import_type=import_type,
               inserted=len(inserted), skipped=len(skipped_rows), admin=cu["username"])
+
+    # سجّل الدُفعة عشان نقدر نحذفها بعدين
+    if import_type == "cars" and inserted:
+        _save_import_batch(
+            import_type="cars",
+            filename=file.filename or "unknown.csv",
+            plates=[item.get("plate","") for item in inserted if item.get("plate")],
+            row_count=len(inserted),
+            username=cu["username"]
+        )
+
     return {
         "import_type": import_type,
         "inserted": len(inserted),
@@ -3075,6 +3188,225 @@ async def import_template(import_type: str, cu: dict = Depends(require_admin)):
         content=csv_content.encode("utf-8-sig"),   # utf-8-sig for Excel compatibility
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={import_type}_template.csv"}
+    )
+
+
+# ══════════════════════════════════════════════════════
+# 30-B. MAINTENANCE PLAN IMPORT — CSV من الشيت الخارجي
+#     يستورد خطة الصيانة (زيت + فلاتر + كاوتش + بطارية)
+#     مباشرةً إلى maintenance_schedule بناءً على رقم اللوحة
+# ══════════════════════════════════════════════════════
+
+MAINT_CSV_COLS = [
+    "رقم_اللوحة", "نوع_السيارة", "الفرع", "الحالة",
+    "عداد_آخر_الشهر", "عداد_آخر_صيانة_زيت", "معدل_تغيير_الزيت_كم",
+    "كم_منذ_آخر_صيانة", "متبقي_للصيانة_كم",
+    "عداد_آخر_كاوتش", "سعر_الكاوتش_جنيه",
+    "عداد_آخر_بطارية", "سعر_البطارية_جنيه",
+    "عداد_آخر_فلتر_زيت", "سعر_فلتر_الزيت_جنيه", "معدل_فلتر_الزيت_كم",
+    "عداد_آخر_فلتر_جاز", "سعر_فلتر_الجاز_جنيه", "معدل_فلتر_الجاز_كم",
+    "عداد_آخر_فلتر_هواء", "سعر_فلتر_الهواء_جنيه", "معدل_فلتر_الهواء_كم",
+]
+
+def _parse_maint_row(row: dict, idx: int, cars_map: dict) -> dict:
+    """تحويل صف CSV — الصف valid دائماً طالما فيه لوحة.
+    البيانات الناقصة تترفع NULL.
+    اللوحة غير المسجلة = warning فقط، تتجاهل عند الرفع.
+    """
+    errors   = []
+    warnings = []
+    plate    = str(row.get("رقم_اللوحة") or "").strip()
+
+    def _n(key):
+        v = row.get(key)
+        if v is None or str(v).strip() in ("", "nan", "None", "—", "-"):
+            return None
+        try:
+            return float(str(v).replace(",", "").strip())
+        except Exception:
+            return None
+
+    car_id = cars_map.get(plate)
+    if not plate:
+        errors.append("رقم اللوحة مطلوب")
+    elif car_id is None:
+        warnings.append(f"اللوحة '{plate}' غير مسجلة في السيستم — سيتم تجاهلها")
+
+    last_maint_odo = _n("عداد_آخر_صيانة_زيت")
+    oil_interval   = _n("معدل_تغيير_الزيت_كم") or 3500
+
+    return {
+        "row_index":            idx,
+        "plate":                plate,
+        "car_id":               car_id,
+        "vehicle_type":         str(row.get("نوع_السيارة") or "").strip(),
+        "current_odometer":     _n("عداد_آخر_الشهر"),
+        "last_oil_change_odo":  last_maint_odo,
+        "oil_interval":         oil_interval,
+        "last_oil_filter_odo":  _n("عداد_آخر_فلتر_زيت"),
+        "oil_filter_price":     _n("سعر_فلتر_الزيت_جنيه") or 0,
+        "oil_filter_interval":  _n("معدل_فلتر_الزيت_كم") or 7000,
+        "last_gas_filter_odo":  _n("عداد_آخر_فلتر_جاز"),
+        "gas_filter_price":     _n("سعر_فلتر_الجاز_جنيه") or 0,
+        "gas_filter_interval":  _n("معدل_فلتر_الجاز_كم") or 3500,
+        "last_air_filter_odo":  _n("عداد_آخر_فلتر_هواء"),
+        "air_filter_price":     _n("سعر_فلتر_الهواء_جنيه") or 0,
+        "air_filter_interval":  _n("معدل_فلتر_الهواء_كم") or 10000,
+        "last_tire_odo":        _n("عداد_آخر_كاوتش"),
+        "tire_price":           _n("سعر_الكاوتش_جنيه") or 0,
+        "last_battery_odo":     _n("عداد_آخر_بطارية"),
+        "battery_price":        _n("سعر_البطارية_جنيه") or 0,
+        "valid":                len(errors) == 0,
+        "errors":               errors,
+        "warnings":             warnings,
+    }
+
+
+def _upsert_maint_schedule(c, car_id: int, maint_type: str,
+                            interval_km: float, last_done_km, price_note: str = ""):
+    """أضف أو حدّث صف في maintenance_schedule."""
+    if last_done_km is None:
+        last_done_km = 0
+    now = datetime.utcnow().isoformat() + "Z"
+    c.execute("SELECT id FROM maintenance_schedule WHERE car_id=? AND maintenance_type=?",
+              (car_id, maint_type))
+    existing = c.fetchone()
+    if existing:
+        c.execute("""UPDATE maintenance_schedule
+                     SET interval_km=?, last_done_km=?, updated_at=?, notes=?
+                     WHERE car_id=? AND maintenance_type=?""",
+                  (interval_km, last_done_km, now, price_note, car_id, maint_type))
+    else:
+        c.execute("""INSERT INTO maintenance_schedule
+                     (car_id, maintenance_type, interval_km, last_done_km,
+                      alert_km_before, notes, created_at, updated_at)
+                     VALUES(?,?,?,?,500,?,?,?)""",
+                  (car_id, maint_type, interval_km, last_done_km, price_note, now, now))
+
+
+@app.post("/import/maintenance/preview")
+async def import_maintenance_preview(
+    file: UploadFile = File(...),
+    cu: dict = Depends(require_admin)
+):
+    """استعراض ملف CSV خطة الصيانة قبل الرفع الفعلي."""
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(400, "حجم الملف يتجاوز 5 MB")
+
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ أو لا يحتوي على بيانات")
+
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, plate FROM cars")
+        cars_map = {r["plate"]: r["id"] for r in c.fetchall()}
+
+    rows = [_parse_maint_row(r, i+1, cars_map) for i, r in enumerate(raw_rows)]
+    valid_count   = sum(1 for r in rows if r["valid"])
+    invalid_count = len(rows) - valid_count
+
+    log_event("import_maintenance_preview", total=len(rows), valid=valid_count, admin=cu["username"])
+    return {
+        "import_type": "maintenance",
+        "rows": rows,
+        "summary": {"total": len(rows), "valid": valid_count, "invalid": invalid_count},
+    }
+
+
+@app.post("/import/maintenance/confirm")
+async def import_maintenance_confirm(
+    file: UploadFile = File(...),
+    skip_errors: bool = False,
+    cu: dict = Depends(require_admin)
+):
+    """تأكيد رفع خطة الصيانة — يُضيف أو يُحدّث maintenance_schedule."""
+    content = await file.read()
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ")
+
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, plate FROM cars")
+        cars_map = {r["plate"]: r["id"] for r in c.fetchall()}
+        rows = [_parse_maint_row(r, i+1, cars_map) for i, r in enumerate(raw_rows)]
+
+        # الصفوف اللي فيها errors حقيقية (لوحة فاضية)
+        hard_errors = [r for r in rows if not r["valid"]]
+        if hard_errors and not skip_errors:
+            raise HTTPException(422, {"message": "يوجد صفوف تحتوي أخطاء", "errors": hard_errors})
+
+        inserted = updated = skipped = 0
+        MAINT_MAP = [
+            ("oil",         "oil_interval",         "last_oil_change_odo",  ""),
+            ("oil_filter",  "oil_filter_interval",  "last_oil_filter_odo",  "oil_filter_price"),
+            ("gas_filter",  "gas_filter_interval",  "last_gas_filter_odo",  "gas_filter_price"),
+            ("air_filter",  "air_filter_interval",  "last_air_filter_odo",  "air_filter_price"),
+            ("tire",        None,                   "last_tire_odo",        "tire_price"),
+            ("battery",     None,                   "last_battery_odo",     "battery_price"),
+        ]
+
+        for r in rows:
+            # تجاهل الصفوف اللي لوحتها مش موجودة في السيستم (warnings)
+            if not r["valid"] or r.get("car_id") is None:
+                skipped += 1
+                continue
+            car_id = r["car_id"]
+            for m_type, interval_key, last_odo_key, price_key in MAINT_MAP:
+                interval = r.get(interval_key) or 0
+                last_odo = r.get(last_odo_key)
+                price_note = f"سعر: {r.get(price_key) or 0} جنيه" if price_key else ""
+
+                c.execute("SELECT id FROM maintenance_schedule WHERE car_id=? AND maintenance_type=?",
+                          (car_id, m_type))
+                exists = c.fetchone()
+                _upsert_maint_schedule(c, car_id, m_type, interval, last_odo, price_note)
+                if exists:
+                    updated += 1
+                else:
+                    inserted += 1
+
+    log_event("import_maintenance_confirm",
+              inserted=inserted, updated=updated, skipped=skipped, admin=cu["username"])
+
+    # سجّل الدُفعة عشان نقدر نحذفها بعدين
+    processed_plates = [r["plate"] for r in rows if r.get("car_id") is not None]
+    if processed_plates:
+        _save_import_batch(
+            import_type="maintenance",
+            filename=file.filename or "maintenance.csv",
+            plates=processed_plates,
+            row_count=inserted + updated,
+            username=cu["username"]
+        )
+
+    return {
+        "ok": True,
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"تم: {inserted} جديد، {updated} محدَّث، {skipped} متجاهل"
+    }
+
+
+@app.get("/import/template/maintenance")
+async def maintenance_template(cu: dict = Depends(require_admin)):
+    """تحميل قالب CSV فارغ لخطة الصيانة."""
+    import io as _io
+    output = _io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(MAINT_CSV_COLS)
+    writer.writerow(["أ-ب-1234","بيك اب","القاهرة","active",
+                     "50000","47000","3500","3000","500",
+                     "30000","2000","20000","1500",
+                     "47000","200","7000","47000","180","3500","47000","150","10000"])
+    from fastapi.responses import Response
+    return Response(
+        content=output.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=maintenance_template.csv"}
     )
 
 
@@ -3209,233 +3541,6 @@ async def import_permissions_template(cu: dict = Depends(require_admin)):
 
 
 # ══════════════════════════════════════════════════════
-# ══════════════════════════════════════════════════════
-# 31. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
-# ══════════════════════════════════════════════════════
-@app.get("/cars/{car_id}/last-odometer")
-async def get_last_odometer(car_id: int, cu: dict = Depends(get_user)):
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""SELECT end_odometer FROM trips
-                     WHERE car_id=? AND end_odometer IS NOT NULL AND end_odometer > 0
-                     ORDER BY end_time DESC LIMIT 1""", (car_id,))
-        row = c.fetchone()
-    return {"car_id": car_id, "last_odometer": row["end_odometer"] if row else None}
-
-
-# ══════════════════════════════════════════════════════
-# 32. FRAUD DETECTION — كشف التلاعب
-# ══════════════════════════════════════════════════════
-@app.get("/reports/fraud-detection")
-async def fraud_detection(cu: dict = Depends(require_superuser)):
-    """تحليل شامل لكشف التلاعب المحتمل في البيانات."""
-    with get_db() as conn:
-        c = conn.cursor()
-
-        # 1. عداد النهاية أقل من عداد البداية (تلاعب صريح)
-        c.execute("""SELECT t.id, t.start_odometer, t.end_odometer,
-                            t.start_time, t.end_time,
-                            d.name driver_name, d.fixed_number,
-                            ca.plate
-                     FROM trips t
-                     JOIN drivers d ON d.id=t.driver_id
-                     JOIN cars ca ON ca.id=t.car_id
-                     WHERE t.end_odometer IS NOT NULL
-                       AND t.start_odometer IS NOT NULL
-                       AND t.end_odometer < t.start_odometer""")
-        odometer_reversed = [dict(r) for r in c.fetchall()]
-
-        # 2. رحلات بمسافة مشبوهة (أكثر من 500 كم في رحلة واحدة)
-        c.execute("""SELECT t.id, t.start_odometer, t.end_odometer,
-                            (t.end_odometer - t.start_odometer) AS distance,
-                            t.start_time, t.end_time,
-                            d.name driver_name, d.fixed_number, ca.plate
-                     FROM trips t
-                     JOIN drivers d ON d.id=t.driver_id
-                     JOIN cars ca ON ca.id=t.car_id
-                     WHERE t.end_odometer IS NOT NULL AND t.start_odometer IS NOT NULL
-                       AND (t.end_odometer - t.start_odometer) > 500
-                     ORDER BY distance DESC""")
-        high_distance = [dict(r) for r in c.fetchall()]
-
-        # 3. رحلتان متداخلتان لنفس السائق
-        c.execute("""SELECT a.id id1, b.id id2,
-                            a.start_time, a.end_time,
-                            b.start_time start2, b.end_time end2,
-                            d.name driver_name, d.fixed_number
-                     FROM trips a JOIN trips b ON a.driver_id=b.driver_id AND a.id<b.id
-                     JOIN drivers d ON d.id=a.driver_id
-                     WHERE a.end_time IS NOT NULL AND b.end_time IS NOT NULL
-                       AND a.start_time < b.end_time AND a.end_time > b.start_time""")
-        overlapping = [dict(r) for r in c.fetchall()]
-
-        # 4. رحلتان متداخلتان لنفس المركبة (مع سائقين مختلفين)
-        c.execute("""SELECT a.id id1, b.id id2, ca.plate,
-                            da.name driver1, db.name driver2,
-                            a.start_time, a.end_time,
-                            b.start_time start2, b.end_time end2
-                     FROM trips a JOIN trips b ON a.car_id=b.car_id AND a.id<b.id
-                     JOIN cars ca ON ca.id=a.car_id
-                     JOIN drivers da ON da.id=a.driver_id
-                     JOIN drivers db ON db.id=b.driver_id
-                     WHERE a.end_time IS NOT NULL AND b.end_time IS NOT NULL
-                       AND a.start_time < b.end_time AND a.end_time > b.start_time
-                       AND a.driver_id != b.driver_id""")
-        car_overlap = [dict(r) for r in c.fetchall()]
-
-        # 5. رحلة وقتها قصير جداً (<3 دقائق) لكن مسافة كبيرة (>10 كم)
-        c.execute("""SELECT t.id,
-                            (julianday(t.end_time)-julianday(t.start_time))*1440 AS minutes,
-                            (t.end_odometer - t.start_odometer) AS distance,
-                            d.name driver_name, ca.plate,
-                            t.start_time, t.end_time
-                     FROM trips t
-                     JOIN drivers d ON d.id=t.driver_id
-                     JOIN cars ca ON ca.id=t.car_id
-                     WHERE t.end_time IS NOT NULL AND t.end_odometer IS NOT NULL
-                       AND t.start_odometer IS NOT NULL
-                       AND (julianday(t.end_time)-julianday(t.start_time))*1440 < 3
-                       AND (t.end_odometer - t.start_odometer) > 10""")
-        impossible_speed = [dict(r) for r in c.fetchall()]
-
-        # 6. وقود كثير في فترة قصيرة (أكثر من 200 لتر في يوم واحد لنفس المركبة)
-        c.execute("""SELECT vehicle_id, DATE(created_at) AS day,
-                            SUM(quantity) AS total_liters, COUNT(*) AS refills,
-                            ca.plate
-                     FROM workshop_records w
-                     JOIN cars ca ON ca.id=w.vehicle_id
-                     WHERE type LIKE 'fuel_%' AND quantity IS NOT NULL
-                     GROUP BY vehicle_id, day
-                     HAVING total_liters > 200
-                     ORDER BY total_liters DESC""")
-        excess_fuel = [dict(r) for r in c.fetchall()]
-
-        # 7. سائق عدّل طلب عداد أكثر من 3 مرات في أسبوع
-        c.execute("""SELECT driver_id, COUNT(*) AS requests,
-                            d.name driver_name, d.fixed_number,
-                            MIN(created_at) AS first_req
-                     FROM driver_requests
-                     JOIN drivers d ON d.id=driver_requests.driver_id
-                     WHERE type='odometer_change'
-                       AND created_at >= datetime('now','-7 days')
-                     GROUP BY driver_id HAVING requests > 3
-                     ORDER BY requests DESC""")
-        repeated_odometer = [dict(r) for r in c.fetchall()]
-
-    total_alerts = (len(odometer_reversed) + len(overlapping) + len(car_overlap) +
-                    len(impossible_speed) + len(excess_fuel) + len(repeated_odometer))
-    high_risk   = len(odometer_reversed) + len(impossible_speed) + len(car_overlap)
-
-    return {
-        "summary": {
-            "total_alerts": total_alerts,
-            "high_risk":    high_risk,
-            "medium_risk":  len(overlapping) + len(excess_fuel),
-            "low_risk":     len(repeated_odometer) + len(high_distance),
-        },
-        "odometer_reversed":  odometer_reversed,
-        "high_distance":      high_distance,
-        "overlapping_driver": overlapping,
-        "car_overlap":        car_overlap,
-        "impossible_speed":   impossible_speed,
-        "excess_fuel":        excess_fuel,
-        "repeated_odometer":  repeated_odometer,
-    }
-
-
-# ══════════════════════════════════════════════════════
-# 33. VOICE NOTES — رسائل صوتية من السوبر
-# ══════════════════════════════════════════════════════
-class VoiceNoteCreate(BaseModel):
-    target_group: str          # 'admins' | 'drivers'
-    audio_data:   str          # base64
-    duration_sec: float = 0
-    max_plays:    int   = 2    # مرتين افتراضياً
-    hours_ttl:    int   = 24   # يتمسح بعد 24 ساعة
-
-@app.post("/voice-notes")
-async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_superuser)):
-    if body.target_group not in ("admins", "drivers"):
-        raise HTTPException(400, "target_group يجب أن يكون admins أو drivers")
-    now      = datetime.utcnow()
-    expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""INSERT INTO voice_notes(sender_id,target_group,audio_data,
-                     duration_sec,created_at,expires_at,max_plays)
-                     VALUES(?,?,?,?,?,?,?)""",
-                  (cu["user_id"], body.target_group, body.audio_data,
-                   body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
-        note_id = c.lastrowid
-    return {"id": note_id, "expires_at": expires}
-
-@app.get("/voice-notes")
-async def list_voice_notes(cu: dict = Depends(get_user)):
-    role   = cu["role"]
-    now    = datetime.utcnow().isoformat() + "Z"
-
-    # السوبر يشوف اللي أرسلها هو
-    if role == "superuser":
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute("""SELECT id, target_group, duration_sec, created_at,
-                                expires_at, play_count, max_plays, is_deleted
-                         FROM voice_notes WHERE sender_id=?
-                         ORDER BY created_at DESC""", (cu["user_id"],))
-            return [dict(r) for r in c.fetchall()]
-
-    # أدمن → يشوف اللي للـ admins
-    if role in ("admin","reporter","superuser","supervisor_workshop","supervisor_field"):
-        group = "admins"
-    elif role == "driver":
-        group = "drivers"
-    else:
-        return []
-
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                            play_count, max_plays, audio_data
-                     FROM voice_notes
-                     WHERE target_group=? AND is_deleted=0
-                       AND expires_at > ? AND play_count < max_plays
-                     ORDER BY created_at DESC""", (group, now))
-        return [dict(r) for r in c.fetchall()]
-
-@app.post("/voice-notes/{note_id}/play")
-async def play_voice_note(note_id: int, cu: dict = Depends(get_user)):
-    """تسجّل تشغيل — وتمسح لو وصلت الحد."""
-    now = datetime.utcnow().isoformat() + "Z"
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT play_count, max_plays, is_deleted, expires_at FROM voice_notes WHERE id=?", (note_id,))
-        row = c.fetchone()
-        if not row:                    raise HTTPException(404, "الرسالة غير موجودة")
-        if row["is_deleted"]:          raise HTTPException(410, "الرسالة تم حذفها")
-        if row["expires_at"] < now:    raise HTTPException(410, "انتهت صلاحية الرسالة")
-        new_count = row["play_count"] + 1
-        if new_count >= row["max_plays"]:
-            c.execute("UPDATE voice_notes SET play_count=?, is_deleted=1 WHERE id=?", (new_count, note_id))
-        else:
-            c.execute("UPDATE voice_notes SET play_count=? WHERE id=?", (new_count, note_id))
-    return {"play_count": new_count, "deleted": new_count >= row["max_plays"]}
-
-@app.delete("/voice-notes/{note_id}")
-async def delete_voice_note(note_id: int, cu: dict = Depends(require_superuser)):
-    with get_db() as conn:
-        conn.cursor().execute("UPDATE voice_notes SET is_deleted=1 WHERE id=? AND sender_id=?",
-                              (note_id, cu["user_id"]))
-    return {"deleted": True}
-
-@app.delete("/voice-notes/cleanup/expired")
-async def cleanup_expired_notes(cu: dict = Depends(require_superuser)):
-    now = datetime.utcnow().isoformat() + "Z"
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("DELETE FROM voice_notes WHERE expires_at < ? OR is_deleted=1", (now,))
-        return {"deleted": c.rowcount}
-
-
 # 24. ENTRY POINT
 # ══════════════════════════════════════════════════════
 
