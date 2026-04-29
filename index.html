@@ -5060,7 +5060,7 @@ async function saveTypePrices() {
 function openPricesPopup(currentPrices) {
   const FUEL_KEYS = ['fuel_solar','fuel_92','fuel_95','fuel_80','fuel_cng'];
   const isSup = isSuperuser();
-  const isAdm = isAdmin();
+  const isAdm = isAdminOrSuper() && !isSuperuser(); // admin only (not superuser)
 
   // Admin ومفيش superuser → ممكن يعدل الصيانة بس لا الوقود
   // Superuser → يعدل كل حاجة
