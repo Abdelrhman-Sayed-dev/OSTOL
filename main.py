@@ -1315,9 +1315,9 @@ async def get_trips(cu: dict = Depends(get_user), branch: Optional[str] = None):
                 c.execute("""SELECT t.* FROM trips t
                              JOIN drivers d ON t.driver_id=d.id
                              WHERE d.branch=?
-                             ORDER BY t.id DESC LIMIT 500""", (branch,))
+                             ORDER BY t.id DESC LIMIT 2000""", (branch,))
             else:
-                c.execute("SELECT * FROM trips ORDER BY id DESC LIMIT 500")
+                c.execute("SELECT * FROM trips ORDER BY id DESC LIMIT 2000")
         else:
             did = cu.get("driver_id")
             if not did: return []
