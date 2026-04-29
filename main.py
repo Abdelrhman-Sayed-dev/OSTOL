@@ -4071,6 +4071,51 @@ async def monthly_report(
             })
         cars_report.sort(key=lambda x: -x["total_cost"])
 
+        # ── سائقو كل مركبة خلال الشهر ──
+        drivers_per_car: dict = {}
+        if car_ids:
+            c.execute(f"""SELECT t.car_id, t.driver_id, d.name, d.fixed_number,
+                                 MIN(t.start_time) as first_trip,
+                                 MAX(COALESCE(t.end_time, t.start_time)) as last_trip
+                          FROM trips t
+                          JOIN drivers d ON d.id = t.driver_id
+                          WHERE t.car_id IN ({car_ph}) AND t.start_time LIKE ?
+                          GROUP BY t.car_id, t.driver_id
+                          ORDER BY t.car_id, first_trip""", car_ids + [like])
+            for row in c.fetchall():
+                cid = row["car_id"]
+                if cid not in drivers_per_car:
+                    drivers_per_car[cid] = []
+                # تنسيق الفترة
+                ft = row["first_trip"][:10] if row["first_trip"] else ""
+                lt = row["last_trip"][:10]  if row["last_trip"]  else ""
+                period = ft if ft == lt else f"{ft} → {lt}"
+                drivers_per_car[cid].append({
+                    "driver_id":   row["driver_id"],
+                    "name":        row["name"],
+                    "fixed_number":row["fixed_number"] or "",
+                    "period":      period,
+                })
+
+        # أيضاً نضيف trips و km لكل مركبة من trips
+        if car_ids:
+            c.execute(f"""SELECT car_id,
+                                 COUNT(*) as trip_count,
+                                 SUM(CASE WHEN end_odometer > start_odometer
+                                          THEN end_odometer - start_odometer ELSE 0 END) as total_km
+                          FROM trips
+                          WHERE car_id IN ({car_ph}) AND start_time LIKE ?
+                          GROUP BY car_id""", car_ids + [like])
+            car_trip_stats = {r["car_id"]: dict(r) for r in c.fetchall()}
+            for car in cars_report:
+                cts = car_trip_stats.get(car["car_id"], {})
+                car["trips"] = cts.get("trip_count", 0)
+                car["km"]    = round(cts.get("total_km", 0), 1)
+        else:
+            for car in cars_report:
+                car["trips"] = 0
+                car["km"] = 0.0
+
     return {
         "month":         month,
         "branch":        eff_branch or "كل الفروع",
@@ -4087,4 +4132,5 @@ async def monthly_report(
         },
         "drivers": drivers_report,
         "cars":    cars_report,
+        "drivers_per_car": drivers_per_car,
     }
