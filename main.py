@@ -1142,6 +1142,36 @@ async def delete_driver(did: int, cu: dict = Depends(require_admin)):
         log_event("driver_deleted", driver_id=did, admin=cu["username"])
         return {"message": "تم الحذف"}
 
+@app.put("/drivers/{did}/license")
+async def update_driver_license(did: int, body: dict, cu: dict = Depends(require_admin)):
+    """
+    تحديث بيانات الرخصة من الأدمن.
+    Input: { license_type: 'driver'|'vehicle', renewal_date: str, new_expiry_date: str }
+    """
+    license_type    = (body.get("license_type") or "").strip()
+    renewal_date    = (body.get("renewal_date") or "").strip()
+    new_expiry_date = (body.get("new_expiry_date") or "").strip()
+
+    if license_type not in ("driver", "vehicle"):
+        raise HTTPException(400, "نوع الرخصة غير صالح — driver أو vehicle")
+    if not new_expiry_date:
+        raise HTTPException(400, "تاريخ انتهاء الرخصة الجديد مطلوب")
+
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM drivers WHERE id=?", (did,))
+        if not c.fetchone():
+            raise HTTPException(404, "السائق غير موجود")
+        if license_type == "driver":
+            c.execute("UPDATE drivers SET driver_license_expiry=? WHERE id=?",
+                      (new_expiry_date, did))
+        else:
+            c.execute("UPDATE drivers SET vehicle_license_expiry=? WHERE id=?",
+                      (new_expiry_date, did))
+        log_event("license_renewed", driver_id=did, type=license_type,
+                  renewal_date=renewal_date, new_expiry=new_expiry_date, admin=cu["username"])
+        return {"ok": True, "license_type": license_type, "new_expiry_date": new_expiry_date}
+
 @app.put("/drivers/{did}/credentials")
 async def update_credentials(did: int, body: dict, cu: dict = Depends(require_admin)):
     new_username = (body.get("username") or "").strip()
@@ -1301,6 +1331,76 @@ async def delete_permission(pid: int, cu: dict = Depends(require_admin)):
         conn.cursor().execute("DELETE FROM driver_car_permissions WHERE id=?", (pid,))
         return {"ok": True}
 
+@app.post("/permissions/reassign")
+async def reassign_permission(body: dict, cu: dict = Depends(require_superuser)):
+    """
+    إعادة تخصيص مركبة من سائق لآخر.
+    Input: { fixed_number: str, plate: str }
+    - يجيب بيانات السائق الحالي والمركبة
+    - بعد التأكيد يُلغي الصلاحية القديمة ويضيف الجديدة
+    """
+    fixed_number = (body.get("fixed_number") or "").strip()
+    plate        = (body.get("plate") or "").strip()
+    confirm      = body.get("confirm", False)
+
+    if not fixed_number or not plate:
+        raise HTTPException(400, "الرقم الثابت ورقم اللوحة مطلوبان")
+
+    with get_db() as conn:
+        c = conn.cursor()
+        # جيب السائق الجديد
+        c.execute("SELECT id, name, branch FROM drivers WHERE fixed_number=?", (fixed_number,))
+        new_driver = c.fetchone()
+        if not new_driver:
+            raise HTTPException(404, f"لا يوجد سائق بالرقم الثابت '{fixed_number}'")
+
+        # جيب المركبة
+        c.execute("SELECT id, plate, model, car_name FROM cars WHERE plate=?", (plate,))
+        car = c.fetchone()
+        if not car:
+            raise HTTPException(404, f"لا توجد مركبة بلوحة '{plate}'")
+
+        # جيب السائق الحالي المرتبط بالمركبة
+        c.execute("""SELECT p.id as perm_id, d.id as driver_id, d.name as driver_name,
+                            d.fixed_number as driver_fixed
+                     FROM driver_car_permissions p
+                     JOIN drivers d ON d.id=p.driver_id
+                     WHERE p.car_id=?
+                     ORDER BY p.id DESC""", (car["id"],))
+        current_perms = [dict(r) for r in c.fetchall()]
+
+        if not confirm:
+            # مرحلة الاستعراض فقط
+            return {
+                "car": dict(car),
+                "new_driver": dict(new_driver),
+                "current_permissions": current_perms,
+                "message": "راجع البيانات ثم أرسل مع confirm=true للتنفيذ"
+            }
+
+        # مرحلة التنفيذ
+        # احذف كل الصلاحيات القديمة للمركبة
+        c.execute("DELETE FROM driver_car_permissions WHERE car_id=?", (car["id"],))
+        deleted_count = conn.execute("SELECT changes()").fetchone()[0]
+
+        # أضف الصلاحية الجديدة
+        c.execute("INSERT OR IGNORE INTO driver_car_permissions(driver_id, car_id) VALUES(?,?)",
+                  (new_driver["id"], car["id"]))
+
+        log_event("permission_reassigned",
+                  car_id=car["id"], plate=plate,
+                  new_driver_id=new_driver["id"], new_driver_name=new_driver["name"],
+                  deleted_old_perms=deleted_count,
+                  superuser=cu["username"])
+
+        return {
+            "ok": True,
+            "car": dict(car),
+            "new_driver": dict(new_driver),
+            "deleted_old_permissions": deleted_count,
+            "message": f"✅ تم إعادة تخصيص '{plate}' للسائق '{new_driver['name']}' بنجاح"
+        }
+
 # ══════════════════════════════════════════════════════
 # 16. TRIPS — with pagination
 # ══════════════════════════════════════════════════════
@@ -1391,6 +1491,9 @@ async def end_trip(te: TripEnd, cu: dict = Depends(get_user)):
             raise HTTPException(403, "لا يمكنك إنهاء رحلة سائق آخر")
         if te.end_odometer <= trip["start_odometer"]:
             raise HTTPException(400, f"عداد النهاية يجب أن يكون أكبر من {trip['start_odometer']}")
+        MAX_TRIP_KM = 1500
+        if (te.end_odometer - trip["start_odometer"]) > MAX_TRIP_KM:
+            raise HTTPException(400, f"المسافة المدخلة ({round(te.end_odometer - trip['start_odometer'], 1)} كم) تتجاوز الحد الأقصى المسموح به ({MAX_TRIP_KM} كم للرحلة الواحدة) — يرجى التحقق من قراءة العداد")
         now = datetime.utcnow().isoformat() + "Z"
         c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,notes=? WHERE id=?",
                   (now, te.end_odometer, te.end_location, te.notes, te.trip_id))
@@ -1456,6 +1559,8 @@ async def end_current(body: dict, cu: dict = Depends(get_user)):
             raise HTTPException(404, "لا توجد رحلة نشطة")
         if end_odo is None or end_odo <= active["start_odometer"]:
             raise HTTPException(400, "عداد النهاية يجب أن يكون أكبر من البداية")
+        if (end_odo - active["start_odometer"]) > 1500:
+            raise HTTPException(400, f"المسافة ({round(end_odo - active['start_odometer'], 1)} كم) تتجاوز الحد الأقصى 1500 كم — تحقق من القراءة")
         c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,notes=? WHERE id=?",
                   (now, end_odo, loc, notes, active["id"]))
         c.execute("SELECT * FROM trips WHERE id=?", (active["id"],))
@@ -2205,15 +2310,19 @@ REQUEST_TYPES = {
     "odometer_change": "تغيير قراءة العداد",
     "permission":      "طلب إذن",
     "leave":           "طلب إجازة",
+    "license_renew":   "تجديد رخصة",
     "other":           "طلب آخر",
 }
 
 @app.post("/requests", status_code=201)
 async def create_request(body: dict, cu: dict = Depends(get_user)):
-    req_type     = (body.get("type") or "").strip()
-    notes        = (body.get("notes") or "").strip()
-    new_odometer = body.get("new_odometer")
-    trip_id      = body.get("trip_id")
+    req_type       = (body.get("type") or "").strip()
+    notes          = (body.get("notes") or "").strip()
+    new_odometer   = body.get("new_odometer")
+    trip_id        = body.get("trip_id")
+    renewal_date   = (body.get("renewal_date") or "").strip()     # تاريخ التجديد الفعلي
+    new_expiry_date= (body.get("new_expiry_date") or "").strip()  # تاريخ الانتهاء الجديد
+    license_type   = (body.get("license_type") or "").strip()     # driver | vehicle
 
     if req_type not in REQUEST_TYPES:
         raise HTTPException(400, "نوع الطلب غير صالح")
@@ -2221,6 +2330,17 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
     driver_id = cu.get("driver_id")
     if not driver_id:
         raise HTTPException(403, "فقط السائقون يمكنهم تقديم الطلبات")
+
+    # حقق من صحة تواريخ التجديد
+    if req_type == "license_renew":
+        if not renewal_date:
+            raise HTTPException(400, "تاريخ التجديد مطلوب")
+        if not new_expiry_date:
+            raise HTTPException(400, "تاريخ انتهاء الرخصة الجديد مطلوب")
+        if not license_type:
+            raise HTTPException(400, "نوع الرخصة مطلوب (driver أو vehicle)")
+        # ضيف المعلومات في الملاحظات
+        notes = f"نوع الرخصة: {'رخصة القيادة' if license_type=='driver' else 'رخصة العربة'} | تاريخ التجديد: {renewal_date} | تاريخ الانتهاء الجديد: {new_expiry_date}"
 
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
@@ -2307,7 +2427,44 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
             raise HTTPException(404, "الطلب غير موجود")
 
         if cu["role"] == "admin":
-            # الأدمن يضيف ملاحظاته ويحيل للسوبر — لا يقرر نهائياً
+            # الأدمن يقدر يقرر مباشرة في الإجازات والأذونات وتجديد الرخصة
+            # بس الـ odometer_change والأخرى بتتحال للسوبر
+            direct_types = {"leave", "permission", "license_renew"}
+            req_type = req.get("type", "") if hasattr(req, "get") else dict(req).get("type", "")
+            
+            status_direct = (body.get("status") or "").strip()
+            if status_direct in ("approved", "rejected") and req_type in direct_types:
+                # قرار مباشر من الأدمن
+                admin_msg = (body.get("admin_message") or "").strip()
+                
+                # لو تجديد رخصة وتمت الموافقة — حدّث بيانات السائق
+                if req_type == "license_renew" and status_direct == "approved":
+                    notes_text = dict(req).get("notes", "")
+                    # استخرج تاريخ الانتهاء الجديد من الملاحظات
+                    import re
+                    exp_match = re.search(r'تاريخ الانتهاء الجديد: (\d{4}-\d{2}-\d{2})', notes_text)
+                    type_match = re.search(r'نوع الرخصة: (.+?) \|', notes_text)
+                    if exp_match and type_match:
+                        new_exp = exp_match.group(1)
+                        lic_type_label = type_match.group(1)
+                        driver_id_req = dict(req).get("driver_id")
+                        if "القيادة" in lic_type_label:
+                            c.execute("UPDATE drivers SET driver_license_expiry=? WHERE id=?",
+                                      (new_exp, driver_id_req))
+                        else:
+                            c.execute("UPDATE drivers SET vehicle_license_expiry=? WHERE id=?",
+                                      (new_exp, driver_id_req))
+                
+                c.execute("""UPDATE driver_requests
+                             SET status=?, admin_notes=?, admin_message=?,
+                                 handled_by=?, handled_at=?
+                             WHERE id=?""",
+                          (status_direct, admin_notes, admin_msg, cu["username"], now, rid))
+                log_event("request_decided_by_admin", request_id=rid,
+                          status=status_direct, admin=cu["username"], type=req_type)
+                return {"ok": True, "status": status_direct, "direct": True}
+
+            # الإحالة للسوبر (لأنواع أخرى أو لو الأدمن اختار الإحالة)
             new_status = "pending_super" if forward else req["status"]
             c.execute("""UPDATE driver_requests
                          SET admin_notes=?, admin_message=?, priority=?,
@@ -2419,8 +2576,8 @@ async def operational_report(
             "t.start_odometer IS NOT NULL",
             "t.end_odometer   IS NOT NULL",
             "t.end_odometer    > t.start_odometer",
-            # ✅ تصفية الرحلات الشاذة: المسافة الواحدة يجب أن تكون أقل من 2000 كم
-            "(t.end_odometer - t.start_odometer) < 2000",
+            # ✅ تصفية الرحلات الشاذة: المسافة الواحدة يجب أن تكون أقل من 1500 كم
+            "(t.end_odometer - t.start_odometer) < 1500",
         ]
         params = []
 
@@ -2562,7 +2719,7 @@ async def operational_report_by_driver(
             "t.end_time IS NOT NULL",
             "t.start_odometer IS NOT NULL",
             "t.end_odometer > t.start_odometer",
-            "(t.end_odometer - t.start_odometer) < 2000",
+            "(t.end_odometer - t.start_odometer) < 1500",
         ]
         base_params = [car_id]
         if date_from:
@@ -2652,11 +2809,11 @@ async def operational_report_by_driver(
 @app.get("/reports/anomalous-trips")
 async def anomalous_trips(
     car_id:    Optional[int] = None,
-    threshold: float = 2000.0,          # كم — أي رحلة أكبر من كده تُعتبر شاذة
+    threshold: float = 1500.0,          # كم — أي رحلة أكبر من كده تُعتبر شاذة
     cu: dict = Depends(require_admin_or_reporter)
 ):
     """
-    يُرجع الرحلات التي تجاوزت حدّ المسافة المنطقية (default 2000 كم للرحلة الواحدة).
+    يُرجع الرحلات التي تجاوزت حدّ المسافة المنطقية (default 1500 كم للرحلة الواحدة).
     يُستخدم لاكتشاف قراءات العداد الخاطئة.
     """
     with get_db() as conn:

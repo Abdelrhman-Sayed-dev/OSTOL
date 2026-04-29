@@ -1331,6 +1331,20 @@ const BRANCHES = [
   "الكباري والأعمال التخصصية",
 ];
 
+// ── مشروعات فرع مدينة نصر (من ملف Excel) ──
+const NASR_PROJECTS = [
+  "15مايو","81 حربي","ادارة الفرع","ادارة الكباري","ادارة تأجير المعدات",
+  "ادارة تحريك التربه","ارابكو","اسكان العاصمه","البرلمان","التراخيص",
+  "ك 35","خدمة مشروعات الفرع","العلمين","القطار السريع","القلج",
+  "الكيان العسكري","المحاجر","المركز الثقافي","المركز الرئيسي","النادي",
+  "النهر الاخضر","الورشه المكانيكيه","توكيل ارمادا","توكيل انجينز",
+  "توكيل اوتراك","توكيل كوماتسو","رئاسة القطاع","طب الازهر","فرع القاهره",
+  "فتحة يمن","فرع شرق ووسط","قطاع القاهره الكبري","الروافع",
+  "محطة غرب اكتوبر","محكمة النقض","مخازن بدر","مخزن الكباري",
+  "مونوريل 10","مونوريل 5","مونوريل 4","مونوريل 9",
+  "ورش الاسكندريه","ورش اسماعليه","ورش العمرات","ورش 4.5"
+];
+
 /** يبني <option> tags من قائمة الفروع الثابتة */
 function branchOptions(selected='') {
   return '<option value="">— اختر الفرع / الإدارة —</option>'
@@ -1432,6 +1446,7 @@ function buildAdminNav() {
     base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
+    base.push({id:'super-reassign',    icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
   }
   return base;
@@ -1491,6 +1506,7 @@ async function renderSection(id) {
     case 'super-licenses':  await renderSuperLicenses(); break;
     case 'super-admins':    await renderSuperAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
+    case 'super-reassign':  await renderSuperReassign(); break;
     case 'super-logs':      await renderSuperLogs(); break;
     case 'import-data':     await renderImportSection(); break;
 
@@ -1671,9 +1687,22 @@ async function renderOverview() {
   const today = new Date(); today.setHours(0,0,0,0);
   const days7 = Array.from({length:7},(_,i)=>{
     const d=new Date(today); d.setDate(d.getDate()-6+i);
-    return d.toISOString().split('T')[0];
+    // استخدم التاريخ المحلي بدل UTC عشان اليوم الحالي يتعرض صح
+    const yr = d.getFullYear();
+    const mo = String(d.getMonth()+1).padStart(2,'0');
+    const dy = String(d.getDate()).padStart(2,'0');
+    return `${yr}-${mo}-${dy}`;
   });
-  const tripsPerDay = days7.map(day=>trips.filter(t=>(t.start_time||'').startsWith(day)).length);
+  // فلتر الرحلات بالتاريخ المحلي — نحول start_time للتاريخ المحلي
+  const getLocalDate = isoStr => {
+    if(!isoStr) return '';
+    const d = new Date(isoStr);
+    const yr = d.getFullYear();
+    const mo = String(d.getMonth()+1).padStart(2,'0');
+    const dy = String(d.getDate()).padStart(2,'0');
+    return `${yr}-${mo}-${dy}`;
+  };
+  const tripsPerDay = days7.map(day=>trips.filter(t=>getLocalDate(t.start_time)===day).length);
   const dayLabels = days7.map(d=>{
     const dt=new Date(d+'T00:00:00');
     return dt.toLocaleDateString('ar-EG',{weekday:'short',day:'numeric',month:'numeric'});
@@ -1852,6 +1881,8 @@ async function renderDriversSection() {
                 data-username="${d.username||''}"
                 data-fixed="${d.fixed_number||''}"
                 data-branch="${d.branch||''}">✏️</button>
+              <button class="btn btn-outline btn-sm renew-license" data-id="${d.id}" data-name="${d.name}"
+                title="تجديد رخصة">📋</button>
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
@@ -1861,6 +1892,7 @@ async function renderDriversSection() {
     </div>`;
   document.getElementById('driversList').addEventListener('click', async e=>{
     if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username,b.dataset.fixed,b.dataset.branch); }
+    if(e.target.closest('.renew-license')){ const b=e.target.closest('.renew-license'); openLicenseRenewalModal(+b.dataset.id, b.dataset.name); }
     if(e.target.closest('.del-driver')){ const id=+e.target.closest('.del-driver').dataset.id; if(!confirm('حذف هذا السائق؟')) return; try{ await apiCall(`/drivers/${id}`,'DELETE'); showNotification('تم الحذف','success'); await renderDriversSection(); }catch(e){showNotification(e.message,'error');} }
   });
 }
@@ -1947,6 +1979,63 @@ function openAddDriverModal() {
       closeModal();
       await renderDriversSection();
     }catch(e){ showNotification(e.message,'error'); }
+  };
+}
+
+function openLicenseRenewalModal(driverId, driverName) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📋 تجديد رخصة — ${driverName}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#1d4ed8">
+      💡 أدخل بيانات التجديد وسيتم تحديث سجل السائق فوراً
+    </div>
+    <div class="form-group">
+      <label>نوع الرخصة <span class="req">*</span></label>
+      <select id="licRenewType" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="">— اختر —</option>
+        <option value="driver">🪪 رخصة القيادة</option>
+        <option value="vehicle">🚗 رخصة العربة (رخصة السيارة)</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>تاريخ التجديد الفعلي</label>
+        <input type="date" id="licRenewDate" value="${new Date().toISOString().split('T')[0]}">
+      </div>
+      <div class="form-group">
+        <label>تاريخ الانتهاء الجديد <span class="req">*</span></label>
+        <input type="date" id="licNewExpiry">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="licRenewSave">✅ حفظ التجديد</button>
+    </div>`);
+
+  document.getElementById('licRenewSave').onclick = async () => {
+    const licType    = document.getElementById('licRenewType').value;
+    const renewDate  = document.getElementById('licRenewDate').value;
+    const newExpiry  = document.getElementById('licNewExpiry').value;
+    if(!licType)   return showNotification('اختر نوع الرخصة','error');
+    if(!newExpiry) return showNotification('أدخل تاريخ انتهاء الرخصة الجديد','error');
+    const btn = document.getElementById('licRenewSave');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/drivers/${driverId}/license`,'PUT',{
+        license_type: licType,
+        renewal_date: renewDate,
+        new_expiry_date: newExpiry
+      });
+      const licLabel = licType==='driver'?'رخصة القيادة':'رخصة العربة';
+      showNotification(`✅ تم تجديد ${licLabel} لـ ${driverName} — تنتهي ${newExpiry}`,'success');
+      closeModal();
+      await renderDriversSection();
+    } catch(e) {
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent='✅ حفظ التجديد';
+    }
   };
 }
 
@@ -2270,10 +2359,18 @@ function openAddCarModal(editId='', editCar={}) {
     <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
       <div class="form-group" style="margin-bottom:0">
         <label>المشروع</label>
-        <select id="mCarProject">
-          <option value="">— اختر المشروع —</option>
-          ${NASR_PROJECTS.map(p=>`<option value="${p}" ${p===(editCar.project||'')?'selected':''}>${p}</option>`).join('')}
-        </select>
+        <div style="position:relative">
+          <input id="mCarProjectInput" list="mCarProjectList"
+            value="${editCar.project||''}"
+            placeholder="اكتب أو اختر المشروع..."
+            autocomplete="off"
+            style="width:100%;padding:.62rem .9rem;border:1.5px solid var(--border);border-radius:10px;
+                   font-family:inherit;font-size:.88rem;background:var(--surface-2);color:var(--text)">
+          <datalist id="mCarProjectList">
+            ${NASR_PROJECTS.map(p=>`<option value="${p}">`).join('')}
+          </datalist>
+        </div>
+        <input type="hidden" id="mCarProject" value="${editCar.project||''}">
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>الفرع / الإدارة</label>
@@ -2314,7 +2411,7 @@ function openAddCarModal(editId='', editCar={}) {
     const _cat = document.getElementById('mCarCategory').value;
     const _sub = document.getElementById('mCarSubType').value;
     const equipment_type = _cat && _sub ? `${_cat}|${_sub}` : (_cat||'');
-    const project        = document.getElementById('mCarProject').value.trim();
+    const project        = (document.getElementById('mCarProjectInput')?.value || document.getElementById('mCarProject')?.value || '').trim();
     const branch         = document.getElementById('mCarBranch').value.trim();
     if(!plate||!model) return showNotification('اللوحة والموديل مطلوبان','error');
     if(!_cat) return showNotification('يرجى اختيار التصنيف الرئيسي','error');
@@ -3750,8 +3847,14 @@ async function renderRequestsSection() {
           <!-- أزرار الأدمن -->
           ${isPending&&isAdminRole&&!isReporter()?`
           <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
+            ${(['leave','permission','license_renew'].includes(r.type))?`
+              <button class="btn btn-sm" onclick="adminDirectDecision(${r.id},'approved','${r.type}')"
+                style="background:#10b981;color:white;border:none">✅ قبول مباشر</button>
+              <button class="btn btn-sm" onclick="adminDirectDecision(${r.id},'rejected','${r.type}')"
+                style="background:#ef4444;color:white;border:none">❌ رفض مباشر</button>
+            `:''}
             <button class="btn btn-primary btn-sm" onclick="openAdminRequestModal(${r.id})"
-                    style="background:#3b82f6;border-color:#3b82f6">📤 إضافة ملاحظة وإحالة للسوبر</button>
+                    style="background:#3b82f6;border-color:#3b82f6">📤 إحالة للسوبر</button>
           </div>`:''}
 
           <!-- أزرار السوبر — اتخاذ القرار النهائي -->
@@ -3816,6 +3919,47 @@ function filterRequests(status, btn) {
     const match = status==='all' || card.dataset.status===status || card.dataset.priority===status;
     card.style.display = match ? 'block' : 'none';
   });
+}
+
+// الأدمن: قرار مباشر في الإجازات والأذونات وتجديد الرخصة
+async function adminDirectDecision(rid, status, reqType) {
+  const label = status === 'approved' ? 'قبول' : 'رفض';
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${status==='approved'?'✅':'❌'} ${label} مباشر</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="background:${status==='approved'?'#f0fdf9':'#fef2f2'};border:1.5px solid ${status==='approved'?'#86efac':'#fca5a5'};border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.88rem">
+      ${status==='approved'?'✅ موافقة مباشرة من الأدمن — لا تحتاج موافقة السوبر':'❌ رفض مباشر من الأدمن'}
+    </div>
+    <div class="form-group">
+      <label>رسالة للسائق (اختياري)</label>
+      <textarea id="directMsg" rows="2" placeholder="مثال: تمت الموافقة على طلبك، يمكنك المتابعة"
+        style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn" style="background:${status==='approved'?'#10b981':'#ef4444'};color:white;border:none" id="directDecBtn">
+        ${status==='approved'?'✅ تأكيد القبول':'❌ تأكيد الرفض'}
+      </button>
+    </div>`);
+
+  document.getElementById('directDecBtn').onclick = async () => {
+    const msg = document.getElementById('directMsg').value.trim();
+    const btn = document.getElementById('directDecBtn');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/requests/${rid}`,'PUT',{
+        status, admin_message: msg
+      });
+      showNotification(`✅ تم ${label} الطلب`, 'success');
+      closeModal();
+      await renderRequestsSection();
+    } catch(e) {
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent=`${status==='approved'?'✅':'❌'} تأكيد ${label}`;
+    }
+  };
 }
 
 // الأدمن: إضافة ملاحظة وتحديد الأولوية والإحالة للسوبر
@@ -4157,6 +4301,8 @@ async function renderDriverTrip() {
     const v = parseFloat(inp.value);
     if(!isNaN(v) && v <= startOdo) {
       inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
+    } else if(!isNaN(v) && (v - startOdo) > 1500) {
+      inp.style.borderColor='#f59e0b'; inp.style.color='#d97706';
     } else {
       inp.style.borderColor='#f59e0b'; inp.style.color='#1e3a5f';
     }
@@ -5100,17 +5246,21 @@ async function renderDriverSinglePage() {
 
     <div class="dp-wrap">
 
-      <!-- GREETING -->
-      <div class="dp-top">
-        <div class="dp-avatar">${currentUser.username.charAt(0).toUpperCase()}</div>
-        <div class="dp-greeting">مرحباً، ${currentUser.username}</div>
-        <div class="dp-date"><span>📅</span><span>${dayName}، ${dateStr}</span></div>
-        <div class="dp-car">
-          <span>${primaryCar ? primaryCar.plate : '—'}</span>
-          <span>—</span>
-          <span style="color:#1a1a2e">${primaryCar ? primaryCar.model : 'لا توجد مركبة'}</span>
-          🚛
+      <!-- GREETING — compact bar بدون أفاتار كبير -->
+      <div class="dp-top" style="padding:1rem 1.2rem;display:flex;align-items:center;gap:.75rem;text-align:right">
+        <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#fbbf24);
+                    color:#fff;font-size:1.1rem;font-weight:900;display:flex;align-items:center;
+                    justify-content:center;flex-shrink:0;box-shadow:0 3px 10px rgba(245,158,11,.3)">
+          ${currentUser.username.charAt(0).toUpperCase()}
         </div>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:.95rem;color:#1a1a2e">مرحباً، ${currentUser.username}</div>
+          <div style="font-size:.73rem;color:#94a3b8;margin-top:.1rem">${dayName}، ${dateStr}</div>
+        </div>
+        ${primaryCar ? `<div style="display:inline-flex;align-items:center;gap:.4rem;background:#f1f5f9;
+          border-radius:50px;padding:.35rem .9rem;font-size:.82rem;font-weight:700;color:#1a1a2e;border:1px solid #e2e8f0">
+          🚛 <span dir="ltr">${primaryCar.plate}</span>
+        </div>` : ''}
       </div>
 
       <!-- LICENSE ALERT BANNER -->
@@ -5354,6 +5504,7 @@ async function renderDriverSinglePage() {
       const notes=document.getElementById('dpEndNotes').value.trim();
       if(isNaN(end_odo)||end_odo<=0) return showNotification('أدخل عداد النهاية','error');
       if(end_odo<=startOdo) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+startOdo+' كم)','error');
+      if((end_odo - startOdo) > 1500) return showNotification(`المسافة المدخلة (${Math.round(end_odo-startOdo)} كم) تتجاوز الحد الأقصى 1500 كم للرحلة الواحدة — تحقق من القراءة`,'error');
       const btn=document.getElementById('dpEndOk');
       btn.disabled=true; btn.textContent='⏳ جاري...';
       const loc=await silentGetLocation();
@@ -5424,6 +5575,7 @@ const REQUEST_TYPE_LABELS = {
   odometer_change: '🔢 ادخال خاطئ',
   permission:      '🙋 طلب إذن',
   leave:           '🏖️ طلب إجازة',
+  license_renew:   '📋 تجديد رخصة',
   other:           '📝 طلب آخر',
 };
 const REQUEST_STATUS_MAP = {
@@ -5527,17 +5679,43 @@ function openSubmitRequestModal() {
     </div>
     <div class="form-group">
       <label>نوع الطلب <span class="req">*</span></label>
-      <select id="reqType" onchange="toggleOdometerField()">
+      <select id="reqType" onchange="toggleRequestFields()">
         <option value="">— اختر نوع الطلب —</option>
-        <option value="odometer_change">🔢 ادخال خاطئ</option>
+        <option value="odometer_change">🔢 ادخال خاطئ في العداد</option>
         <option value="permission">🙋 طلب إذن</option>
         <option value="leave">🏖️ طلب إجازة</option>
+        <option value="license_renew">📋 تجديد رخصة</option>
         <option value="other">📝 طلب آخر</option>
       </select>
     </div>
+    <!-- حقل العداد -->
     <div class="form-group" id="odometerField" style="display:none">
       <label>قراءة العداد الصحيحة (كم) <span class="req">*</span></label>
       <input type="number" id="reqOdometer" placeholder="أدخل الرقم الصحيح للعداد" min="0">
+    </div>
+    <!-- حقول تجديد الرخصة -->
+    <div id="licenseRenewFields" style="display:none">
+      <div class="form-group">
+        <label>نوع الرخصة <span class="req">*</span></label>
+        <select id="reqLicType" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+          <option value="">— اختر —</option>
+          <option value="driver">🪪 رخصة القيادة</option>
+          <option value="vehicle">🚗 رخصة العربة</option>
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+        <div class="form-group">
+          <label>تاريخ التجديد الفعلي <span class="req">*</span></label>
+          <input type="date" id="reqRenewalDate">
+        </div>
+        <div class="form-group">
+          <label>تاريخ انتهاء الرخصة الجديد <span class="req">*</span></label>
+          <input type="date" id="reqNewExpiry">
+        </div>
+      </div>
+      <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:.6rem .9rem;font-size:.8rem;color:#1d4ed8;margin-bottom:.5rem">
+        💡 أدخل تاريخ التجديد الفعلي وتاريخ الانتهاء الجديد — الأدمن سيعتمدها ويحدث بياناتك
+      </div>
     </div>
     <div class="form-group">
       <label>ملاحظات / تفاصيل</label>
@@ -5555,13 +5733,22 @@ function openSubmitRequestModal() {
     if(!type) return showNotification('يرجى اختيار نوع الطلب','error');
     if(type==='odometer_change' && !newOdometer)
       return showNotification('يرجى إدخال قراءة العداد الصحيحة','error');
+    const payload = { type, notes, new_odometer: newOdometer ? parseFloat(newOdometer) : null };
+    if(type === 'license_renew') {
+      const licType    = document.getElementById('reqLicType')?.value;
+      const renewDate  = document.getElementById('reqRenewalDate')?.value;
+      const newExpiry  = document.getElementById('reqNewExpiry')?.value;
+      if(!licType)   return showNotification('اختر نوع الرخصة','error');
+      if(!renewDate) return showNotification('أدخل تاريخ التجديد','error');
+      if(!newExpiry) return showNotification('أدخل تاريخ انتهاء الرخصة الجديد','error');
+      payload.license_type    = licType;
+      payload.renewal_date    = renewDate;
+      payload.new_expiry_date = newExpiry;
+    }
     const btn = document.getElementById('reqSubmitBtn');
     btn.disabled=true; btn.textContent='جاري الإرسال...';
     try {
-      await apiCall('/requests','POST',{
-        type, notes,
-        new_odometer: newOdometer ? parseFloat(newOdometer) : null,
-      });
+      await apiCall('/requests','POST', payload);
       showNotification('✅ تم إرسال طلبك للإدارة بنجاح','success');
       closeModal();
       await openMyRequestsModal();
@@ -5572,11 +5759,15 @@ function openSubmitRequestModal() {
   };
 }
 
-function toggleOdometerField() {
+function toggleRequestFields() {
   const t = document.getElementById('reqType').value;
-  const f = document.getElementById('odometerField');
-  if(f) f.style.display = t==='odometer_change' ? 'block' : 'none';
+  const odoF = document.getElementById('odometerField');
+  const licF = document.getElementById('licenseRenewFields');
+  if(odoF) odoF.style.display = t==='odometer_change' ? 'block' : 'none';
+  if(licF) licF.style.display = t==='license_renew'   ? 'block' : 'none';
 }
+
+function toggleOdometerField() { toggleRequestFields(); }
 
 /* Quick action dispatcher */
 async function dpQuick(type) {
@@ -6215,7 +6406,7 @@ async function renderSuperDecisions() {
   try { reqs = await apiCall('/requests'); } catch(e) { reqs=[]; }
   const pending = reqs.filter(r=>r.status==='pending_super');
 
-  const TYPE_LABELS = {odometer_change:'🔢 ادخال خاطئ',permission:'🙋 طلب إذن',leave:'🏖️ طلب إجازة',other:'📝 طلب آخر'};
+  const TYPE_LABELS = {odometer_change:'🔢 ادخال خاطئ',permission:'🙋 طلب إذن',leave:'🏖️ طلب إجازة',license_renew:'📋 تجديد رخصة',other:'📝 طلب آخر'};
   const PRIORITY_LABELS = {urgent:'🔴 عاجل',medium:'🟡 متوسط',deferrable:'🟢 قابل للتأجيل'};
   const PRIORITY_COLORS = {urgent:'#ef4444',medium:'#f59e0b',deferrable:'#10b981'};
 
@@ -6565,6 +6756,121 @@ function renderImportResult(data, importType) {
 /* ══════════════════════════════════════════════════════
    SUPERUSER — سجل الدخول والإجراءات
    ══════════════════════════════════════════════════════ */
+// ══════════════════════════════════════════════════════
+// SUPER — إعادة تخصيص المركبة لسائق جديد
+// ══════════════════════════════════════════════════════
+async function renderSuperReassign() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔄 إعادة تخصيص مركبة لسائق</div>
+      </div>
+      <div style="padding:1.25rem;max-width:540px">
+        <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;padding:1rem;margin-bottom:1.2rem;font-size:.88rem;color:#1d4ed8;line-height:1.7">
+          📋 <strong>كيف يعمل؟</strong><br>
+          ١. أدخل الرقم الثابت للسائق الجديد ورقم لوحة المركبة<br>
+          ٢. راجع البيانات (السائق الحالي والمركبة)<br>
+          ٣. اضغط "تأكيد" لإلغاء الصلاحية القديمة وإضافة الجديدة
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+          <div class="form-group" style="margin:0">
+            <label>الرقم الثابت للسائق الجديد <span class="req">*</span></label>
+            <input id="reassignFixed" placeholder="مثال: 206338"
+              style="width:100%;padding:.7rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.95rem">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>رقم لوحة المركبة <span class="req">*</span></label>
+            <input id="reassignPlate" placeholder="مثال: ر ق د/856" dir="ltr"
+              style="width:100%;padding:.7rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.95rem">
+          </div>
+        </div>
+        <button class="btn btn-primary" id="reassignPreviewBtn" onclick="doReassignPreview()"
+          style="width:100%;font-size:1rem;padding:.85rem">
+          🔍 استعراض البيانات قبل التنفيذ
+        </button>
+        <div id="reassignPreviewArea" style="margin-top:1.5rem"></div>
+      </div>
+    </div>`;
+}
+
+async function doReassignPreview() {
+  const fixed = document.getElementById('reassignFixed').value.trim();
+  const plate = document.getElementById('reassignPlate').value.trim();
+  if(!fixed || !plate) return showNotification('أدخل الرقم الثابت ورقم اللوحة','error');
+
+  const btn = document.getElementById('reassignPreviewBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري البحث...';
+
+  try {
+    const data = await apiCall('/permissions/reassign','POST',{fixed_number: fixed, plate, confirm: false});
+    const area = document.getElementById('reassignPreviewArea');
+
+    const currentPerms = data.current_permissions || [];
+    const permsHtml = currentPerms.length
+      ? currentPerms.map(p=>`<div style="padding:.5rem .8rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;margin-bottom:.4rem;font-size:.85rem">
+          👨‍✈️ <strong>${p.driver_name}</strong> <code style="font-size:.78rem">${p.driver_fixed||'—'}</code>
+          <span style="color:#94a3b8;font-size:.75rem"> — صلاحية #${p.perm_id}</span>
+        </div>`).join('')
+      : '<div style="color:var(--muted);font-size:.85rem">لا توجد صلاحيات حالية</div>';
+
+    area.innerHTML = `
+      <div style="background:#f8fafc;border:1.5px solid var(--border);border-radius:14px;overflow:hidden">
+        <!-- معلومات المركبة -->
+        <div style="padding:.9rem 1.1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem">
+          <span style="font-size:1.5rem">🚗</span>
+          <div>
+            <div style="font-weight:800">${data.car.plate} — ${data.car.model}</div>
+            ${data.car.car_name?`<div style="font-size:.8rem;color:var(--muted)">${data.car.car_name}</div>`:''}
+          </div>
+        </div>
+        <!-- السائق الجديد -->
+        <div style="padding:.9rem 1.1rem;background:#f0fdf9;border-bottom:1px solid #6ee7b7">
+          <div style="font-size:.75rem;color:#065f46;font-weight:700;margin-bottom:.35rem">✅ السائق الجديد</div>
+          <div style="font-weight:800;color:#059669">${data.new_driver.name}</div>
+          <div style="font-size:.78rem;color:var(--muted)">الفرع: ${data.new_driver.branch||'—'}</div>
+        </div>
+        <!-- الصلاحيات الحالية -->
+        <div style="padding:.9rem 1.1rem">
+          <div style="font-size:.75rem;color:#92400e;font-weight:700;margin-bottom:.5rem">
+            ⚠️ الصلاحيات التي ستُلغى (${currentPerms.length})
+          </div>
+          ${permsHtml}
+        </div>
+        <!-- أزرار التأكيد -->
+        <div style="padding:.9rem 1.1rem;background:#fef2f2;border-top:1px solid #fca5a5;display:flex;gap:.75rem">
+          <button class="btn btn-ghost" onclick="document.getElementById('reassignPreviewArea').innerHTML=''" style="flex:1">
+            ❌ إلغاء
+          </button>
+          <button class="btn btn-danger" onclick="doReassignConfirm('${fixed}','${plate.replace(/'/g,"\\'")}')" style="flex:2;font-size:.95rem;font-weight:800">
+            ✅ تأكيد إعادة التخصيص
+          </button>
+        </div>
+      </div>`;
+  } catch(e) {
+    showNotification(e.message,'error');
+  } finally {
+    btn.disabled=false; btn.textContent='🔍 استعراض البيانات قبل التنفيذ';
+  }
+}
+
+async function doReassignConfirm(fixed, plate) {
+  try {
+    const data = await apiCall('/permissions/reassign','POST',{fixed_number: fixed, plate, confirm: true});
+    showNotification(`✅ ${data.message}`,'success');
+    document.getElementById('reassignFixed').value = '';
+    document.getElementById('reassignPlate').value = '';
+    document.getElementById('reassignPreviewArea').innerHTML = `
+      <div style="text-align:center;padding:1.5rem;background:#f0fdf9;border:1.5px solid #6ee7b7;border-radius:12px">
+        <div style="font-size:2.5rem;margin-bottom:.5rem">✅</div>
+        <div style="font-weight:800;color:#059669">${data.message}</div>
+        <div style="font-size:.82rem;color:var(--muted);margin-top:.4rem">
+          تم إلغاء ${data.deleted_old_permissions} صلاحية قديمة وإضافة صلاحية جديدة
+        </div>
+      </div>`;
+  } catch(e) { showNotification(e.message,'error'); }
+}
+
 async function renderSuperLogs() {
   const c = document.getElementById('pageContent');
   c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
@@ -7422,70 +7728,89 @@ async function loadMonthlyReport() {
           </div>
         </div>
 
-        <!-- TOP 5 السائقين -->
+        <!-- TOP 10 السائقين + الأسوأ -->
         ${(()=>{
-          const top5 = data.drivers.slice(0,5);
-          const medals = ['🥇','🥈','🥉','4️⃣','5️⃣'];
-          return `<div style="margin-bottom:1.2rem">
-            <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
-              <span style="background:#3b82f6;color:white;border-radius:6px;padding:.1rem .55rem;font-size:.75rem;font-weight:800">TOP 5</span>
-              السائقون — أعلى مسافة
-              <span style="font-size:.75rem;color:var(--muted);font-weight:400">(من ${data.drivers.length})</span>
+          const medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+          const withKm = data.drivers.filter(d=>d.km>0);
+          const top10  = withKm.slice(0,10);
+          const worst5 = [...data.drivers].filter(d=>d.trips>0).sort((a,b)=>a.km-b.km).slice(0,5);
+          function drvRow(d,i,bad=false) {
+            const refKm = top10[0]?.km||1;
+            const barW = Math.round((d.km/refKm)*100);
+            return `<tr ${bad?'style="background:rgba(239,68,68,.04)"':''}>
+              <td style="text-align:center;font-size:.85rem;${bad?'color:#ef4444;font-weight:700':''}">${bad?i+1:(medals[i]||i+1)}</td>
+              <td><strong>${d.name}</strong></td>
+              <td style="font-size:.75rem"><code>${d.fixed_number||'—'}</code></td>
+              <td>${d.trips}</td>
+              <td><div style="display:flex;align-items:center;gap:.35rem">
+                ${!bad?`<div style="width:45px;background:#e2e8f0;border-radius:3px;height:4px">
+                  <div style="width:${barW}%;background:#3b82f6;border-radius:3px;height:4px"></div>
+                </div>`:''}
+                <strong style="${bad?'color:#ef4444':''}">${Math.round(d.km).toLocaleString('ar-EG')}</strong>
+              </div></td>
+              <td style="font-size:.78rem">${d.trips>0?Math.round(d.km/d.trips):0} كم</td>
+            </tr>`;
+          }
+          return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.2rem">
+            <div>
+              <div style="font-weight:700;font-size:.85rem;margin-bottom:.45rem;display:flex;align-items:center;gap:.4rem">
+                <span style="background:#3b82f6;color:white;border-radius:6px;padding:.1rem .5rem;font-size:.7rem;font-weight:800">TOP 10</span>
+                أفضل السائقين — مسافة <span style="font-size:.7rem;color:var(--muted)">(${data.drivers.length})</span>
+              </div>
+              <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+                <table><thead><tr style="font-size:.73rem"><th style="width:26px"></th><th>السائق</th><th>الرقم</th><th>رحلات</th><th>كم</th><th>متوسط</th></tr></thead>
+                <tbody>${top10.map((d,i)=>drvRow(d,i,false)).join('')}${!top10.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>':''}</tbody></table>
+              </div>
             </div>
-            <div class="table-wrap">
-              <table><thead><tr style="font-size:.8rem">
-                <th style="width:30px"></th><th>السائق</th><th>الرقم الثابت</th>
-                <th>رحلات</th><th>إجمالي كم</th><th>متوسط</th>
-              </tr></thead><tbody>
-              ${top5.map((d,i)=>{
-                const barW = data.drivers[0]?.km>0?Math.round((d.km/data.drivers[0].km)*100):0;
-                return `<tr>
-                  <td style="text-align:center;font-size:1rem">${medals[i]||i+1}</td>
-                  <td><strong>${d.name}</strong></td>
-                  <td style="font-size:.78rem"><code>${d.fixed_number||'—'}</code></td>
-                  <td>${d.trips}</td>
-                  <td>
-                    <div style="display:flex;align-items:center;gap:.45rem">
-                      <div style="width:60px;background:#e2e8f0;border-radius:3px;height:5px">
-                        <div style="width:${barW}%;background:#3b82f6;border-radius:3px;height:5px"></div>
-                      </div>
-                      <strong>${Math.round(d.km).toLocaleString('ar-EG')}</strong>
-                    </div>
-                  </td>
-                  <td style="font-size:.82rem">${d.trips>0?Math.round(d.km/d.trips):0} كم/رحلة</td>
-                </tr>`;
-              }).join('')}
-              ${!top5.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
-              </tbody></table>
+            <div>
+              <div style="font-weight:700;font-size:.85rem;margin-bottom:.45rem;display:flex;align-items:center;gap:.4rem">
+                <span style="background:#ef4444;color:white;border-radius:6px;padding:.1rem .5rem;font-size:.7rem;font-weight:800">⬇️ الأقل</span>
+                أقل السائقين نشاطاً
+              </div>
+              <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+                <table><thead><tr style="font-size:.73rem"><th style="width:26px">#</th><th>السائق</th><th>الرقم</th><th>رحلات</th><th>كم</th><th>متوسط</th></tr></thead>
+                <tbody>${worst5.map((d,i)=>drvRow(d,i,true)).join('')}${!worst5.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>':''}</tbody></table>
+              </div>
             </div>
           </div>`;
         })()}
 
-        <!-- TOP 5 المركبات -->
+        <!-- TOP 10 المركبات + الأسوأ -->
         ${(()=>{
-          const top5 = data.cars.slice(0,5);
-          return `<div style="margin-bottom:1.2rem">
-            <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
-              <span style="background:#10b981;color:white;border-radius:6px;padding:.1rem .55rem;font-size:.75rem;font-weight:800">TOP 5</span>
-              المركبات — أعلى تكلفة
-              <span style="font-size:.75rem;color:var(--muted);font-weight:400">(من ${data.cars.length})</span>
+          const withCost = data.cars.filter(c=>c.total_cost>0);
+          const top10c  = withCost.slice(0,10);
+          const worst5c = data.cars.filter(c=>c.fuel_liters>0).sort((a,b)=>a.fuel_liters-b.fuel_liters).slice(0,5);
+          function carRow(c,i,bad=false) {
+            return `<tr ${bad?'style="background:rgba(239,68,68,.04)"':''}>
+              <td style="text-align:center;${bad?'color:#ef4444;font-weight:700':''}">${i+1}</td>
+              <td dir="ltr"><strong>${c.plate}</strong></td>
+              <td style="font-size:.75rem">${c.model}</td>
+              <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
+              <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
+              <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
+              <td><strong style="color:${bad?'#ef4444':'var(--primary)'}">${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
+            </tr>`;
+          }
+          return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.2rem">
+            <div>
+              <div style="font-weight:700;font-size:.85rem;margin-bottom:.45rem;display:flex;align-items:center;gap:.4rem">
+                <span style="background:#10b981;color:white;border-radius:6px;padding:.1rem .5rem;font-size:.7rem;font-weight:800">TOP 10</span>
+                أعلى المركبات تكلفة <span style="font-size:.7rem;color:var(--muted)">(${data.cars.length})</span>
+              </div>
+              <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+                <table><thead><tr style="font-size:.73rem"><th>#</th><th>اللوحة</th><th>الموديل</th><th>وقود(ل)</th><th>تكلفة وقود</th><th>صيانة</th><th>إجمالي</th></tr></thead>
+                <tbody>${top10c.map((c,i)=>carRow(c,i,false)).join('')}${!top10c.length?'<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>':''}</tbody></table>
+              </div>
             </div>
-            <div class="table-wrap">
-              <table><thead><tr style="font-size:.8rem">
-                <th>#</th><th>اللوحة</th><th>الموديل</th>
-                <th>وقود (لتر)</th><th>تكلفة وقود</th><th>صيانة</th><th>الإجمالي (جنيه)</th>
-              </tr></thead><tbody>
-              ${top5.map((c,i)=>`<tr>
-                <td>${i+1}</td>
-                <td dir="ltr"><strong>${c.plate}</strong></td>
-                <td style="font-size:.8rem">${c.model}</td>
-                <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
-                <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
-                <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
-                <td><strong style="color:var(--primary)">${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
-              </tr>`).join('')}
-              ${!top5.length?'<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا توجد بيانات</td></tr>':''}
-              </tbody></table>
+            <div>
+              <div style="font-weight:700;font-size:.85rem;margin-bottom:.45rem;display:flex;align-items:center;gap:.4rem">
+                <span style="background:#f59e0b;color:white;border-radius:6px;padding:.1rem .5rem;font-size:.7rem;font-weight:800">⬇️ الأقل</span>
+                أقل المركبات وقوداً
+              </div>
+              <div class="table-wrap" style="max-height:320px;overflow-y:auto">
+                <table><thead><tr style="font-size:.73rem"><th>#</th><th>اللوحة</th><th>الموديل</th><th>وقود(ل)</th><th>تكلفة وقود</th><th>صيانة</th><th>إجمالي</th></tr></thead>
+                <tbody>${worst5c.map((c,i)=>carRow(c,i,true)).join('')}${!worst5c.length?'<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>':''}</tbody></table>
+              </div>
             </div>
           </div>`;
         })()}
