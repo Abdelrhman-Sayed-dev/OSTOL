@@ -1483,6 +1483,10 @@ function switchSection(id) {
   document.getElementById('topbarTitle').textContent = item?.label||'';
   renderSection(id);
   closeSidebar();
+  // ── تحديث الـ URL ──
+  if(history.pushState) {
+    history.pushState({section:id}, '', '#'+id);
+  }
 }
 
 async function renderSection(id) {
@@ -5057,76 +5061,120 @@ async function saveTypePrices() {
   }catch(e){ showNotification(e.message,'error'); }
 }
 
-function openPricesPopup(currentPrices) {
-  const FUEL_KEYS = ['fuel_solar','fuel_92','fuel_95','fuel_80','fuel_cng'];
+function openPricesPopup(basePrices) {
   const isSup = isSuperuser();
-  const isAdm = isAdminOrSuper() && !isSuperuser(); // admin only (not superuser)
-
-  // Admin ومفيش superuser → ممكن يعدل الصيانة بس لا الوقود
-  // Superuser → يعدل كل حاجة
-  // Reporter → عرض فقط
-  const canEditFuel = isSup;
+  const isAdm = isAdminOrSuper() && !isSuperuser();
+  const canEditFuel  = isSup;
   const canEditMaint = isSup || isAdm;
 
-  const fuelRows = FUEL_TYPES.map(f=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:#fff7ed;border-radius:8px;border:1px solid #fde68a;margin-bottom:.4rem">
-      <span style="font-size:.82rem;font-weight:700;color:#b45309">⛽ ${f.label}</span>
-      <div style="display:flex;align-items:center;gap:.4rem">
-        <input type="number" id="pp_${f.key}" value="${currentPrices[f.key]||0}"
-          min="0" step="0.01" ${!canEditFuel?'disabled':''}
-          style="width:90px;padding:.35rem .6rem;border:1.5px solid ${canEditFuel?'#f59e0b':'#d1d5db'};border-radius:7px;font-size:.85rem;text-align:center;background:${canEditFuel?'white':'#f9fafb'}">
-        <span style="font-size:.72rem;color:var(--muted)">ج/لتر</span>
-        ${!canEditFuel?'<span title="يحدده السوبر يوزر فقط" style="color:#f59e0b;font-size:.8rem">🔒</span>':''}
+  // ── للسوبر يوزر: اجلب الفروع وابن الـ select أولاً ──
+  async function buildAndOpen(prices, selectedBranch) {
+    const fuelRows = FUEL_TYPES.map(f=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:#fff7ed;border-radius:8px;border:1px solid #fde68a;margin-bottom:.4rem">
+        <span style="font-size:.82rem;font-weight:700;color:#b45309">⛽ ${f.label}</span>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <input type="number" id="pp_${f.key}" value="${prices[f.key]||0}"
+            min="0" step="0.01" ${!canEditFuel?'disabled':''}
+            style="width:90px;padding:.35rem .6rem;border:1.5px solid ${canEditFuel?'#f59e0b':'#d1d5db'};border-radius:7px;font-size:.85rem;text-align:center;background:${canEditFuel?'white':'#f9fafb'}">
+          <span style="font-size:.72rem;color:var(--muted)">ج/لتر</span>
+          ${!canEditFuel?'<span title="يحدده السوبر يوزر فقط" style="color:#f59e0b;font-size:.8rem">🔒</span>':''}
+        </div>
+      </div>`).join('');
+
+    const maintRows = Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:white;border-radius:8px;border:1px solid #d1fae5;margin-bottom:.4rem">
+        <span style="font-size:.82rem;font-weight:700;color:#065f46">${v.icon} ${v.label}</span>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <input type="number" id="pp_${k}" value="${prices[k]||0}"
+            min="0" step="0.01" ${!canEditMaint?'disabled':''}
+            style="width:90px;padding:.35rem .6rem;border:1.5px solid ${canEditMaint?'#10b981':'#d1d5db'};border-radius:7px;font-size:.85rem;text-align:center;background:${canEditMaint?'white':'#f9fafb'}">
+          <span style="font-size:.72rem;color:var(--muted)">جنيه</span>
+        </div>
+      </div>`).join('');
+
+    // ── branch selector للسوبر يوزر فقط ──
+    let branchSelectorHtml = '';
+    if(isSup) {
+      let liveBranches = [];
+      try { liveBranches = await loadBranches(); } catch(e){}
+      if(!liveBranches.length) liveBranches = BRANCHES;
+      const branchOpts = liveBranches.map(b=>
+        `<option value="${b}" ${b===selectedBranch?'selected':''}>${b}</option>`
+      ).join('');
+      branchSelectorHtml = `
+        <div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:#f0f9ff;border:1.5px solid #7dd3fc;border-radius:10px;margin-bottom:.8rem">
+          <span style="font-size:.8rem;font-weight:700;color:#0369a1;white-space:nowrap">📍 الفرع:</span>
+          <select id="ppBranchSelect" style="flex:1;padding:.35rem .6rem;border:1.5px solid #7dd3fc;border-radius:8px;font-family:inherit;font-size:.83rem;background:white">
+            <option value="">🌐 عام (كل الفروع)</option>
+            ${branchOpts}
+          </select>
+          <button onclick="reloadPricesForBranch()" class="btn btn-primary btn-sm" style="white-space:nowrap">🔄 تحميل</button>
+        </div>`;
+    }
+
+    openModal(`
+      <div class="modal-header">
+        <div class="modal-title">⚙️ أسعار الوقود والصيانة</div>
+        <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
-    </div>`).join('');
-
-  const maintRows = Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:white;border-radius:8px;border:1px solid #d1fae5;margin-bottom:.4rem">
-      <span style="font-size:.82rem;font-weight:700;color:#065f46">${v.icon} ${v.label}</span>
-      <div style="display:flex;align-items:center;gap:.4rem">
-        <input type="number" id="pp_${k}" value="${currentPrices[k]||0}"
-          min="0" step="0.01" ${!canEditMaint?'disabled':''}
-          style="width:90px;padding:.35rem .6rem;border:1.5px solid ${canEditMaint?'#10b981':'#d1d5db'};border-radius:7px;font-size:.85rem;text-align:center;background:${canEditMaint?'white':'#f9fafb'}">
-        <span style="font-size:.72rem;color:var(--muted)">جنيه</span>
+      ${branchSelectorHtml}
+      <div style="max-height:62vh;overflow-y:auto;padding:.2rem">
+        <div style="font-size:.8rem;font-weight:700;color:#92400e;margin-bottom:.5rem;padding:.4rem .8rem;background:#fff7ed;border-radius:8px">
+          ⛽ أنواع الوقود — سعر اللتر
+          ${!canEditFuel?'<span style="color:#6b7280;font-weight:400">(عرض فقط — يحدده السوبر يوزر)</span>':''}
+          ${selectedBranch?`<span style="color:#0369a1;font-weight:400;font-size:.75rem"> — ${selectedBranch}</span>`:''}
+        </div>
+        ${fuelRows}
+        <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.5rem;margin-top:.8rem;padding:.4rem .8rem;background:#f0fdf9;border-radius:8px">🔧 أسعار الصيانة</div>
+        ${maintRows}
       </div>
-    </div>`).join('');
+      <div style="font-size:.75rem;color:var(--muted);margin:.5rem 0">⚠️ القيمة 0 = بدون سعر — السائق لا يرى الأرقام</div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
+        ${canEditMaint ? '<button class="btn btn-success" id="ppSaveBtn">💾 حفظ الأسعار</button>' : ''}
+      </div>`);
 
-  openModal(`
-    <div class="modal-header">
-      <div class="modal-title">⚙️ أسعار الوقود والصيانة</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div style="max-height:70vh;overflow-y:auto;padding:.2rem">
-      <div style="font-size:.8rem;font-weight:700;color:#92400e;margin-bottom:.5rem;padding:.4rem .8rem;background:#fff7ed;border-radius:8px">⛽ أنواع الوقود — سعر اللتر ${!canEditFuel?'<span style="color:#6b7280">(عرض فقط — يحدده السوبر يوزر)</span>':''}</div>
-      ${fuelRows}
-      <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.5rem;margin-top:.8rem;padding:.4rem .8rem;background:#f0fdf9;border-radius:8px">🔧 أسعار الصيانة</div>
-      ${maintRows}
-    </div>
-    <div style="font-size:.75rem;color:var(--muted);margin:.5rem 0">⚠️ القيمة 0 = بدون سعر — السائق لا يرى الأرقام</div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
-      ${canEditMaint ? `<button class="btn btn-success" id="ppSaveBtn">💾 حفظ الأسعار</button>` : ''}
-    </div>`);
-
-  if(canEditMaint) {
-    document.getElementById('ppSaveBtn').onclick = async () => {
-      const body = {};
-      FUEL_TYPES.forEach(f=>{
-        const el = document.getElementById('pp_'+f.key);
-        if(el && !el.disabled) body[f.key] = parseFloat(el.value)||0;
-      });
-      Object.keys(WT).filter(k=>!k.startsWith('fuel_')).forEach(k=>{
-        const el = document.getElementById('pp_'+k);
-        if(el && !el.disabled) body[k] = parseFloat(el.value)||0;
-      });
-      try {
-        await apiCall('/settings/prices','PUT',body);
-        showNotification('✅ تم حفظ الأسعار بنجاح','success');
-        closeModal();
-        await renderAdminWorkshops();
-      } catch(e) { showNotification(e.message,'error'); }
-    };
+    if(canEditMaint) {
+      document.getElementById('ppSaveBtn').onclick = async () => {
+        const branch = isSup ? (document.getElementById('ppBranchSelect')?.value || '') : '';
+        const body = {};
+        if(branch) body.branch = branch; // للسوبر يوزر يحدد الفرع
+        FUEL_TYPES.forEach(f=>{
+          const el = document.getElementById('pp_'+f.key);
+          if(el && !el.disabled) body[f.key] = parseFloat(el.value)||0;
+        });
+        Object.keys(WT).filter(k=>!k.startsWith('fuel_')).forEach(k=>{
+          const el = document.getElementById('pp_'+k);
+          if(el && !el.disabled) body[k] = parseFloat(el.value)||0;
+        });
+        const btn = document.getElementById('ppSaveBtn');
+        btn.disabled=true; btn.textContent='جاري...';
+        try {
+          await apiCall('/settings/prices','PUT',body);
+          showNotification('✅ تم حفظ الأسعار' + (branch?' للفرع: '+branch:' العامة'),'success');
+          closeModal();
+          await renderAdminWorkshops();
+        } catch(e) {
+          showNotification(e.message,'error');
+          btn.disabled=false; btn.textContent='💾 حفظ الأسعار';
+        }
+      };
+    }
   }
+
+  // ── تحميل الأسعار لفرع معين (زر 🔄) ──
+  window.reloadPricesForBranch = async () => {
+    const branch = document.getElementById('ppBranchSelect')?.value || '';
+    try {
+      const url = branch ? '/settings/prices?branch='+encodeURIComponent(branch) : '/settings/prices';
+      const prices = await apiCall(url);
+      // أعد فتح الـ modal بالأسعار الجديدة
+      closeModal();
+      setTimeout(()=>buildAndOpen(prices, branch), 120);
+    } catch(e) { showNotification(e.message,'error'); }
+  };
+
+  buildAndOpen(basePrices || window._currentWsPrices || {}, '');
 }
 
 
@@ -5169,6 +5217,22 @@ async function pollNotifications() {
   renderNav(buildAdminNav());
 }
 
+// ── handle browser back/forward ──
+window.addEventListener('popstate', (e) => {
+  const id = (e.state?.section) || location.hash.replace('#','') || 'overview';
+  if(currentUser && id) {
+    currentSection = id;
+    const items = isSupervisor() ? buildSupervisorNav()
+                : isAdminLike()  ? buildAdminNav()
+                : buildDriverNav();
+    renderNav(items);
+    const item = items.find(i=>i.id===id);
+    if(document.getElementById('topbarTitle'))
+      document.getElementById('topbarTitle').textContent = item?.label||'';
+    renderSection(id);
+  }
+});
+
 /* ── INIT ── */
 function initUI() {
   document.getElementById('appShell').style.display='flex';
@@ -5186,7 +5250,13 @@ function initUI() {
     }
   }
   if(isAdminLike()){
-    currentSection='overview'; renderNav(buildAdminNav()); renderSection('overview');
+    const _hashSection = location.hash.replace('#','');
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data'];
+  currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
+  renderNav(buildAdminNav());
+  renderSection(currentSection);
+  if(_hashSection && _validSections.includes(_hashSection) && history.replaceState)
+    history.replaceState({section:currentSection},'','#'+currentSection);
     notifPollInterval=setInterval(pollNotifications,20000);
     setTimeout(pollNotifications,3000);
     // فحص الرسائل الصوتية كل دقيقة
