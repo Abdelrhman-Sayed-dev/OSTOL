@@ -59,6 +59,157 @@
 }
 body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 
+/* ══════════════════════════════════════════════
+   CUSTOM SELECT — نظام القوائم المنسدلة الموحد
+   ══════════════════════════════════════════════ */
+.cs-wrapper {
+  position: relative;
+  width: 100%;
+  font-family: inherit;
+}
+.cs-trigger {
+  width: 100%;
+  min-height: 38px;
+  padding: .5rem 2.4rem .5rem .85rem;
+  border: 1.5px solid var(--border-2, #d1d9e6);
+  border-radius: 10px;
+  background: var(--surface-2, #f8f9fb);
+  color: var(--text, #0f1d2e);
+  font-family: inherit;
+  font-size: .88rem;
+  cursor: pointer;
+  text-align: right;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  transition: border-color .2s, box-shadow .2s;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cs-trigger:hover { border-color: var(--primary, #1e3a5f); }
+.cs-trigger.cs-open {
+  border-color: var(--primary, #1e3a5f);
+  box-shadow: 0 0 0 3px rgba(30,58,95,.12);
+}
+.cs-trigger .cs-arrow {
+  flex-shrink: 0;
+  color: var(--muted, #6b7280);
+  font-size: .7rem;
+  transition: transform .22s;
+  pointer-events: none;
+}
+.cs-trigger.cs-open .cs-arrow { transform: rotate(180deg); }
+.cs-trigger .cs-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-trigger .cs-label.cs-placeholder { color: var(--muted, #6b7280); }
+
+.cs-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0; left: 0;
+  z-index: 99999;
+  background: var(--surface, #fff);
+  border: 1.5px solid var(--border-2, #d1d9e6);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(15,29,46,.14), 0 2px 8px rgba(15,29,46,.06);
+  overflow: hidden;
+  animation: csFadeIn .18s ease;
+}
+.cs-dropdown.cs-open { display: flex; flex-direction: column; }
+
+@keyframes csFadeIn {
+  from { opacity:0; transform:translateY(-6px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.cs-search-wrap {
+  padding: .55rem .65rem .45rem;
+  border-bottom: 1px solid var(--border, #e5e9f0);
+  background: var(--surface-2, #f8f9fb);
+  flex-shrink: 0;
+}
+.cs-search {
+  width: 100%;
+  padding: .42rem .75rem .42rem 2rem;
+  border: 1.5px solid var(--border-2, #d1d9e6);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--text, #0f1d2e);
+  font-family: inherit;
+  font-size: .84rem;
+  outline: none;
+  transition: border-color .2s;
+  direction: rtl;
+}
+.cs-search:focus { border-color: var(--primary, #1e3a5f); }
+.cs-search-icon {
+  position: absolute;
+  left: 1.05rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted, #6b7280);
+  font-size: .85rem;
+  pointer-events: none;
+}
+
+.cs-list {
+  overflow-y: auto;
+  max-height: 220px;
+  padding: .3rem 0;
+}
+.cs-list::-webkit-scrollbar { width: 5px; }
+.cs-list::-webkit-scrollbar-track { background: transparent; }
+.cs-list::-webkit-scrollbar-thumb { background: var(--border-2,#d1d9e6); border-radius:3px; }
+
+.cs-option {
+  padding: .55rem 1rem;
+  font-size: .88rem;
+  cursor: pointer;
+  color: var(--text, #0f1d2e);
+  transition: background .13s;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+.cs-option:hover, .cs-option.cs-focused { background: var(--primary-glow, rgba(30,58,95,.07)); }
+.cs-option.cs-selected {
+  background: var(--primary-glow, rgba(30,58,95,.1));
+  font-weight: 700;
+  color: var(--primary, #1e3a5f);
+}
+.cs-option.cs-selected::after {
+  content: '✓';
+  margin-right: auto;
+  font-size: .8rem;
+  color: var(--primary, #1e3a5f);
+}
+.cs-option mark {
+  background: #fde68a;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-style: normal;
+}
+.cs-empty {
+  padding: .9rem 1rem;
+  text-align: center;
+  color: var(--muted, #6b7280);
+  font-size: .84rem;
+}
+
+/* داخل modal */
+.modal-body .cs-dropdown,
+.modal-content .cs-dropdown { z-index: 99999; }
+
+
 
 /* ── LOGIN ── */
 .login-overlay{
@@ -1186,18 +1337,15 @@ function branchOptions(selected='') {
     + BRANCHES.map(b=>`<option value="${b}" ${b===selected?'selected':''}>${b}</option>`).join('');
 }
 
-/** حقل فرع قابل للبحث (input + datalist) */
+/** حقل فرع قابل للبحث — يستخدم نظام CustomSelect الموحد */
 function branchSearchField(id, value='') {
-  const listId = id+'_list';
-  return `<div style="position:relative">
-    <input id="${id}" list="${listId}" value="${value||''}" autocomplete="off"
-      placeholder="اكتب أو اختر الفرع / الإدارة..."
-      style="width:100%;padding:.55rem .8rem;border:1.5px solid var(--border);border-radius:10px;
-             font-family:inherit;font-size:.88rem;background:var(--bg);color:var(--text)">
-    <datalist id="${listId}">
-      ${BRANCHES.map(b=>`<option value="${b}">`).join('')}
-    </datalist>
-  </div>`;
+  const opts = BRANCHES.map(b =>
+    `<option value="${b}" ${b===value?'selected':''}>${b}</option>`
+  ).join('');
+  return `<select id="${id}">
+    <option value="">— اختر الفرع / الإدارة —</option>
+    ${opts}
+  </select>`;
 }
 function setSuperBranch(branch, btn) {
   window._superBranch = branch;
@@ -1235,6 +1383,8 @@ function openModal(html) {
   ov.innerHTML=`<div class="modal">${html}</div>`;
   ov.addEventListener('click', e=>{ if(e.target===ov) closeModal(); });
   document.body.appendChild(ov);
+  // تحديث الـ custom selects بعد فتح الـ modal
+  setTimeout(()=>{ if(window.CS) window.CS.upgradeAll(); }, 40);
 }
 function closeModal() { document.getElementById('activeModal')?.remove(); }
 
@@ -2120,19 +2270,10 @@ function openAddCarModal(editId='', editCar={}) {
     <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
       <div class="form-group" style="margin-bottom:0">
         <label>المشروع</label>
-        <div style="position:relative">
-          <input id="mCarProjectSearch" placeholder="🔍 ابحث أو اكتب المشروع..."
-            autocomplete="off"
-            value="${editCar.project||''}"
-            style="width:100%"
-            oninput="filterProjectDrop(this.value);document.getElementById('mCarProject').value=this.value"
-            onfocus="showProjectDrop()"
-            onblur="setTimeout(()=>hideProjectDrop(),200)">
-          <div id="mCarProjectDrop" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:9999;
-               background:#fff;border:1.5px solid var(--border-2);border-radius:8px;
-               max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15)"></div>
-          <input type="hidden" id="mCarProject" value="${editCar.project||''}">
-        </div>
+        <select id="mCarProject">
+          <option value="">— اختر المشروع —</option>
+          ${NASR_PROJECTS.map(p=>`<option value="${p}" ${p===(editCar.project||'')?'selected':''}>${p}</option>`).join('')}
+        </select>
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>الفرع / الإدارة</label>
@@ -2427,53 +2568,7 @@ function clearTripFilters(){
   filterTrips();
 }
 
-/* ── مشروعات مدينة نصر Dropdown ── */
-const NASR_PROJECTS = [
-  "15مايو","81 حربي","ادارة الفرع","ادارة الكباري","ادارة تأجير المعدات",
-  "ادارة تحريك التربه","ارابكو","اسكان العاصمه","البرلمان","التراخيص",
-  "ك 35","خدمة مشروعات الفرع","العلمين","القطار السريع","القلج",
-  "الكيان العسكري","المحاجر","المركز الثقافي","المركز الرئيسي","النادي",
-  "النهر الاخضر","الورشه المكانيكيه","توكيل ارمادا","توكيل انجينز",
-  "توكيل اوتراك","توكيل كوماتسو","رئاسة القطاع","طب الازهر",
-  "فرع القاهره","فتحة يمن","فرع شرق ووسط","قطاع القاهره الكبري",
-  "الروافع","محطة غرب اكتوبر","محكمة النقض","مخازن بدر","مخزن الكباري",
-  "مونوريل 10","مونوريل 5","مونوريل 4","مونوريل 9",
-  "ورش الاسكندريه","ورش اسماعليه","ورش العمرات","ورش 4.5"
-];
 
-function showProjectDrop() {
-  filterProjectDrop(document.getElementById('mCarProjectSearch')?.value || '');
-}
-
-function hideProjectDrop() {
-  const d = document.getElementById('mCarProjectDrop');
-  if(d) d.style.display = 'none';
-}
-
-function filterProjectDrop(query) {
-  const drop = document.getElementById('mCarProjectDrop');
-  if(!drop) return;
-  const q = query.trim().toLowerCase();
-  const filtered = NASR_PROJECTS.filter(p => !q || p.toLowerCase().includes(q));
-  if(!filtered.length) { drop.style.display='none'; return; }
-  drop.innerHTML = filtered.map(p => {
-    const hl = q ? p.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),
-      m=>`<mark style="background:#fde68a;border-radius:2px">${m}</mark>`) : p;
-    return `<div onmousedown="selectProject('${p.replace(/'/g,"\'")}')"
-      style="padding:.5rem .9rem;cursor:pointer;font-size:.88rem;border-bottom:1px solid var(--border);transition:background .15s"
-      onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">${hl}</div>`;
-  }).join('');
-  drop.style.display = 'block';
-}
-
-function selectProject(name) {
-  const si = document.getElementById('mCarProjectSearch');
-  const hi = document.getElementById('mCarProject');
-  const d  = document.getElementById('mCarProjectDrop');
-  if(si) si.value = name;
-  if(hi) hi.value = name;
-  if(d)  d.style.display = 'none';
-}
 
 /* ── تعديل عداد الرحلة ── */
 document.addEventListener('click', async e=>{
@@ -7669,4 +7764,276 @@ async function deleteSupervisor(uid, name) {
     await renderSuperSupervisors();
   } catch(e) { showNotification(e.message,'error'); }
 }
+
+
+/* ════════════════════════════════════════════════════════════════
+   CUSTOM SELECT ENGINE — نظام القوائم المنسدلة الموحد
+   يحوّل كل <select> في الصفحة لـ custom dropdown بعد الـ render
+   ════════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  /* ── selects to SKIP (لا تتحوّل) ──
+     أضف data-no-cs="true" على أي select تريد تركه كما هو */
+  const SKIP_ATTR = 'data-no-cs';
+
+  /* ── active dropdown tracker ── */
+  let _activeCS = null;
+
+  /* close all open dropdowns */
+  function closeAll(except) {
+    document.querySelectorAll('.cs-dropdown.cs-open').forEach(d => {
+      if(d !== except) {
+        d.classList.remove('cs-open');
+        const w = d.closest('.cs-wrapper');
+        if(w) w.querySelector('.cs-trigger')?.classList.remove('cs-open');
+      }
+    });
+  }
+
+  /* build highlight html */
+  function highlight(text, q) {
+    if(!q) return text;
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+    return text.replace(re, m => `<mark>${m}</mark>`);
+  }
+
+  /* ── core: upgrade one <select> element ── */
+  function upgradeSelect(sel) {
+    if(sel.dataset.csUpgraded === '1') return;
+    if(sel.hasAttribute(SKIP_ATTR)) return;
+    // skip hidden / file / etc
+    if(sel.type && sel.type !== 'select-one' && sel.type !== 'select-multiple') return;
+
+    sel.dataset.csUpgraded = '1';
+    sel.style.display = 'none';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cs-wrapper';
+    // copy any inline style width hints
+    const selStyle = getComputedStyle(sel);
+    const minW = sel.style.minWidth || '';
+    if(minW) wrapper.style.minWidth = minW;
+
+    /* ── trigger button ── */
+    const trigger = document.createElement('div');
+    trigger.className = 'cs-trigger';
+    trigger.setAttribute('tabindex','0');
+    trigger.setAttribute('role','combobox');
+    trigger.setAttribute('aria-haspopup','listbox');
+    trigger.setAttribute('aria-expanded','false');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'cs-label';
+    const arrowSpan = document.createElement('span');
+    arrowSpan.className = 'cs-arrow';
+    arrowSpan.textContent = '▾';
+
+    trigger.appendChild(labelSpan);
+    trigger.appendChild(arrowSpan);
+
+    /* ── dropdown ── */
+    const dropdown = document.createElement('div');
+    dropdown.className = 'cs-dropdown';
+    dropdown.setAttribute('role','listbox');
+
+    /* search wrap */
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'cs-search-wrap';
+    searchWrap.style.position = 'relative';
+    const searchIcon = document.createElement('span');
+    searchIcon.className = 'cs-search-icon';
+    searchIcon.textContent = '🔍';
+    const searchInput = document.createElement('input');
+    searchInput.className = 'cs-search';
+    searchInput.placeholder = 'بحث...';
+    searchInput.autocomplete = 'off';
+    searchInput.setAttribute('aria-label','بحث في القائمة');
+    searchWrap.appendChild(searchIcon);
+    searchWrap.appendChild(searchInput);
+
+    /* list */
+    const list = document.createElement('div');
+    list.className = 'cs-list';
+
+    dropdown.appendChild(searchWrap);
+    dropdown.appendChild(list);
+
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(dropdown);
+
+    /* insert wrapper before the original select */
+    sel.parentNode.insertBefore(wrapper, sel);
+    wrapper.appendChild(sel); // keep select inside wrapper (hidden)
+
+    /* ── collect options ── */
+    function getOptions() {
+      return Array.from(sel.options).map(o => ({
+        value: o.value,
+        label: o.textContent.trim(),
+        disabled: o.disabled
+      }));
+    }
+
+    /* ── render list items ── */
+    function renderList(query) {
+      const opts = getOptions();
+      const q = query.trim().toLowerCase();
+      list.innerHTML = '';
+      let count = 0;
+
+      opts.forEach((opt, idx) => {
+        if(opt.disabled && opt.value === '' && !q) {
+          // placeholder — skip in list (shown in trigger)
+          return;
+        }
+        const label = opt.label;
+        if(q && !label.toLowerCase().includes(q)) return;
+        count++;
+
+        const item = document.createElement('div');
+        item.className = 'cs-option' + (sel.value === opt.value ? ' cs-selected':'');
+        item.setAttribute('role','option');
+        item.setAttribute('data-value', opt.value);
+        item.innerHTML = highlight(label, q);
+        if(opt.disabled) { item.style.opacity='.45'; item.style.cursor='not-allowed'; }
+        else {
+          item.addEventListener('mousedown', e => {
+            e.preventDefault();
+            setVal(opt.value, opt.label);
+            closeDropdown();
+          });
+        }
+        list.appendChild(item);
+      });
+
+      if(count === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'cs-empty';
+        empty.textContent = 'لا توجد نتائج';
+        list.appendChild(empty);
+      }
+    }
+
+    /* ── update trigger label ── */
+    function updateLabel() {
+      const cur = sel.options[sel.selectedIndex];
+      if(cur && cur.value !== '' && !cur.disabled) {
+        labelSpan.textContent = cur.textContent.trim();
+        labelSpan.classList.remove('cs-placeholder');
+      } else {
+        // show placeholder
+        const ph = Array.from(sel.options).find(o => o.value === '' || o.disabled);
+        labelSpan.textContent = ph ? ph.textContent.trim() : 'اختر...';
+        labelSpan.classList.add('cs-placeholder');
+      }
+    }
+
+    /* ── set value ── */
+    function setVal(value, label) {
+      sel.value = value;
+      // fire native events so existing onchange handlers work
+      sel.dispatchEvent(new Event('change', {bubbles:true}));
+      sel.dispatchEvent(new Event('input',  {bubbles:true}));
+      updateLabel();
+      renderList('');
+    }
+
+    /* ── open / close ── */
+    function openDropdown() {
+      closeAll(dropdown);
+      dropdown.classList.add('cs-open');
+      trigger.classList.add('cs-open');
+      trigger.setAttribute('aria-expanded','true');
+      _activeCS = dropdown;
+      renderList('');
+      searchInput.value = '';
+      // scroll selected into view
+      setTimeout(() => {
+        searchInput.focus();
+        const sel2 = list.querySelector('.cs-selected');
+        if(sel2) sel2.scrollIntoView({block:'nearest'});
+      }, 30);
+    }
+    function closeDropdown() {
+      dropdown.classList.remove('cs-open');
+      trigger.classList.remove('cs-open');
+      trigger.setAttribute('aria-expanded','false');
+      if(_activeCS === dropdown) _activeCS = null;
+    }
+    function toggleDropdown() {
+      if(dropdown.classList.contains('cs-open')) closeDropdown();
+      else openDropdown();
+    }
+
+    /* ── events ── */
+    trigger.addEventListener('click', e => { e.stopPropagation(); toggleDropdown(); });
+    trigger.addEventListener('keydown', e => {
+      if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDropdown(); }
+      if(e.key === 'Escape') closeDropdown();
+    });
+    searchInput.addEventListener('input', () => renderList(searchInput.value));
+    searchInput.addEventListener('keydown', e => {
+      if(e.key === 'Escape') closeDropdown();
+      if(e.key === 'Enter') {
+        const first = list.querySelector('.cs-option:not([style*="not-allowed"])');
+        if(first) first.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+      }
+    });
+    // prevent closing when clicking inside dropdown
+    dropdown.addEventListener('mousedown', e => e.stopPropagation());
+
+    /* ── observe select value changes from outside code ── */
+    const valObserver = new MutationObserver(() => { updateLabel(); renderList(''); });
+    valObserver.observe(sel, { attributes:true, childList:true, subtree:true });
+
+    // also patch .value setter
+    const origDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    // we can't easily patch per-instance, so we rely on MutationObserver + manual sync
+
+    /* ── sync when select changes programmatically ── */
+    sel.addEventListener('change', () => { updateLabel(); renderList(''); });
+
+    /* initial label */
+    updateLabel();
+  }
+
+  /* ── upgrade all current selects on page ── */
+  function upgradeAll() {
+    document.querySelectorAll('select:not([data-cs-upgraded="1"]):not([data-no-cs])').forEach(upgradeSelect);
+  }
+
+  /* ── watch for dynamically added selects (modals, renders) ── */
+  const observer = new MutationObserver(mutations => {
+    let needScan = false;
+    for(const m of mutations) {
+      for(const n of m.addedNodes) {
+        if(n.nodeType === 1) { needScan = true; break; }
+      }
+      if(needScan) break;
+    }
+    if(needScan) {
+      // small delay so the HTML is fully built
+      clearTimeout(observer._t);
+      observer._t = setTimeout(upgradeAll, 60);
+    }
+  });
+  observer.observe(document.body, { childList:true, subtree:true });
+
+  /* ── close on outside click ── */
+  document.addEventListener('click', () => closeAll());
+  document.addEventListener('keydown', e => { if(e.key==='Escape') closeAll(); });
+
+  /* ── initial upgrade ── */
+  if(document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', upgradeAll);
+  } else {
+    setTimeout(upgradeAll, 80);
+  }
+
+  /* ── expose globally so manual call is possible ── */
+  window.CS = { upgrade: upgradeSelect, upgradeAll };
+
+})();
+
 </script>
