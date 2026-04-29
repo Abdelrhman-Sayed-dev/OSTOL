@@ -1218,7 +1218,7 @@ async def primary_car(did: int, cu: dict = Depends(get_user)):
         c = conn.cursor()
         c.execute("""SELECT c.id,c.plate,c.model,c.status FROM cars c
                      INNER JOIN driver_car_permissions p ON c.id=p.car_id
-                     WHERE p.driver_id=? ORDER BY p.id ASC LIMIT 1""", (did,))
+                     WHERE p.driver_id=? ORDER BY p.id DESC LIMIT 1""", (did,))
         row = c.fetchone()
         return dict(row) if row else None
 
@@ -1394,12 +1394,18 @@ async def reassign_permission(body: dict, cu: dict = Depends(require_superuser))
             }
 
         # مرحلة التنفيذ
-        # احذف كل الصلاحيات القديمة للمركبة
+        # 1. احذف كل الصلاحيات القديمة للمركبة (أي سائق كان معها)
         c.execute("DELETE FROM driver_car_permissions WHERE car_id=?", (car["id"],))
-        deleted_count = conn.execute("SELECT changes()").fetchone()[0]
+        deleted_car_perms = conn.execute("SELECT changes()").fetchone()[0]
 
-        # أضف الصلاحية الجديدة
-        c.execute("INSERT OR IGNORE INTO driver_car_permissions(driver_id, car_id) VALUES(?,?)",
+        # 2. احذف كل صلاحيات السائق الجديد للعربيات التانية (عشان يفضل معاه العربية الجديدة بس)
+        c.execute("DELETE FROM driver_car_permissions WHERE driver_id=?", (new_driver["id"],))
+        deleted_driver_perms = conn.execute("SELECT changes()").fetchone()[0]
+
+        deleted_count = deleted_car_perms + deleted_driver_perms
+
+        # 3. أضف الصلاحية الجديدة
+        c.execute("INSERT INTO driver_car_permissions(driver_id, car_id) VALUES(?,?)",
                   (new_driver["id"], car["id"]))
 
         log_event("permission_reassigned",
