@@ -12,6 +12,10 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cairo:wght@300;400;600;700;900&family=DM+Sans:wght@300;400;500;600;700&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;font-family:'Cairo',system-ui,sans-serif}
+@keyframes livePulse {
+  0%,100% { box-shadow:0 3px 12px rgba(16,185,129,.35),0 0 0 0 rgba(16,185,129,.4); }
+  50%      { box-shadow:0 3px 12px rgba(16,185,129,.35),0 0 0 8px rgba(16,185,129,0); }
+}
 :root{
   /* ══ NEW ENTERPRISE NAVY + GOLD SYSTEM ══ */
   --primary:#1e3a5f;
@@ -1490,6 +1494,8 @@ function switchSection(id) {
 }
 
 async function renderSection(id) {
+  // وقّف الـ live tracking لو كنا في الخريطة وبنروح section تاني
+  if(id !== 'map') stopLiveTracking();
   const c = document.getElementById('pageContent');
   c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
   switch(id) {
@@ -2919,13 +2925,25 @@ async function renderMapSection() {
       </div>
 
       <!-- Tabs -->
-      <div class="map-tabs">
-        <button class="map-tab active" onclick="switchMapTab('fleet',this)">📍 خريطة الأسطول الكاملة</button>
+      <div class="map-tabs" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <button class="map-tab active" onclick="switchMapTab('live',this)">🟢 Live — مواقع فورية</button>
+        <button class="map-tab" onclick="switchMapTab('fleet',this)">📍 خريطة الأسطول</button>
         <button class="map-tab" onclick="switchMapTab('route',this)">🛣️ مسار الرحلة</button>
+        <span id="liveDriversBadge" style="margin-right:auto;font-size:.78rem;font-weight:700;color:#10b981;padding:.25rem .75rem;background:#f0fdf9;border:1px solid #6ee7b7;border-radius:20px">⏳ جاري التحميل...</span>
+      </div>
+
+      <!-- Live Map Panel -->
+      <div class="map-panel active" id="mapPanelLive">
+        <div id="liveMap" style="height:520px;border-radius:12px"></div>
+        <div class="map-legend" style="margin-top:.6rem">
+          <span><span class="legend-dot" style="background:#10b981"></span> سائق يتحرك (موقع حي)</span>
+          <span><span class="legend-dot" style="background:#1e3a5f"></span> سائق واقف</span>
+          <span style="font-size:.75rem;color:var(--muted)">يتحدث كل 4 ثواني تلقائياً</span>
+        </div>
       </div>
 
       <!-- Fleet Map Panel -->
-      <div class="map-panel active" id="mapPanelFleet">
+      <div class="map-panel" id="mapPanelFleet">
         <div id="fleetMap"></div>
         <div class="map-legend">
           <span><span class="legend-dot" style="background:#10b981"></span> رحلة نشطة (موقع البداية)</span>
@@ -3034,6 +3052,21 @@ async function renderMapSection() {
     window._routeMapInstance = L.map('routeMap').setView([24.7136,46.6753],6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(window._routeMapInstance);
   },150);
+
+  // ── Init Live Map (الخريطة الحية) ──
+  setTimeout(()=>{
+    if(window._liveMapInstance) {
+      window._liveMapInstance.remove();
+      window._liveMapInstance = null;
+    }
+    stopLiveTracking();
+    const liveMap = L.map('liveMap').setView([30.0444, 31.2357], 7); // مركز مصر
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      attribution:'© OpenStreetMap', maxZoom:19
+    }).addTo(liveMap);
+    window._liveMapInstance = liveMap;
+    startLiveTracking(liveMap);
+  }, 200);
 }
 
 function buildGarageTable(records){
@@ -3071,10 +3104,18 @@ function switchMapTab(tab, btn) {
   document.querySelectorAll('.map-panel').forEach(p=>p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('mapPanel'+tab.charAt(0).toUpperCase()+tab.slice(1)).classList.add('active');
-  // Invalidate maps when switching tabs
   setTimeout(()=>{
     if(tab==='fleet' && window._fleetMap) window._fleetMap.invalidateSize();
     if(tab==='route' && window._routeMapInstance) window._routeMapInstance.invalidateSize();
+    if(tab==='live'  && window._liveMapInstance) {
+      window._liveMapInstance.invalidateSize();
+      // أعد تشغيل الـ tracking لو كان متوقف
+      if(!_liveTrackingInterval) startLiveTracking(window._liveMapInstance);
+    }
+    // وقّف الـ live tracking لو مش في tab الـ live عشان توفير battery
+    if(tab !== 'live') {
+      if(_liveTrackingInterval) { clearInterval(_liveTrackingInterval); _liveTrackingInterval = null; }
+    }
   },50);
 }
 
@@ -5178,6 +5219,209 @@ function openPricesPopup(basePrices) {
 }
 
 
+/* ══════════════════════════════════════════════════════
+   LIVE LOCATION — إرسال واستقبال المواقع الحية
+   ══════════════════════════════════════════════════════ */
+
+// ── السائق: يبدأ إرسال موقعه كل 5 ثواني ──
+function startLiveLocationSending() {
+  if(!navigator.geolocation || !currentUser?.driver_id) return;
+
+  let lastPos = null;
+
+  function sendPosition(pos) {
+    const { latitude: lat, longitude: lng, accuracy, heading, speed } = pos.coords;
+    lastPos = { lat, lng, accuracy, heading: heading||0, speed: speed||0 };
+
+    // جيب بيانات الرحلة النشطة لو موجودة
+    const carId  = window._driverCar?.id   || null;
+    const tripId = window._activeTrip?.id  || null;
+
+    apiCall('/location/update', 'POST', {
+      lat, lng, accuracy, heading: heading||0, speed: speed||0,
+      car_id: carId, trip_id: tripId
+    }).catch(()=>{});
+  }
+
+  // watchPosition: يبعت كلما اتغير الموقع (أدق من setInterval)
+  window._liveLocationWatcher = navigator.geolocation.watchPosition(
+    sendPosition,
+    ()=>{},
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
+  );
+
+  // Fallback interval كل 5 ثواني لو watchPosition مش شغال
+  window._liveLocationInterval = setInterval(() => {
+    if(!lastPos) return; // لو مفيش موقع اتبعت بـ watchPosition
+    const carId  = window._driverCar?.id  || null;
+    const tripId = window._activeTrip?.id || null;
+    apiCall('/location/update', 'POST', { ...lastPos, car_id: carId, trip_id: tripId }).catch(()=>{});
+  }, 5000);
+}
+
+
+// ── الأدمن: live tracking على الخريطة ──
+let _liveTrackingInterval = null;
+// Map: driver_id → { marker, prevLat, prevLng, animFrame, targetLat, targetLng }
+const _liveMarkers = {};
+
+function startLiveTracking(map) {
+  if(_liveTrackingInterval) clearInterval(_liveTrackingInterval);
+
+  async function fetchAndUpdate() {
+    let locs = [];
+    try { locs = await apiCall('/location/live'); } catch(e) { return; }
+
+    const now = Date.now();
+    const activeIds = new Set();
+
+    locs.forEach(loc => {
+      const did    = loc.driver_id;
+      const newLat = loc.lat;
+      const newLng = loc.lng;
+      activeIds.add(did);
+
+      if(_liveMarkers[did]) {
+        // ── تحديث marker موجود — smooth animation ──
+        const m = _liveMarkers[did];
+        m.targetLat = newLat;
+        m.targetLng = newLng;
+        m.heading   = loc.heading || 0;
+        m.speed     = loc.speed   || 0;
+        m.driverName= loc.driver_name;
+        m.carPlate  = loc.car_plate;
+        m.updatedAt = loc.updated_at;
+        animateMarker(did, map);
+        // تحديث الـ popup content
+        updateLivePopup(did, loc);
+      } else {
+        // ── إنشاء marker جديد ──
+        const icon = makeLiveIcon(loc.heading||0, loc.speed||0);
+        const marker = L.marker([newLat, newLng], { icon, zIndexOffset: 1000 })
+          .addTo(map)
+          .bindPopup(buildLivePopupHtml(loc));
+        _liveMarkers[did] = {
+          marker, prevLat: newLat, prevLng: newLng,
+          targetLat: newLat, targetLng: newLng,
+          heading: loc.heading||0, speed: loc.speed||0,
+          animFrame: null, startTime: null,
+          driverName: loc.driver_name, carPlate: loc.car_plate,
+          updatedAt: loc.updated_at
+        };
+      }
+    });
+
+    // احذف markers السائقين اللي مش active
+    Object.keys(_liveMarkers).forEach(did => {
+      if(!activeIds.has(parseInt(did))) {
+        map.removeLayer(_liveMarkers[did].marker);
+        if(_liveMarkers[did].animFrame) cancelAnimationFrame(_liveMarkers[did].animFrame);
+        delete _liveMarkers[did];
+      }
+    });
+
+    // badge عداد السائقين النشطين
+    const badge = document.getElementById('liveDriversBadge');
+    if(badge) badge.textContent = locs.length > 0 ? `🟢 ${locs.length} سائق نشط` : '⚫ لا يوجد سائقون نشطون';
+  }
+
+  fetchAndUpdate();
+  _liveTrackingInterval = setInterval(fetchAndUpdate, 4000);
+}
+
+function stopLiveTracking() {
+  if(_liveTrackingInterval) { clearInterval(_liveTrackingInterval); _liveTrackingInterval = null; }
+  Object.keys(_liveMarkers).forEach(did => {
+    if(_liveMarkers[did].animFrame) cancelAnimationFrame(_liveMarkers[did].animFrame);
+    delete _liveMarkers[did];
+  });
+}
+
+// ── Smooth animation: interpolation بين الموقع القديم والجديد (4 ثواني) ──
+function animateMarker(did, map) {
+  const m = _liveMarkers[did];
+  if(!m) return;
+  if(m.animFrame) cancelAnimationFrame(m.animFrame);
+
+  const startLat = m.prevLat;
+  const startLng = m.prevLng;
+  const endLat   = m.targetLat;
+  const endLng   = m.targetLng;
+  const duration  = 3800; // ms — slightly less than poll interval for smooth feel
+  const startTime = performance.now();
+
+  function step(now) {
+    if(!_liveMarkers[did]) return; // marker اتحذف
+    const t = Math.min((now - startTime) / duration, 1);
+    // easeInOut cubic للـ smoothness
+    const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+    const lat = startLat + (endLat - startLat) * ease;
+    const lng = startLng + (endLng - startLng) * ease;
+    m.marker.setLatLng([lat, lng]);
+    // تحديث الـ icon بالـ heading لو بيتحرك
+    if(t < 1) {
+      m.animFrame = requestAnimationFrame(step);
+    } else {
+      m.prevLat = endLat;
+      m.prevLng = endLng;
+      m.animFrame = null;
+      // تحديث icon بعد انتهاء الـ animation
+      m.marker.setIcon(makeLiveIcon(m.heading, m.speed));
+    }
+  }
+  m.animFrame = requestAnimationFrame(step);
+}
+
+function makeLiveIcon(heading, speed) {
+  const isMoving = speed > 1; // أكتر من 1 م/ث = بيتحرك
+  const color    = isMoving ? '#10b981' : '#1e3a5f';
+  const pulse    = isMoving ? 'animation:livePulse 1.2s ease-in-out infinite;' : '';
+  // نقلب الـ arrow حسب الـ heading
+  const rot = `transform:rotate(${heading||0}deg)`;
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative;width:40px;height:40px">
+      <div style="position:absolute;inset:0;background:${color};border-radius:50%;
+                  border:3px solid white;box-shadow:0 3px 12px rgba(0,0,0,.35);
+                  display:flex;align-items:center;justify-content:center;font-size:1.1rem;
+                  ${pulse}">🚗</div>
+      ${isMoving ? `<div style="position:absolute;top:-8px;left:50%;margin-left:-5px;
+                                width:0;height:0;border-left:5px solid transparent;
+                                border-right:5px solid transparent;
+                                border-bottom:8px solid ${color};${rot}"></div>` : ''}
+    </div>`,
+    iconSize: [40, 40], iconAnchor: [20, 20]
+  });
+}
+
+function buildLivePopupHtml(loc) {
+  const ago = loc.updated_at ? Math.round((Date.now()-new Date(loc.updated_at).getTime())/1000) : 0;
+  const kmh = loc.speed ? (loc.speed*3.6).toFixed(1) : '0';
+  return `<div dir="rtl" style="min-width:180px;font-family:Cairo,sans-serif;line-height:1.8">
+    <strong style="font-size:.92rem">🚗 ${loc.car_plate||'—'}</strong><br>
+    <span style="font-size:.8rem;color:#666">${loc.car_model||''}</span>
+    <hr style="margin:.3rem 0;border:none;border-top:1px solid #e2e8f0">
+    <span style="font-size:.82rem">👨‍✈️ <strong>${loc.driver_name||'—'}</strong></span><br>
+    <span style="font-size:.8rem">🏃 السرعة: <strong>${kmh} كم/س</strong></span><br>
+    <span id="lp_ago_${loc.driver_id}" style="font-size:.75rem;color:#94a3b8">🕐 منذ ${ago} ثانية</span>
+    <br>
+    <a href="https://maps.google.com/?q=${loc.lat},${loc.lng}" target="_blank"
+       style="display:inline-flex;align-items:center;gap:.3rem;margin-top:.4rem;
+              padding:.3rem .7rem;background:#10b981;color:white;border-radius:7px;
+              text-decoration:none;font-size:.75rem;font-weight:700">
+      🗺️ فتح في خرائط Google
+    </a>
+  </div>`;
+}
+
+function updateLivePopup(did, loc) {
+  const m = _liveMarkers[did];
+  if(!m) return;
+  const kmh = loc.speed ? (loc.speed*3.6).toFixed(1) : '0';
+  m.marker.setPopupContent(buildLivePopupHtml(loc));
+  m.marker.setIcon(makeLiveIcon(loc.heading||0, loc.speed||0));
+}
+
 /* ── NOTIFICATION POLLING ── */
 async function pollNotifications() {
   if(!isAdminLike()) return;
@@ -5268,6 +5512,8 @@ function initUI() {
     // فحص الرسائل الصوتية للسائق
     setTimeout(checkAndShowVoiceNotes, 5000);
     setInterval(checkAndShowVoiceNotes, 60000);
+    // ── إرسال الموقع الحي كل 5 ثواني ──
+    startLiveLocationSending();
   }
 }
 
@@ -5615,6 +5861,8 @@ async function renderDriverSinglePage() {
   document.getElementById('dpLogout').onclick=()=>{
     clearInterval(notifPollInterval);
     if(window._driverCarPollInterval) clearInterval(window._driverCarPollInterval);
+    if(window._liveLocationInterval)  clearInterval(window._liveLocationInterval);
+    if(window._liveLocationWatcher)   navigator.geolocation.clearWatch(window._liveLocationWatcher);
     clearAuth(); currentUser=null;
     setTimeout(()=>location.reload(),300);
   };

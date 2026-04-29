@@ -427,6 +427,21 @@ def _safe_add_columns(c):
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
 
+    # ── جدول المواقع الحية للسائقين ──
+    c.execute("""CREATE TABLE IF NOT EXISTS live_locations (
+        driver_id   INTEGER PRIMARY KEY,
+        car_id      INTEGER,
+        lat         REAL    NOT NULL,
+        lng         REAL    NOT NULL,
+        accuracy    REAL    DEFAULT 0,
+        heading     REAL    DEFAULT 0,
+        speed       REAL    DEFAULT 0,
+        updated_at  TEXT    NOT NULL,
+        trip_id     INTEGER,
+        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_live_updated ON live_locations(updated_at)")
+
     # ── تصحيح السجلات القديمة: price كان سعر/وحدة، دلوقتي يبقى إجمالي ──
     # نضرب السجلات اللي price فيها صغيرة (< 200) وعندها كمية > 0
     FUEL_TYPES_FOR_MIGRATION = [t for t in WORKSHOP_TYPES if t.startswith("fuel_")] + ["oil"]
@@ -1421,6 +1436,64 @@ async def reassign_permission(body: dict, cu: dict = Depends(require_superuser))
             "deleted_old_permissions": deleted_count,
             "message": f"✅ تم إعادة تخصيص '{plate}' للسائق '{new_driver['name']}' بنجاح"
         }
+
+# ══════════════════════════════════════════════════════
+# 15b. LIVE LOCATION — real-time driver tracking
+# ══════════════════════════════════════════════════════
+
+@app.post("/location/update")
+async def update_location(body: dict, cu: dict = Depends(get_user)):
+    """السائق يبعت موقعه الحالي (كل 5 ثواني)."""
+    if cu["role"] != "driver":
+        raise HTTPException(403, "للسائقين فقط")
+
+    driver_id = cu.get("driver_id")
+    if not driver_id:
+        raise HTTPException(400, "لا يوجد سائق مرتبط بهذا الحساب")
+
+    lat = body.get("lat")
+    lng = body.get("lng")
+    if lat is None or lng is None:
+        raise HTTPException(400, "lat و lng مطلوبان")
+
+    car_id   = body.get("car_id")
+    accuracy = body.get("accuracy", 0)
+    heading  = body.get("heading", 0)
+    speed    = body.get("speed", 0)
+    trip_id  = body.get("trip_id")
+    now      = datetime.utcnow().isoformat() + "Z"
+
+    with get_db() as conn:
+        conn.execute("""INSERT INTO live_locations
+            (driver_id,car_id,lat,lng,accuracy,heading,speed,updated_at,trip_id)
+            VALUES(?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(driver_id) DO UPDATE SET
+                car_id=excluded.car_id, lat=excluded.lat, lng=excluded.lng,
+                accuracy=excluded.accuracy, heading=excluded.heading,
+                speed=excluded.speed, updated_at=excluded.updated_at,
+                trip_id=excluded.trip_id""",
+            (driver_id, car_id, lat, lng, accuracy, heading, speed, now, trip_id))
+    return {"ok": True}
+
+
+@app.get("/location/live")
+async def get_live_locations(cu: dict = Depends(require_admin_or_reporter)):
+    """الأدمن يجيب آخر مواقع كل السائقين النشطين (آخر 2 دقيقة)."""
+    stale_cutoff = (datetime.utcnow() - timedelta(minutes=2)).isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT ll.driver_id, ll.car_id, ll.lat, ll.lng,
+                            ll.accuracy, ll.heading, ll.speed,
+                            ll.updated_at, ll.trip_id,
+                            d.name as driver_name,
+                            c.plate as car_plate, c.model as car_model
+                     FROM live_locations ll
+                     LEFT JOIN drivers d ON d.id = ll.driver_id
+                     LEFT JOIN cars    c ON c.id = ll.car_id
+                     WHERE ll.updated_at >= ?
+                     ORDER BY ll.updated_at DESC""", (stale_cutoff,))
+        return [dict(r) for r in c.fetchall()]
+
 
 # ══════════════════════════════════════════════════════
 # 16. TRIPS — with pagination
