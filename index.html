@@ -2956,10 +2956,6 @@ async function renderMapSection() {
     <div class="card">
       <div class="card-header"><div class="card-title">🅿️ آخر تسجيل جراج لكل سائق</div></div>
       <div class="table-wrap">${buildGarageTable(garageLatest)}</div>
-    </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">📋 ملخص المركبات والمواقع</div></div>
-      <div class="table-wrap">${buildMapSummaryTable(trips,drivers,cars,garageLatest)}</div>
     </div>`;
 
   setTimeout(()=>{
@@ -2976,22 +2972,25 @@ async function renderMapSection() {
 
       let coords=null, color='#1e3a5f', label='📍 آخر موقع معروف', isGarage=false;
 
-      // Priority 1: Active trip → show start location (green)
-      if(activeTrip){
+      // Priority 1: Garage record (gold pin) — if no active trip
+      if(!activeTrip && garageRec){
+        const gc=parseCoords(garageRec.location);
+        if(gc){ coords=gc; color='#b8860b'; label='🅿️ في الجراج'; isGarage=true; }
+      }
+      // Priority 2: Active trip → start location (green)
+      if(!coords && activeTrip){
         coords=parseCoords(activeTrip.start_location||'');
         color='#10b981'; label='● رحلة نشطة';
       }
-      // Priority 2: No active trip → show last completed trip end location (navy)
+      // Priority 3: Last completed trip — end then start location (navy)
       if(!coords && lastTrip){
         coords=parseCoords(lastTrip.end_location||'') || parseCoords(lastTrip.start_location||'');
         color='#1e3a5f'; label='📍 آخر موقع معروف';
       }
-      // Priority 3: Garage record overrides if no active trip (gold pin)
-      if(!activeTrip && garageRec){
-        const gc=parseCoords(garageRec.location);
-        if(gc){
-          coords=gc; color='#b8860b'; label='🅿️ في الجراج'; isGarage=true;
-        }
+      // Priority 4: Any trip start location (navy)
+      if(!coords){
+        const anyTrip = trips.filter(t=>t.car_id===car.id&&t.start_location).sort((a,b)=>b.id-a.id)[0];
+        if(anyTrip){ coords=parseCoords(anyTrip.start_location||''); color='#1e3a5f'; label='📍 آخر موقع معروف'; }
       }
 
       if(!coords) return;
