@@ -987,8 +987,9 @@ async def login(request: Request, data: LoginReq):
 
         # Tokens
         access_token = create_access_token({
-            "user_id": u["id"], "role": u["role"], "username": u["username"],
-            "branch":  u["branch"] or ""
+            "user_id":   u["id"], "role": u["role"], "username": u["username"],
+            "branch":    u["branch"] or "",
+            "driver_id": driver_id  # مضاف عشان update_location يشتغل
         })
         refresh_token, refresh_exp = create_refresh_token()
 
@@ -1026,8 +1027,16 @@ async def refresh_token(request: Request, body: RefreshReq):
         if datetime.fromisoformat(u["refresh_exp"]) < datetime.utcnow():
             raise HTTPException(401, "انتهت صلاحية الجلسة — يرجى تسجيل الدخول مجدداً")
 
+        # جيب driver_id لو الـ role = driver
+        drv_id_refresh = None
+        if u["role"] == "driver":
+            c.execute("SELECT id FROM drivers WHERE user_id=?", (u["id"],))
+            drv_row = c.fetchone()
+            drv_id_refresh = drv_row["id"] if drv_row else None
+
         new_access = create_access_token({
-            "user_id": u["id"], "role": u["role"], "username": u["username"]
+            "user_id": u["id"], "role": u["role"], "username": u["username"],
+            "driver_id": drv_id_refresh
         })
         new_refresh, new_exp = create_refresh_token()
         c.execute("UPDATE users SET refresh_token=?,refresh_exp=? WHERE id=?",
@@ -1448,6 +1457,11 @@ async def update_location(body: dict, cu: dict = Depends(get_user)):
         raise HTTPException(403, "للسائقين فقط")
 
     driver_id = cu.get("driver_id")
+    # Fallback: ابحث عن driver_id من الـ DB لو مش موجود في الـ token
+    if not driver_id:
+        with get_db() as _conn:
+            _row = _conn.execute("SELECT id FROM drivers WHERE user_id=?", (cu["user_id"],)).fetchone()
+            driver_id = _row["id"] if _row else None
     if not driver_id:
         raise HTTPException(400, "لا يوجد سائق مرتبط بهذا الحساب")
 

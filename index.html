@@ -4208,6 +4208,7 @@ function silentGetLocation(timeoutMs=10000) {
 async function renderDriverTrip() {
   const [allowedCars, allTrips] = await Promise.all([loadAllowedCars(), loadTrips()]);
   const activeTrip = allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
+  window._activeTrip = activeTrip || null;
   const carOpts = allowedCars.length
     ? '<option value="">-- اختر المركبة --</option>'+allowedCars.map(c=>`<option value="${c.id}" ${activeTrip&&activeTrip.car_id===c.id?'selected':''}>${c.plate} — ${c.model}</option>`).join('')
     : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
@@ -5232,21 +5233,27 @@ function startLiveLocationSending() {
   function sendPosition(pos) {
     const { latitude: lat, longitude: lng, accuracy, heading, speed } = pos.coords;
     lastPos = { lat, lng, accuracy, heading: heading||0, speed: speed||0 };
-
-    // جيب بيانات الرحلة النشطة لو موجودة
-    const carId  = window._driverCar?.id   || null;
-    const tripId = window._activeTrip?.id  || null;
-
+    const carId  = window._driverCar?.id  || null;
+    const tripId = window._activeTrip?.id || null;
     apiCall('/location/update', 'POST', {
       lat, lng, accuracy, heading: heading||0, speed: speed||0,
       car_id: carId, trip_id: tripId
     }).catch(()=>{});
   }
 
-  // watchPosition: يبعت كلما اتغير الموقع (أدق من setInterval)
+  function onLocationError(err) {
+    // لو GPS مش شغال — مش بنوقف، بس بنسجل
+    console.warn('GPS error:', err.message);
+  }
+
+  // ── أرسل الموقع فوراً أول ما بنبدأ ──
+  navigator.geolocation.getCurrentPosition(sendPosition, onLocationError,
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+  );
+
+  // watchPosition: يبعت كلما اتغير الموقع
   window._liveLocationWatcher = navigator.geolocation.watchPosition(
-    sendPosition,
-    ()=>{},
+    sendPosition, onLocationError,
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
   );
 
@@ -5592,6 +5599,7 @@ async function renderDriverSinglePage() {
   window._driverCar  = primaryCar;
 
   const activeTrip = allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time);
+  window._activeTrip = activeTrip || null;
   const now = new Date();
   const dayName = now.toLocaleDateString('ar-EG',{weekday:'long'});
   const dateStr = now.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
