@@ -5326,7 +5326,6 @@ async function refreshDriverDashboard() {
     clearInterval(window._driverCarPollInterval);
     window._driverCarPollInterval = null;
   }
-  const btn = document.getElementById('dpRefresh');
   if(btn) { btn.style.transform='rotate(360deg)'; btn.style.transition='transform .5s'; }
   await renderDriverSinglePage();
 }
@@ -5438,11 +5437,7 @@ async function renderDriverSinglePage() {
 
   document.getElementById('appShell').innerHTML = `
     <button class="dp-logout" id="dpLogout">خروج</button>
-    <button id="dpRefresh" onclick="refreshDriverDashboard()" title="تحديث البيانات"
-      style="position:fixed;top:1rem;left:1rem;z-index:999;background:var(--surface);
-             border:1.5px solid var(--border);border-radius:50%;width:36px;height:36px;
-             font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;
-             box-shadow:var(--shadow-sm);transition:.2s" title="تحديث">🔄</button>
+
 
     <div class="dp-wrap">
 
