@@ -2802,36 +2802,22 @@ async function renderAdminWorkshops() {
     </div>
     <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1.2rem">
       <div class="card-header">
-        <div class="card-title" style="color:#065f46">💰 أسعار الصيانة لكل نوع (يُطبَّق تلقائياً على السائقين)</div>
-        ${isSuperuser() ? `<button class="btn btn-success btn-sm" onclick="saveTypePrices()">💾 حفظ الأسعار</button>` : '<span style="font-size:.78rem;color:var(--muted)">👁️ عرض فقط — الأسعار يحددها السوبر يوزر</span>'}
+        <div class="card-title" style="color:#065f46">💰 أسعار الوقود والصيانة</div>
+        ${!isReporter() ? `<button class="btn btn-success btn-sm" onclick="openPricesPopup(${JSON.stringify(currentPrices)})">⚙️ تعديل الأسعار</button>` : ''}
       </div>
-      <div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:12px;padding:.9rem;margin-bottom:.8rem">
-        <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.7rem">⛽ أنواع الوقود — سعر اللتر (جنيه)</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.55rem">
-          ${FUEL_TYPES.map(f=>`
-            <div style="background:white;border-radius:8px;padding:.7rem;border:1px solid #fde68a">
-              <div style="font-size:.77rem;font-weight:700;color:#b45309;margin-bottom:.3rem">⛽ ${f.label}</div>
-              <div style="display:flex;align-items:center;gap:.3rem">
-                <input type="number" id="typePrice_${f.key}" value="${currentPrices[f.key]||0}" ${!isSuperuser()?"disabled":""}
-                  placeholder="0" min="0" step="0.01" ${isReporter()?'disabled':''}
-                  style="width:100%;padding:.4rem .6rem;border:1.5px solid #f59e0b;border-radius:7px;font-size:.85rem">
-                <span style="font-size:.72rem;color:var(--muted)">جنيه</span>
-              </div>
-            </div>`).join('')}
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.7rem">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;padding:.4rem 0">
+        ${FUEL_TYPES.map(f=>`
+          <div style="background:#fff7ed;border-radius:10px;padding:.6rem 1rem;border:1px solid #fde68a;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:.8rem;font-weight:700;color:#b45309">⛽ ${f.label}</span>
+            <span style="font-size:.88rem;font-weight:800;color:#92400e">${(currentPrices[f.key]||0)} <small style="font-size:.68rem">ج/لتر</small></span>
+          </div>`).join('')}
         ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`
-          <div style="background:white;border-radius:10px;padding:.8rem;border:1px solid #e2e8f0">
-            <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.4rem">${v.icon} ${v.label}</div>
-            <div style="display:flex;align-items:center;gap:.4rem">
-              <input type="number" id="typePrice_${k}" value="${currentPrices[k]||0}" placeholder="0" min="0" step="0.01" ${!isSuperuser()?'disabled':''}
-                style="width:100%;padding:.45rem .7rem;border:1.5px solid #10b981;border-radius:8px;font-size:.88rem">
-              <span style="font-size:.78rem;color:var(--muted);white-space:nowrap">جنيه</span>
-            </div>
+          <div style="background:white;border-radius:10px;padding:.6rem 1rem;border:1px solid #d1fae5;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:.8rem;font-weight:700;color:#065f46">${v.icon} ${v.label}</span>
+            <span style="font-size:.88rem;font-weight:800;color:#047857">${(currentPrices[k]||0)} <small style="font-size:.68rem">جنيه</small></span>
           </div>`).join('')}
       </div>
-      <div style="font-size:.78rem;color:var(--muted);margin-top:.6rem">
+      <div style="font-size:.78rem;color:var(--muted);margin-top:.4rem">
         ⚠️ السائق لا يرى المبلغ — فقط "السعر محدد من قبل الإدارة" • القيمة 0 = بدون سعر
       </div>
     </div>
@@ -4816,15 +4802,52 @@ async function renderDriverWorkshop() {
       <div><h2>الورشة</h2><p>اختر نوع الصيانة لتسجيل العملية</p></div>
     </div>
     <div class="card">
-      <div class="card-header"><div class="card-title">اختر نوع الصيانة</div></div>
+      <div class="card-header"><div class="card-title">اختر نوع الخدمة</div></div>
       <div class="workshop-items">
-        ${Object.entries(WT).map(([k,v])=>`
-          <div class="workshop-item" onclick="openWsModal('${k}')">
-            <div class="workshop-item-icon">${v.icon}</div>
-            <div class="workshop-item-label">${v.label}</div>
+        ${FUEL_TYPES.map(f=>`
+          <div class="workshop-item" onclick="openWsModal('${f.key}')">
+            <div class="workshop-item-icon">⛽</div>
+            <div class="workshop-item-label">${f.label}</div>
           </div>`).join('')}
+        <div class="workshop-item" onclick="openWsModal('oil')">
+          <div class="workshop-item-icon">🛢️</div>
+          <div class="workshop-item-label">تغيير زيت</div>
+        </div>
+        <div class="workshop-item" style="border-color:var(--primary);background:rgba(30,58,95,.05)" onclick="openMaintenanceGroupModal()">
+          <div class="workshop-item-icon">🔧</div>
+          <div class="workshop-item-label">الصيانة</div>
+        </div>
+        <div class="workshop-item" onclick="openWsModal('other')">
+          <div class="workshop-item-icon">🔨</div>
+          <div class="workshop-item-label">أخرى</div>
+        </div>
       </div>
     </div>`;
+}
+
+function openMaintenanceGroupModal() {
+  const MAINT_TYPES = [
+    {key:'filter',  icon:'🔧', label:'فلتر'},
+    {key:'tire',    icon:'⚫', label:'كوتش'},
+    {key:'battery', icon:'🔋', label:'بطارية'},
+    {key:'belt',    icon:'🔩', label:'سيور'},
+  ];
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🔧 الصيانة — اختر النوع</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:.5rem 0">
+      ${MAINT_TYPES.map(t=>`
+        <div onclick="closeModal();setTimeout(()=>openWsModal('${t.key}'),180)"
+          style="background:var(--surface-2);border:1.5px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;cursor:pointer;transition:.15s"
+          onmouseover="this.style.borderColor='var(--gold)';this.style.background='rgba(184,134,11,.06)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+          <div style="font-size:2rem;margin-bottom:.4rem">${t.icon}</div>
+          <div style="font-size:.88rem;font-weight:700;color:var(--text-2)">${t.label}</div>
+        </div>`).join('')}
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button></div>`);
 }
 
 function openWsModal(type) {
@@ -5014,6 +5037,79 @@ async function saveTypePrices() {
     await renderAdminWorkshops();
   }catch(e){ showNotification(e.message,'error'); }
 }
+
+function openPricesPopup(currentPrices) {
+  const FUEL_KEYS = ['fuel_solar','fuel_92','fuel_95','fuel_80','fuel_cng'];
+  const isSup = isSuperuser();
+  const isAdm = isAdmin();
+
+  // Admin ومفيش superuser → ممكن يعدل الصيانة بس لا الوقود
+  // Superuser → يعدل كل حاجة
+  // Reporter → عرض فقط
+  const canEditFuel = isSup;
+  const canEditMaint = isSup || isAdm;
+
+  const fuelRows = FUEL_TYPES.map(f=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:#fff7ed;border-radius:8px;border:1px solid #fde68a;margin-bottom:.4rem">
+      <span style="font-size:.82rem;font-weight:700;color:#b45309">⛽ ${f.label}</span>
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <input type="number" id="pp_${f.key}" value="${currentPrices[f.key]||0}"
+          min="0" step="0.01" ${!canEditFuel?'disabled':''}
+          style="width:90px;padding:.35rem .6rem;border:1.5px solid ${canEditFuel?'#f59e0b':'#d1d5db'};border-radius:7px;font-size:.85rem;text-align:center;background:${canEditFuel?'white':'#f9fafb'}">
+        <span style="font-size:.72rem;color:var(--muted)">ج/لتر</span>
+        ${!canEditFuel?'<span title="يحدده السوبر يوزر فقط" style="color:#f59e0b;font-size:.8rem">🔒</span>':''}
+      </div>
+    </div>`).join('');
+
+  const maintRows = Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:white;border-radius:8px;border:1px solid #d1fae5;margin-bottom:.4rem">
+      <span style="font-size:.82rem;font-weight:700;color:#065f46">${v.icon} ${v.label}</span>
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <input type="number" id="pp_${k}" value="${currentPrices[k]||0}"
+          min="0" step="0.01" ${!canEditMaint?'disabled':''}
+          style="width:90px;padding:.35rem .6rem;border:1.5px solid ${canEditMaint?'#10b981':'#d1d5db'};border-radius:7px;font-size:.85rem;text-align:center;background:${canEditMaint?'white':'#f9fafb'}">
+        <span style="font-size:.72rem;color:var(--muted)">جنيه</span>
+      </div>
+    </div>`).join('');
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">⚙️ أسعار الوقود والصيانة</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="max-height:70vh;overflow-y:auto;padding:.2rem">
+      <div style="font-size:.8rem;font-weight:700;color:#92400e;margin-bottom:.5rem;padding:.4rem .8rem;background:#fff7ed;border-radius:8px">⛽ أنواع الوقود — سعر اللتر ${!canEditFuel?'<span style="color:#6b7280">(عرض فقط — يحدده السوبر يوزر)</span>':''}</div>
+      ${fuelRows}
+      <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.5rem;margin-top:.8rem;padding:.4rem .8rem;background:#f0fdf9;border-radius:8px">🔧 أسعار الصيانة</div>
+      ${maintRows}
+    </div>
+    <div style="font-size:.75rem;color:var(--muted);margin:.5rem 0">⚠️ القيمة 0 = بدون سعر — السائق لا يرى الأرقام</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
+      ${canEditMaint ? `<button class="btn btn-success" id="ppSaveBtn">💾 حفظ الأسعار</button>` : ''}
+    </div>`);
+
+  if(canEditMaint) {
+    document.getElementById('ppSaveBtn').onclick = async () => {
+      const body = {};
+      FUEL_TYPES.forEach(f=>{
+        const el = document.getElementById('pp_'+f.key);
+        if(el && !el.disabled) body[f.key] = parseFloat(el.value)||0;
+      });
+      Object.keys(WT).filter(k=>!k.startsWith('fuel_')).forEach(k=>{
+        const el = document.getElementById('pp_'+k);
+        if(el && !el.disabled) body[k] = parseFloat(el.value)||0;
+      });
+      try {
+        await apiCall('/settings/prices','PUT',body);
+        showNotification('✅ تم حفظ الأسعار بنجاح','success');
+        closeModal();
+        await renderAdminWorkshops();
+      } catch(e) { showNotification(e.message,'error'); }
+    };
+  }
+}
+
 
 /* ── NOTIFICATION POLLING ── */
 async function pollNotifications() {

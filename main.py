@@ -802,18 +802,30 @@ SUPERUSERS = [
 ]
 
 def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
-    """Ensure exactly the given accounts exist for a role.
-    Removes accounts no longer in the list, adds missing ones.
+    """Ensure the hardcoded accounts exist for a role.
+    Only removes accounts that WERE previously hardcoded but removed from the list.
+    Dynamically added accounts (via API) are preserved.
     Skips rehashing on restart for accounts that already exist.
     """
     c.execute("SELECT id, username FROM users WHERE role=?", (role,))
     existing = {r["username"]: r["id"] for r in c.fetchall()}
-    allowed  = {u for u, _ in accounts}
+    hardcoded_names = {u for u, _ in accounts}
+
+    # Only delete accounts that are NOT in hardcoded list AND were hardcoded before
+    # We track this via a special marker: accounts seeded by code get flag in a settings table
+    c.execute("""CREATE TABLE IF NOT EXISTS _seeded_accounts (
+        username TEXT PRIMARY KEY,
+        role TEXT NOT NULL
+    )""")
+    c.execute("SELECT username FROM _seeded_accounts WHERE role=?", (role,))
+    previously_seeded = {r["username"] for r in c.fetchall()}
 
     for uname, uid in list(existing.items()):
-        if uname not in allowed:
+        # Only delete if it was previously seeded AND is no longer in hardcoded list
+        if uname in previously_seeded and uname not in hardcoded_names:
             c.execute("DELETE FROM users WHERE id=?", (uid,))
-            log.info(f"Removed old {role}: {uname}")
+            c.execute("DELETE FROM _seeded_accounts WHERE username=?", (uname,))
+            log.info(f"Removed old seeded {role}: {uname}")
 
     for uname, pw in accounts:
         if uname not in existing:
@@ -821,6 +833,9 @@ def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
             c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
                       (uname, pw_hash, role))
             log.info(f"Created {role}: {uname}")
+        # Mark as seeded (or update marker if already exists)
+        c.execute("INSERT OR REPLACE INTO _seeded_accounts(username,role) VALUES(?,?)",
+                  (uname, role))
 
     log.info(f"✅ {role.capitalize()} accounts synced")
 
@@ -1965,17 +1980,20 @@ async def get_prices(cu: dict = Depends(get_user)):
             return {r["key"].replace("price_",""): float(r["value"]) for r in c.fetchall()}
 
 @app.put("/settings/prices")
-async def set_prices(body: dict, cu: dict = Depends(require_superuser)):
+async def set_prices(body: dict, cu: dict = Depends(require_admin)):
     """
-    - admin عنده فرع: يحفظ الأسعار لفرعه: key = price_{branch}_{type}
-    - superuser أو بدون فرع: يحفظ الأسعار العامة: key = price_{type}
+    - admin عنده فرع: يحفظ الأسعار لفرعه (ماعدا الوقود — ده للسوبر فقط)
+    - superuser أو بدون فرع: يحفظ كل الأسعار العامة
     - superuser ممكن يمرر { branch: 'cairo', prices: {...} } عشان يعدل فرع معين
     """
     branch = _branch_filter(cu)
+    is_super = cu["role"] == "superuser"
+
     # superuser ممكن يحدد فرع معين في الـ body
-    if not branch and cu["role"] == "superuser":
+    if not branch and is_super:
         branch = body.pop("branch", None) or None
 
+    FUEL_TYPES_SET = {"fuel_solar", "fuel_92", "fuel_95", "fuel_80", "fuel_cng"}
     valid = WORKSHOP_TYPES
     now   = datetime.utcnow().isoformat() + "Z"
     saved = {}
@@ -1985,6 +2003,9 @@ async def set_prices(body: dict, cu: dict = Depends(require_superuser)):
             if ws_type not in valid:
                 continue
             if not isinstance(price, (int, float)) or price < 0:
+                continue
+            # admin لا يستطيع تعديل أسعار الوقود — فقط السوبر يوزر
+            if ws_type in FUEL_TYPES_SET and not is_super:
                 continue
             key = f"price_{branch}_{ws_type}" if branch else f"price_{ws_type}"
             c.execute("INSERT OR REPLACE INTO app_settings(key,value,updated_at) VALUES(?,?,?)",
@@ -2431,12 +2452,12 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
             # بس الـ odometer_change والأخرى بتتحال للسوبر
             direct_types = {"leave", "permission", "license_renew"}
             req_type = req.get("type", "") if hasattr(req, "get") else dict(req).get("type", "")
-            
+
             status_direct = (body.get("status") or "").strip()
             if status_direct in ("approved", "rejected") and req_type in direct_types:
                 # قرار مباشر من الأدمن
                 admin_msg = (body.get("admin_message") or "").strip()
-                
+
                 # لو تجديد رخصة وتمت الموافقة — حدّث بيانات السائق
                 if req_type == "license_renew" and status_direct == "approved":
                     notes_text = dict(req).get("notes", "")
@@ -2454,7 +2475,7 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
                         else:
                             c.execute("UPDATE drivers SET vehicle_license_expiry=? WHERE id=?",
                                       (new_exp, driver_id_req))
-                
+
                 c.execute("""UPDATE driver_requests
                              SET status=?, admin_notes=?, admin_message=?,
                                  handled_by=?, handled_at=?
