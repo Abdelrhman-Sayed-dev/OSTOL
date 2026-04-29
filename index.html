@@ -1281,7 +1281,6 @@ function buildAdminNav() {
     base.push({id:'super-licenses',    icon:'⚠️', label:'تنبيهات الرخص'});
     base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
-    base.push({id:'super-supervisors', icon:'🎯', label:'المشرفين'});
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
   }
@@ -2121,7 +2120,19 @@ function openAddCarModal(editId='', editCar={}) {
     <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
       <div class="form-group" style="margin-bottom:0">
         <label>المشروع</label>
-        <input id="mCarProject" placeholder="مثال: القطار السريع" value="${editCar.project||''}">
+        <div style="position:relative">
+          <input id="mCarProjectSearch" placeholder="🔍 ابحث أو اكتب المشروع..."
+            autocomplete="off"
+            value="${editCar.project||''}"
+            style="width:100%"
+            oninput="filterProjectDrop(this.value);document.getElementById('mCarProject').value=this.value"
+            onfocus="showProjectDrop()"
+            onblur="setTimeout(()=>hideProjectDrop(),200)">
+          <div id="mCarProjectDrop" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:9999;
+               background:#fff;border:1.5px solid var(--border-2);border-radius:8px;
+               max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.15)"></div>
+          <input type="hidden" id="mCarProject" value="${editCar.project||''}">
+        </div>
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>الفرع / الإدارة</label>
@@ -2385,7 +2396,11 @@ function filterTrips() {
   let f=(window._tripsData||[]).filter(t=>{
     if(dId    && String(t.driver_id)!==dId)  return false;
     if(cId    && String(t.car_id)!==cId)     return false;
-    if(date   && !t.start_time?.startsWith(date)) return false;
+    if(date) {
+      if(!t.start_time) return false;
+      const localDate = new Date(t.start_time).toLocaleDateString('en-CA');
+      if(localDate !== date) return false;
+    }
     if(status==='active' && t.end_time)   return false;
     if(status==='done'   && !t.end_time)  return false;
     if(search) {
@@ -2410,6 +2425,54 @@ function clearTripFilters(){
   const fd=document.getElementById('ftDate');if(fd)fd.value='';
   const fs=document.getElementById('ftStatus');if(fs)fs.value='';
   filterTrips();
+}
+
+/* ── مشروعات مدينة نصر Dropdown ── */
+const NASR_PROJECTS = [
+  "15مايو","81 حربي","ادارة الفرع","ادارة الكباري","ادارة تأجير المعدات",
+  "ادارة تحريك التربه","ارابكو","اسكان العاصمه","البرلمان","التراخيص",
+  "ك 35","خدمة مشروعات الفرع","العلمين","القطار السريع","القلج",
+  "الكيان العسكري","المحاجر","المركز الثقافي","المركز الرئيسي","النادي",
+  "النهر الاخضر","الورشه المكانيكيه","توكيل ارمادا","توكيل انجينز",
+  "توكيل اوتراك","توكيل كوماتسو","رئاسة القطاع","طب الازهر",
+  "فرع القاهره","فتحة يمن","فرع شرق ووسط","قطاع القاهره الكبري",
+  "الروافع","محطة غرب اكتوبر","محكمة النقض","مخازن بدر","مخزن الكباري",
+  "مونوريل 10","مونوريل 5","مونوريل 4","مونوريل 9",
+  "ورش الاسكندريه","ورش اسماعليه","ورش العمرات","ورش 4.5"
+];
+
+function showProjectDrop() {
+  filterProjectDrop(document.getElementById('mCarProjectSearch')?.value || '');
+}
+
+function hideProjectDrop() {
+  const d = document.getElementById('mCarProjectDrop');
+  if(d) d.style.display = 'none';
+}
+
+function filterProjectDrop(query) {
+  const drop = document.getElementById('mCarProjectDrop');
+  if(!drop) return;
+  const q = query.trim().toLowerCase();
+  const filtered = NASR_PROJECTS.filter(p => !q || p.toLowerCase().includes(q));
+  if(!filtered.length) { drop.style.display='none'; return; }
+  drop.innerHTML = filtered.map(p => {
+    const hl = q ? p.replace(new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),
+      m=>`<mark style="background:#fde68a;border-radius:2px">${m}</mark>`) : p;
+    return `<div onmousedown="selectProject('${p.replace(/'/g,"\'")}')"
+      style="padding:.5rem .9rem;cursor:pointer;font-size:.88rem;border-bottom:1px solid var(--border);transition:background .15s"
+      onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">${hl}</div>`;
+  }).join('');
+  drop.style.display = 'block';
+}
+
+function selectProject(name) {
+  const si = document.getElementById('mCarProjectSearch');
+  const hi = document.getElementById('mCarProject');
+  const d  = document.getElementById('mCarProjectDrop');
+  if(si) si.value = name;
+  if(hi) hi.value = name;
+  if(d)  d.style.display = 'none';
 }
 
 /* ── تعديل عداد الرحلة ── */
@@ -5179,7 +5242,7 @@ async function renderDriverSinglePage() {
       <div class="form-group"><label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
         <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}" max="999999"
                class="odo-input"
-               
+
                oninput="this.classList.toggle('invalid',!isNaN(parseFloat(this.value))&&parseFloat(this.value)<=${startOdo})">
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem;text-align:center">
           يجب أن يكون أكبر من <strong style="color:#1e3a5f">${startOdo} كم</strong>
