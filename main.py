@@ -1951,33 +1951,42 @@ async def unread_count(cu: dict = Depends(get_user)):
 
 
 @app.get("/settings/prices")
-async def get_prices(cu: dict = Depends(get_user)):
+async def get_prices(branch: Optional[str] = None, cu: dict = Depends(get_user)):
     """
-    - superuser أو بدون فرع: يرجع كل الأسعار (عامة + فروع)
-    - admin/reporter عنده فرع: يرجع أسعار فرعه (يرجع للعام لو مفيش سعر فرع محدد)
+    - superuser يمرر ?branch=xxx لأسعار فرع محدد
+    - admin/reporter عنده فرع: يرجع أسعار فرعه تلقائياً
+    - بدون فرع: الأسعار العامة
     """
-    branch = _branch_filter(cu)
+    # السوبر يوزر يقدر يحدد فرع عبر query param
+    eff_branch = branch if (cu["role"] == "superuser" and branch) else _branch_filter(cu)
+
+    def _prices_for_branch(c, br):
+        prices = {}
+        for ws_type in WORKSHOP_TYPES:
+            c.execute("SELECT value FROM app_settings WHERE key=?", (f"price_{br}_{ws_type}",))
+            row = c.fetchone()
+            if row:
+                prices[ws_type] = float(row["value"])
+            else:
+                c.execute("SELECT value FROM app_settings WHERE key=?", (f"price_{ws_type}",))
+                row = c.fetchone()
+                prices[ws_type] = float(row["value"]) if row else 0.0
+        return prices
+
     with get_db() as conn:
         c = conn.cursor()
-        if branch:
-            prices = {}
-            for ws_type in WORKSHOP_TYPES:
-                # ابحث عن سعر الفرع أولاً
-                c.execute("SELECT value FROM app_settings WHERE key=?",
-                          (f"price_{branch}_{ws_type}",))
-                row = c.fetchone()
-                if row:
-                    prices[ws_type] = float(row["value"])
-                else:
-                    # fallback للسعر العام
-                    c.execute("SELECT value FROM app_settings WHERE key=?",
-                              (f"price_{ws_type}",))
-                    row = c.fetchone()
-                    prices[ws_type] = float(row["value"]) if row else 0.0
-            return prices
+        if eff_branch:
+            return _prices_for_branch(c, eff_branch)
         else:
             c.execute("SELECT key,value FROM app_settings WHERE key LIKE 'price_%'")
-            return {r["key"].replace("price_",""): float(r["value"]) for r in c.fetchall()}
+            all_rows = {r["key"]: float(r["value"]) for r in c.fetchall()}
+            # رجّع بس الأسعار العامة (مش الفروع) — key بدون underscore زيادة
+            return {
+                k.replace("price_",""): v
+                for k, v in all_rows.items()
+                if k.count('_') == 1  # price_oil, price_fuel_solar لكن مش price_branch_oil
+                   or k.startswith('price_fuel_')  # fuel subtypes
+            }
 
 @app.put("/settings/prices")
 async def set_prices(body: dict, cu: dict = Depends(require_admin)):
