@@ -5320,6 +5320,17 @@ function showPermissionsModal() {
 }
 
 /* ── DRIVER SINGLE PAGE ── */
+async function refreshDriverDashboard() {
+  // يوقف الـ polling القديم قبل ما يعيد التحميل
+  if(window._driverCarPollInterval) {
+    clearInterval(window._driverCarPollInterval);
+    window._driverCarPollInterval = null;
+  }
+  const btn = document.getElementById('dpRefresh');
+  if(btn) { btn.style.transform='rotate(360deg)'; btn.style.transition='transform .5s'; }
+  await renderDriverSinglePage();
+}
+
 async function renderDriverSinglePage() {
   document.body.classList.add('driver-mode');
 
@@ -5427,6 +5438,11 @@ async function renderDriverSinglePage() {
 
   document.getElementById('appShell').innerHTML = `
     <button class="dp-logout" id="dpLogout">خروج</button>
+    <button id="dpRefresh" onclick="refreshDriverDashboard()" title="تحديث البيانات"
+      style="position:fixed;top:1rem;left:1rem;z-index:999;background:var(--surface);
+             border:1.5px solid var(--border);border-radius:50%;width:36px;height:36px;
+             font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;
+             box-shadow:var(--shadow-sm);transition:.2s" title="تحديث">🔄</button>
 
     <div class="dp-wrap">
 
@@ -5602,9 +5618,32 @@ async function renderDriverSinglePage() {
 
   // Logout
   document.getElementById('dpLogout').onclick=()=>{
-    clearInterval(notifPollInterval); clearAuth(); currentUser=null;
+    clearInterval(notifPollInterval);
+    if(window._driverCarPollInterval) clearInterval(window._driverCarPollInterval);
+    clearAuth(); currentUser=null;
     setTimeout(()=>location.reload(),300);
   };
+
+  // ── Polling: كشف تغيير المركبة المخصصة كل 90 ثانية ──
+  window._driverCarPollInterval = setInterval(async () => {
+    if(!currentUser?.driver_id) return;
+    try {
+      const newCar = await apiCall(`/drivers/${currentUser.driver_id}/primary-car`).catch(()=>null);
+      const oldId  = window._driverCar?.id ?? null;
+      const newId  = newCar?.id ?? null;
+      if(oldId !== newId) {
+        // العربية اتغيرت — بلّغ وأعد تحميل الداشبورد
+        const msg = newCar
+          ? `🔄 تم تحديث مركبتك: ${newCar.plate} — ${newCar.model}`
+          : '⚠️ تم إلغاء تخصيص مركبتك';
+        showNotification(msg, newCar?'success':'warning', 6000);
+        window._driverCar = newCar;
+        // أعد رسم الداشبورد بالبيانات الجديدة
+        await renderDriverSinglePage();
+      }
+    } catch(e) {}
+  }, 90000); // كل 90 ثانية
+
 
   // Start trip
   document.getElementById('dpStart')?.addEventListener('click', async () => {
