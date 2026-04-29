@@ -2787,6 +2787,7 @@ async function renderAdminWorkshops() {
     apiCall('/settings/prices').catch(()=>({}))
   ]);
   const totalRaw = records.reduce((s,r)=>s+(r.price||0),0);
+  window._currentWsPrices = currentPrices;
   const total = totalRaw.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
@@ -2803,7 +2804,7 @@ async function renderAdminWorkshops() {
     <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1.2rem">
       <div class="card-header">
         <div class="card-title" style="color:#065f46">💰 أسعار الوقود والصيانة</div>
-        ${!isReporter() ? `<button class="btn btn-success btn-sm" onclick="openPricesPopup(${JSON.stringify(currentPrices)})">⚙️ تعديل الأسعار</button>` : ''}
+        ${!isReporter() ? `<button class="btn btn-success btn-sm" onclick="openPricesPopup(window._currentWsPrices)">⚙️ تعديل الأسعار</button>` : ''}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;padding:.4rem 0">
         ${FUEL_TYPES.map(f=>`
@@ -5334,7 +5335,7 @@ async function renderDriverSinglePage() {
 
   const emgCardsHtml = recentReports.map(r=>buildEmgCard(r)).join('');
 
-  const wsTypes = Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')&&k!=='oil');
+  // wsTypes kept for reference (no longer used in dp-ws-grid)
 
   document.getElementById('appShell').innerHTML = `
     <button class="dp-logout" id="dpLogout">خروج</button>
@@ -5505,8 +5506,7 @@ async function renderDriverSinglePage() {
       <div class="dp-section">
         <div class="dp-label">🔩 خدمات الصيانة</div>
         <div class="dp-ws-grid">
-          ${wsTypes.map(([k,v])=>`
-            <button class="dp-ws-btn" onclick="dpWsModal('${k}')">${v.label}</button>`).join('')}
+          <button class="dp-ws-btn" style="border-color:var(--primary);color:var(--primary);font-weight:800" onclick="openDpMaintenanceGroup()">🔧 الصيانة</button>
         </div>
       </div>
 
@@ -6166,6 +6166,32 @@ async function _sendEmergencyNoAudio() {
 }
 
 /* Workshop modal — car is read-only, set to primary car */
+function openDpMaintenanceGroup() {
+  const MAINT = [
+    {key:'filter',  icon:'🔧', label:'فلتر'},
+    {key:'tire',    icon:'⚫', label:'كوتش'},
+    {key:'battery', icon:'🔋', label:'بطارية'},
+    {key:'belt',    icon:'🔩', label:'سيور'},
+    {key:'other',   icon:'🔨', label:'أخرى'},
+  ];
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🔧 الصيانة — اختر النوع</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:.5rem 0">
+      ${MAINT.map(t=>`
+        <div onclick="closeModal();setTimeout(()=>dpWsModal('${t.key}'),180)"
+          style="background:var(--surface-2);border:1.5px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;cursor:pointer;transition:.15s"
+          onmouseover="this.style.borderColor='var(--gold)';this.style.background='rgba(184,134,11,.06)'"
+          onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+          <div style="font-size:2rem;margin-bottom:.4rem">${t.icon}</div>
+          <div style="font-size:.88rem;font-weight:700;color:var(--text-2)">${t.label}</div>
+        </div>`).join('')}
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button></div>`);
+}
+
 function dpWsModal(type) {
   // 'fuel' is a virtual type — show subtype selector first
   if(type === 'fuel') {
