@@ -217,65 +217,135 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 /* ── LOGIN ── */
 .login-overlay{
   position:fixed;inset:0;
-  background:var(--bg);
-  display:flex;align-items:center;justify-content:center;z-index:2000;
-  overflow:hidden;
+  background:#F8FAFC;
+  display:flex;z-index:2000;overflow:hidden;
 }
-.login-overlay::before{
+
+/* ── الجانب الأيسر — Hero ── */
+.login-hero{
+  flex:1;
+  background:linear-gradient(160deg,#1e3a5f 0%,#1a5276 60%,#1e3a5f 100%);
+  display:flex;flex-direction:column;
+  padding:2.5rem 3rem;
+  position:relative;overflow:hidden;
+}
+.login-hero::before{
   content:'';position:absolute;inset:0;
   background:
-    radial-gradient(ellipse 60% 50% at 70% 30%, rgba(30,58,95,.06) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 20% 70%, rgba(14,165,233,.05) 0%, transparent 60%);
+    radial-gradient(ellipse 80% 60% at 40% 50%, rgba(14,165,233,.15) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 50% at 80% 80%, rgba(30,58,95,.4) 0%, transparent 60%);
 }
-.login-overlay::after{
+.login-hero::after{
   content:'';position:absolute;inset:0;
   background-image:
-    linear-gradient(#E2E8F0 1px, transparent 1px),
-    linear-gradient(90deg, #E2E8F0 1px, transparent 1px);
-  background-size:48px 48px;opacity:.4;
+    linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
+  background-size:52px 52px;
 }
-.login-card{
-  position:relative;z-index:2;
+.login-hero-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column}
+.login-brand{display:flex;align-items:center;gap:.85rem;margin-bottom:auto}
+.login-brand-icon{
+  width:52px;height:52px;background:rgba(255,255,255,.12);
+  border:1.5px solid rgba(255,255,255,.2);border-radius:14px;
+  display:flex;align-items:center;justify-content:center;font-size:1.6rem;
+}
+.login-brand-name{color:white;font-size:1.1rem;font-weight:800;line-height:1.2}
+.login-brand-sub{color:rgba(255,255,255,.5);font-size:.7rem;margin-top:.15rem;font-weight:400}
+.login-hero-content{flex:1;display:flex;flex-direction:column;justify-content:center;padding:2rem 0}
+.login-hero-title{
+  color:white;font-size:2.4rem;font-weight:900;
+  line-height:1.2;margin-bottom:1rem;letter-spacing:-.5px;
+}
+.login-hero-title span{color:#38bdf8}
+.login-hero-desc{color:rgba(255,255,255,.65);font-size:.95rem;line-height:1.7;max-width:420px;margin-bottom:2.5rem}
+.login-features{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.login-feature{
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:12px;padding:.85rem 1rem;
+  display:flex;align-items:flex-start;gap:.65rem;
+}
+.login-feature-icon{font-size:1.25rem;flex-shrink:0;margin-top:.05rem}
+.login-feature-title{color:white;font-size:.82rem;font-weight:700;margin-bottom:.15rem}
+.login-feature-desc{color:rgba(255,255,255,.45);font-size:.72rem;line-height:1.4}
+.login-hero-footer{
+  color:rgba(255,255,255,.3);font-size:.72rem;
+  padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.08);
+}
+
+/* ── الجانب الأيمن — Form ── */
+.login-panel{
+  width:480px;flex-shrink:0;
   background:#ffffff;
-  border:1px solid #E2E8F0;
-  border-radius:20px;
-  padding:2.6rem 2.4rem 2.4rem;
-  width:90%;max-width:390px;
-  text-align:center;
-  box-shadow:0 8px 40px rgba(15,23,42,.08);
+  display:flex;flex-direction:column;
+  padding:2.5rem 2.8rem;
+  border-right:none;
+  overflow-y:auto;
 }
-.login-logo{
-  width:60px;height:60px;
-  background:linear-gradient(135deg,var(--primary) 0%,var(--primary-light) 100%);
-  border-radius:16px;
+.login-panel-header{margin-bottom:2rem;margin-top:auto}
+.login-panel-logo{
+  width:64px;height:64px;
+  background:linear-gradient(135deg,#1e3a5f,#2d5486);
+  border-radius:18px;
   display:flex;align-items:center;justify-content:center;
-  font-size:1.75rem;margin:0 auto 1.1rem;
-  box-shadow:0 6px 20px rgba(30,58,95,.25);
+  font-size:2rem;margin-bottom:1.2rem;
+  box-shadow:0 6px 20px rgba(30,58,95,.2);
 }
-.login-card h2{font-size:1.35rem;color:var(--text);font-weight:800;margin-bottom:.3rem;letter-spacing:-.2px}
-.login-card p{color:var(--muted);font-size:.78rem;margin-bottom:1.7rem;font-weight:400}
-.login-card input{
-  width:100%;padding:.82rem 1rem;margin-bottom:.75rem;
-  border:1.5px solid #E2E8F0;
-  border-radius:11px;font-size:.88rem;
-  background:#F8FAFC;color:var(--text);
-  transition:.2s;font-family:inherit;
+.login-panel h2{font-size:1.6rem;color:#0f172a;font-weight:800;margin-bottom:.35rem}
+.login-panel p{color:#64748b;font-size:.85rem}
+
+.login-form{flex:1}
+.login-field{margin-bottom:1.1rem}
+.login-field label{
+  display:block;font-size:.78rem;font-weight:700;
+  color:#334155;margin-bottom:.45rem;
 }
-.login-card input::placeholder{color:#94a3b8}
-.login-card input:focus{
-  outline:none;border-color:var(--primary);
-  background:#fff;
-  box-shadow:0 0 0 3px var(--primary-glow);
+.login-input-wrap{position:relative}
+.login-input-wrap .login-input-icon{
+  position:absolute;right:.9rem;top:50%;transform:translateY(-50%);
+  color:#94a3b8;font-size:.95rem;pointer-events:none;
+}
+.login-field input{
+  width:100%;padding:.78rem 2.6rem .78rem .9rem;
+  border:1.5px solid #E2E8F0;border-radius:11px;
+  font-size:.88rem;background:#F8FAFC;color:#0f172a;
+  transition:.2s;font-family:inherit;direction:rtl;
+}
+.login-field input::placeholder{color:#94a3b8}
+.login-field input:focus{
+  outline:none;border-color:#1e3a5f;background:#fff;
+  box-shadow:0 0 0 3px rgba(30,58,95,.1);
 }
 .login-btn{
-  width:100%;
-  background:var(--primary);
-  border:none;padding:.85rem;border-radius:11px;
-  font-weight:700;font-size:.92rem;color:white;cursor:pointer;
-  transition:.2s;font-family:inherit;
+  width:100%;padding:.9rem;border-radius:11px;border:none;cursor:pointer;
+  background:#1e3a5f;color:white;
+  font-size:.92rem;font-weight:700;font-family:inherit;
+  transition:.2s;margin-bottom:1.2rem;
   box-shadow:0 4px 16px rgba(30,58,95,.25);
 }
-.login-btn:hover{background:var(--primary-light);transform:translateY(-1px);box-shadow:0 6px 20px rgba(30,58,95,.3)}
+.login-btn:hover:not(:disabled){background:#2d5486;transform:translateY(-1px);box-shadow:0 6px 20px rgba(30,58,95,.3)}
+.login-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.login-roles{
+  background:#EFF6FF;border:1px solid #BFDBFE;border-radius:11px;
+  padding:.85rem 1rem;display:flex;align-items:center;gap:.75rem;
+}
+.login-roles-icon{font-size:1.5rem;flex-shrink:0}
+.login-roles-text{font-size:.76rem;color:#1e40af;line-height:1.5}
+.login-roles-text strong{display:block;font-size:.78rem;margin-bottom:.15rem;color:#1e3a5f}
+.login-panel-footer{margin-top:auto;padding-top:1.5rem;text-align:center;color:#94a3b8;font-size:.72rem}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .login-overlay{flex-direction:column}
+  .login-hero{display:none}
+  .login-panel{width:100%;flex:1;padding:2rem 1.5rem;justify-content:center}
+  .login-panel-header{margin-top:0}
+}
+@media(min-width:769px) and (max-width:1100px){
+  .login-hero .login-features{grid-template-columns:1fr}
+  .login-panel{width:400px;padding:2rem 2.2rem}
+  .login-hero-title{font-size:1.9rem}
+}
 
 /* ── SHELL ── */
 #appShell{display:flex;min-height:100vh}
@@ -1021,6 +1091,8 @@ body.driver-mode { background:#f5f5f5; }
 .dp-qbtn-emg { animation:emgBlink 2.5s ease-in-out infinite; }
 .dp-qbtn-maint { background:#f0fdf9; }
 .dp-qbtn-maint .qi-wrap { background:rgba(16,185,129,.15); }
+.dp-qbtn-photo { background:#fdf4ff; }
+.dp-qbtn-photo .qi-wrap { background:rgba(168,85,247,.14); }
 
 /* ── WORKSHOP SERVICES — pill style ── */
 .dp-ws-grid {
@@ -1419,6 +1491,7 @@ function buildAdminNav() {
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-reassign',    icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
+    base.push({id:'driver-photos',      icon:'📷', label:'صور السائقين'});
   }
   return base;
 }
@@ -1485,6 +1558,7 @@ async function renderSection(id) {
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-reassign':  await renderSuperReassign(); break;
     case 'super-logs':      await renderSuperLogs(); break;
+    case 'driver-photos': await renderDriverPhotosSection(); break;
     case 'import-data':     await renderImportSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
@@ -5844,6 +5918,12 @@ async function renderDriverSinglePage() {
             <span class="qs">خدمات السيارة</span>
             <span class="qi-arrow">›</span>
           </button>
+          <button class="dp-qbtn dp-qbtn-photo" onclick="openDriverPhotoCapture()">
+            <div class="qi-wrap">📷</div>
+            <span class="ql">رفع صورة</span>
+            <span class="qs">إرسال للإدارة</span>
+            <span class="qi-arrow">›</span>
+          </button>
         </div>
       </div>
 
@@ -6545,6 +6625,182 @@ async function _sendEmergencyNoAudio() {
 }
 
 /* Workshop modal — car is read-only, set to primary car */
+// ══════════════════════════════════════════════════════
+// DRIVER PHOTO CAPTURE
+// ══════════════════════════════════════════════════════
+function openDriverPhotoCapture() {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📷 رفع صورة</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="padding:.5rem 0">
+      <div id="photoPreviewWrap" style="display:none;margin-bottom:1rem;text-align:center">
+        <img id="photoPreview" style="max-width:100%;max-height:260px;border-radius:12px;border:1px solid var(--border)">
+      </div>
+      <div id="photoPlaceholder" style="background:var(--surface-2);border:2px dashed var(--border);border-radius:12px;padding:2.5rem;text-align:center;margin-bottom:1rem">
+        <div style="font-size:2.5rem;margin-bottom:.5rem">📷</div>
+        <div style="font-size:.85rem;color:var(--muted)">اضغط لالتقاط صورة أو اختيار من المعرض</div>
+      </div>
+      <input type="file" id="photoFileInput" accept="image/*" capture="environment"
+        style="display:none" onchange="handlePhotoSelected(this)">
+      <button class="btn btn-primary" style="width:100%;margin-bottom:.6rem"
+        onclick="document.getElementById('photoFileInput').click()">
+        📷 التقاط صورة / اختيار من المعرض
+      </button>
+      <div class="form-group" style="margin-bottom:.5rem">
+        <label>ملاحظة (اختياري)</label>
+        <input type="text" id="photoCaption" placeholder="مثال: حادث، عطل، تقرير موقع..." maxlength="200">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="photoSubmitBtn" disabled onclick="submitDriverPhoto()">
+        📤 إرسال الصورة
+      </button>
+    </div>`);
+}
+
+let _photoBase64 = null;
+
+function handlePhotoSelected(input) {
+  const file = input.files[0];
+  if(!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    _photoBase64 = e.target.result.split(',')[1]; // base64 only
+    document.getElementById('photoPreview').src = e.target.result;
+    document.getElementById('photoPreviewWrap').style.display = 'block';
+    document.getElementById('photoPlaceholder').style.display = 'none';
+    document.getElementById('photoSubmitBtn').disabled = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function submitDriverPhoto() {
+  if(!_photoBase64) return;
+  const caption = document.getElementById('photoCaption')?.value || '';
+  const btn = document.getElementById('photoSubmitBtn');
+  btn.disabled = true; btn.textContent = 'جاري الرفع...';
+  try {
+    await apiCall('/driver/photo/upload', 'POST', {
+      image: _photoBase64,
+      caption
+    });
+    _photoBase64 = null;
+    showNotification('✅ تم إرسال الصورة للإدارة بنجاح', 'success');
+    closeModal();
+  } catch(e) {
+    showNotification(e.message || 'فشل الرفع', 'error');
+    btn.disabled = false; btn.textContent = '📤 إرسال الصورة';
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// ADMIN PHOTOS SECTION — عرض صور السائقين
+// ══════════════════════════════════════════════════════
+async function renderDriverPhotosSection() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+  const [photos, drivers] = await Promise.all([
+    apiCall('/driver/photos?limit=100').catch(()=>[]),
+    loadDrivers().catch(()=>[])
+  ]);
+
+  const driverMap = {};
+  drivers.forEach(d => driverMap[d.id] = d);
+
+  // Filter bar
+  const driverOpts = drivers.map(d =>
+    `<option value="${d.id}">${d.name}</option>`
+  ).join('');
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📷 صور السائقين</div>
+        <div style="display:flex;gap:.6rem;align-items:center">
+          <select id="photoDriverFilter" onchange="filterPhotos()"
+            style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;background:var(--surface-2)">
+            <option value="">كل السائقين</option>
+            ${driverOpts}
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="renderDriverPhotosSection()">🔄 تحديث</button>
+        </div>
+      </div>
+      <div id="photosGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem">
+        ${renderPhotosGrid(photos)}
+      </div>
+    </div>`;
+
+  window._allPhotos = photos;
+}
+
+function renderPhotosGrid(photos) {
+  if(!photos.length) return '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📭</div><p>لا توجد صور مرفوعة</p></div>';
+
+  return photos.map(p => {
+    const dt = p.created_at ? new Date(p.created_at) : null;
+    const dateStr = dt ? dt.toLocaleDateString('ar-EG', {year:'numeric',month:'long',day:'numeric'}) : '';
+    const timeStr = dt ? dt.toLocaleTimeString('ar-EG', {hour:'2-digit',minute:'2-digit'}) : '';
+    return `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:.15s"
+           onmouseover="this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.boxShadow='none'">
+        <div style="position:relative;overflow:hidden;cursor:pointer" onclick="openPhotoModal('${p.photo_url}','${p.driver_name||''}','${dateStr} ${timeStr}','${p.caption||''}')">
+          <img src="${p.photo_url}" alt="صورة السائق"
+            style="width:100%;height:160px;object-fit:cover;display:block"
+            onerror="this.src='data:image/svg+xml,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\'><rect fill=\'%23f1f5f9\' width=\'100\' height=\'100\'></rect><text x=\'50\' y=\'55\' text-anchor=\'middle\' font-size=\'30\'>🖼️</text></svg>'">
+          <div style="position:absolute;top:.5rem;right:.5rem;background:rgba(0,0,0,.5);color:white;font-size:.65rem;font-weight:700;padding:.2rem .55rem;border-radius:20px">
+            🔍 عرض
+          </div>
+        </div>
+        <div style="padding:.75rem">
+          <div style="font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:.25rem">👨‍✈️ ${p.driver_name||'—'}</div>
+          ${p.caption ? `<div style="font-size:.75rem;color:var(--muted);margin-bottom:.3rem">💬 ${p.caption}</div>` : ''}
+          <div style="font-size:.72rem;color:var(--muted)">📅 ${dateStr}</div>
+          <div style="font-size:.72rem;color:var(--muted)">🕐 ${timeStr}</div>
+          ${isSuperuser() ? `<button onclick="deleteDriverPhoto(${p.id},this)" class="btn btn-danger btn-sm" style="width:100%;margin-top:.6rem;font-size:.72rem;padding:.3rem">🗑️ حذف</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function openPhotoModal(url, name, datetime, caption) {
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📷 ${name}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="text-align:center;padding:.5rem 0">
+      <img src="${url}" style="max-width:100%;max-height:65vh;border-radius:10px;object-fit:contain">
+      <div style="margin-top:.8rem;font-size:.82rem;color:var(--muted)">📅 ${datetime}</div>
+      ${caption ? `<div style="font-size:.82rem;color:var(--text-2);margin-top:.3rem">💬 ${caption}</div>` : ''}
+    </div>
+    <div class="modal-footer">
+      <a href="${url}" download class="btn btn-primary">⬇️ تحميل</a>
+      <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
+    </div>`);
+}
+
+async function filterPhotos() {
+  const driverId = document.getElementById('photoDriverFilter')?.value;
+  let photos = window._allPhotos || [];
+  if(driverId) photos = photos.filter(p => p.driver_id == driverId);
+  document.getElementById('photosGrid').innerHTML = renderPhotosGrid(photos);
+}
+
+async function deleteDriverPhoto(id, btn) {
+  if(!confirm('تأكيد حذف الصورة؟')) return;
+  btn.disabled = true;
+  try {
+    await apiCall('/driver/photos/'+id, 'DELETE');
+    showNotification('✅ تم حذف الصورة', 'success');
+    renderDriverPhotosSection();
+  } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; }
+}
+
 function openDpMaintenanceGroup() {
   const MAINT = [
     {key:'filter',  icon:'🔧', label:'فلتر'},
@@ -7466,7 +7722,98 @@ function filterLogs() {
 function showLogin() {
   const saved=loadUser(), token=getToken();
   if(saved&&token){ currentUser=saved; initUI(); return; }
-  document.body.insertAdjacentHTML('afterbegin',`<div class="login-overlay" id="loginOverlay"><div class="login-card"><div class="login-logo">🚛</div><h2>نظام إدارة الأسطول</h2><p>Fleet Management v2</p><input type="text" id="luName" placeholder="اسم المستخدم"><input type="password" id="luPw" placeholder="كلمة المرور"><button class="login-btn" id="doLoginBtn">تسجيل الدخول</button></div></div>`);
+  document.body.insertAdjacentHTML('afterbegin',`
+<div class="login-overlay" id="loginOverlay">
+
+  <!-- Hero Side -->
+  <div class="login-hero">
+    <div class="login-hero-inner">
+      <div class="login-brand">
+        <div class="login-brand-icon">🚛</div>
+        <div>
+          <div class="login-brand-name">نظام إدارة الأسطول</div>
+          <div class="login-brand-sub">Fleet Management System</div>
+        </div>
+      </div>
+      <div class="login-hero-content">
+        <div class="login-hero-title">تحكم كامل<br>في <span>أسطولك</span></div>
+        <div class="login-hero-desc">إدارة المركبات والسائقين والمشرفين بسهولة وكفاءة مع تتبع مباشر وتقارير دقيقة في الوقت الحقيقي</div>
+        <div class="login-features">
+          <div class="login-feature">
+            <div class="login-feature-icon">📍</div>
+            <div>
+              <div class="login-feature-title">تتبع مباشر</div>
+              <div class="login-feature-desc">مواقع المركبات في الوقت الحقيقي</div>
+            </div>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">📊</div>
+            <div>
+              <div class="login-feature-title">تقارير وتحليلات</div>
+              <div class="login-feature-desc">تقارير تفصيلية لدعم القرار</div>
+            </div>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">🛡️</div>
+            <div>
+              <div class="login-feature-title">أمان وموثوقية</div>
+              <div class="login-feature-desc">حماية بياناتك بمعايير أمن عالية</div>
+            </div>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">⚙️</div>
+            <div>
+              <div class="login-feature-title">إدارة متكاملة</div>
+              <div class="login-feature-desc">إدارة شاملة للمركبات والسائقين</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="login-hero-footer">جميع الحقوق محفوظة © ${new Date().getFullYear()} نظام إدارة الأسطول</div>
+    </div>
+  </div>
+
+  <!-- Form Side -->
+  <div class="login-panel">
+    <div class="login-panel-header">
+      <div class="login-panel-logo">🚛</div>
+      <h2>تسجيل الدخول</h2>
+      <p>من فضلك أدخل بياناتك للوصول إلى النظام</p>
+    </div>
+
+    <div class="login-form">
+      <div class="login-field">
+        <label>اسم المستخدم</label>
+        <div class="login-input-wrap">
+          <span class="login-input-icon">👤</span>
+          <input type="text" id="luName" placeholder="أدخل اسم المستخدم" autocomplete="username">
+        </div>
+      </div>
+      <div class="login-field">
+        <label>كلمة المرور</label>
+        <div class="login-input-wrap">
+          <span class="login-input-icon">🔒</span>
+          <input type="password" id="luPw" placeholder="أدخل كلمة المرور" autocomplete="current-password">
+        </div>
+      </div>
+
+      <button class="login-btn" id="doLoginBtn">تسجيل الدخول</button>
+
+      <div class="login-roles">
+        <div class="login-roles-icon">👥</div>
+        <div class="login-roles-text">
+          <strong>يسمح النظام بالدخول للأدوار التالية:</strong>
+          مدير النظام • مشرف • سائق
+        </div>
+      </div>
+    </div>
+
+    <div class="login-panel-footer">
+      جميع الحقوق محفوظة © ${new Date().getFullYear()} نظام إدارة الأسطول
+    </div>
+  </div>
+
+</div>`);
   const doLogin=async()=>{
     const username=document.getElementById('luName').value, password=document.getElementById('luPw').value;
     const btn=document.getElementById('doLoginBtn'); btn.disabled=true; btn.textContent='جاري...';
