@@ -1493,7 +1493,7 @@ async def update_location(body: dict, cu: dict = Depends(get_user)):
 @app.get("/location/live")
 async def get_live_locations(cu: dict = Depends(require_admin_or_reporter)):
     """الأدمن يجيب آخر مواقع كل السائقين النشطين (آخر 2 دقيقة)."""
-    stale_cutoff = (datetime.utcnow() - timedelta(minutes=2)).isoformat() + "Z"
+    stale_cutoff = (datetime.utcnow() - timedelta(seconds=30)).isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""SELECT ll.driver_id, ll.car_id, ll.lat, ll.lng,
