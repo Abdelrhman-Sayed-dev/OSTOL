@@ -1488,18 +1488,16 @@ async def upload_driver_photo(body: dict, cu: dict = Depends(get_user)):
         raise HTTPException(400, "صورة غير صالحة")
 
     # Detect type from magic bytes
-    IMG_MAGIC = {
-        b"ÿØÿ": "jpg",
-        b"PNG":      "png",
-        b"GIF":          "gif",
-        b"RIFF":         "webp",
-    }
-    ext = None
-    for magic, fmt in IMG_MAGIC.items():
-        if raw[:len(magic)] == magic:
-            ext = fmt; break
-    if not ext:
-        ext = "jpg"  # fallback
+    # Detect image type from first bytes
+    ext = "jpg"
+    if len(raw) >= 2 and raw[0] == 0xFF and raw[1] == 0xD8:
+        ext = "jpg"
+    elif len(raw) >= 4 and raw[0] == 0x89 and raw[1:4] == b"PNG":
+        ext = "png"
+    elif len(raw) >= 3 and raw[:3] == b"GIF":
+        ext = "gif"
+    elif len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        ext = "webp"
 
     now = datetime.utcnow()
     fname = f"photo_{driver_id}_{int(now.timestamp()*1000)}.{ext}"
