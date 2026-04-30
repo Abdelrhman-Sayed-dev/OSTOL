@@ -5255,16 +5255,16 @@ function startLiveLocationSending() {
   // watchPosition: يبعت كلما اتغير الموقع
   window._liveLocationWatcher = navigator.geolocation.watchPosition(
     sendPosition, onLocationError,
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 4000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 1500 }
   );
 
   // Fallback interval كل 5 ثواني لو watchPosition مش شغال
   window._liveLocationInterval = setInterval(() => {
-    if(!lastPos) return; // لو مفيش موقع اتبعت بـ watchPosition
+    if(!lastPos) return;
     const carId  = window._driverCar?.id  || null;
     const tripId = window._activeTrip?.id || null;
     apiCall('/location/update', 'POST', { ...lastPos, car_id: carId, trip_id: tripId }).catch(()=>{});
-  }, 5000);
+  }, 2000);
 }
 
 
@@ -5273,6 +5273,9 @@ let _liveTrackingInterval = null;
 // Map: driver_id → { marker, prevLat, prevLng, animFrame, targetLat, targetLng }
 const _liveMarkers = {};
 
+// ── Dead reckoning constants ──
+const DEG_PER_METER = 1 / 111320; // approx degrees per meter at equator
+
 function startLiveTracking(map) {
   if(_liveTrackingInterval) clearInterval(_liveTrackingInterval);
 
@@ -5280,46 +5283,49 @@ function startLiveTracking(map) {
     let locs = [];
     try { locs = await apiCall('/location/live'); } catch(e) { return; }
 
-    const now = Date.now();
     const activeIds = new Set();
 
     locs.forEach(loc => {
       const did    = loc.driver_id;
       const newLat = loc.lat;
       const newLng = loc.lng;
+      const spd    = loc.speed  || 0;
+      const hdg    = loc.heading || 0;
       activeIds.add(did);
 
       if(_liveMarkers[did]) {
-        // ── تحديث marker موجود — smooth animation ──
         const m = _liveMarkers[did];
+        // أخد الموقع الحالي الفعلي للـ marker (مش الـ target القديم)
+        const curPos = m.marker.getLatLng();
+        m.prevLat   = curPos.lat;
+        m.prevLng   = curPos.lng;
         m.targetLat = newLat;
         m.targetLng = newLng;
-        m.heading   = loc.heading || 0;
-        m.speed     = loc.speed   || 0;
+        m.heading   = hdg;
+        m.speed     = spd;
+        m.lastUpdate= Date.now();
         m.driverName= loc.driver_name;
         m.carPlate  = loc.car_plate;
         m.updatedAt = loc.updated_at;
-        animateMarker(did, map);
-        // تحديث الـ popup content
         updateLivePopup(did, loc);
       } else {
-        // ── إنشاء marker جديد ──
-        const icon = makeLiveIcon(loc.heading||0, loc.speed||0);
+        const icon = makeLiveIcon(hdg, spd);
         const marker = L.marker([newLat, newLng], { icon, zIndexOffset: 1000 })
-          .addTo(map)
-          .bindPopup(buildLivePopupHtml(loc));
+          .addTo(map).bindPopup(buildLivePopupHtml(loc));
         _liveMarkers[did] = {
-          marker, prevLat: newLat, prevLng: newLng,
+          marker,
+          prevLat: newLat, prevLng: newLng,
           targetLat: newLat, targetLng: newLng,
-          heading: loc.heading||0, speed: loc.speed||0,
-          animFrame: null, startTime: null,
+          heading: hdg, speed: spd,
+          lastUpdate: Date.now(),
+          animFrame: null,
           driverName: loc.driver_name, carPlate: loc.car_plate,
           updatedAt: loc.updated_at
         };
+        startContinuousAnimation(did, map);
       }
     });
 
-    // احذف markers السائقين اللي مش active
     Object.keys(_liveMarkers).forEach(did => {
       if(!activeIds.has(parseInt(did))) {
         map.removeLayer(_liveMarkers[did].marker);
@@ -5328,13 +5334,12 @@ function startLiveTracking(map) {
       }
     });
 
-    // badge عداد السائقين النشطين
     const badge = document.getElementById('liveDriversBadge');
     if(badge) badge.textContent = locs.length > 0 ? `🟢 ${locs.length} سائق نشط` : '⚫ لا يوجد سائقون نشطون';
   }
 
   fetchAndUpdate();
-  _liveTrackingInterval = setInterval(fetchAndUpdate, 4000);
+  _liveTrackingInterval = setInterval(fetchAndUpdate, 2500);
 }
 
 function stopLiveTracking() {
@@ -5345,39 +5350,69 @@ function stopLiveTracking() {
   });
 }
 
-// ── Smooth animation: interpolation بين الموقع القديم والجديد (4 ثواني) ──
-function animateMarker(did, map) {
+// ── Animation مستمرة بـ dead reckoning — مش بتوقف بين الـ updates ──
+function startContinuousAnimation(did, map) {
   const m = _liveMarkers[did];
   if(!m) return;
   if(m.animFrame) cancelAnimationFrame(m.animFrame);
 
-  const startLat = m.prevLat;
-  const startLng = m.prevLng;
-  const endLat   = m.targetLat;
-  const endLng   = m.targetLng;
-  const duration  = 3800; // ms — slightly less than poll interval for smooth feel
-  const startTime = performance.now();
+  let lastFrame = performance.now();
 
   function step(now) {
-    if(!_liveMarkers[did]) return; // marker اتحذف
-    const t = Math.min((now - startTime) / duration, 1);
-    // easeInOut cubic للـ smoothness
-    const ease = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
-    const lat = startLat + (endLat - startLat) * ease;
-    const lng = startLng + (endLng - startLng) * ease;
-    m.marker.setLatLng([lat, lng]);
-    // تحديث الـ icon بالـ heading لو بيتحرك
-    if(t < 1) {
-      m.animFrame = requestAnimationFrame(step);
-    } else {
-      m.prevLat = endLat;
-      m.prevLng = endLng;
-      m.animFrame = null;
-      // تحديث icon بعد انتهاء الـ animation
-      m.marker.setIcon(makeLiveIcon(m.heading, m.speed));
+    const m = _liveMarkers[did];
+    if(!m) return;
+
+    const dt = (now - lastFrame) / 1000; // seconds since last frame
+    lastFrame = now;
+
+    const curPos = m.marker.getLatLng();
+    let curLat = curPos.lat;
+    let curLng = curPos.lng;
+
+    const timeSinceUpdate = (Date.now() - m.lastUpdate) / 1000; // seconds
+    const CATCH_UP_WINDOW = 2.5; // ثواني — نفس الـ polling interval
+
+    if(timeSinceUpdate < CATCH_UP_WINDOW) {
+      // ── Phase 1: اتجه للـ target الجديد بـ interpolation سلس ──
+      const progress = Math.min(timeSinceUpdate / CATCH_UP_WINDOW, 1);
+      const ease = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2; // easeInOutQuad — أسرع من cubic
+
+      curLat = curLat + (m.targetLat - curLat) * Math.min(dt * 3, 0.15);
+      curLng = curLng + (m.targetLng - curLng) * Math.min(dt * 3, 0.15);
+    } else if(m.speed > 0.5) {
+      // ── Phase 2: dead reckoning — استمر بنفس السرعة والاتجاه ──
+      const headingRad = (m.heading * Math.PI) / 180;
+      const distPerFrame = m.speed * dt; // meters
+      const latPerFrame  = distPerFrame * DEG_PER_METER;
+      const lngPerFrame  = distPerFrame * DEG_PER_METER / Math.cos(curLat * Math.PI / 180);
+
+      curLat += latPerFrame  * Math.cos(headingRad);
+      curLng += lngPerFrame  * Math.sin(headingRad);
     }
+    // لو واقف (speed ≈ 0) — مش بنحرك
+
+    m.marker.setLatLng([curLat, curLng]);
+
+    // تحديث الـ icon كل ثانية تقريباً (مش كل frame عشان متبطلش)
+    if(!m._lastIconUpdate || now - m._lastIconUpdate > 1000) {
+      m.marker.setIcon(makeLiveIcon(m.heading, m.speed));
+      m._lastIconUpdate = now;
+    }
+
+    m.animFrame = requestAnimationFrame(step);
   }
+
   m.animFrame = requestAnimationFrame(step);
+}
+
+// ── للـ markers الموجودة: ابدأ animation مستمرة بعد أول update ──
+function animateMarker(did, map) {
+  if(!_liveMarkers[did]._continuous) {
+    _liveMarkers[did]._continuous = true;
+    startContinuousAnimation(did, map);
+  }
 }
 
 function makeLiveIcon(heading, speed) {
