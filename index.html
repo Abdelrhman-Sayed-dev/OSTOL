@@ -217,31 +217,34 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 /* ── LOGIN ── */
 .login-overlay{
   position:fixed;inset:0;
-  background:#F8FAFC;
-  display:flex;z-index:2000;overflow:hidden;
+  background:linear-gradient(160deg,#1e3a5f 0%,#1a5276 60%,#1e3a5f 100%);
+  display:flex;align-items:center;justify-content:center;
+  z-index:2000;overflow:hidden;
+}
+.login-overlay::before{
+  content:'';position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 80% 60% at 30% 50%, rgba(14,165,233,.12) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 50% at 80% 80%, rgba(30,58,95,.4) 0%, transparent 60%);
+}
+.login-overlay::after{
+  content:'';position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+  background-size:52px 52px;
 }
 
-/* ── الجانب الأيسر — Hero ── */
+/* ── الـ Hero — يُخفى في الموبايل ── */
 .login-hero{
-  flex:1;
-  background:linear-gradient(160deg,#1e3a5f 0%,#1a5276 60%,#1e3a5f 100%);
+  flex:1;max-width:600px;
+  background:transparent;
   display:flex;flex-direction:column;
   padding:2.5rem 3rem;
   position:relative;overflow:hidden;
 }
-.login-hero::before{
-  content:'';position:absolute;inset:0;
-  background:
-    radial-gradient(ellipse 80% 60% at 40% 50%, rgba(14,165,233,.15) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 50% at 80% 80%, rgba(30,58,95,.4) 0%, transparent 60%);
-}
-.login-hero::after{
-  content:'';position:absolute;inset:0;
-  background-image:
-    linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
-  background-size:52px 52px;
-}
+.login-hero::before{ content:'';display:none; }
+.login-hero::after{ content:'';display:none; }
 .login-hero-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column}
 .login-brand{display:flex;align-items:center;gap:.85rem;margin-bottom:auto}
 .login-brand-icon{
@@ -269,32 +272,35 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 .login-feature-title{color:white;font-size:.82rem;font-weight:700;margin-bottom:.15rem}
 .login-feature-desc{color:rgba(255,255,255,.45);font-size:.72rem;line-height:1.4}
 .login-hero-footer{
-  color:rgba(255,255,255,.3);font-size:.72rem;
+  color:rgba(255,255,255,.25);font-size:.72rem;
   padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.08);
+  position:relative;z-index:2;
 }
 
-/* ── الجانب الأيمن — Form ── */
+/* ── الـ Form — Card في النص ── */
 .login-panel{
-  width:480px;flex-shrink:0;
+  width:420px;flex-shrink:0;
   background:#ffffff;
   display:flex;flex-direction:column;
-  padding:2.5rem 2.8rem;
-  border-right:none;
+  padding:2.4rem 2.6rem;
+  border-radius:20px;
   overflow-y:auto;
+  position:relative;z-index:2;
+  box-shadow:0 24px 60px rgba(15,23,42,.2);
 }
-.login-panel-header{margin-bottom:2rem;margin-top:auto}
+.login-panel-header{margin-bottom:1.8rem}
 .login-panel-logo{
-  width:64px;height:64px;
+  width:56px;height:56px;
   background:linear-gradient(135deg,#1e3a5f,#2d5486);
-  border-radius:18px;
+  border-radius:16px;
   display:flex;align-items:center;justify-content:center;
-  font-size:2rem;margin-bottom:1.2rem;
+  font-size:1.8rem;margin-bottom:1rem;
   box-shadow:0 6px 20px rgba(30,58,95,.2);
 }
-.login-panel h2{font-size:1.6rem;color:#0f172a;font-weight:800;margin-bottom:.35rem}
-.login-panel p{color:#64748b;font-size:.85rem}
+.login-panel h2{font-size:1.5rem;color:#0f172a;font-weight:800;margin-bottom:.3rem}
+.login-panel p{color:#64748b;font-size:.83rem;margin-bottom:0}
 
-.login-form{flex:1}
+.login-form{width:100%}
 .login-field{margin-bottom:1.1rem}
 .login-field label{
   display:block;font-size:.78rem;font-weight:700;
@@ -332,19 +338,18 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 .login-roles-icon{font-size:1.5rem;flex-shrink:0}
 .login-roles-text{font-size:.76rem;color:#1e40af;line-height:1.5}
 .login-roles-text strong{display:block;font-size:.78rem;margin-bottom:.15rem;color:#1e3a5f}
-.login-panel-footer{margin-top:auto;padding-top:1.5rem;text-align:center;color:#94a3b8;font-size:.72rem}
+.login-panel-footer{padding-top:1.2rem;text-align:center;color:#94a3b8;font-size:.72rem;border-top:1px solid #F1F5F9}
 
 /* ── Responsive ── */
 @media(max-width:768px){
-  .login-overlay{flex-direction:column}
+  .login-overlay{padding:1rem}
   .login-hero{display:none}
-  .login-panel{width:100%;flex:1;padding:2rem 1.5rem;justify-content:center}
-  .login-panel-header{margin-top:0}
+  .login-panel{width:100%;max-width:420px;border-radius:16px}
 }
 @media(min-width:769px) and (max-width:1100px){
   .login-hero .login-features{grid-template-columns:1fr}
-  .login-panel{width:400px;padding:2rem 2.2rem}
   .login-hero-title{font-size:1.9rem}
+  .login-panel{width:380px;padding:2rem 2rem}
 }
 
 /* ── SHELL ── */
@@ -7725,56 +7730,17 @@ function showLogin() {
   document.body.insertAdjacentHTML('afterbegin',`
 <div class="login-overlay" id="loginOverlay">
 
-  <!-- Hero Side -->
-  <div class="login-hero">
-    <div class="login-hero-inner">
-      <div class="login-brand">
-        <div class="login-brand-icon">🚛</div>
-        <div>
-          <div class="login-brand-name">نظام إدارة الأسطول</div>
-          <div class="login-brand-sub">Fleet Management System</div>
-        </div>
-      </div>
-      <div class="login-hero-content">
-        <div class="login-hero-title">تحكم كامل<br>في <span>أسطولك</span></div>
-        <div class="login-hero-desc">إدارة المركبات والسائقين والمشرفين بسهولة وكفاءة مع تتبع مباشر وتقارير دقيقة في الوقت الحقيقي</div>
-        <div class="login-features">
-          <div class="login-feature">
-            <div class="login-feature-icon">📍</div>
-            <div>
-              <div class="login-feature-title">تتبع مباشر</div>
-              <div class="login-feature-desc">مواقع المركبات في الوقت الحقيقي</div>
-            </div>
-          </div>
-          <div class="login-feature">
-            <div class="login-feature-icon">📊</div>
-            <div>
-              <div class="login-feature-title">تقارير وتحليلات</div>
-              <div class="login-feature-desc">تقارير تفصيلية لدعم القرار</div>
-            </div>
-          </div>
-          <div class="login-feature">
-            <div class="login-feature-icon">🛡️</div>
-            <div>
-              <div class="login-feature-title">أمان وموثوقية</div>
-              <div class="login-feature-desc">حماية بياناتك بمعايير أمن عالية</div>
-            </div>
-          </div>
-          <div class="login-feature">
-            <div class="login-feature-icon">⚙️</div>
-            <div>
-              <div class="login-feature-title">إدارة متكاملة</div>
-              <div class="login-feature-desc">إدارة شاملة للمركبات والسائقين</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="login-hero-footer">جميع الحقوق محفوظة © ${new Date().getFullYear()} نظام إدارة الأسطول</div>
+  <!-- Brand top-right (desktop only) -->
+  <div class="login-brand" style="position:absolute;top:2rem;left:2rem;z-index:3">
+    <div class="login-brand-icon">🚛</div>
+    <div>
+      <div class="login-brand-name">نظام إدارة الأسطول</div>
+      <div class="login-brand-sub">Fleet Management System</div>
     </div>
   </div>
 
-  <!-- Form Side -->
-  <div class="login-panel">
+  <!-- Form Card — centered -->
+  <div class="login-panel" style="position:relative;z-index:3">
     <div class="login-panel-header">
       <div class="login-panel-logo">🚛</div>
       <h2>تسجيل الدخول</h2>
@@ -7789,7 +7755,7 @@ function showLogin() {
           <input type="text" id="luName" placeholder="أدخل اسم المستخدم" autocomplete="username">
         </div>
       </div>
-      <div class="login-field">
+      <div class="login-field" style="margin-bottom:1.4rem">
         <label>كلمة المرور</label>
         <div class="login-input-wrap">
           <span class="login-input-icon">🔒</span>
