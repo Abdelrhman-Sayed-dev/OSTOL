@@ -287,7 +287,7 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
   width:var(--sidebar-width);
   background:var(--sidebar-bg);
   min-height:100vh;display:flex;flex-direction:column;
-  position:fixed;right:0;top:0;bottom:0;z-index:100;
+  position:fixed;right:0;top:0;bottom:0;z-index:2000;
   transition:.3s cubic-bezier(.4,0,.2,1);
   border-left:1px solid rgba(255,255,255,.06);
   /* مخفي دايماً حتى لما يُفتح */
@@ -833,7 +833,7 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
   th,td{padding:.28rem .32rem}
   .workshop-items{grid-template-columns:1fr 1fr}
 }
-.sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
+.sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1999;display:none}
 .sidebar-overlay.show{display:block}
 
 /* ════════════════════════════════════════
@@ -2986,7 +2986,7 @@ async function renderMapSection() {
     </div>`;
 
   setTimeout(()=>{
-    const map=L.map('fleetMap').setView([24.7136,46.6753],6);
+    const map=L.map('fleetMap').setView([26.8206, 30.8025], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
     const markers=[];
 
@@ -3049,7 +3049,7 @@ async function renderMapSection() {
 
   // Init route map placeholder
   setTimeout(()=>{
-    window._routeMapInstance = L.map('routeMap').setView([24.7136,46.6753],6);
+    window._routeMapInstance = L.map('routeMap').setView([26.8206, 30.8025], 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(window._routeMapInstance);
   },150);
 
@@ -3060,7 +3060,7 @@ async function renderMapSection() {
       window._liveMapInstance = null;
     }
     stopLiveTracking();
-    const liveMap = L.map('liveMap').setView([30.0444, 31.2357], 7); // مركز مصر
+    const liveMap = L.map('liveMap', {zoomControl:true}).setView([26.8206, 30.8025], 6); // مركز مصر كامل
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
       attribution:'© OpenStreetMap', maxZoom:19
     }).addTo(liveMap);
@@ -5955,7 +5955,7 @@ async function renderDriverSinglePage() {
       <div class="modal-header"><div class="modal-title">✔ إنهاء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#166534">
         🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
-        <span style="font-size:.8rem;opacity:.8"></span>
+        <span style="font-size:.8rem;opacity:.8">📍 سيتم تسجيل موقعك الحالي تلقائياً</span>
       </div>
       <div class="form-group"><label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
         <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}" max="999999"
