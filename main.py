@@ -427,6 +427,18 @@ def _safe_add_columns(c):
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
 
+    # ── جدول صور السائقين ──
+    c.execute("""CREATE TABLE IF NOT EXISTS driver_photos (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        driver_id   INTEGER NOT NULL,
+        photo_url   TEXT    NOT NULL,
+        caption     TEXT    DEFAULT '',
+        created_at  TEXT    NOT NULL,
+        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_photos_driver ON driver_photos(driver_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_photos_created ON driver_photos(created_at)")
+
     # ── جدول المواقع الحية للسائقين ──
     c.execute("""CREATE TABLE IF NOT EXISTS live_locations (
         driver_id   INTEGER PRIMARY KEY,
@@ -1445,6 +1457,116 @@ async def reassign_permission(body: dict, cu: dict = Depends(require_superuser))
             "deleted_old_permissions": deleted_count,
             "message": f"✅ تم إعادة تخصيص '{plate}' للسائق '{new_driver['name']}' بنجاح"
         }
+
+# ══════════════════════════════════════════════════════
+# 15a. DRIVER PHOTOS — رفع وعرض صور السائقين
+# ══════════════════════════════════════════════════════
+
+@app.post("/driver/photo/upload")
+async def upload_driver_photo(body: dict, cu: dict = Depends(get_user)):
+    """السائق يرفع صورة (base64) — تُحفظ وتُعرض عند السوبر يوزر."""
+    if cu["role"] != "driver":
+        raise HTTPException(403, "للسائقين فقط")
+
+    driver_id = cu.get("driver_id")
+    if not driver_id:
+        with get_db() as _c:
+            row = _c.execute("SELECT id FROM drivers WHERE user_id=?", (cu["user_id"],)).fetchone()
+            driver_id = row["id"] if row else None
+    if not driver_id:
+        raise HTTPException(400, "لا يوجد سائق مرتبط بهذا الحساب")
+
+    b64 = body.get("image")
+    caption = body.get("caption", "")[:200]
+    if not b64:
+        raise HTTPException(400, "image مطلوبة")
+
+    # Decode & validate image
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(400, "صورة غير صالحة")
+
+    # Detect type from magic bytes
+    IMG_MAGIC = {
+        b"ÿØÿ": "jpg",
+        b"PNG":      "png",
+        b"GIF":          "gif",
+        b"RIFF":         "webp",
+    }
+    ext = None
+    for magic, fmt in IMG_MAGIC.items():
+        if raw[:len(magic)] == magic:
+            ext = fmt; break
+    if not ext:
+        ext = "jpg"  # fallback
+
+    now = datetime.utcnow()
+    fname = f"photo_{driver_id}_{int(now.timestamp()*1000)}.{ext}"
+    dest  = UPLOAD_DIR / fname
+    dest.write_bytes(raw)
+
+    photo_url = f"/uploads/{fname}"
+    created_at = now.isoformat() + "Z"
+
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO driver_photos(driver_id,photo_url,caption,created_at) VALUES(?,?,?,?)",
+            (driver_id, photo_url, caption, created_at)
+        )
+    log_event("photo_uploaded", user_id=cu["user_id"], size=len(raw))
+    return {"ok": True, "photo_url": photo_url, "created_at": created_at}
+
+
+@app.get("/driver/photos")
+async def get_driver_photos(
+    driver_id: Optional[int] = None,
+    limit: int = 50,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """الأدمن والسوبر يوزر يشوفوا صور السائقين."""
+    with get_db() as conn:
+        c = conn.cursor()
+        if driver_id:
+            c.execute("""SELECT dp.*, d.name as driver_name, d.fixed_number
+                         FROM driver_photos dp
+                         JOIN drivers d ON d.id = dp.driver_id
+                         WHERE dp.driver_id=?
+                         ORDER BY dp.created_at DESC LIMIT ?""",
+                      (driver_id, limit))
+        else:
+            branch = _branch_filter(cu)
+            if branch:
+                c.execute("""SELECT dp.*, d.name as driver_name, d.fixed_number
+                             FROM driver_photos dp
+                             JOIN drivers d ON d.id = dp.driver_id
+                             WHERE d.branch=?
+                             ORDER BY dp.created_at DESC LIMIT ?""",
+                          (branch, limit))
+            else:
+                c.execute("""SELECT dp.*, d.name as driver_name, d.fixed_number
+                             FROM driver_photos dp
+                             JOIN drivers d ON d.id = dp.driver_id
+                             ORDER BY dp.created_at DESC LIMIT ?""",
+                          (limit,))
+        return [dict(r) for r in c.fetchall()]
+
+
+@app.delete("/driver/photos/{photo_id}")
+async def delete_driver_photo(photo_id: int, cu: dict = Depends(require_superuser)):
+    """السوبر يوزر يحذف صورة."""
+    with get_db() as conn:
+        row = conn.execute("SELECT photo_url FROM driver_photos WHERE id=?", (photo_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "الصورة غير موجودة")
+        # Delete file
+        try:
+            fp = Path(str(UPLOAD_DIR) + row["photo_url"].replace("/uploads",""))
+            if fp.exists(): fp.unlink()
+        except Exception: pass
+        conn.execute("DELETE FROM driver_photos WHERE id=?", (photo_id,))
+    return {"ok": True}
+
 
 # ══════════════════════════════════════════════════════
 # 15b. LIVE LOCATION — real-time driver tracking
