@@ -2986,7 +2986,7 @@ async function renderMapSection() {
     </div>`;
 
   setTimeout(()=>{
-    const map=L.map('fleetMap').setView([26.8206, 30.8025], 6);
+    const map=L.map('fleetMap').setView([27.0, 33.0], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
     const markers=[];
 
@@ -3043,14 +3043,14 @@ async function renderMapSection() {
       markers.push(coords);
     });
 
-    if(markers.length>0) map.fitBounds(L.latLngBounds(markers.map(c=>L.latLng(c[0],c[1]))),{padding:[40,40],maxZoom:12});
-    else map.setView([26.8206, 30.8025], 6);
+    if(markers.length>0) map.fitBounds(L.latLngBounds(markers.map(c=>L.latLng(c[0],c[1]))),{padding:[60,60],maxZoom:8});
+    else map.setView([27.0, 33.0], 5);
     window._fleetMap = map;
   },100);
 
   // Init route map placeholder
   setTimeout(()=>{
-    window._routeMapInstance = L.map('routeMap').setView([26.8206, 30.8025], 6);
+    window._routeMapInstance = L.map('routeMap').setView([27.0, 33.0], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(window._routeMapInstance);
   },150);
 
@@ -3061,7 +3061,7 @@ async function renderMapSection() {
       window._liveMapInstance = null;
     }
     stopLiveTracking();
-    const liveMap = L.map('liveMap', {zoomControl:true}).setView([26.8206, 30.8025], 6); // مركز مصر كامل
+    const liveMap = L.map('liveMap', {zoomControl:true}).setView([27.0, 33.0], 5); // مركز مصر كامل
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
       attribution:'© OpenStreetMap', maxZoom:19
     }).addTo(liveMap);
