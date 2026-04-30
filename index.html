@@ -5295,7 +5295,6 @@ function startLiveTracking(map) {
 
       if(_liveMarkers[did]) {
         const m = _liveMarkers[did];
-        // أخد الموقع الحالي الفعلي للـ marker (مش الـ target القديم)
         const curPos = m.marker.getLatLng();
         m.prevLat   = curPos.lat;
         m.prevLng   = curPos.lng;
@@ -5308,6 +5307,8 @@ function startLiveTracking(map) {
         m.carPlate  = loc.car_plate;
         m.updatedAt = loc.updated_at;
         updateLivePopup(did, loc);
+        // ابدأ animation لو مش شغالة
+        if(!m.animFrame) startContinuousAnimation(did, map);
       } else {
         const icon = makeLiveIcon(hdg, spd);
         const marker = L.marker([newLat, newLng], { icon, zIndexOffset: 1000 })
@@ -5409,10 +5410,9 @@ function startContinuousAnimation(did, map) {
 
 // ── للـ markers الموجودة: ابدأ animation مستمرة بعد أول update ──
 function animateMarker(did, map) {
-  if(!_liveMarkers[did]._continuous) {
-    _liveMarkers[did]._continuous = true;
-    startContinuousAnimation(did, map);
-  }
+  const m = _liveMarkers[did];
+  if(!m) return;
+  if(!m.animFrame) startContinuousAnimation(did, map);
 }
 
 function makeLiveIcon(heading, speed) {
