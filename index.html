@@ -3043,7 +3043,8 @@ async function renderMapSection() {
       markers.push(coords);
     });
 
-    if(markers.length>0) map.fitBounds(L.latLngBounds(markers.map(c=>L.latLng(c[0],c[1]))),{padding:[40,40]});
+    if(markers.length>0) map.fitBounds(L.latLngBounds(markers.map(c=>L.latLng(c[0],c[1]))),{padding:[40,40],maxZoom:12});
+    else map.setView([26.8206, 30.8025], 6);
     window._fleetMap = map;
   },100);
 
