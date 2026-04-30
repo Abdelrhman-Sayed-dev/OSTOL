@@ -216,103 +216,103 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 
 /* ── LOGIN ── */
 .login-overlay{
-  position:fixed;inset:0;
-  background:linear-gradient(160deg,#1e3a5f 0%,#1a5276 60%,#1e3a5f 100%);
-  display:flex;align-items:center;justify-content:center;
-  z-index:2000;overflow:hidden;
-}
-.login-overlay::before{
-  content:'';position:absolute;inset:0;
-  background:
-    radial-gradient(ellipse 80% 60% at 30% 50%, rgba(14,165,233,.12) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 50% at 80% 80%, rgba(30,58,95,.4) 0%, transparent 60%);
-}
-.login-overlay::after{
-  content:'';position:absolute;inset:0;
-  background-image:
-    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
-  background-size:52px 52px;
+  position:fixed;inset:0;z-index:2000;overflow:hidden;
+  display:flex;flex-direction:row-reverse; /* RTL: form يمين، hero يسار */
+  background:#1e3a5f;
 }
 
-/* ── الـ Hero — يُخفى في الموبايل ── */
+/* ═══ HERO — الجانب الأيسر (أزرق) ═══ */
 .login-hero{
-  flex:1;max-width:600px;
-  background:transparent;
-  display:flex;flex-direction:column;
-  padding:2.5rem 3rem;
-  position:relative;overflow:hidden;
+  flex:1;
+  background:linear-gradient(155deg,#1e3a5f 0%,#1a5276 55%,#154360 100%);
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:2.5rem 3rem;position:relative;overflow:hidden;
 }
-.login-hero::before{ content:'';display:none; }
-.login-hero::after{ content:'';display:none; }
-.login-hero-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column}
-.login-brand{display:flex;align-items:center;gap:.85rem;margin-bottom:auto}
+.login-hero::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 70% 55% at 35% 45%, rgba(14,165,233,.18) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 40% at 75% 75%, rgba(10,40,80,.5) 0%, transparent 60%);
+}
+.login-hero::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size:54px 54px;
+}
+.login-hero-inner{
+  position:relative;z-index:2;
+  height:100%;display:flex;flex-direction:column;justify-content:space-between;
+}
+.login-brand{display:flex;align-items:center;gap:.85rem}
 .login-brand-icon{
-  width:52px;height:52px;background:rgba(255,255,255,.12);
-  border:1.5px solid rgba(255,255,255,.2);border-radius:14px;
-  display:flex;align-items:center;justify-content:center;font-size:1.6rem;
+  width:50px;height:50px;
+  background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.18);
+  border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;
 }
-.login-brand-name{color:white;font-size:1.1rem;font-weight:800;line-height:1.2}
-.login-brand-sub{color:rgba(255,255,255,.5);font-size:.7rem;margin-top:.15rem;font-weight:400}
-.login-hero-content{flex:1;display:flex;flex-direction:column;justify-content:center;padding:2rem 0}
+.login-brand-name{color:white;font-size:1.05rem;font-weight:800;line-height:1.2}
+.login-brand-sub{color:rgba(255,255,255,.45);font-size:.65rem;margin-top:.15rem;font-weight:400;letter-spacing:.3px}
+.login-hero-content{flex:1;display:flex;flex-direction:column;justify-content:center;padding:2.5rem 0}
 .login-hero-title{
-  color:white;font-size:2.4rem;font-weight:900;
-  line-height:1.2;margin-bottom:1rem;letter-spacing:-.5px;
+  color:white;font-size:2.6rem;font-weight:900;
+  line-height:1.15;margin-bottom:1rem;letter-spacing:-.5px;
 }
 .login-hero-title span{color:#38bdf8}
-.login-hero-desc{color:rgba(255,255,255,.65);font-size:.95rem;line-height:1.7;max-width:420px;margin-bottom:2.5rem}
-.login-features{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.login-hero-desc{
+  color:rgba(255,255,255,.6);font-size:.92rem;
+  line-height:1.75;max-width:420px;margin-bottom:2.5rem;
+}
+.login-features{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
 .login-feature{
-  background:rgba(255,255,255,.06);
+  background:rgba(255,255,255,.07);
   border:1px solid rgba(255,255,255,.1);
   border-radius:12px;padding:.85rem 1rem;
-  display:flex;align-items:flex-start;gap:.65rem;
+  display:flex;align-items:flex-start;gap:.6rem;
 }
-.login-feature-icon{font-size:1.25rem;flex-shrink:0;margin-top:.05rem}
-.login-feature-title{color:white;font-size:.82rem;font-weight:700;margin-bottom:.15rem}
-.login-feature-desc{color:rgba(255,255,255,.45);font-size:.72rem;line-height:1.4}
+.login-feature-icon{font-size:1.2rem;flex-shrink:0;margin-top:.05rem}
+.login-feature-title{color:white;font-size:.8rem;font-weight:700;margin-bottom:.12rem}
+.login-feature-desc{color:rgba(255,255,255,.42);font-size:.7rem;line-height:1.4}
 .login-hero-footer{
-  color:rgba(255,255,255,.25);font-size:.72rem;
-  padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.08);
+  color:rgba(255,255,255,.25);font-size:.7rem;
+  padding-top:1.2rem;border-top:1px solid rgba(255,255,255,.08);
   position:relative;z-index:2;
 }
 
-/* ── الـ Form — Card في النص ── */
+/* ═══ FORM PANEL — الجانب الأيمن (أبيض) ═══ */
 .login-panel{
-  width:420px;flex-shrink:0;
+  width:460px;flex-shrink:0;
   background:#ffffff;
   display:flex;flex-direction:column;
-  padding:2.4rem 2.6rem;
-  border-radius:20px;
+  padding:2.8rem 2.8rem;
   overflow-y:auto;
-  position:relative;z-index:2;
-  box-shadow:0 24px 60px rgba(15,23,42,.2);
+  box-shadow:-8px 0 40px rgba(0,0,0,.12);
 }
-.login-panel-header{margin-bottom:1.8rem}
+.login-panel-header{margin-bottom:2rem}
 .login-panel-logo{
-  width:56px;height:56px;
+  width:58px;height:58px;
   background:linear-gradient(135deg,#1e3a5f,#2d5486);
   border-radius:16px;
   display:flex;align-items:center;justify-content:center;
-  font-size:1.8rem;margin-bottom:1rem;
-  box-shadow:0 6px 20px rgba(30,58,95,.2);
+  font-size:1.8rem;margin-bottom:1.1rem;
+  box-shadow:0 6px 18px rgba(30,58,95,.22);
 }
-.login-panel h2{font-size:1.5rem;color:#0f172a;font-weight:800;margin-bottom:.3rem}
-.login-panel p{color:#64748b;font-size:.83rem;margin-bottom:0}
+.login-panel h2{font-size:1.55rem;color:#0f172a;font-weight:800;margin-bottom:.3rem}
+.login-panel p{color:#64748b;font-size:.83rem;line-height:1.5}
 
-.login-form{width:100%}
+.login-form{flex:1;display:flex;flex-direction:column;justify-content:center}
 .login-field{margin-bottom:1.1rem}
 .login-field label{
-  display:block;font-size:.78rem;font-weight:700;
-  color:#334155;margin-bottom:.45rem;
+  display:block;font-size:.76rem;font-weight:700;
+  color:#334155;margin-bottom:.42rem;
 }
 .login-input-wrap{position:relative}
 .login-input-wrap .login-input-icon{
   position:absolute;right:.9rem;top:50%;transform:translateY(-50%);
-  color:#94a3b8;font-size:.95rem;pointer-events:none;
+  color:#94a3b8;font-size:.9rem;pointer-events:none;
 }
 .login-field input{
-  width:100%;padding:.78rem 2.6rem .78rem .9rem;
+  width:100%;padding:.78rem 2.5rem .78rem .9rem;
   border:1.5px solid #E2E8F0;border-radius:11px;
   font-size:.88rem;background:#F8FAFC;color:#0f172a;
   transition:.2s;font-family:inherit;direction:rtl;
@@ -323,33 +323,46 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
   box-shadow:0 0 0 3px rgba(30,58,95,.1);
 }
 .login-btn{
-  width:100%;padding:.9rem;border-radius:11px;border:none;cursor:pointer;
+  width:100%;padding:.88rem;border-radius:11px;border:none;cursor:pointer;
   background:#1e3a5f;color:white;
   font-size:.92rem;font-weight:700;font-family:inherit;
-  transition:.2s;margin-bottom:1.2rem;
-  box-shadow:0 4px 16px rgba(30,58,95,.25);
+  transition:.2s;margin-top:.2rem;margin-bottom:1.1rem;
+  box-shadow:0 4px 14px rgba(30,58,95,.25);
 }
-.login-btn:hover:not(:disabled){background:#2d5486;transform:translateY(-1px);box-shadow:0 6px 20px rgba(30,58,95,.3)}
-.login-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.login-btn:hover:not(:disabled){background:#2d5486;transform:translateY(-1px);box-shadow:0 6px 18px rgba(30,58,95,.3)}
+.login-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
 .login-roles{
   background:#EFF6FF;border:1px solid #BFDBFE;border-radius:11px;
-  padding:.85rem 1rem;display:flex;align-items:center;gap:.75rem;
+  padding:.8rem .95rem;display:flex;align-items:center;gap:.7rem;
 }
-.login-roles-icon{font-size:1.5rem;flex-shrink:0}
-.login-roles-text{font-size:.76rem;color:#1e40af;line-height:1.5}
-.login-roles-text strong{display:block;font-size:.78rem;margin-bottom:.15rem;color:#1e3a5f}
-.login-panel-footer{padding-top:1.2rem;text-align:center;color:#94a3b8;font-size:.72rem;border-top:1px solid #F1F5F9}
+.login-roles-icon{font-size:1.4rem;flex-shrink:0}
+.login-roles-text{font-size:.74rem;color:#1e40af;line-height:1.55}
+.login-roles-text strong{display:block;font-size:.76rem;margin-bottom:.1rem;color:#1e3a5f}
+.login-panel-footer{
+  padding-top:1.3rem;margin-top:auto;
+  text-align:center;color:#94a3b8;font-size:.7rem;
+  border-top:1px solid #F1F5F9;
+}
 
-/* ── Responsive ── */
-@media(max-width:768px){
-  .login-overlay{padding:1rem}
+/* ═══ RESPONSIVE ═══ */
+@media(max-width:900px){
+  /* موبايل وتابلت: form فوق، بدون hero */
+  .login-overlay{flex-direction:column;background:#1e3a5f}
   .login-hero{display:none}
-  .login-panel{width:100%;max-width:420px;border-radius:16px}
+  .login-panel{
+    width:100%;flex:1;
+    padding:2.5rem 1.6rem;
+    box-shadow:none;
+    border-radius:0;
+    /* في الموبايل: نخلي الـ form في المنتصف رأسياً */
+    justify-content:center;
+  }
+  .login-panel-header{margin-bottom:1.5rem}
 }
-@media(min-width:769px) and (max-width:1100px){
-  .login-hero .login-features{grid-template-columns:1fr}
-  .login-hero-title{font-size:1.9rem}
-  .login-panel{width:380px;padding:2rem 2rem}
+@media(min-width:901px) and (max-width:1200px){
+  .login-panel{width:400px;padding:2.2rem 2.2rem}
+  .login-features{grid-template-columns:1fr}
+  .login-hero-title{font-size:2rem}
 }
 
 /* ── SHELL ── */
@@ -7730,17 +7743,59 @@ function showLogin() {
   document.body.insertAdjacentHTML('afterbegin',`
 <div class="login-overlay" id="loginOverlay">
 
-  <!-- Brand top-right (desktop only) -->
-  <div class="login-brand" style="position:absolute;top:2rem;left:2rem;z-index:3">
-    <div class="login-brand-icon">🚛</div>
-    <div>
-      <div class="login-brand-name">نظام إدارة الأسطول</div>
-      <div class="login-brand-sub">Fleet Management System</div>
+  <!-- ═══ Hero Side (left/شمال) ═══ -->
+  <div class="login-hero">
+    <div class="login-hero-inner">
+
+      <div class="login-brand">
+        <div class="login-brand-icon">🚛</div>
+        <div>
+          <div class="login-brand-name">نظام إدارة الأسطول</div>
+          <div class="login-brand-sub">Fleet Management System</div>
+        </div>
+      </div>
+
+      <div class="login-hero-content">
+        <div class="login-hero-title">تحكم كامل<br>في <span>أسطولك</span></div>
+        <div class="login-hero-desc">إدارة المركبات والسائقين والمشرفين بسهولة وكفاءة مع تتبع مباشر وتقارير دقيقة في الوقت الحقيقي</div>
+        <div class="login-features">
+          <div class="login-feature">
+            <div class="login-feature-icon">📍</div>
+            <div>
+              <div class="login-feature-title">تتبع مباشر</div>
+              <div class="login-feature-desc">مواقع المركبات في الوقت الحقيقي</div>
+            </div>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">📊</div>
+            <div>
+              <div class="login-feature-title">تقارير وتحليلات</div>
+              <div class="login-feature-desc">تقارير تفصيلية لدعم القرار</div>
+            </div>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">🛡️</div>
+            <div>
+              <div class="login-feature-title">أمان وموثوقية</div>
+              <div class="login-feature-desc">حماية بياناتك بمعايير أمن عالية</div>
+            </div>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">⚙️</div>
+            <div>
+              <div class="login-feature-title">إدارة متكاملة</div>
+              <div class="login-feature-desc">إدارة شاملة للمركبات والسائقين</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="login-hero-footer">جميع الحقوق محفوظة © ${new Date().getFullYear()} نظام إدارة الأسطول</div>
     </div>
   </div>
 
-  <!-- Form Card — centered -->
-  <div class="login-panel" style="position:relative;z-index:3">
+  <!-- ═══ Form Panel (right/يمين) ═══ -->
+  <div class="login-panel">
     <div class="login-panel-header">
       <div class="login-panel-logo">🚛</div>
       <h2>تسجيل الدخول</h2>
@@ -7755,16 +7810,14 @@ function showLogin() {
           <input type="text" id="luName" placeholder="أدخل اسم المستخدم" autocomplete="username">
         </div>
       </div>
-      <div class="login-field" style="margin-bottom:1.4rem">
+      <div class="login-field">
         <label>كلمة المرور</label>
         <div class="login-input-wrap">
           <span class="login-input-icon">🔒</span>
           <input type="password" id="luPw" placeholder="أدخل كلمة المرور" autocomplete="current-password">
         </div>
       </div>
-
       <button class="login-btn" id="doLoginBtn">تسجيل الدخول</button>
-
       <div class="login-roles">
         <div class="login-roles-icon">👥</div>
         <div class="login-roles-text">
