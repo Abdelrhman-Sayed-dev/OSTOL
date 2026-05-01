@@ -389,7 +389,13 @@ def _safe_add_columns(c):
         "trips":              [("garage_location","TEXT DEFAULT ''")],
         "workshop_records":   [("location","TEXT DEFAULT ''"),("operation_type","TEXT DEFAULT ''"),
                                ("vehicle_id","INTEGER"),("odometer_reading","REAL"),
-                               ("description","TEXT DEFAULT ''"),("tire_action","TEXT DEFAULT ''")],
+                               ("description","TEXT DEFAULT ''"),("tire_action","TEXT DEFAULT ''"),
+                               ("doc_number","TEXT DEFAULT ''"),
+                               ("engine_hours","REAL"),
+                               ("supply_source","TEXT DEFAULT ''"),
+                               ("item_name","TEXT DEFAULT ''"),
+                               ("item_spec","TEXT DEFAULT ''"),
+                               ("receiver_name","TEXT DEFAULT ''")],
         "drivers":            [("national_id","TEXT DEFAULT ''"),("birth_date","TEXT DEFAULT ''"),
                                ("driver_license_expiry","TEXT DEFAULT ''"),
                                ("vehicle_license_expiry","TEXT DEFAULT ''"),
@@ -775,6 +781,13 @@ class WorkshopCreate(BaseModel):
     operation_type: Optional[str] = ""; vehicle_id: Optional[int] = None
     odometer_reading: Optional[float] = None; description: Optional[str] = ""
     tire_action: Optional[str] = ""; location: Optional[str] = ""
+    # حقول البطاقة التشغيلية
+    doc_number:    Optional[str]   = ""    # رقم مستند الصرف
+    engine_hours:  Optional[float] = None  # ساعات المحرك
+    supply_source: Optional[str]   = ""    # جهة الصرف
+    item_name:     Optional[str]   = ""    # اسم الصنف (كاوتش/بطارية)
+    item_spec:     Optional[str]   = ""    # المقاس
+    receiver_name: Optional[str]   = ""    # اسم المتسلم
 
 class EmergencyCreate(BaseModel):
     driver_id: int; car_id: Optional[int] = None
@@ -1884,11 +1897,14 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
         c = conn.cursor()
         c.execute("""INSERT INTO workshop_records
                      (driver_id,type,quantity,price,notes,created_at,
-                      operation_type,vehicle_id,odometer_reading,description,tire_action,location)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                      doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
                    rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
-                   rec.description or "", rec.tire_action or "", rec.location or ""))
+                   rec.description or "", rec.tire_action or "", rec.location or "",
+                   rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
+                   rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
         rid = c.lastrowid
         vp = None
         if rec.vehicle_id:
@@ -1944,10 +1960,161 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
         for r in c.fetchall():
             d = dict(r)
             for k in ["operation_type","vehicle_id","odometer_reading",
-                      "description","vehicle_plate","tire_action","location"]:
+                      "description","vehicle_plate","tire_action","location",
+                      "doc_number","engine_hours","supply_source",
+                      "item_name","item_spec","receiver_name"]:
                 d.setdefault(k, None)
             rows.append(d)
         return rows
+
+# ══════════════════════════════════════════════════════
+# 18b. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/operational/page2")
+async def get_operational_page2(
+    car_id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to:   Optional[str] = None,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """
+    يجيب سجلات الصيانة لمركبة في فترة زمنية:
+    - oils: تغيير زيت / فلاتر / شحم / هيدروليك / فرامل
+    - tires: إطارات
+    - batteries: بطاريات
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+
+        conditions = []
+        params = []
+
+        if car_id:
+            conditions.append("w.vehicle_id = ?")
+            params.append(car_id)
+        if date_from:
+            conditions.append("date(w.created_at) >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append("date(w.created_at) <= ?")
+            params.append(date_to)
+
+        # Branch filter
+        branch = _branch_filter(cu)
+        if branch:
+            conditions.append("d.branch = ?")
+            params.append(branch)
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        q = f"""
+            SELECT w.id, w.created_at, w.type, w.operation_type,
+                   w.quantity, w.price, w.notes, w.odometer_reading,
+                   w.tire_action, w.location, w.description,
+                   d.name as driver_name,
+                   c.plate as vehicle_plate, c.model as vehicle_model
+            FROM workshop_records w
+            LEFT JOIN drivers d ON w.driver_id = d.id
+            LEFT JOIN cars c ON w.vehicle_id = c.id
+            {where}
+            ORDER BY w.created_at ASC
+        """
+        c.execute(q, params)
+        rows = [dict(r) for r in c.fetchall()]
+
+    # Categorize rows
+    oils      = []
+    tires     = []
+    batteries = []
+
+    OIL_TYPES     = {"oil", "filter"}
+    TIRE_TYPES    = {"tire"}
+    BATTERY_TYPES = {"battery"}
+
+    OIL_OP_MAP = {
+        "تغيير زيت":    "زيت_محرك",
+        "فلتر زيت":     "زيت_محرك",
+        "فلتر هواء":    "أخرى",
+        "فلتر وقود":    "أخرى",
+        "فلتر مكيف":    "أخرى",
+    }
+
+    # Oil type mapping from operation_type
+    OIL_OP_LABELS = {
+        "زيت محرك":    "motor",
+        "زيت تروس":    "gear",
+        "زيت فرامل":   "brake",
+        "زيت هيدروليك":"hydraulic",
+        "شحم":          "grease",
+    }
+
+    for r in rows:
+        t   = r.get("type","")
+        op  = r.get("operation_type","") or ""
+        date_str = (r.get("created_at","") or "")[:10]
+        qty      = r.get("quantity")
+        odo      = r.get("odometer_reading")
+        notes    = r.get("notes","") or ""
+        price    = r.get("price") or ""
+        doc_num  = r.get("doc_number","") or ""
+        eng_h    = r.get("engine_hours")
+        supply   = r.get("supply_source","") or ""
+        item_n   = r.get("item_name","") or ""
+        item_s   = r.get("item_spec","") or ""
+        recv     = r.get("receiver_name","") or ""
+
+        if t in OIL_TYPES:
+            # Determine oil column from operation_type
+            oil_col = OIL_OP_LABELS.get(op, "other")
+            oils.append({
+                "date":         date_str,
+                "oil_col":      oil_col,      # motor/gear/brake/hydraulic/grease/other
+                "operation":    op or t,
+                "quantity":     qty or "",
+                "price":        price,
+                "odometer":     odo or "",
+                "engine_hours": eng_h or "",
+                "doc_number":   doc_num,
+                "supply_source":supply,
+                "notes":        notes,
+                "driver":       r.get("driver_name",""),
+                "vehicle":      r.get("vehicle_plate",""),
+            })
+        elif t in TIRE_TYPES:
+            tires.append({
+                "date":          date_str,
+                "item":          item_n or "إطارات",
+                "spec":          item_s or r.get("tire_action","") or "",
+                "quantity":      qty or "",
+                "price":         price,
+                "doc_number":    doc_num,
+                "receiver_name": recv,
+                "notes":         notes,
+                "driver":        r.get("driver_name",""),
+                "vehicle":       r.get("vehicle_plate",""),
+            })
+        elif t in BATTERY_TYPES:
+            tires.append({
+                "date":          date_str,
+                "item":          item_n or "بطارية",
+                "spec":          item_s or op or "",
+                "quantity":      qty or "",
+                "price":         price,
+                "doc_number":    doc_num,
+                "receiver_name": recv,
+                "notes":         notes,
+                "driver":        r.get("driver_name",""),
+                "vehicle":       r.get("vehicle_plate",""),
+            })
+
+    return {
+        "oils":      oils,
+        "tires":     tires,
+        "total_oils":     len(oils),
+        "total_tires":    len(tires),
+    }
+
 
 # ══════════════════════════════════════════════════════
 # 19. GARAGE RECORDS
