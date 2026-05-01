@@ -7053,22 +7053,37 @@ function dpWsModal(type) {
   const isFuelType = type.startsWith('fuel_');
   if(isFuelType) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
   else if(type==='oil') specific=`
-    <div class="form-group"><label>نوع الزيت <span class="req">*</span></label>
-      <select id="wOpType">
-        <option value="">-- اختر نوع الزيت --</option>
-        <option value="زيت محرك">🔴 زيت محرك</option>
-        <option value="زيت تروس">🟠 زيت تروس</option>
-        <option value="زيت فرامل">🟡 زيت فرامل</option>
-        <option value="زيت هيدروليك">🔵 زيت هيدروليك</option>
-        <option value="شحم">⚫ شحم</option>
-        <option value="أخرى">🔧 أخرى</option>
-      </select>
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.8rem 1rem;margin-bottom:.6rem">
+      <div style="font-size:.78rem;font-weight:700;color:#0369a1;margin-bottom:.6rem">🛢️ الكميات (اترك فارغاً إذا لم يُصرف)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.75rem">زيت المحرك (لتر)</label>
+          <input type="number" id="wOilMotor" placeholder="0" min="0" step="0.1">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.75rem">زيت التروس (لتر)</label>
+          <input type="number" id="wOilGear" placeholder="0" min="0" step="0.1">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.75rem">زيت الفرامل (لتر)</label>
+          <input type="number" id="wOilBrake" placeholder="0" min="0" step="0.1">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.75rem">زيت الهيدروليك (لتر)</label>
+          <input type="number" id="wOilHydro" placeholder="0" min="0" step="0.1">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.75rem">شحم (كجم)</label>
+          <input type="number" id="wOilGrease" placeholder="0" min="0" step="0.1">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.75rem">أخرى (لتر)</label>
+          <input type="number" id="wOilOther" placeholder="0" min="0" step="0.1">
+        </div>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 8" min="0.1" step="0.1"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
       <div class="form-group"><label>ساعات المحرك</label><input type="number" id="wEngHours" placeholder="مثال: 2500" min="0"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
       <div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/001"></div>
       <div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="مثال: ورشة الموقع"></div>
     </div>
@@ -7143,24 +7158,48 @@ function dpWsModal(type) {
     const payload={driver_id:currentUser.driver_id,type:selWsType,price,notes,vehicle_id:vid,odometer_reading:odo,location:''};
     const _isFuel=selWsType.startsWith('fuel_')||selWsType==='fuel';
 
-    // Quantity
-    if(_isFuel||['oil','tire','battery'].includes(selWsType)){
+    // Quantity (fuel & tire only — oil handled separately below)
+    if(_isFuel||selWsType==='tire'||selWsType==='battery'){
       const q=parseFloat(document.getElementById('wQty')?.value);
-      if((_isFuel||selWsType==='oil'||selWsType==='tire')&&(!q||q<=0))return showNotification('أدخل الكمية','error');
+      if((_isFuel||selWsType==='tire')&&(!q||q<=0))return showNotification('أدخل الكمية','error');
       if(q&&q>0) payload.quantity=q;
     }
 
-    // Oil specific
+    // Oil — multiple records (one per oil type entered)
     if(selWsType==='oil'){
-      const op=document.getElementById('wOpType')?.value;
-      if(!op) return showNotification('اختر نوع الزيت','error');
-      payload.operation_type=op;
-      const eh=parseFloat(document.getElementById('wEngHours')?.value);
-      if(eh&&eh>0) payload.engine_hours=eh;
-      const dn=document.getElementById('wDocNum')?.value?.trim();
-      if(dn) payload.doc_number=dn;
-      const sup=document.getElementById('wSupply')?.value?.trim();
-      if(sup) payload.supply_source=sup;
+      const eh  = parseFloat(document.getElementById('wEngHours')?.value)||null;
+      const dn  = document.getElementById('wDocNum')?.value?.trim()||'';
+      const sup = document.getElementById('wSupply')?.value?.trim()||'';
+      const oils=[
+        {id:'wOilMotor',  op:'زيت محرك',    col:'motor'},
+        {id:'wOilGear',   op:'زيت تروس',    col:'gear'},
+        {id:'wOilBrake',  op:'زيت فرامل',   col:'brake'},
+        {id:'wOilHydro',  op:'زيت هيدروليك',col:'hydraulic'},
+        {id:'wOilGrease', op:'شحم',          col:'grease'},
+        {id:'wOilOther',  op:'أخرى',         col:'other'},
+      ];
+      const oilEntries=oils.map(o=>({
+        op:o.op, col:o.col,
+        qty:parseFloat(document.getElementById(o.id)?.value)||0
+      })).filter(o=>o.qty>0);
+      if(oilEntries.length===0) return showNotification('أدخل كمية على الأقل لنوع زيت واحد','error');
+      btn.disabled=true; btn.textContent='جاري...';
+      payload.location = await silentGetLocation();
+      try{
+        for(const entry of oilEntries){
+          await apiCall('/workshops','POST',{
+            ...payload,
+            quantity: entry.qty,
+            operation_type: entry.op,
+            engine_hours: eh,
+            doc_number: dn,
+            supply_source: sup,
+          });
+        }
+        showNotification('✅ تم حفظ ' + oilEntries.length + ' نوع زيت', 'success');
+        closeModal();
+      }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
+      return; // early return — already saved
     }
 
     // Tire specific
