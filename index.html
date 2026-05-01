@@ -2892,22 +2892,37 @@ async function renderAdminWorkshops() {
 
 function buildWSTable(records) {
   if(!records.length) return '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد سجلات</p></div>';
-  return `<table><thead><tr><th>#</th><th>السائق</th><th>النوع</th><th>العملية</th><th>حالة الكوتش</th><th>المركبة</th><th>العداد</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>ملاحظات</th><th>📍 الموقع</th><th>التاريخ</th></tr></thead><tbody>
+  return `<table><thead><tr>
+    <th>#</th><th>السائق</th><th>النوع</th><th>التفاصيل</th><th>المركبة</th>
+    <th>العداد</th><th>ساعات المحرك</th><th>الكمية</th><th>الإجمالي</th>
+    <th>اسم الصنف</th><th>المقاس</th><th>رقم المستند</th><th>جهة الصرف</th>
+    <th>المتسلم</th><th>ملاحظات</th><th>التاريخ</th>
+  </tr></thead><tbody>
   ${records.map(r=>{
     const wt=WT[r.type]||{icon:'🔨',label:r.type};
-    const opLabel=r.operation_type?(r.operation_type==='maintenance'?'صيانة':'استبدال'):'—';
-    const taLabel=r.tire_action?`<span class="badge badge-orange">${TIRE_ACTIONS[r.tire_action]||r.tire_action}</span>`:'—';
-    return `<tr><td>${r.id}</td><td>${r.driver_name||'—'}</td>
+    // Build detail badge
+    let detail = '—';
+    if(r.type==='oil' && r.operation_type) detail=`<span class="badge badge-blue">${r.operation_type}</span>`;
+    else if(r.type==='tire' && r.tire_action) detail=`<span class="badge badge-orange">${TIRE_ACTIONS[r.tire_action]||r.tire_action}</span>`;
+    else if(r.operation_type) detail=`<span class="badge badge-navy">${r.operation_type==='maintenance'?'صيانة':'استبدال'}</span>`;
+    return `<tr>
+      <td>${r.id}</td>
+      <td>${r.driver_name||'—'}</td>
       <td><span class="badge badge-purple">${wt.icon} ${wt.label}</span></td>
-      <td>${r.operation_type?`<span class="badge badge-blue">${opLabel}</span>`:'—'}</td>
-      <td>${r.type==='tire'?taLabel:'—'}</td>
-      <td dir="ltr">${r.vehicle_plate||'—'}</td><td>${r.odometer_reading?r.odometer_reading+' كم':'—'}</td>
+      <td>${detail}</td>
+      <td dir="ltr">${r.vehicle_plate||'—'}</td>
+      <td>${r.odometer_reading?r.odometer_reading+' كم':'—'}</td>
+      <td>${r.engine_hours?r.engine_hours+' س':'—'}</td>
       <td>${r.quantity||'—'}</td>
-      <td style="font-size:.82rem">${r.price} جنيه</td>
       <td><strong>${r.price?(parseFloat(r.price)).toFixed(2)+' جنيه':'—'}</strong></td>
+      <td style="font-size:.82rem">${r.item_name||'—'}</td>
+      <td style="font-size:.82rem">${r.item_spec||'—'}</td>
+      <td style="font-size:.82rem">${r.doc_number||'—'}</td>
+      <td style="font-size:.82rem">${r.supply_source||'—'}</td>
+      <td style="font-size:.82rem">${r.receiver_name||'—'}</td>
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
-      <td>${r.location?formatLocation(r.location):'<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
-      <td>${r.created_at?fmtDT(r.created_at):'—'}</td></tr>`;
+      <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
+    </tr>`;
   }).join('')}</tbody></table>`;
 }
 
@@ -3570,11 +3585,10 @@ async function generateOpCard() {
 
     <!-- ════════════════════════════════════════
          الصفحة الثانية — خامساً وسادساً
-         (تُطبع على ورقة منفصلة)
     ════════════════════════════════════════ -->
     <div class="op-page-break"></div>
 
-    <div class="card op-page2">
+    <div class="card op-page2" id="opPage2Card">
       <!-- ترويسة الطباعة -->
       <div class="op-print-header" style="text-align:center;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #0f2027">
         <div style="font-size:15pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
@@ -3591,7 +3605,7 @@ async function generateOpCard() {
           خامساً: الزيوت والشحوم المتصرفة
         </div>
         <div style="overflow-x:auto;margin-bottom:1.5rem">
-          <table class="op-table op-page2-table">
+          <table class="op-table op-page2-table" id="oilsTable">
             <thead>
               <tr>
                 <th rowspan="2" style="width:60px">التاريخ</th>
@@ -3618,14 +3632,14 @@ async function generateOpCard() {
               </tr>
             </thead>
             <tbody>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
             </tbody>
           </table>
         </div>
@@ -3635,7 +3649,7 @@ async function generateOpCard() {
           سادساً: الكاوتش والبطاريات المتصرفة
         </div>
         <div style="overflow-x:auto;margin-bottom:1.5rem">
-          <table class="op-table op-page2-table">
+          <table class="op-table op-page2-table" id="tiresTable">
             <thead>
               <tr>
                 <th rowspan="2" style="width:60px">التاريخ</th>
@@ -3690,6 +3704,75 @@ async function generateOpCard() {
         </div>
       </div>
     </div>`;
+
+  // ── جلب بيانات الصفحة الثانية ──
+  try {
+    let p2url = `/reports/operational/page2?date_from=${date_from}&date_to=${date_to}`;
+    if (car_id) p2url += `&car_id=${car_id}`;
+    const p2 = await apiCall(p2url);
+    renderPage2(p2);
+  } catch(e) {
+    console.warn('Page2 data failed:', e.message);
+  }
+}
+
+function renderPage2(p2) {
+  // col map for oils: motor/gear/brake/hydraulic/grease/other
+  const OIL_COL = {motor:0, gear:1, brake:2, hydraulic:3, grease:4, other:5};
+
+  // ── جدول الزيوت (15 أعمدة) ──
+  // التاريخ | محرك | تروس | فرامل | هيدروليك | شحم | أخرى | رقم مستند | تاريخ مستند | جهة الصرف | عداد(كم) | ساعات محرك | الاسم | عدد التشغيل | التوقيع
+  const oilsTbody = document.querySelector('#oilsTable tbody');
+  if (oilsTbody) {
+    const oils = p2.oils || [];
+    const EMPTY_OILS = 8;
+    const rows = [];
+    oils.forEach(o => {
+      const qtyCells = ['&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;'];
+      const col = OIL_COL[o.oil_col] ?? 5;
+      if(o.quantity) qtyCells[col] = o.quantity;
+      rows.push(`<tr>
+        <td>${o.date||'&nbsp;'}</td>
+        ${qtyCells.map(c=>`<td>${c}</td>`).join('')}
+        <td>${o.doc_number||'&nbsp;'}</td>
+        <td>&nbsp;</td>
+        <td>${o.supply_source||'&nbsp;'}</td>
+        <td>${o.odometer||'&nbsp;'}</td>
+        <td>${o.engine_hours||'&nbsp;'}</td>
+        <td>${o.driver||'&nbsp;'}</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>`);
+    });
+    while(rows.length < EMPTY_OILS) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(15) + '</tr>');
+    oilsTbody.innerHTML = rows.join('');
+  }
+
+  // ── جدول الكاوتش والبطاريات (12 أعمدة) ──
+  // التاريخ | اسم الصنف | المقاس | الكمية | رقم مستند | تاريخ مستند | الاجمالي | الوحدة | اسم القائم | توقيع | اسم المتسلم
+  const tiresTbody = document.querySelector('#tiresTable tbody');
+  if (tiresTbody) {
+    const tires = p2.tires || [];
+    const EMPTY_TIRES = 6;
+    const rows = [];
+    tires.forEach(t => {
+      rows.push(`<tr>
+        <td>${t.date||'&nbsp;'}</td>
+        <td>${t.item||'&nbsp;'}</td>
+        <td>${t.spec||'&nbsp;'}</td>
+        <td>${t.quantity||'&nbsp;'}</td>
+        <td>${t.doc_number||'&nbsp;'}</td>
+        <td>&nbsp;</td>
+        <td>${t.price||'&nbsp;'}</td>
+        <td>&nbsp;</td>
+        <td>${t.driver||'&nbsp;'}</td>
+        <td>&nbsp;</td>
+        <td>${t.receiver_name||'&nbsp;'}</td>
+      </tr>`);
+    });
+    while(rows.length < EMPTY_TIRES) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(12) + '</tr>');
+    tiresTbody.innerHTML = rows.join('');
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -6968,14 +7051,65 @@ function dpWsModal(type) {
 
   let specific='';
   const isFuelType = type.startsWith('fuel_');
-  if(isFuelType || type==='oil') specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
+  if(isFuelType) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
+  else if(type==='oil') specific=`
+    <div class="form-group"><label>نوع الزيت <span class="req">*</span></label>
+      <select id="wOpType">
+        <option value="">-- اختر نوع الزيت --</option>
+        <option value="زيت محرك">🔴 زيت محرك</option>
+        <option value="زيت تروس">🟠 زيت تروس</option>
+        <option value="زيت فرامل">🟡 زيت فرامل</option>
+        <option value="زيت هيدروليك">🔵 زيت هيدروليك</option>
+        <option value="شحم">⚫ شحم</option>
+        <option value="أخرى">🔧 أخرى</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 8" min="0.1" step="0.1"></div>
+      <div class="form-group"><label>ساعات المحرك</label><input type="number" id="wEngHours" placeholder="مثال: 2500" min="0"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/001"></div>
+      <div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="مثال: ورشة الموقع"></div>
+    </div>
+  `;
   else if(type==='tire') specific=`
-    <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label><input type="number" id="wQty" placeholder="4" min="1"></div>
-    <div class="form-group"><label>حالة الكوتش <span class="req">*</span></label>
-      <select id="wTireAction"><option value="">-- اختر --</option>
-        <option value="puncture">🔴 ثقب</option><option value="repair">🔧 تصليح</option><option value="replacement">🔄 استبدال</option>
-      </select></div>`;
-  else if(['filter','battery','belt'].includes(type)) specific=`<div class="form-group"><label>نوع العملية <span class="req">*</span></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>اسم الصنف / الماركة</label><input type="text" id="wItemName" placeholder="مثال: ميشلان، بريدجستون"></div>
+      <div class="form-group"><label>المقاس</label><input type="text" id="wItemSpec" placeholder="مثال: 11R22.5"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label><input type="number" id="wQty" placeholder="4" min="1"></div>
+      <div class="form-group"><label>حالة الكوتش <span class="req">*</span></label>
+        <select id="wTireAction"><option value="">-- اختر --</option>
+          <option value="puncture">🔴 ثقب</option><option value="repair">🔧 تصليح</option><option value="replacement">🔄 استبدال</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/050"></div>
+      <div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>
+    </div>
+  `;
+  else if(type==='battery') specific=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>اسم الصنف / الماركة</label><input type="text" id="wItemName" placeholder="مثال: فارتا، اكسايد"></div>
+      <div class="form-group"><label>المقاس / السعة</label><input type="text" id="wItemSpec" placeholder="مثال: 12V-200Ah"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>الكمية (عدد)</label><input type="number" id="wQty" placeholder="1" min="1"></div>
+      <div class="form-group"><label>نوع العملية <span class="req">*</span></label>
+        <select id="wOpType"><option value="">-- اختر --</option>
+          <option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/075"></div>
+      <div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>
+    </div>
+  `;
+  else if(['filter','belt'].includes(type)) specific=`<div class="form-group"><label>نوع العملية <span class="req">*</span></label>
     <select id="wOpType"><option value="">-- اختر --</option>
       <option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option>
     </select></div>`;
@@ -7008,9 +7142,65 @@ function dpWsModal(type) {
     if(!odo||odo<=0)    return showNotification('أدخل قراءة العداد','error');
     const payload={driver_id:currentUser.driver_id,type:selWsType,price,notes,vehicle_id:vid,odometer_reading:odo,location:''};
     const _isFuel=selWsType.startsWith('fuel_')||selWsType==='fuel';
-    if(_isFuel||['oil','tire'].includes(selWsType)){const q=parseFloat(document.getElementById('wQty')?.value);if(!q||q<=0)return showNotification('أدخل الكمية','error');payload.quantity=q;}
-    if(selWsType==='tire'){const ta=document.getElementById('wTireAction')?.value;if(!ta)return showNotification('اختر حالة الكوتش','error');payload.tire_action=ta;}
-    if(['filter','battery','belt'].includes(selWsType)){const op=document.getElementById('wOpType')?.value;if(!op)return showNotification('اختر نوع العملية','error');payload.operation_type=op;}
+
+    // Quantity
+    if(_isFuel||['oil','tire','battery'].includes(selWsType)){
+      const q=parseFloat(document.getElementById('wQty')?.value);
+      if((_isFuel||selWsType==='oil'||selWsType==='tire')&&(!q||q<=0))return showNotification('أدخل الكمية','error');
+      if(q&&q>0) payload.quantity=q;
+    }
+
+    // Oil specific
+    if(selWsType==='oil'){
+      const op=document.getElementById('wOpType')?.value;
+      if(!op) return showNotification('اختر نوع الزيت','error');
+      payload.operation_type=op;
+      const eh=parseFloat(document.getElementById('wEngHours')?.value);
+      if(eh&&eh>0) payload.engine_hours=eh;
+      const dn=document.getElementById('wDocNum')?.value?.trim();
+      if(dn) payload.doc_number=dn;
+      const sup=document.getElementById('wSupply')?.value?.trim();
+      if(sup) payload.supply_source=sup;
+    }
+
+    // Tire specific
+    if(selWsType==='tire'){
+      const ta=document.getElementById('wTireAction')?.value;
+      if(!ta) return showNotification('اختر حالة الكوتش','error');
+      payload.tire_action=ta;
+      const iname=document.getElementById('wItemName')?.value?.trim();
+      if(iname) payload.item_name=iname;
+      const ispec=document.getElementById('wItemSpec')?.value?.trim();
+      if(ispec) payload.item_spec=ispec;
+      const dn=document.getElementById('wDocNum')?.value?.trim();
+      if(dn) payload.doc_number=dn;
+      const recv=document.getElementById('wRecvName')?.value?.trim();
+      if(recv) payload.receiver_name=recv;
+    }
+
+    // Battery specific
+    if(selWsType==='battery'){
+      const op=document.getElementById('wOpType')?.value;
+      if(!op) return showNotification('اختر نوع العملية','error');
+      payload.operation_type=op;
+      const iname=document.getElementById('wItemName')?.value?.trim();
+      if(iname) payload.item_name=iname;
+      const ispec=document.getElementById('wItemSpec')?.value?.trim();
+      if(ispec) payload.item_spec=ispec;
+      const dn=document.getElementById('wDocNum')?.value?.trim();
+      if(dn) payload.doc_number=dn;
+      const recv=document.getElementById('wRecvName')?.value?.trim();
+      if(recv) payload.receiver_name=recv;
+    }
+
+    // Filter/belt
+    if(['filter','belt'].includes(selWsType)){
+      const op=document.getElementById('wOpType')?.value;
+      if(!op) return showNotification('اختر نوع العملية','error');
+      payload.operation_type=op;
+    }
+
+    // Other
     if(selWsType==='other'){const d=document.getElementById('wDesc')?.value?.trim();if(!d)return showNotification('أدخل وصف العملية','error');payload.description=d;}
     btn.disabled=true; btn.textContent='جاري...';
     payload.location=await silentGetLocation();
