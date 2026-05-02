@@ -433,6 +433,12 @@ def _safe_add_columns(c):
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
 
+    # ── migration: avatar_url للمستخدمين ──
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''")
+    except Exception:
+        pass  # العمود موجود بالفعل
+
     # ── جدول صور السائقين ──
     c.execute("""CREATE TABLE IF NOT EXISTS driver_photos (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -642,6 +648,7 @@ class RefreshReq(BaseModel):
 class UserResp(BaseModel):
     id: int; username: str; role: str; driver_id: Optional[int] = None
     branch: Optional[str] = ""
+    avatar_url: Optional[str] = ""
 
 class LoginResp(BaseModel):
     access_token: str; refresh_token: str; token_type: str; user: UserResp
@@ -1019,7 +1026,7 @@ async def login(request: Request, data: LoginReq):
         c = conn.cursor()
         # username ممكن يتكرر عند السائقين — نجيب كل الحسابات بنفس الاسم
         # ونبحث عن الأول اللي كلمة مروره تطابق
-        c.execute("SELECT id,username,password,role,branch FROM users WHERE username=?", (data.username,))
+        c.execute("SELECT id,username,password,role,branch,avatar_url FROM users WHERE username=?", (data.username,))
         candidates = c.fetchall()
         u = None
         for candidate in candidates:
@@ -1062,7 +1069,8 @@ async def login(request: Request, data: LoginReq):
             token_type="bearer",
             user=UserResp(id=u["id"], username=u["username"],
                           role=u["role"], driver_id=driver_id,
-                          branch=u["branch"] or "")
+                          branch=u["branch"] or "",
+                          avatar_url=u["avatar_url"] or "")
         )
 
 @app.post("/token/refresh")
@@ -1099,6 +1107,78 @@ async def logout(cu: dict = Depends(get_user)):
     with get_db() as conn:
         conn.cursor().execute("UPDATE users SET refresh_token=NULL,refresh_exp=NULL WHERE id=?",
                               (cu["user_id"],))
+    return {"ok": True}
+
+# ══════════════════════════════════════════════════════
+# USER AVATAR — رفع وجلب صورة البروفايل للمستخدم
+# ══════════════════════════════════════════════════════
+
+@app.post("/user/avatar")
+async def upload_user_avatar(body: dict, cu: dict = Depends(get_user)):
+    """
+    يرفع صورة بروفايل للمستخدم الحالي (أدمن أو سوبر يوزر).
+    body: { image: base64string }
+    """
+    import base64, re as _re
+    raw_b64 = body.get("image", "")
+    if not raw_b64:
+        raise HTTPException(400, "لم يتم إرسال صورة")
+    # اقبل data:image/...;base64,... أو raw base64
+    m = _re.match(r"data:image/(\w+);base64,(.+)", raw_b64, _re.DOTALL)
+    if m:
+        ext, raw_b64 = m.group(1).lower(), m.group(2)
+    else:
+        ext = "jpg"
+    allowed_exts = {"jpg","jpeg","png","webp","gif"}
+    if ext not in allowed_exts:
+        raise HTTPException(400, "نوع الصورة غير مدعوم")
+    try:
+        raw = base64.b64decode(raw_b64)
+    except Exception:
+        raise HTTPException(400, "صورة غير صالحة")
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(400, "حجم الصورة يتجاوز 5 MB")
+
+    fname = f"avatar_user_{cu['user_id']}_{int(datetime.utcnow().timestamp()*1000)}.{ext}"
+    fpath = UPLOAD_DIR / fname
+    fpath.write_bytes(raw)
+    avatar_url = f"/uploads/{fname}"
+
+    with get_db() as conn:
+        # احذف الصورة القديمة لو موجودة
+        old = conn.execute("SELECT avatar_url FROM users WHERE id=?", (cu["user_id"],)).fetchone()
+        if old and old["avatar_url"]:
+            old_path = UPLOAD_DIR / old["avatar_url"].replace("/uploads/","")
+            try:
+                if old_path.exists() and "avatar_user_" in old_path.name:
+                    old_path.unlink()
+            except Exception:
+                pass
+        conn.execute("UPDATE users SET avatar_url=? WHERE id=?", (avatar_url, cu["user_id"]))
+
+    log_event("avatar_uploaded", user_id=cu["user_id"])
+    return {"ok": True, "avatar_url": avatar_url}
+
+@app.get("/user/avatar")
+async def get_user_avatar(cu: dict = Depends(get_user)):
+    """يرجع avatar_url للمستخدم الحالي."""
+    with get_db() as conn:
+        row = conn.execute("SELECT avatar_url FROM users WHERE id=?", (cu["user_id"],)).fetchone()
+    return {"avatar_url": row["avatar_url"] if row else ""}
+
+@app.delete("/user/avatar")
+async def delete_user_avatar(cu: dict = Depends(get_user)):
+    """يحذف صورة البروفايل."""
+    with get_db() as conn:
+        old = conn.execute("SELECT avatar_url FROM users WHERE id=?", (cu["user_id"],)).fetchone()
+        if old and old["avatar_url"]:
+            old_path = UPLOAD_DIR / old["avatar_url"].replace("/uploads/","")
+            try:
+                if old_path.exists() and "avatar_user_" in old_path.name:
+                    old_path.unlink()
+            except Exception:
+                pass
+        conn.execute("UPDATE users SET avatar_url='' WHERE id=?", (cu["user_id"],))
     return {"ok": True}
 
 # ══════════════════════════════════════════════════════

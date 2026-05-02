@@ -35,7 +35,8 @@ def create_database():
             created_at TEXT    DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
-            refresh_exp   TEXT
+            refresh_exp   TEXT,
+            avatar_url    TEXT    DEFAULT ''
         )
     """)
 

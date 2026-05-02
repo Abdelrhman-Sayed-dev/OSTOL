@@ -345,11 +345,22 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
   display:flex;align-items:center;gap:.8rem;
 }
 .user-avatar{
-  width:34px;height:34px;border-radius:10px;
+  width:46px;height:46px;border-radius:12px;
   background:linear-gradient(135deg,var(--primary),var(--primary-light));
   display:flex;align-items:center;justify-content:center;
-  font-size:.85rem;color:white;font-weight:800;flex-shrink:0;
+  font-size:1.1rem;color:white;font-weight:800;flex-shrink:0;
+  cursor:pointer;overflow:hidden;position:relative;
+  transition:box-shadow .2s, transform .15s;
+  border:2px solid rgba(255,255,255,.3);
+  box-shadow:var(--shadow-sm);
 }
+.user-avatar:hover{box-shadow:0 0 0 3px rgba(30,58,95,.2);transform:scale(1.04);}
+.user-avatar img{width:100%;height:100%;object-fit:cover;border-radius:10px;}
+.user-avatar .avatar-edit-overlay{
+  display:none;position:absolute;inset:0;background:rgba(0,0,0,.45);
+  align-items:center;justify-content:center;font-size:.85rem;border-radius:10px;
+}
+.user-avatar:hover .avatar-edit-overlay{display:flex;}
 .user-name{font-size:.8rem;color:var(--text);font-weight:700}
 .user-role{font-size:.62rem;color:var(--muted);margin-top:2px;font-weight:500}
 .sidebar-nav{flex:1;padding:.6rem .55rem;overflow-y:auto;scrollbar-width:none}
@@ -1218,7 +1229,10 @@ tr.row-hidden { display:none; }
       <div class="sidebar-subtitle">Fleet Management v2</div>
     </div>
     <div class="sidebar-user">
-      <div class="user-avatar" id="userAvatar">؟</div>
+      <div class="user-avatar" id="userAvatar" onclick="openAvatarModal()" title="تغيير الصورة الشخصية">
+        <span id="userAvatarInitial">؟</span>
+        <div class="avatar-edit-overlay">✏️</div>
+      </div>
       <div>
         <div class="user-name" id="sidebarUsername">—</div>
         <div class="user-role" id="sidebarRole">—</div>
@@ -5920,7 +5934,17 @@ window.addEventListener('popstate', (e) => {
 /* ── INIT ── */
 function initUI() {
   document.getElementById('appShell').style.display='flex';
-  document.getElementById('userAvatar').textContent=currentUser.username.charAt(0).toUpperCase();
+  // ── Avatar ──
+  const avatarEl = document.getElementById('userAvatar');
+  const initialEl = document.getElementById('userAvatarInitial');
+  if(initialEl) initialEl.textContent = currentUser.username.charAt(0).toUpperCase();
+  if(currentUser.avatar_url) {
+    const img = document.createElement('img');
+    img.src = currentUser.avatar_url;
+    img.alt = currentUser.username;
+    img.onerror = () => img.remove();
+    avatarEl.prepend(img);
+  }
   document.getElementById('sidebarUsername').textContent=currentUser.username;
   document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':'🚗 سائق';
   // إظهار الفرع في الـ sidebar لو الأدمن/المراقب مقيّد بفرع
@@ -8264,7 +8288,7 @@ function showLogin() {
       setToken(data.access_token);
       if(data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
       const u={id:data.user.id,username:data.user.username,role:data.user.role,driver_id:data.user.driver_id,
-               branch: data.user.branch || ''};
+               branch: data.user.branch || '', avatar_url: data.user.avatar_url || ''};
       saveUser(u); currentUser=u;
       document.getElementById('loginOverlay').remove();
       initUI();
@@ -9750,4 +9774,114 @@ async function deleteSupervisor(uid, name) {
 
 
 showLogin();
+
+/* ══════════════════════════════════════════════
+   AVATAR MODAL — رفع صورة البروفايل
+   ══════════════════════════════════════════════ */
+function openAvatarModal() {
+  // فقط أدمن أو سوبر يوزر يقدروا يغيروا صورتهم
+  if(!currentUser || !['admin','superuser'].includes(currentUser.role)) return;
+  let existing = document.getElementById('avatarModal');
+  if(existing) existing.remove();
+
+  const hasAvatar = !!currentUser.avatar_url;
+  const overlay = document.createElement('div');
+  overlay.id = 'avatarModal';
+  overlay.className = 'modal-overlay';
+  overlay.style.cssText = 'display:flex;z-index:9999;';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:400px;width:92%" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">🖼️ الصورة الشخصية</div>
+        <button class="modal-close" onclick="document.getElementById('avatarModal').remove()">✕</button>
+      </div>
+      <div style="padding:1.2rem">
+        <div id="avatarPreviewWrap" style="text-align:center;margin-bottom:1rem">
+          ${hasAvatar
+            ? `<img src="${currentUser.avatar_url}" id="avatarPreviewImg"
+                style="width:96px;height:96px;border-radius:14px;object-fit:cover;border:2px solid var(--border);box-shadow:var(--shadow-md)">`
+            : `<div id="avatarPreviewImg" style="width:96px;height:96px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--primary-light));display:inline-flex;align-items:center;justify-content:center;font-size:2.2rem;color:white;font-weight:800;box-shadow:var(--shadow-md)">
+                ${currentUser.username.charAt(0).toUpperCase()}
+               </div>`
+          }
+        </div>
+        <div id="avatarDropzone"
+          onclick="document.getElementById('avatarFileInput').click()"
+          style="border:2px dashed var(--border-2);border-radius:12px;padding:1.2rem;text-align:center;cursor:pointer;color:var(--muted);font-size:.85rem;transition:border-color .2s,background .2s;"
+          onmouseover="this.style.borderColor='var(--primary)';this.style.background='var(--gold-pale)'"
+          onmouseout="this.style.borderColor='var(--border-2)';this.style.background=''">
+          📁 اضغط لاختيار صورة<br>
+          <span style="font-size:.75rem;color:var(--muted)">JPG, PNG, WEBP — حتى 5 MB</span>
+        </div>
+        <input type="file" id="avatarFileInput" accept="image/*" style="display:none">
+        <div style="display:flex;gap:.6rem;margin-top:1rem">
+          <button class="btn btn-primary" id="avatarSaveBtn" disabled style="flex:1" onclick="saveAvatar()">
+            💾 حفظ الصورة
+          </button>
+          ${hasAvatar ? `<button class="btn btn-danger" style="flex:none;padding:.5rem .9rem" onclick="deleteAvatar()" title="حذف الصورة">🗑️</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', () => overlay.remove());
+
+  // Preview on file select
+  let _avatarB64 = null;
+  document.getElementById('avatarFileInput').addEventListener('change', function() {
+    const file = this.files[0];
+    if(!file) return;
+    if(file.size > 5*1024*1024) { showNotification('الصورة أكبر من 5 MB','error'); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      _avatarB64 = e.target.result;
+      const wrap = document.getElementById('avatarPreviewWrap');
+      wrap.innerHTML = `<img src="${e.target.result}" style="width:96px;height:96px;border-radius:14px;object-fit:cover;border:2px solid var(--border);box-shadow:var(--shadow-md)">`;
+      document.getElementById('avatarSaveBtn').disabled = false;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  window._avatarB64Ref = () => _avatarB64;
+}
+
+async function saveAvatar() {
+  const b64 = window._avatarB64Ref ? window._avatarB64Ref() : null;
+  if(!b64) return;
+  const btn = document.getElementById('avatarSaveBtn');
+  btn.disabled = true; btn.textContent = '⏳ جاري الرفع...';
+  try {
+    const res = await apiCall('/user/avatar','POST',{ image: b64 });
+    if(res.ok && res.avatar_url) {
+      currentUser.avatar_url = res.avatar_url;
+      // تحديث الأيقونة في الـ sidebar فوراً
+      const avatarEl = document.getElementById('userAvatar');
+      const existingImg = avatarEl.querySelector('img');
+      if(existingImg) existingImg.remove();
+      const img = document.createElement('img');
+      img.src = res.avatar_url + '?t=' + Date.now();
+      img.alt = currentUser.username;
+      avatarEl.prepend(img);
+      document.getElementById('avatarModal')?.remove();
+      showNotification('✅ تم رفع الصورة بنجاح','success');
+    }
+  } catch(e) {
+    showNotification('فشل رفع الصورة: ' + (e.message||e),'error');
+    btn.disabled = false; btn.textContent = '💾 حفظ الصورة';
+  }
+}
+
+async function deleteAvatar() {
+  if(!confirm('هل تريد حذف صورتك الشخصية؟')) return;
+  try {
+    await apiCall('/user/avatar','DELETE',{});
+    currentUser.avatar_url = '';
+    const avatarEl = document.getElementById('userAvatar');
+    const existingImg = avatarEl.querySelector('img');
+    if(existingImg) existingImg.remove();
+    document.getElementById('avatarModal')?.remove();
+    showNotification('تم حذف الصورة','success');
+  } catch(e) {
+    showNotification('فشل الحذف','error');
+  }
+}
 </script>
