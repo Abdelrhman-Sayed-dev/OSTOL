@@ -7769,7 +7769,7 @@ async function renderImportSection() {
     <div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:1.5rem">
 
       <!-- Header cards -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:1rem">
         <div class="card" style="border-top:3px solid var(--primary)">
           <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
             <div class="card-title">👨‍✈️ استيراد السائقين</div>
@@ -7809,6 +7809,19 @@ async function renderImportSection() {
             </a>
           </div>
         </div>
+        <div class="card" style="border-top:3px solid #8b5cf6">
+          <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+            <div class="card-title">🔧 استيراد الصيانة الدورية</div>
+          </div>
+          <div style="padding:0 1.25rem 1.25rem;color:var(--muted);font-size:.85rem">
+            أضف جداول الصيانة الدورية لجميع المركبات دفعة واحدة عبر رقم اللوحة
+          </div>
+          <div style="padding:0 1.25rem 1.25rem">
+            <a href="/import/template/maintenance" class="btn btn-outline btn-sm" download>
+              ⬇️ تحميل قالب CSV
+            </a>
+          </div>
+        </div>
       </div>
 
       <!-- Upload Card -->
@@ -7824,6 +7837,7 @@ async function renderImportSection() {
                 <option value="drivers">👨‍✈️ سائقين</option>
                 <option value="cars">🚙 مركبات</option>
                 <option value="permissions">🔗 صلاحيات</option>
+                <option value="maintenance">🔧 صيانة دورية</option>
               </select>
             </div>
             <div class="form-group" style="margin:0">
@@ -7862,6 +7876,8 @@ async function doImportPreview() {
   const token = getToken();
   const url = importType === 'permissions'
     ? `/import/permissions/preview`
+    : importType === 'maintenance'
+    ? `/import/maintenance/preview`
     : `/import/preview?import_type=${importType}`;
   try {
     const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
@@ -7884,11 +7900,14 @@ function renderImportPreview(data) {
 
   const summaryColor = summary.invalid === 0 ? 'var(--success)' : summary.valid === 0 ? 'var(--danger)' : 'var(--warning)';
 
+  const isMaintenance = import_type === 'maintenance';
   const cols = isPermissions
     ? ['#','الرقم الثابت','المركبة','التحقق']
     : isDrivers
       ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
-      : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
+      : isMaintenance
+        ? ['#','رقم اللوحة','نوع الصيانة','كل كام كم','كل كام يوم','آخر قراءة (كم)','تاريخ آخر صيانة','التحقق']
+        : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
 
   const renderRow = (r) => {
     const status = r.valid
@@ -7899,6 +7918,17 @@ function renderImportPreview(data) {
         <td>${r.row_index}</td>
         <td><code>${r.fixed_number||'—'}</code></td>
         <td dir="ltr"><strong>${r.plate||'—'}</strong></td>
+        <td>${status}</td>
+      </tr>`;
+    if(isMaintenance) return `
+      <tr style="${!r.valid?'background:rgba(200,75,49,.05)':''}">
+        <td>${r.row_index}</td>
+        <td dir="ltr"><strong>${r.plate||'—'}</strong></td>
+        <td>${r.maintenance_type||'—'}</td>
+        <td>${r.interval_km!=null?r.interval_km+' كم':'—'}</td>
+        <td>${r.interval_days!=null?r.interval_days+' يوم':'—'}</td>
+        <td>${r.last_done_km!=null?r.last_done_km+' كم':'—'}</td>
+        <td style="font-size:.8rem">${r.last_done_date||'—'}</td>
         <td>${status}</td>
       </tr>`;
     if(isDrivers) return `
@@ -7969,6 +7999,8 @@ async function doImportConfirm() {
   const token = getToken();
   const url = importType === 'permissions'
     ? `/import/permissions/confirm?skip_errors=${skipErrors}`
+    : importType === 'maintenance'
+    ? `/import/maintenance/confirm?skip_errors=${skipErrors}`
     : `/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`;
   try {
     const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
@@ -8009,7 +8041,7 @@ function renderImportResult(data, importType) {
       </div>
       <div style="padding:.75rem 1.25rem 1.25rem;display:flex;gap:.75rem">
         <button class="btn btn-primary btn-sm" onclick="renderImportSection()">📥 رفع ملف جديد</button>
-        <button class="btn btn-outline btn-sm" onclick="switchSection('${importType==='drivers'?'drivers':importType==='cars'?'cars':'permissions'}')">
+        <button class="btn btn-outline btn-sm" onclick="switchSection('${importType==='drivers'?'drivers':importType==='cars'?'cars':importType==='maintenance'?'maintenance':'permissions'}')">
           ${importType==='drivers'?'👨‍✈️ عرض السائقين':importType==='cars'?'🚙 عرض المركبات':'🔗 عرض الصلاحيات'}
         </button>
       </div>
@@ -8399,7 +8431,12 @@ async function renderMaintenanceSection() {
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
       <div style="font-size:.88rem;color:var(--muted)">تتبع مواعيد الصيانة الدورية لكل مركبة تلقائياً</div>
-      ${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>`:''}
+      ${!isReporter()?`
+        <div style="display:flex;gap:.6rem">
+          <button class="btn btn-outline btn-sm" onclick="openMaintenanceImportModal()">📥 استيراد CSV</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>
+        </div>
+      `:''}
     </div>
     ${buildGroup('🔴 صيانة متأخرة', overdue, '#ef4444')}
     ${buildGroup('🟠 تقترب مواعيد الصيانة', warning, '#f97316')}
@@ -8504,6 +8541,307 @@ async function deleteMaintenanceRecord(id) {
     showNotification('تم الحذف','success');
     await renderMaintenanceSection();
   } catch(e) { showNotification(e.message,'error'); }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// MAINTENANCE CSV IMPORT — استيراد الصيانة من CSV
+// ═══════════════════════════════════════════════════════════════
+const MAINT_CSV_COLS = [
+  "رقم اللوحة","نوع الصيانة","كل كام كم","كل كام يوم",
+  "آخر قراءة عداد","تاريخ آخر صيانة","إنذار قبل كم","إنذار قبل يوم","ملاحظات"
+];
+const MAINT_TYPES_VALID = [
+  "تغيير زيت","فلتر زيت","فلتر هواء","فلتر وقود","فلتر مكيف",
+  "إطارات","بطارية","فرامل أمامية","فرامل خلفية","سير توزيع",
+  "ترمس","ماء تبريد","سائل فرامل","فحص دوري عام","أخرى"
+];
+
+function downloadMaintenanceTemplate() {
+  // صفوف الأمثلة
+  const rows = [
+    MAINT_CSV_COLS,
+    ["أ-ب-1234","تغيير زيت","5000","90","45000","2025-01-15","500","7",""],
+    ["ج-د-5678","فلتر هواء","10000","","40000","","500","7",""],
+    ["ه-و-9012","فحص دوري عام","","180","","2025-03-01","","14","فحص شامل"],
+    ["","","","","","","","","← مثال: هذا الصف سيُرفض (اللوحة مطلوبة)"],
+  ];
+  // أنواع الصيانة المتاحة كـ comment في نهاية الملف
+  const typesComment = ["# أنواع الصيانة المتاحة:","# "+MAINT_TYPES_VALID.join(" | ")];
+  const csv = [...rows,...typesComment.map(l=>[l])].map(r=>
+    Array.isArray(r) ? r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',') : r
+  ).join('\r\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'maintenance_schedule_template.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function parseMaintenanceCSV(text) {
+  // تجاهل الأسطر التي تبدأ بـ #
+  const lines = text.replace(/\r/g,'').split('\n').filter(l=>l.trim() && !l.trim().startsWith('#'));
+  if(!lines.length) return [];
+  // دعم الفاصلة العادية والفاصلة المنقوطة
+  const sep = lines[0].includes(';') ? ';' : ',';
+  const parseRow = line => {
+    const cells = []; let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+      if(line[i]==='"'){ if(inQ && line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
+      else if(line[i]===sep && !inQ){ cells.push(cur.trim()); cur=''; }
+      else cur+=line[i];
+    }
+    cells.push(cur.trim());
+    return cells;
+  };
+  const headers = parseRow(lines[0]);
+  return lines.slice(1).map((line,idx)=>{
+    const vals = parseRow(line);
+    const obj = {};
+    headers.forEach((h,i)=>{ obj[h.replace(/^#\s*/,'')] = vals[i]||''; });
+    return obj;
+  });
+}
+
+function validateMaintenanceRows(rows, carsMap) {
+  return rows.map((row, idx)=>{
+    const errors=[];
+    const plate = (row['رقم اللوحة']||row['plate']||'').trim();
+    const type  = (row['نوع الصيانة']||row['maintenance_type']||'').trim();
+    const intKm = (row['كل كام كم']||row['interval_km']||'').trim();
+    const intDy = (row['كل كام يوم']||row['interval_days']||'').trim();
+    const lastKm= (row['آخر قراءة عداد']||row['last_done_km']||'').trim();
+    const lastDt= (row['تاريخ آخر صيانة']||row['last_done_date']||'').trim();
+    const alKm  = (row['إنذار قبل كم']||row['alert_km_before']||'500').trim()||'500';
+    const alDy  = (row['إنذار قبل يوم']||row['alert_days_before']||'7').trim()||'7';
+    const notes = (row['ملاحظات']||row['notes']||'').trim();
+
+    if(!plate) errors.push('رقم اللوحة مطلوب');
+    else if(!carsMap[plate]) errors.push(`لا توجد مركبة بلوحة "${plate}"`);
+    if(!type) errors.push('نوع الصيانة مطلوب');
+    else if(!MAINT_TYPES_VALID.includes(type)) errors.push(`نوع غير صالح: "${type}"`);
+    if(!intKm && !intDy) errors.push('يجب تحديد كل كام كم أو كل كام يوم');
+    if(intKm && isNaN(parseFloat(intKm))) errors.push('كل كام كم يجب أن يكون رقم');
+    if(intDy && isNaN(parseInt(intDy)))   errors.push('كل كام يوم يجب أن يكون رقم');
+    if(lastDt && !/^\d{4}-\d{2}-\d{2}$/.test(lastDt)) errors.push('تاريخ آخر صيانة يجب YYYY-MM-DD');
+
+    return {
+      row_num: idx+2,
+      plate, type,
+      interval_km:   parseFloat(intKm)||null,
+      interval_days: parseInt(intDy)||null,
+      last_done_km:  parseFloat(lastKm)||null,
+      last_done_date:lastDt||null,
+      alert_km_before: parseFloat(alKm)||500,
+      alert_days_before: parseInt(alDy)||7,
+      notes,
+      car_id: carsMap[plate]||null,
+      valid: errors.length===0,
+      errors
+    };
+  }).filter(r=>r.plate||r.type); // تجاهل الصفوف الفارغة كلياً
+}
+
+async function openMaintenanceImportModal() {
+  // جيب المركبات
+  if(!window._carsCache || !window._carsCache.length)
+    window._carsCache = await loadCars();
+  const carsMap = {};
+  (window._carsCache||[]).forEach(c=>{ carsMap[c.plate]=c.id; });
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">📥 استيراد جداول الصيانة من CSV</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <!-- Info strip -->
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.75rem 1rem;font-size:.83rem;color:#0369a1;margin-bottom:1rem;line-height:1.8">
+      <strong>📋 الأعمدة المطلوبة:</strong> رقم اللوحة، نوع الصيانة، كل كام كم أو كل كام يوم<br>
+      <strong>📅 صيغة التاريخ:</strong> YYYY-MM-DD &nbsp;|&nbsp;
+      <strong>🔢 الفواصل:</strong> فاصلة عادية أو منقوطة
+    </div>
+
+    <!-- Upload row -->
+    <div style="display:flex;gap:.75rem;align-items:flex-end;margin-bottom:1rem">
+      <div class="form-group" style="margin:0;flex:1">
+        <label>اختر ملف CSV <span class="req">*</span></label>
+        <input type="file" id="maintCsvFile" accept=".csv"
+               style="padding:.48rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
+      </div>
+      <button class="btn btn-outline btn-sm" style="white-space:nowrap;height:40px" onclick="downloadMaintenanceTemplate()">
+        ⬇️ تحميل قالب CSV
+      </button>
+      <button class="btn btn-primary btn-sm" style="white-space:nowrap;height:40px" id="maintPreviewBtn">
+        🔍 معاينة البيانات
+      </button>
+    </div>
+
+    <!-- Preview area -->
+    <div id="maintImportPreview"></div>
+  `, {wide: true});
+
+  // Store carsMap for use in preview
+  window._maintCarsMap = carsMap;
+  document.getElementById('maintPreviewBtn').onclick = () => doMaintenancePreview(window._maintCarsMap);
+}
+
+async function doMaintenancePreview(carsMap) {
+  const fileInput = document.getElementById('maintCsvFile');
+  if(!fileInput || !fileInput.files[0]) return showNotification('اختر ملف CSV أولاً','error');
+  const file = fileInput.files[0];
+  const btn = document.getElementById('maintPreviewBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري التحليل...';
+
+  try {
+    const text = await file.text();
+    const rows = parseMaintenanceCSV(text);
+    if(!rows.length) { showNotification('الملف فارغ أو لا توجد بيانات','error'); return; }
+    const validated = validateMaintenanceRows(rows, carsMap);
+    window._maintImportData = { validated, file };
+    renderMaintenancePreviewTable(validated);
+  } catch(e) {
+    showNotification(e.message,'error');
+  } finally {
+    btn.disabled=false; btn.textContent='🔍 معاينة البيانات';
+  }
+}
+
+function renderMaintenancePreviewTable(validated) {
+  const area = document.getElementById('maintImportPreview');
+  const total   = validated.length;
+  const valid   = validated.filter(r=>r.valid).length;
+  const invalid = total - valid;
+  const pct     = total ? Math.round(valid/total*100) : 0;
+  const barColor = invalid===0 ? '#10b981' : valid===0 ? '#ef4444' : '#f97316';
+
+  area.innerHTML = `
+    <!-- Summary bar -->
+    <div class="card" style="margin-bottom:.75rem">
+      <div class="card-header" style="border-bottom:none">
+        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;width:100%">
+          <div class="card-title" style="flex:1">📋 نتيجة التحليل</div>
+          <span style="font-size:.85rem;color:var(--muted)">${total} صف إجمالي</span>
+          <span style="font-size:.85rem;font-weight:700;color:#10b981">✅ ${valid} صحيح</span>
+          ${invalid>0?`<span style="font-size:.85rem;font-weight:700;color:#ef4444">❌ ${invalid} خطأ</span>`:''}
+          <label style="display:flex;align-items:center;gap:.35rem;font-size:.82rem;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="maintSkipErrors" style="width:auto">
+            تجاهل الأخطاء وأضف الصحيحة فقط
+          </label>
+          <button class="btn btn-primary btn-sm" id="maintConfirmBtn"
+            onclick="doMaintenanceImportConfirm()"
+            ${valid===0?'disabled':''}>
+            ✅ تأكيد الإضافة (${valid} صف)
+          </button>
+        </div>
+      </div>
+      <!-- Progress bar -->
+      <div style="height:5px;background:var(--border);overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${barColor};transition:width .5s"></div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap" style="max-height:380px;overflow-y:auto">
+      <table>
+        <thead><tr>
+          <th>#</th><th>رقم اللوحة</th><th>نوع الصيانة</th>
+          <th>كل كام كم</th><th>كل كام يوم</th>
+          <th>آخر قراءة (كم)</th><th>تاريخ آخر صيانة</th><th>التحقق</th>
+        </tr></thead>
+        <tbody>
+          ${validated.map(r=>{
+            const statusCell = r.valid
+              ? `<span style="color:#10b981;font-weight:700;font-size:.82rem">✅ صحيح</span>`
+              : `<span style="color:#ef4444;font-size:.75rem">❌ ${r.errors.join(' • ')}</span>`;
+            return `<tr style="${!r.valid?'background:rgba(239,68,68,.06)':''}">
+              <td style="color:var(--muted);font-size:.8rem">${r.row_num}</td>
+              <td dir="ltr"><strong>${r.plate||'—'}</strong></td>
+              <td>${r.type||'—'}</td>
+              <td>${r.interval_km!=null?r.interval_km.toLocaleString('ar-EG')+' كم':'—'}</td>
+              <td>${r.interval_days!=null?r.interval_days+' يوم':'—'}</td>
+              <td>${r.last_done_km!=null?r.last_done_km.toLocaleString('ar-EG')+' كم':'—'}</td>
+              <td style="font-size:.8rem">${r.last_done_date||'—'}</td>
+              <td>${statusCell}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${invalid>0?`<div style="padding:.65rem 1rem;background:#fffbeb;border-top:1px solid var(--border);font-size:.82rem;color:#b45309">
+      ⚠️ الصفوف الحمراء بها أخطاء — فعّل "تجاهل الأخطاء" لرفع الصحيحة فقط
+    </div>`:''}
+  `;
+}
+
+async function doMaintenanceImportConfirm() {
+  if(!window._maintImportData) return;
+  const { validated } = window._maintImportData;
+  const skipErrors = document.getElementById('maintSkipErrors')?.checked||false;
+  const toInsert = skipErrors ? validated.filter(r=>r.valid) : validated;
+
+  if(!skipErrors && toInsert.some(r=>!r.valid)) {
+    showNotification('يوجد أخطاء — فعّل "تجاهل الأخطاء" للمتابعة','error');
+    return;
+  }
+  const validOnly = toInsert.filter(r=>r.valid);
+  if(!validOnly.length) { showNotification('لا توجد صفوف صحيحة للإضافة','error'); return; }
+
+  const btn = document.getElementById('maintConfirmBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري الإضافة...';
+
+  let inserted=0, skipped=0, errors=[];
+  for(const r of validOnly) {
+    try {
+      await apiCall('/maintenance/schedule','POST',{
+        car_id:           r.car_id,
+        maintenance_type: r.type,
+        interval_km:      r.interval_km,
+        interval_days:    r.interval_days,
+        last_done_km:     r.last_done_km,
+        last_done_date:   r.last_done_date,
+        alert_km_before:  r.alert_km_before,
+        alert_days_before:r.alert_days_before,
+        notes:            r.notes
+      });
+      inserted++;
+    } catch(e) {
+      skipped++;
+      errors.push(`صف ${r.row_num} (${r.plate}): ${e.message}`);
+    }
+  }
+
+  const area = document.getElementById('maintImportPreview');
+  area.innerHTML = `
+    <div class="card" style="border-top:3px solid ${inserted>0?'#10b981':'#ef4444'}">
+      <div class="card-header" style="border-bottom:none">
+        <div class="card-title" style="color:${inserted>0?'#10b981':'#ef4444'}">
+          ${inserted>0?'✅ تم الاستيراد بنجاح':'❌ فشل الاستيراد'}
+        </div>
+      </div>
+      <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
+        <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:#10b981">${inserted}</div>
+          <div style="color:var(--muted);font-size:.85rem">تم إضافته</div>
+        </div>
+        <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:#f97316">${skipped}</div>
+          <div style="color:var(--muted);font-size:.85rem">تم تجاهله</div>
+        </div>
+        <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:var(--primary)">${inserted+skipped}</div>
+          <div style="color:var(--muted);font-size:.85rem">إجمالي الصفوف</div>
+        </div>
+      </div>
+      ${errors.length?`<div style="padding:.75rem 1.25rem;background:#fef2f2;border-top:1px solid var(--border);font-size:.8rem;color:#b91c1c">
+        <strong>أخطاء:</strong><br>${errors.slice(0,5).join('<br>')}${errors.length>5?`<br>... و${errors.length-5} أخطاء أخرى`:''}
+      </div>`:''}
+      <div style="padding:.75rem 1.25rem;display:flex;gap:.75rem">
+        <button class="btn btn-primary btn-sm" onclick="closeModal();renderMaintenanceSection()">عرض جداول الصيانة</button>
+      </div>
+    </div>`;
+  window._maintImportData = null;
 }
 
 // ═══════════════════════════════════════════════════════════════
