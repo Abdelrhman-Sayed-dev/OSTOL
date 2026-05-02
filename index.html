@@ -6996,16 +6996,16 @@ function openDriverPhotoCapture() {
       <div id="photoPreviewWrap" style="display:none;margin-bottom:1rem;text-align:center">
         <img id="photoPreview" style="max-width:100%;max-height:260px;border-radius:12px;border:1px solid var(--border)">
       </div>
-      <div id="photoPlaceholder" style="background:var(--surface-2);border:2px dashed var(--border);border-radius:12px;padding:2.5rem;text-align:center;margin-bottom:1rem">
-        <div style="font-size:2.5rem;margin-bottom:.5rem">📷</div>
-        <div style="font-size:.85rem;color:var(--muted)">اضغط لالتقاط صورة أو اختيار من المعرض</div>
-      </div>
       <input type="file" id="photoFileInput" accept="image/*" capture="environment"
         style="display:none" onchange="handlePhotoSelected(this)">
-      <button class="btn btn-primary" style="width:100%;margin-bottom:.6rem"
-        onclick="document.getElementById('photoFileInput').click()">
-        📷 التقاط صورة / اختيار من المعرض
-      </button>
+      <div id="photoPlaceholder"
+        onclick="document.getElementById('photoFileInput').click()"
+        style="background:linear-gradient(135deg,#1e3a5f,#2563eb);border-radius:16px;padding:3rem 2rem;text-align:center;margin-bottom:1rem;cursor:pointer;transition:.2s"
+        onmouseover="this.style.opacity='.88'" onmouseout="this.style.opacity='1'">
+        <div style="font-size:4rem;margin-bottom:.8rem">📸</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#fff;margin-bottom:.3rem">التقاط صورة</div>
+        <div style="font-size:.82rem;color:rgba(255,255,255,.7)">اضغط هنا للتصوير المباشر</div>
+      </div>
       <div class="form-group" style="margin-bottom:.5rem">
         <label>ملاحظة (اختياري)</label>
         <input type="text" id="photoCaption" placeholder="مثال: حادث، عطل، تقرير موقع..." maxlength="200">
@@ -8118,6 +8118,9 @@ async function doReassignConfirm(fixed, plate) {
         </div>
       </div>`;
   } catch(e) { showNotification(e.message,'error'); }
+  // Refresh caches so tabs reflect new assignment immediately
+  window._allPerms = null;
+  window._allCars  = null;
 }
 
 async function renderSuperLogs() {
