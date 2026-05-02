@@ -3054,7 +3054,6 @@ class MaintenanceScheduleCreate(BaseModel):
     notes:            Optional[str]   = ""
 
 class MaintenanceScheduleUpdate(BaseModel):
-    car_id:           Optional[int]   = None   # تغيير المركبة
     maintenance_type: Optional[str]   = None
     interval_km:      Optional[float] = None
     interval_days:    Optional[int]   = None
@@ -3308,6 +3307,7 @@ async def operational_report_by_driver(
         if date_to:
             fuel_conds.append("date(w.created_at) <= ?")
             fuel_params.append(date_to)
+        # ملخص حسب النوع
         c.execute(f"""
             SELECT w.type, SUM(w.quantity) AS total_qty, SUM(w.price) AS total_price,
                    COUNT(*) AS count
@@ -3316,6 +3316,22 @@ async def operational_report_by_driver(
             GROUP BY w.type
         """, fuel_params)
         fuel_records = [dict(r) for r in c.fetchall()]
+
+        # تفاصيل كل عملية تمويل يوم بيوم (للسولار تحديداً)
+        c.execute(f"""
+            SELECT date(w.created_at) AS fuel_date,
+                   w.type,
+                   w.quantity,
+                   w.price,
+                   w.odometer_reading,
+                   w.notes,
+                   d.name AS driver_name
+            FROM workshop_records w
+            LEFT JOIN drivers d ON d.id = w.driver_id
+            WHERE {' AND '.join(fuel_conds)}
+            ORDER BY w.created_at ASC
+        """, fuel_params)
+        fuel_detail = [dict(r) for r in c.fetchall()]
 
         # ── Grand totals ──
         c.execute(f"""
@@ -3329,6 +3345,7 @@ async def operational_report_by_driver(
         "car_info":     car_info,
         "drivers":      drivers,
         "fuel_records": fuel_records,
+        "fuel_detail":  fuel_detail,
         "total_km":     tot["tkm"] or 0,
         "total_trips":  tot["tc"]  or 0,
     }
@@ -4150,22 +4167,18 @@ def _maintenance_row(row: dict, cars_map: dict) -> dict:
     d["car_model"]  = car.get("model", "—")
     d["car_branch"] = car.get("branch", "")
 
-    from datetime import timedelta
+    # Last known odometer from trips
+    d["current_km"] = d.get("_current_km", None)
 
-    # current_km: من الرحلات أولاً، وإن مفيش يرجع last_done_km كـ fallback
-    trip_km = d.get("_current_km")
-    last_km = d.get("last_done_km")
-    d["current_km"] = trip_km if trip_km is not None else last_km
-
-    # Compute next due km
+    # Compute next due
     next_km = None
-    if last_km is not None and d.get("interval_km"):
-        next_km = float(last_km) + float(d["interval_km"])
+    if d.get("last_done_km") is not None and d.get("interval_km"):
+        next_km = float(d["last_done_km"]) + float(d["interval_km"])
     d["next_due_km"] = next_km
 
-    # Compute next due date
     next_date = None
     if d.get("last_done_date") and d.get("interval_days"):
+        from datetime import timedelta
         try:
             ld = datetime.fromisoformat(d["last_done_date"])
             next_date = (ld + timedelta(days=int(d["interval_days"]))).strftime("%Y-%m-%d")
@@ -4174,22 +4187,21 @@ def _maintenance_row(row: dict, cars_map: dict) -> dict:
     d["next_due_date"] = next_date
 
     # Alert status
+    today = datetime.utcnow().strftime("%Y-%m-%d")
     alert_km_before   = float(d.get("alert_km_before") or 500)
     alert_days_before = int(d.get("alert_days_before") or 7)
     cur_km = d.get("current_km")
 
     status = "ok"
-
-    # تقييم الكيلومترات — فقط لو عندنا عداد حالي حقيقي من الرحلات
-    if next_km is not None and trip_km is not None:
-        remaining_km = next_km - float(trip_km)
+    if next_km is not None and cur_km is not None:
+        remaining_km = next_km - float(cur_km)
         if remaining_km <= 0:
             status = "overdue"
         elif remaining_km <= alert_km_before:
             status = "warning"
 
-    # تقييم التاريخ — يشتغل دايماً بغض النظر عن الكيلومترات
     if next_date and status == "ok":
+        from datetime import timedelta
         try:
             nd = datetime.fromisoformat(next_date)
             days_left = (nd - datetime.utcnow()).days
