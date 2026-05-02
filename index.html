@@ -8534,6 +8534,93 @@ function openMaintenanceDoneModal(id, plate, type) {
   };
 }
 
+
+async function openEditMaintenanceModal(id) {
+  // جيب بيانات السجل من السيرفر
+  let rec;
+  try {
+    const all = await apiCall('/maintenance/schedule');
+    rec = all.find(r => r.id === id);
+    if(!rec) return showNotification('لم يتم العثور على السجل', 'error');
+  } catch(e) { return showNotification(e.message, 'error'); }
+
+  if(!window._carsCache || !window._carsCache.length)
+    window._carsCache = await loadCars();
+
+  const carsOpts = (window._carsCache||[]).map(c =>
+    `<option value="${c.id}" ${c.id===rec.car_id?'selected':''}>${c.plate} — ${c.model}${c.car_name?' ('+c.car_name+')':''}</option>`
+  ).join('');
+  const typeOpts = MAINTENANCE_TYPES_FE.map(t =>
+    `<option value="${t}" ${t===rec.maintenance_type?'selected':''}>${t}</option>`
+  ).join('');
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✏️ تعديل جدول الصيانة</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>المركبة <span class="req">*</span></label>
+        <select id="eMaintCar"><option value="">— اختر —</option>${carsOpts}</select></div>
+      <div class="form-group"><label>نوع الصيانة <span class="req">*</span></label>
+        <select id="eMaintType"><option value="">— اختر —</option>${typeOpts}</select></div>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>كل كام كم</label>
+        <input type="number" id="eMaintKmInt" value="${rec.interval_km||''}" placeholder="مثال: 5000" min="0" step="100"></div>
+      <div class="form-group"><label>أو كل كام يوم</label>
+        <input type="number" id="eMaintDayInt" value="${rec.interval_days||''}" placeholder="مثال: 90" min="0"></div>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>آخر قراءة عداد (كم)</label>
+        <input type="number" id="eMaintLastKm" value="${rec.last_done_km||''}" placeholder="مثال: 45000" min="0"></div>
+      <div class="form-group"><label>تاريخ آخر صيانة</label>
+        <input type="date" id="eMaintLastDate" value="${rec.last_done_date||''}"></div>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>إنذار قبل (كم)</label>
+        <input type="number" id="eMaintAlertKm" value="${rec.alert_km_before||500}" min="0"></div>
+      <div class="form-group"><label>إنذار قبل (يوم)</label>
+        <input type="number" id="eMaintAlertDay" value="${rec.alert_days_before||7}" min="0"></div>
+    </div>
+    <div class="form-group"><label>ملاحظات</label>
+      <textarea id="eMaintNotes" rows="2" style="width:100%;resize:vertical;padding:.55rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem">${rec.notes||''}</textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="eMaintSave">💾 حفظ التعديل</button>
+    </div>`);
+
+  document.getElementById('eMaintSave').onclick = async () => {
+    const car_id           = parseInt(document.getElementById('eMaintCar').value);
+    const maintenance_type = document.getElementById('eMaintType').value;
+    const interval_km      = parseFloat(document.getElementById('eMaintKmInt').value)  || null;
+    const interval_days    = parseInt(document.getElementById('eMaintDayInt').value)   || null;
+    if(!car_id)           return showNotification('اختر المركبة', 'error');
+    if(!maintenance_type) return showNotification('اختر نوع الصيانة', 'error');
+    if(!interval_km && !interval_days) return showNotification('حدد الفاصل الزمني (كم أو يوم)', 'error');
+
+    const body = {
+      car_id, maintenance_type, interval_km, interval_days,
+      last_done_km:      parseFloat(document.getElementById('eMaintLastKm').value)   || null,
+      last_done_date:    document.getElementById('eMaintLastDate').value              || null,
+      alert_km_before:   parseFloat(document.getElementById('eMaintAlertKm').value)  || 500,
+      alert_days_before: parseInt(document.getElementById('eMaintAlertDay').value)   || 7,
+      notes:             document.getElementById('eMaintNotes').value.trim(),
+    };
+    const btn = document.getElementById('eMaintSave');
+    btn.disabled = true; btn.textContent = 'جاري...';
+    try {
+      await apiCall(`/maintenance/schedule/${id}`, 'PUT', body);
+      showNotification('✅ تم تعديل جدول الصيانة', 'success');
+      closeModal(); await renderMaintenanceSection();
+    } catch(e) {
+      showNotification(e.message, 'error');
+      btn.disabled = false; btn.textContent = '💾 حفظ التعديل';
+    }
+  };
+}
+
 async function deleteMaintenanceRecord(id) {
   if(!confirm('هل تريد حذف هذا الجدول؟')) return;
   try {
