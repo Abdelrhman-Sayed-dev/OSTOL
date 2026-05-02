@@ -9155,6 +9155,11 @@ async function loadMonthlyReport() {
       }
       const refVal = (drvSort==='trips_best'||drvSort==='trips_worst') ? (sorted[0]?.trips||1) : (sorted[0]?.km||1);
       const isBad = drvSort==='worst'||drvSort==='trips_worst';
+      // حفظ البيانات المرتبة للطباعة
+      window._mrData._sortedDrivers = sorted;
+      window._mrData._drvSortLabel  = sortLabel;
+      window._mrData._drvSortIsBad  = isBad;
+      window._mrData._drvSortColor  = badgeColor;
 
       const rows = sorted.map((d,i) => {
         const val = (drvSort==='trips_best'||drvSort==='trips_worst') ? d.trips : d.km;
@@ -9224,6 +9229,11 @@ async function loadMonthlyReport() {
         sortedCars=[...data.cars].filter(c=>c.total_cost>0).sort((a,b)=>b.total_cost-a.total_cost).slice(0,10);
         carSortLabel='أعلى تكلفة';
       }
+      // حفظ البيانات المرتبة للطباعة
+      window._mrData._sortedCars      = sortedCars;
+      window._mrData._carSortLabel    = carSortLabel;
+      window._mrData._carSortColor    = carBadgeColor;
+      window._mrData._reportType      = type;
 
       const carRows = sortedCars.map((c,i) => {
         const driversForCar = (data.drivers_per_car && data.drivers_per_car[c.car_id]) || [];
@@ -9287,22 +9297,25 @@ function printMonthlyReport() {
   const s = d.summary;
   const [yr, mo] = d.month.split('-');
   const monthName = new Date(yr, mo-1, 1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
-  const top10D = d.drivers.slice(0,10);
-  const top10C = d.cars.slice(0,10);
+  const top10D = d._sortedDrivers || d.drivers.slice(0,10);
+  const top10C = d._sortedCars    || d.cars.slice(0,10);
+  const isBad   = d._drvSortIsBad || false;
+  const drvColor= d._drvSortColor || '#3b82f6';
   const medals = ['🥇','🥈','🥉','4','5','6','7','8','9','🔟'];
 
   const drvRows = top10D.map((dr,i) => {
-    const barW = d.drivers[0]?.km>0 ? Math.round((dr.km/d.drivers[0].km)*100) : 0;
+    const refKm = top10D[0]?.km||1;
+    const barW = dr.km>0 ? Math.round((dr.km/refKm)*100) : 0;
     return `<tr>
-      <td style="text-align:center">${medals[i]}</td>
+      <td style="text-align:center">${isBad ? i+1 : (medals[i]||i+1)}</td>
       <td>${dr.name}</td><td>${dr.fixed_number||'—'}</td>
       <td style="text-align:center">${dr.trips}</td>
       <td>
         <div style="display:flex;align-items:center;gap:5px">
           <div style="width:50px;background:#e2e8f0;border-radius:3px;height:5px">
-            <div style="width:${barW}%;background:#3b82f6;border-radius:3px;height:5px"></div>
+            <div style="width:${barW}%;background:${drvColor};border-radius:3px;height:5px"></div>
           </div>
-          <strong>${Math.round(dr.km).toLocaleString('ar-EG')}</strong>
+          <strong style="${isBad?'color:#ef4444':''}">${Math.round(dr.km).toLocaleString('ar-EG')}</strong>
         </div>
       </td>
       <td>${dr.trips>0?Math.round(dr.km/dr.trips):0} كم</td>
