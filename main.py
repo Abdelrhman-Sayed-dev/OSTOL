@@ -3072,8 +3072,8 @@ async def operational_report(
             if group_by == "day":
                 grp = "strftime('%Y-%m-%d', t.start_time)"
             elif group_by == "week":
-                # SQLite: start of week (Monday) = date(start_time, 'weekday 0', '-6 days')
-                grp = "strftime('%Y-%W', t.start_time)"
+                # Return the Monday (start) of the week as a date string
+                grp = "date(t.start_time, 'weekday 1', '-6 days')"
             elif group_by == "month":
                 grp = "strftime('%Y-%m', t.start_time)"
             else:  # year
