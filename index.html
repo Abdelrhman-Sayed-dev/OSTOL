@@ -3446,6 +3446,11 @@ async function renderOperationalCard() {
         .op-page-break { display:block!important;page-break-before:always!important;break-before:page!important;height:0 }
         .op-page2-table th,
         .op-page2-table td { font-size:8.5pt!important;padding:3px 4px!important }
+        /* ── منع كسر جدول السائقين على صفحة منفصلة ── */
+        .op-drivers-section {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
       }
       .op-print-header { display:none }
       .op-page-break { display:none }
@@ -3743,7 +3748,7 @@ async function generateOpCard() {
             <td style="text-align:center;font-size:.8rem;color:#94a3b8">${d.first_date||'—'}</td>
           </tr>`;}).join('');
         driversHtml = `
-          <div style="margin-top:1rem">
+          <div class="op-drivers-section" style="margin-top:1rem">
             <div style="font-weight:800;font-size:.88rem;color:#334155;margin-bottom:.6rem">
               👤 السائقون في هذه الفترة (${dData.drivers.length})
             </div>
