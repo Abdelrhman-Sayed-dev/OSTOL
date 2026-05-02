@@ -3426,9 +3426,22 @@ async function renderOperationalCard() {
           </div>
           <div class="form-group" style="margin:0">
             <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">نوع التقرير</label>
-            <select id="opType" style="width:100%">
+            <select id="opType" style="width:100%" onchange="
+              const g=document.getElementById('opGranularity');
+              const w=document.getElementById('opGranularityWrap');
+              if(this.value==='detailed'){w.style.display='block';}
+              else{w.style.display='none';}
+            ">
               <option value="summary">📦 إجمالي</option>
               <option value="detailed">🔍 تفصيلي</option>
+            </select>
+          </div>
+          <div id="opGranularityWrap" class="form-group" style="margin:0;display:none">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">تفصيل حسب</label>
+            <select id="opGranularity" style="width:100%">
+              <option value="daily">📅 يومي</option>
+              <option value="weekly">📆 أسبوعي</option>
+              <option value="monthly" selected>🗓️ شهري</option>
             </select>
           </div>
           <div>
@@ -3438,7 +3451,7 @@ async function renderOperationalCard() {
           </div>
         </div>
         <div style="margin-top:.7rem;font-size:.78rem;color:#94a3b8">
-          💡 إجمالي = مجموع الكيلومترات لكل فترة &nbsp;|&nbsp; تفصيلي = تفصيل شهري أو يومي
+          💡 التفصيلي يتطلب اختيار مركبة محددة
         </div>
       </div>
     </div>
@@ -3469,14 +3482,23 @@ async function generateOpCard() {
   const date_from   = document.getElementById('opFrom').value;
   const date_to     = document.getElementById('opTo').value;
   const report_type = document.getElementById('opType').value;
+  const granularity = document.getElementById('opGranularity')?.value || 'monthly';
   const res_el      = document.getElementById('opCardResult');
 
   if(!date_from||!date_to) { showNotification('يرجى تحديد الفترة الزمنية','error'); return; }
   if(date_from > date_to)  { showNotification('تاريخ البداية يجب أن يسبق تاريخ النهاية','error'); return; }
 
+  // التفصيلي يتطلب مركبة محددة
+  if(report_type==='detailed' && !car_id) {
+    showNotification('التقرير التفصيلي يتطلب اختيار مركبة محددة', 'error');
+    return;
+  }
+
   res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري إنشاء التقرير...</p></div>';
 
-  let params = `date_from=${date_from}&date_to=${date_to}&report_type=${report_type}`;
+  // map frontend granularity → backend group_by
+  const groupBy = granularity==='daily' ? 'day' : granularity==='weekly' ? 'week' : 'month';
+  let params = `date_from=${date_from}&date_to=${date_to}&report_type=${report_type}&group_by=${groupBy}`;
   if(car_id) params += `&car_id=${car_id}`;
 
   let data;
