@@ -3433,6 +3433,8 @@ async function renderOperationalCard() {
 
   c.innerHTML = `
     <style>
+      @page { size: A4 landscape; margin: 8mm 10mm; }
+      @page :first { size: A4 portrait; margin: 10mm 12mm; }
       @media print {
         body > *:not(#appShell) { display:none!important }
         .sidebar,.topbar,.no-print { display:none!important }
@@ -3445,12 +3447,16 @@ async function renderOperationalCard() {
         .op-bar-wrap { display:none!important }
         .op-page-break { display:block!important;page-break-before:always!important;break-before:page!important;height:0 }
         .op-page2-table th,
-        .op-page2-table td { font-size:8.5pt!important;padding:3px 4px!important }
+        .op-page2-table td { font-size:7.5pt!important;padding:2px 3px!important;white-space:nowrap!important }
         /* ── منع كسر جدول السائقين على صفحة منفصلة ── */
         .op-drivers-section {
           page-break-inside: avoid !important;
           break-inside: avoid !important;
+          margin-bottom: 1rem !important;
         }
+        /* ── جدول الزيوت: اجعله يملأ العرض كاملاً ── */
+        .op-page2-table { width: 100% !important; table-layout: fixed !important; }
+        .op-page2 { border: none !important; }
       }
       .op-print-header { display:none }
       .op-page-break { display:none }
@@ -3829,12 +3835,11 @@ async function generateOpCard() {
             </tfoot>
           </table>
         </div>
-        ${driversHtml}
       </div>
     </div>
 
     <!-- ════════════════════════════════════════
-         الصفحة الثانية — خامساً وسادساً
+         الصفحة الثانية — السائقون + خامساً + سادساً
     ════════════════════════════════════════ -->
     <div class="op-page-break"></div>
 
@@ -3845,6 +3850,7 @@ async function generateOpCard() {
       </div>
 
       <div style="padding:.5rem 1.2rem 1.4rem">
+        ${driversHtml}
 
         <!-- ═══ خامساً: الزيوت والشحوم المتصرفة ═══ -->
         <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin-bottom:.8rem;color:#1e3a5f">
@@ -3854,27 +3860,27 @@ async function generateOpCard() {
           <table class="op-table op-page2-table" id="oilsTable">
             <thead>
               <tr>
-                <th rowspan="2" style="width:60px">التاريخ</th>
+                <th rowspan="2" style="width:50px">التاريخ</th>
                 <th colspan="6" style="text-align:center;border-bottom:1px solid #e2e8f0">الكمية المتصرفة</th>
                 <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">مستند الصرف</th>
-                <th rowspan="2" style="text-align:center;min-width:60px">جهة الصرف</th>
+                <th rowspan="2" style="text-align:center">جهة الصرف</th>
                 <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">المسافة</th>
                 <th colspan="3" style="text-align:center;border-bottom:1px solid #e2e8f0">القائم بالتموين</th>
               </tr>
               <tr>
-                <th style="min-width:55px">زيت المحرك (ليتر)</th>
-                <th style="min-width:55px">زيت التروس (ليتر)</th>
-                <th style="min-width:55px">زيت الفرامل (ليتر)</th>
-                <th style="min-width:55px">زيت الهيدروليك (ليتر)</th>
-                <th style="min-width:55px">شحم (كجم)</th>
-                <th style="min-width:55px">أخرى</th>
-                <th style="min-width:45px">رقم</th>
-                <th style="min-width:55px">تاريخ</th>
-                <th style="min-width:65px">عداد الآن (كم)</th>
-                <th style="min-width:65px">محرك الآن (ساعة)</th>
-                <th style="min-width:60px">الاسم</th>
-                <th style="min-width:60px">عدد التشغيل</th>
-                <th style="min-width:60px">التوقيع</th>
+                <th>زيت المحرك (ليتر)</th>
+                <th>زيت التروس (ليتر)</th>
+                <th>زيت الفرامل (ليتر)</th>
+                <th>زيت الهيدروليك (ليتر)</th>
+                <th>شحم (كجم)</th>
+                <th>أخرى</th>
+                <th>رقم</th>
+                <th>تاريخ</th>
+                <th>عداد الآن (كم)</th>
+                <th>محرك الآن (ساعة)</th>
+                <th>الاسم</th>
+                <th>عدد التشغيل</th>
+                <th>التوقيع</th>
               </tr>
             </thead>
             <tbody>
@@ -3898,22 +3904,22 @@ async function generateOpCard() {
           <table class="op-table op-page2-table" id="tiresTable">
             <thead>
               <tr>
-                <th rowspan="2" style="width:60px">التاريخ</th>
-                <th rowspan="2" style="min-width:80px">اسم الصنف</th>
-                <th rowspan="2" style="min-width:55px">المقاس أو الصفة</th>
-                <th rowspan="2" style="min-width:70px">الكمية المتصرفة بالعدد</th>
+                <th rowspan="2" style="width:50px">التاريخ</th>
+                <th rowspan="2">اسم الصنف</th>
+                <th rowspan="2">المقاس أو الصفة</th>
+                <th rowspan="2">الكمية المتصرفة بالعدد</th>
                 <th colspan="3" style="text-align:center;border-bottom:1px solid #e2e8f0">مستند الصرف</th>
                 <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">السعر</th>
                 <th colspan="3" style="text-align:center;border-bottom:1px solid #e2e8f0">القائم بالصرف</th>
               </tr>
               <tr>
-                <th style="min-width:45px">رقم</th>
-                <th style="min-width:55px">تاريخ</th>
-                <th style="min-width:55px">الاجمالي</th>
-                <th style="min-width:55px">الوحدة</th>
-                <th style="min-width:60px">الاسم</th>
-                <th style="min-width:60px">التوقيع</th>
-                <th style="min-width:60px">الاسم</th>
+                <th>رقم</th>
+                <th>تاريخ</th>
+                <th>الاجمالي</th>
+                <th>الوحدة</th>
+                <th>الاسم</th>
+                <th>التوقيع</th>
+                <th>الاسم</th>
               </tr>
             </thead>
             <tbody>
