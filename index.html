@@ -8547,9 +8547,17 @@ async function deleteMaintenanceRecord(id) {
 // ═══════════════════════════════════════════════════════════════
 // MAINTENANCE CSV IMPORT — استيراد الصيانة من CSV
 // ═══════════════════════════════════════════════════════════════
+// أعمدة الـ CSV — مطابقة للفورم بالضبط
 const MAINT_CSV_COLS = [
-  "رقم اللوحة","نوع الصيانة","كل كام كم","كل كام يوم",
-  "آخر قراءة عداد","تاريخ آخر صيانة","إنذار قبل كم","إنذار قبل يوم","ملاحظات"
+  "المركبة (رقم اللوحة)",
+  "نوع الصيانة",
+  "كل كام كم",
+  "أو كل كام يوم",
+  "آخر قراءة عداد عند الصيانة (كم)",
+  "تاريخ آخر صيانة",
+  "إنذار قبل (كم)",
+  "إنذار قبل (يوم)",
+  "ملاحظات"
 ];
 const MAINT_TYPES_VALID = [
   "تغيير زيت","فلتر زيت","فلتر هواء","فلتر وقود","فلتر مكيف",
@@ -8558,20 +8566,15 @@ const MAINT_TYPES_VALID = [
 ];
 
 function downloadMaintenanceTemplate() {
-  // صفوف الأمثلة
+  // صف الأعمدة + صف فارغ جاهز للكتابة (مع القيم الافتراضية)
   const rows = [
     MAINT_CSV_COLS,
-    ["أ-ب-1234","تغيير زيت","5000","90","45000","2025-01-15","500","7",""],
-    ["ج-د-5678","فلتر هواء","10000","","40000","","500","7",""],
-    ["ه-و-9012","فحص دوري عام","","180","","2025-03-01","","14","فحص شامل"],
-    ["","","","","","","","","← مثال: هذا الصف سيُرفض (اللوحة مطلوبة)"],
+    ["", "", "", "", "", "", "500", "7", ""],
   ];
-  // أنواع الصيانة المتاحة كـ comment في نهاية الملف
-  const typesComment = ["# أنواع الصيانة المتاحة:","# "+MAINT_TYPES_VALID.join(" | ")];
-  const csv = [...rows,...typesComment.map(l=>[l])].map(r=>
-    Array.isArray(r) ? r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',') : r
+  const csv = rows.map(r =>
+    r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')
   ).join('\r\n');
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
+  const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'maintenance_schedule_template.csv';
@@ -8580,42 +8583,45 @@ function downloadMaintenanceTemplate() {
 }
 
 function parseMaintenanceCSV(text) {
-  // تجاهل الأسطر التي تبدأ بـ #
-  const lines = text.replace(/\r/g,'').split('\n').filter(l=>l.trim() && !l.trim().startsWith('#'));
+  const lines = text.replace(/\r/g,'').split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
   if(!lines.length) return [];
-  // دعم الفاصلة العادية والفاصلة المنقوطة
   const sep = lines[0].includes(';') ? ';' : ',';
   const parseRow = line => {
-    const cells = []; let cur='', inQ=false;
-    for(let i=0;i<line.length;i++){
-      if(line[i]==='"'){ if(inQ && line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
-      else if(line[i]===sep && !inQ){ cells.push(cur.trim()); cur=''; }
-      else cur+=line[i];
+    const cells = []; let cur = '', inQ = false;
+    for(let i = 0; i < line.length; i++){
+      if(line[i] === '"'){ if(inQ && line[i+1] === '"'){cur+='"';i++;}else inQ=!inQ; }
+      else if(line[i] === sep && !inQ){ cells.push(cur.trim()); cur=''; }
+      else cur += line[i];
     }
     cells.push(cur.trim());
     return cells;
   };
   const headers = parseRow(lines[0]);
-  return lines.slice(1).map((line,idx)=>{
+  return lines.slice(1).map((line) => {
     const vals = parseRow(line);
     const obj = {};
-    headers.forEach((h,i)=>{ obj[h.replace(/^#\s*/,'')] = vals[i]||''; });
+    headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
     return obj;
   });
 }
 
 function validateMaintenanceRows(rows, carsMap) {
-  return rows.map((row, idx)=>{
-    const errors=[];
-    const plate = (row['رقم اللوحة']||row['plate']||'').trim();
-    const type  = (row['نوع الصيانة']||row['maintenance_type']||'').trim();
-    const intKm = (row['كل كام كم']||row['interval_km']||'').trim();
-    const intDy = (row['كل كام يوم']||row['interval_days']||'').trim();
-    const lastKm= (row['آخر قراءة عداد']||row['last_done_km']||'').trim();
-    const lastDt= (row['تاريخ آخر صيانة']||row['last_done_date']||'').trim();
-    const alKm  = (row['إنذار قبل كم']||row['alert_km_before']||'500').trim()||'500';
-    const alDy  = (row['إنذار قبل يوم']||row['alert_days_before']||'7').trim()||'7';
-    const notes = (row['ملاحظات']||row['notes']||'').trim();
+  // خريطة لربط اسم العمود في الفورمات الجديد بالـ key الداخلي
+  const g = (row, ...keys) => {
+    for(const k of keys){ const v=(row[k]||'').trim(); if(v) return v; }
+    return '';
+  };
+  return rows.map((row, idx) => {
+    const errors = [];
+    const plate  = g(row, 'المركبة (رقم اللوحة)', 'رقم اللوحة', 'plate');
+    const type   = g(row, 'نوع الصيانة', 'maintenance_type');
+    const intKm  = g(row, 'كل كام كم', 'interval_km');
+    const intDy  = g(row, 'أو كل كام يوم', 'كل كام يوم', 'interval_days');
+    const lastKm = g(row, 'آخر قراءة عداد عند الصيانة (كم)', 'آخر قراءة عداد', 'last_done_km');
+    const lastDt = g(row, 'تاريخ آخر صيانة', 'last_done_date');
+    const alKm   = g(row, 'إنذار قبل (كم)', 'إنذار قبل كم', 'alert_km_before') || '500';
+    const alDy   = g(row, 'إنذار قبل (يوم)', 'إنذار قبل يوم', 'alert_days_before') || '7';
+    const notes  = g(row, 'ملاحظات', 'notes');
 
     if(!plate) errors.push('رقم اللوحة مطلوب');
     else if(!carsMap[plate]) errors.push(`لا توجد مركبة بلوحة "${plate}"`);
@@ -8627,20 +8633,20 @@ function validateMaintenanceRows(rows, carsMap) {
     if(lastDt && !/^\d{4}-\d{2}-\d{2}$/.test(lastDt)) errors.push('تاريخ آخر صيانة يجب YYYY-MM-DD');
 
     return {
-      row_num: idx+2,
+      row_num: idx + 2,
       plate, type,
-      interval_km:   parseFloat(intKm)||null,
-      interval_days: parseInt(intDy)||null,
-      last_done_km:  parseFloat(lastKm)||null,
-      last_done_date:lastDt||null,
-      alert_km_before: parseFloat(alKm)||500,
-      alert_days_before: parseInt(alDy)||7,
+      interval_km:      parseFloat(intKm) || null,
+      interval_days:    parseInt(intDy)   || null,
+      last_done_km:     parseFloat(lastKm)|| null,
+      last_done_date:   lastDt || null,
+      alert_km_before:  parseFloat(alKm)  || 500,
+      alert_days_before:parseInt(alDy)    || 7,
       notes,
-      car_id: carsMap[plate]||null,
-      valid: errors.length===0,
+      car_id: carsMap[plate] || null,
+      valid:  errors.length === 0,
       errors
     };
-  }).filter(r=>r.plate||r.type); // تجاهل الصفوف الفارغة كلياً
+  }).filter(r => r.plate || r.type);
 }
 
 async function openMaintenanceImportModal() {
