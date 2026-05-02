@@ -2807,13 +2807,27 @@ const WT = {
   fuel_95:   {icon:'⛽',label:'بنزين 95'},
   fuel_80:   {icon:'⛽',label:'بنزين 80'},
   fuel_cng:  {icon:'🔵',label:'غاز طبيعي'},
-  oil:       {icon:'🛢️',label:'تغيير زيت'},
+  oil:       {icon:'🛢️',label:'زيوت (إجمالي)'},
+  oil_motor: {icon:'🔴',label:'زيت المحرك'},
+  oil_gear:  {icon:'🟠',label:'زيت التروس'},
+  oil_brake: {icon:'🟡',label:'زيت الفرامل'},
+  oil_hydro: {icon:'🔵',label:'زيت الهيدروليك'},
+  oil_grease:{icon:'⚫',label:'شحم'},
   filter:    {icon:'🔧',label:'فلتر'},
   tire:      {icon:'⚫',label:'كوتش'},
   battery:   {icon:'🔋',label:'بطارية'},
   belt:      {icon:'🔩',label:'سيور'},
   other:     {icon:'🔨',label:'أخرى'},
 };
+
+// أنواع الزيت التفصيلية
+const OIL_SUBTYPES = [
+  {key:'oil_motor',  icon:'🔴', label:'زيت المحرك',    unit:'لتر'},
+  {key:'oil_gear',   icon:'🟠', label:'زيت التروس',    unit:'لتر'},
+  {key:'oil_brake',  icon:'🟡', label:'زيت الفرامل',   unit:'لتر'},
+  {key:'oil_hydro',  icon:'🔵', label:'زيت الهيدروليك',unit:'لتر'},
+  {key:'oil_grease', icon:'⚫', label:'شحم',            unit:'كجم'},
+];
 const TIRE_ACTIONS = { puncture:'ثقب', replacement:'استبدال', repair:'تصليح' };
 
 async function renderAdminWorkshops() {
@@ -5365,7 +5379,21 @@ function openPricesPopup(basePrices) {
         </div>
       </div>`).join('');
 
-    const maintRows = Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`
+    // Oil subtypes group
+    const oilSubRows = OIL_SUBTYPES.map(s=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.45rem .8rem .45rem 1.2rem;background:#f0f9ff;border-radius:8px;border:1px solid #bae6fd;margin-bottom:.35rem">
+        <span style="font-size:.8rem;font-weight:600;color:#0369a1">${s.icon} ${s.label} (${s.unit})</span>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <input type="number" id="pp_${s.key}" value="${prices[s.key]||0}"
+            min="0" step="0.01" ${!canEditMaint?'disabled':''}
+            style="width:90px;padding:.35rem .6rem;border:1.5px solid ${canEditMaint?'#0ea5e9':'#d1d5db'};border-radius:7px;font-size:.85rem;text-align:center;background:${canEditMaint?'white':'#f9fafb'}">
+          <span style="font-size:.72rem;color:var(--muted)">ج/وحدة</span>
+        </div>
+      </div>`).join('');
+
+    const maintRows = Object.entries(WT)
+      .filter(([k])=>!k.startsWith('fuel_') && !k.startsWith('oil'))
+      .map(([k,v])=>`
       <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:white;border-radius:8px;border:1px solid #d1fae5;margin-bottom:.4rem">
         <span style="font-size:.82rem;font-weight:700;color:#065f46">${v.icon} ${v.label}</span>
         <div style="display:flex;align-items:center;gap:.4rem">
@@ -5409,7 +5437,9 @@ function openPricesPopup(basePrices) {
           ${selectedBranch?`<span style="color:#0369a1;font-weight:400;font-size:.75rem"> — ${selectedBranch}</span>`:''}
         </div>
         ${fuelRows}
-        <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.5rem;margin-top:.8rem;padding:.4rem .8rem;background:#f0fdf9;border-radius:8px">🔧 أسعار الصيانة</div>
+        <div style="font-size:.8rem;font-weight:700;color:#0369a1;margin-bottom:.5rem;margin-top:.8rem;padding:.4rem .8rem;background:#e0f2fe;border-radius:8px">🛢️ أسعار الزيوت — سعر الوحدة</div>
+        ${oilSubRows}
+        <div style="font-size:.8rem;font-weight:700;color:#065f46;margin-bottom:.5rem;margin-top:.8rem;padding:.4rem .8rem;background:#f0fdf9;border-radius:8px">🔧 أسعار الصيانة الأخرى</div>
         ${maintRows}
       </div>
       <div style="font-size:.75rem;color:var(--muted);margin:.5rem 0">⚠️ القيمة 0 = بدون سعر — السائق لا يرى الأرقام</div>
@@ -5427,7 +5457,11 @@ function openPricesPopup(basePrices) {
           const el = document.getElementById('pp_'+f.key);
           if(el && !el.disabled) body[f.key] = parseFloat(el.value)||0;
         });
-        Object.keys(WT).filter(k=>!k.startsWith('fuel_')).forEach(k=>{
+        OIL_SUBTYPES.forEach(s=>{
+          const el = document.getElementById('pp_'+s.key);
+          if(el && !el.disabled) body[s.key] = parseFloat(el.value)||0;
+        });
+        Object.keys(WT).filter(k=>!k.startsWith('fuel_') && !k.startsWith('oil')).forEach(k=>{
           const el = document.getElementById('pp_'+k);
           if(el && !el.disabled) body[k] = parseFloat(el.value)||0;
         });
@@ -7029,6 +7063,17 @@ function openDpMaintenanceGroup() {
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button></div>`);
 }
 
+function toggleOilQty(key) {
+  const sel = document.getElementById('oil_chk_' + key);
+  const wrap = document.getElementById('oil_qty_wrap_' + key);
+  const empty = document.getElementById('oil_qty_empty_' + key);
+  if(!sel||!wrap||!empty) return;
+  const selected = sel.value === 'yes';
+  wrap.style.display  = selected ? 'block' : 'none';
+  empty.style.display = selected ? 'none'  : 'block';
+  if(selected) document.getElementById('oil_qty_' + key)?.focus();
+}
+
 function dpWsModal(type) {
   // 'fuel' is a virtual type — show subtype selector first
   if(type === 'fuel') {
@@ -7054,38 +7099,27 @@ function dpWsModal(type) {
   if(isFuelType) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
   else if(type==='oil') specific=`
     <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.8rem 1rem;margin-bottom:.6rem">
-      <div style="font-size:.78rem;font-weight:700;color:#0369a1;margin-bottom:.6rem">🛢️ الكميات (اترك فارغاً إذا لم يُصرف)</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-        <div class="form-group" style="margin:0">
-          <label style="font-size:.75rem">زيت المحرك (لتر)</label>
-          <input type="number" id="wOilMotor" placeholder="0" min="0" step="0.1">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label style="font-size:.75rem">زيت التروس (لتر)</label>
-          <input type="number" id="wOilGear" placeholder="0" min="0" step="0.1">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label style="font-size:.75rem">زيت الفرامل (لتر)</label>
-          <input type="number" id="wOilBrake" placeholder="0" min="0" step="0.1">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label style="font-size:.75rem">زيت الهيدروليك (لتر)</label>
-          <input type="number" id="wOilHydro" placeholder="0" min="0" step="0.1">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label style="font-size:.75rem">شحم (كجم)</label>
-          <input type="number" id="wOilGrease" placeholder="0" min="0" step="0.1">
-        </div>
-        <div class="form-group" style="margin:0">
-          <label style="font-size:.75rem">أخرى (لتر)</label>
-          <input type="number" id="wOilOther" placeholder="0" min="0" step="0.1">
-        </div>
-      </div>
+      <div style="font-size:.78rem;font-weight:700;color:#0369a1;margin-bottom:.7rem">🛢️ أنواع الزيوت المصروفة</div>
+      ${OIL_SUBTYPES.map(s=>`
+        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
+          <div style="font-size:.8rem;font-weight:600;color:#334155">${s.icon} ${s.label}</div>
+          <select id="oil_chk_${s.key}" onchange="toggleOilQty('${s.key}')"
+            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
+            <option value="no">لم يُصرف</option>
+            <option value="yes">✅ تم الصرف</option>
+          </select>
+          <div id="oil_qty_wrap_${s.key}" style="display:none">
+            <input type="number" id="oil_qty_${s.key}" placeholder="الكمية (${s.unit})"
+              min="0.1" step="0.1"
+              style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
+          </div>
+          <div id="oil_qty_empty_${s.key}" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
+        </div>`).join('')}
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
       <div class="form-group"><label>ساعات المحرك</label><input type="number" id="wEngHours" placeholder="مثال: 2500" min="0"></div>
-      <div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/001"></div>
-      <div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="مثال: ورشة الموقع"></div>
+      <div class="form-group"><label>رقم المستند</label><input type="text" id="wDocNum" placeholder="2024/001"></div>
+      <div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="ورشة الموقع"></div>
     </div>
   `;
   else if(type==='tire') specific=`
@@ -7165,41 +7199,43 @@ function dpWsModal(type) {
       if(q&&q>0) payload.quantity=q;
     }
 
-    // Oil — multiple records (one per oil type entered)
+    // Oil — multiple records (one per subtype selected)
     if(selWsType==='oil'){
       const eh  = parseFloat(document.getElementById('wEngHours')?.value)||null;
       const dn  = document.getElementById('wDocNum')?.value?.trim()||'';
       const sup = document.getElementById('wSupply')?.value?.trim()||'';
-      const oils=[
-        {id:'wOilMotor',  op:'زيت محرك',    col:'motor'},
-        {id:'wOilGear',   op:'زيت تروس',    col:'gear'},
-        {id:'wOilBrake',  op:'زيت فرامل',   col:'brake'},
-        {id:'wOilHydro',  op:'زيت هيدروليك',col:'hydraulic'},
-        {id:'wOilGrease', op:'شحم',          col:'grease'},
-        {id:'wOilOther',  op:'أخرى',         col:'other'},
-      ];
-      const oilEntries=oils.map(o=>({
-        op:o.op, col:o.col,
-        qty:parseFloat(document.getElementById(o.id)?.value)||0
-      })).filter(o=>o.qty>0);
-      if(oilEntries.length===0) return showNotification('أدخل كمية على الأقل لنوع زيت واحد','error');
+      const oilEntries = OIL_SUBTYPES
+        .filter(s => document.getElementById('oil_chk_'+s.key)?.value === 'yes')
+        .map(s => ({
+          type: s.key,
+          qty:  parseFloat(document.getElementById('oil_qty_'+s.key)?.value)||0,
+        }))
+        .filter(e => e.qty > 0);
+      if(oilEntries.length === 0)
+        return showNotification('اختر نوع زيت واحد على الأقل وأدخل الكمية', 'error');
       btn.disabled=true; btn.textContent='جاري...';
       payload.location = await silentGetLocation();
+      const prices = window._currentWsPrices || {};
       try{
         for(const entry of oilEntries){
+          const unitPrice = prices[entry.type] || prices['oil'] || 0;
           await apiCall('/workshops','POST',{
             ...payload,
+            type:     entry.type,
             quantity: entry.qty,
-            operation_type: entry.op,
-            engine_hours: eh,
-            doc_number: dn,
+            price:    unitPrice * entry.qty,
+            engine_hours:  eh,
+            doc_number:    dn,
             supply_source: sup,
           });
         }
         showNotification('✅ تم حفظ ' + oilEntries.length + ' نوع زيت', 'success');
         closeModal();
-      }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
-      return; // early return — already saved
+      }catch(e){
+        showNotification(e.message,'error');
+        btn.disabled=false; btn.textContent='💾 حفظ';
+      }
+      return;
     }
 
     // Tire specific
