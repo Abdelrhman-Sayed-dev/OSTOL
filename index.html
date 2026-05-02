@@ -3433,8 +3433,7 @@ async function renderOperationalCard() {
 
   c.innerHTML = `
     <style>
-      @page { size: A4 landscape; margin: 8mm 10mm; }
-      @page :first { size: A4 portrait; margin: 10mm 12mm; }
+      @page { size: A4 portrait; margin: 8mm 10mm; }
       @media print {
         body > *:not(#appShell) { display:none!important }
         .sidebar,.topbar,.no-print { display:none!important }
@@ -3446,16 +3445,26 @@ async function renderOperationalCard() {
         .op-table td { font-size:9pt!important;padding:4px 6px!important }
         .op-bar-wrap { display:none!important }
         .op-page-break { display:block!important;page-break-before:always!important;break-before:page!important;height:0 }
+        /* ── جداول الزيوت والكاوتش — ضغط كامل للعرض ── */
+        .op-page2-table {
+          width: 100% !important;
+          table-layout: fixed !important;
+          font-size: 6pt !important;
+        }
         .op-page2-table th,
-        .op-page2-table td { font-size:7.5pt!important;padding:2px 3px!important;white-space:nowrap!important }
+        .op-page2-table td {
+          font-size: 6pt !important;
+          padding: 2px 2px !important;
+          white-space: normal !important;
+          word-break: break-word !important;
+          line-height: 1.2 !important;
+        }
         /* ── منع كسر جدول السائقين على صفحة منفصلة ── */
         .op-drivers-section {
           page-break-inside: avoid !important;
           break-inside: avoid !important;
           margin-bottom: 1rem !important;
         }
-        /* ── جدول الزيوت: اجعله يملأ العرض كاملاً ── */
-        .op-page2-table { width: 100% !important; table-layout: fixed !important; }
         .op-page2 { border: none !important; }
       }
       .op-print-header { display:none }
@@ -3844,10 +3853,6 @@ async function generateOpCard() {
     <div class="op-page-break"></div>
 
     <div class="card op-page2" id="opPage2Card">
-      <!-- عنوان الجزء الثاني — يظهر عند الطباعة/PDF فقط -->
-      <div class="op-print-header" style="text-align:center;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #0f2027">
-        <div style="font-size:12pt;font-weight:700;margin-top:.2rem">البطاقة التشغيلية للمركبات — الجزء الثاني</div>
-      </div>
 
       <div style="padding:.5rem 1.2rem 1.4rem">
         ${driversHtml}
