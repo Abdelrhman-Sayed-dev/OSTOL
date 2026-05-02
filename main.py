@@ -3054,6 +3054,7 @@ class MaintenanceScheduleCreate(BaseModel):
     notes:            Optional[str]   = ""
 
 class MaintenanceScheduleUpdate(BaseModel):
+    car_id:           Optional[int]   = None   # تغيير المركبة
     maintenance_type: Optional[str]   = None
     interval_km:      Optional[float] = None
     interval_days:    Optional[int]   = None
@@ -3438,24 +3439,6 @@ ARABIC_COL_MAP = {
     "equipment_type":    "equipment_type",
     "القطاع":            "sector",
     "sector":            "sector",
-    # للصيانة الدورية
-    "المركبة":           "plate",
-    "نوع الصيانة":      "maintenance_type",
-    "maintenance_type":  "maintenance_type",
-    "كل كام كم":        "interval_km",
-    "interval_km":       "interval_km",
-    "كل كام يوم":       "interval_days",
-    "interval_days":     "interval_days",
-    "آخر قراءة عداد":   "last_done_km",
-    "last_done_km":      "last_done_km",
-    "تاريخ آخر صيانة":  "last_done_date",
-    "last_done_date":    "last_done_date",
-    "إنذار قبل كم":     "alert_km_before",
-    "alert_km_before":   "alert_km_before",
-    "إنذار قبل يوم":    "alert_days_before",
-    "alert_days_before": "alert_days_before",
-    "ملاحظات":          "notes",
-    "notes":             "notes",
 }
 
 def _normalize_date(val: str) -> str:
@@ -3913,184 +3896,6 @@ async def import_permissions_template(cu: dict = Depends(require_admin)):
     return Response(content=output.getvalue().encode("utf-8-sig"), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=permissions_template.csv"})
 
-# ══════════════════════════════════════════════════════
-# 30-B. MAINTENANCE SCHEDULE BULK IMPORT — CSV / Excel
-# ══════════════════════════════════════════════════════
-
-def _validate_maintenance_row(row: dict, idx: int, cars_map: dict, valid_types: list) -> dict:
-    """التحقق من صف صيانة دورية واحد."""
-    errors = []
-    plate            = str(row.get("plate") or row.get("المركبة") or "").strip()
-    maint_type       = str(row.get("maintenance_type") or row.get("نوع الصيانة") or "").strip()
-    interval_km_raw  = str(row.get("interval_km") or "").strip()
-    interval_days_raw= str(row.get("interval_days") or "").strip()
-    last_done_km_raw = str(row.get("last_done_km") or "").strip()
-    last_done_date   = _normalize_date(str(row.get("last_done_date") or ""))
-    alert_km_raw     = str(row.get("alert_km_before") or "500").strip() or "500"
-    alert_days_raw   = str(row.get("alert_days_before") or "7").strip() or "7"
-    notes            = str(row.get("notes") or "").strip()
-
-    car_id = cars_map.get(plate)
-    if not plate:
-        errors.append("رقم اللوحة مطلوب")
-    elif car_id is None:
-        errors.append(f"لا توجد مركبة بلوحة '{plate}'")
-
-    if not maint_type:
-        errors.append("نوع الصيانة مطلوب")
-    elif maint_type not in valid_types:
-        errors.append(f"نوع الصيانة غير صالح: {maint_type}")
-
-    if not interval_km_raw and not interval_days_raw:
-        errors.append("يجب تحديد كل كام كم أو كل كام يوم")
-
-    def safe_float(v):
-        try: return float(v) if v else None
-        except: return None
-
-    def safe_int(v):
-        try: return int(float(v)) if v else None
-        except: return None
-
-    interval_km   = safe_float(interval_km_raw)
-    interval_days = safe_int(interval_days_raw)
-    last_done_km  = safe_float(last_done_km_raw)
-    alert_km      = safe_float(alert_km_raw) or 500.0
-    alert_days    = safe_int(alert_days_raw) or 7
-
-    return {
-        "row_index":         idx,
-        "valid":             len(errors) == 0,
-        "errors":            errors,
-        "plate":             plate,
-        "car_id":            car_id,
-        "maintenance_type":  maint_type,
-        "interval_km":       interval_km,
-        "interval_days":     interval_days,
-        "last_done_km":      last_done_km,
-        "last_done_date":    last_done_date or None,
-        "alert_km_before":   alert_km,
-        "alert_days_before": alert_days,
-        "notes":             notes,
-    }
-
-
-@app.get("/import/template/maintenance")
-async def import_maintenance_template(cu: dict = Depends(require_admin)):
-    """قالب CSV للصيانة الدورية."""
-    cols = [
-        "رقم اللوحة", "نوع الصيانة", "كل كام كم", "كل كام يوم",
-        "آخر قراءة عداد", "تاريخ آخر صيانة", "إنذار قبل كم", "إنذار قبل يوم", "ملاحظات"
-    ]
-    samples = [
-        ["أ-ب-1234", "تغيير زيت",      "5000", "90",  "45000", "2025-01-15", "500", "7",  ""],
-        ["ج-د-5678", "فلتر هواء",       "10000", "",   "40000", "",           "500", "7",  ""],
-        ["ه-و-9012", "فحص دوري عام",    "",      "180","",      "2025-03-01", "",    "14", "فحص شامل"],
-        ["",         "تغيير زيت",       "",      "",   "",      "",           "",    "",   "← مثال: هذا الصف سيُرفض (اللوحة مطلوبة)"],
-    ]
-    output = io.StringIO()
-    w = csv.writer(output)
-    w.writerow(cols)
-    for s in samples:
-        w.writerow(s)
-    from fastapi.responses import Response
-    return Response(
-        content=output.getvalue().encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=maintenance_schedule_template.csv"}
-    )
-
-
-@app.post("/import/maintenance/preview")
-async def import_maintenance_preview(
-    file: UploadFile = File(...),
-    cu: dict = Depends(require_admin)
-):
-    """معاينة ملف الصيانة الدورية قبل الرفع الفعلي."""
-    content_bytes = await file.read()
-    rows_raw = _parse_upload_file(content_bytes, file.filename)
-
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, plate FROM cars")
-        cars_map = {r["plate"]: r["id"] for r in c.fetchall()}
-
-    validated = []
-    for i, row in enumerate(rows_raw, start=2):
-        validated.append(_validate_maintenance_row(row, i, cars_map, MAINTENANCE_TYPES))
-
-    valid_count   = sum(1 for r in validated if r["valid"])
-    invalid_count = sum(1 for r in validated if not r["valid"])
-
-    return {
-        "import_type": "maintenance",
-        "summary":     {"total": len(validated), "valid": valid_count, "invalid": invalid_count},
-        "rows":        validated,
-    }
-
-
-@app.post("/import/maintenance/confirm")
-async def import_maintenance_confirm(
-    file: UploadFile = File(...),
-    skip_errors: bool = False,
-    cu: dict = Depends(require_admin)
-):
-    """رفع جداول الصيانة الدورية من ملف CSV/Excel."""
-    content_bytes = await file.read()
-    rows_raw = _parse_upload_file(content_bytes, file.filename)
-
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("SELECT id, plate FROM cars")
-        cars_map = {r["plate"]: r["id"] for r in c.fetchall()}
-
-    validated = []
-    for i, row in enumerate(rows_raw, start=2):
-        validated.append(_validate_maintenance_row(row, i, cars_map, MAINTENANCE_TYPES))
-
-    valid_rows   = [r for r in validated if r["valid"]]
-    invalid_rows = [r for r in validated if not r["valid"]]
-
-    invalid_count = len(invalid_rows)
-    if not skip_errors and invalid_count:
-        raise HTTPException(400, {
-            "message": f"يوجد {invalid_count} صف به أخطاء — فعّل تجاهل الأخطاء للمتابعة",
-            "errors": [{"row": r["row_index"], "errors": r["errors"]} for r in invalid_rows[:10]]
-        })
-
-    now = datetime.utcnow().isoformat()
-    inserted = 0
-    skipped  = len(invalid_rows) if skip_errors else 0
-
-    with get_db() as conn:
-        c = conn.cursor()
-        for r in valid_rows:
-            # تجنب التكرار: نفس المركبة + نفس نوع الصيانة
-            c.execute(
-                "SELECT id FROM maintenance_schedules WHERE car_id=? AND maintenance_type=?",
-                (r["car_id"], r["maintenance_type"])
-            )
-            if c.fetchone():
-                skipped += 1
-                continue
-            c.execute("""
-                INSERT INTO maintenance_schedules
-                (car_id, maintenance_type, interval_km, interval_days, last_done_km,
-                 last_done_date, alert_km_before, alert_days_before, notes, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, (
-                r["car_id"], r["maintenance_type"],
-                r["interval_km"], r["interval_days"],
-                r["last_done_km"], r["last_done_date"],
-                r["alert_km_before"], r["alert_days_before"],
-                r["notes"], now
-            ))
-            inserted += 1
-        conn.commit()
-
-    return {"inserted": inserted, "skipped": skipped, "total": len(validated)}
-
-
 
 # ══════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════
@@ -4345,18 +4150,22 @@ def _maintenance_row(row: dict, cars_map: dict) -> dict:
     d["car_model"]  = car.get("model", "—")
     d["car_branch"] = car.get("branch", "")
 
-    # Last known odometer from trips
-    d["current_km"] = d.get("_current_km", None)
+    from datetime import timedelta
 
-    # Compute next due
+    # current_km: من الرحلات أولاً، وإن مفيش يرجع last_done_km كـ fallback
+    trip_km = d.get("_current_km")
+    last_km = d.get("last_done_km")
+    d["current_km"] = trip_km if trip_km is not None else last_km
+
+    # Compute next due km
     next_km = None
-    if d.get("last_done_km") is not None and d.get("interval_km"):
-        next_km = float(d["last_done_km"]) + float(d["interval_km"])
+    if last_km is not None and d.get("interval_km"):
+        next_km = float(last_km) + float(d["interval_km"])
     d["next_due_km"] = next_km
 
+    # Compute next due date
     next_date = None
     if d.get("last_done_date") and d.get("interval_days"):
-        from datetime import timedelta
         try:
             ld = datetime.fromisoformat(d["last_done_date"])
             next_date = (ld + timedelta(days=int(d["interval_days"]))).strftime("%Y-%m-%d")
@@ -4365,21 +4174,22 @@ def _maintenance_row(row: dict, cars_map: dict) -> dict:
     d["next_due_date"] = next_date
 
     # Alert status
-    today = datetime.utcnow().strftime("%Y-%m-%d")
     alert_km_before   = float(d.get("alert_km_before") or 500)
     alert_days_before = int(d.get("alert_days_before") or 7)
     cur_km = d.get("current_km")
 
     status = "ok"
-    if next_km is not None and cur_km is not None:
-        remaining_km = next_km - float(cur_km)
+
+    # تقييم الكيلومترات — فقط لو عندنا عداد حالي حقيقي من الرحلات
+    if next_km is not None and trip_km is not None:
+        remaining_km = next_km - float(trip_km)
         if remaining_km <= 0:
             status = "overdue"
         elif remaining_km <= alert_km_before:
             status = "warning"
 
+    # تقييم التاريخ — يشتغل دايماً بغض النظر عن الكيلومترات
     if next_date and status == "ok":
-        from datetime import timedelta
         try:
             nd = datetime.fromisoformat(next_date)
             days_left = (nd - datetime.utcnow()).days
