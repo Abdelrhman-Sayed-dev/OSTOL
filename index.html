@@ -7255,16 +7255,9 @@ function dpWsModal(type) {
   openModal(`
     <div class="modal-header"><div class="modal-title">${wt.icon} ${wt.label}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
     ${specific}
-    <div class="form-group"><label>المركبة</label><select id="wVehicle" disabled>${carOpts}</select></div>
     <div class="form-group"><label>قراءة العداد (كم) <span class="req">*</span></label><input type="number" id="wOdo" placeholder="مثال: 54000" min="0"></div>
     <div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>
-    <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:8px;padding:.55rem 1rem;font-size:.8rem;color:#166534;font-weight:700;margin-bottom:.8rem">💰 السعر محدد من قبل الإدارة</div>
     <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
-    ${(window._typePrices&&window._typePrices[type]>0)?`
-    <div style="padding:.4rem .8rem;background:var(--surface-2);border-radius:8px;margin-bottom:.5rem;font-size:.85rem">
-      💰 سعر الوحدة: <strong style="color:var(--primary)">${(window._typePrices[type]||0).toFixed(2)} جنيه</strong>
-      <span style="color:var(--muted)">— الإجمالي يُحسب تلقائياً</span>
-    </div>`:''}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button>
