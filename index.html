@@ -3510,19 +3510,28 @@ async function generateOpCard() {
     return;
   }
 
-  // Determine column labels
-  const isMonthly = !data.single_month && !data.multi_year && report_type==='detailed';
-  const isDaily   = data.single_month  && report_type==='detailed';
-  const isYearly  = data.multi_year;
+  // Determine column labels from backend group_by field
+  const gb = data.group_by || 'month';   // day | week | month | year
+  const isDaily   = gb === 'day';
+  const isWeekly  = gb === 'week';
+  const isMonthly = gb === 'month';
+  const isYearly  = gb === 'year';
 
   function periodLabel(p) {
-    if(isDaily)   { // 2026-04-01 → 1 أبريل
+    if(isDaily) {
+      // p = "2026-04-20" → الأحد 20 أبريل
       const d = new Date(p + 'T00:00:00');
-      return d.toLocaleDateString('ar-EG',{weekday:'short',day:'numeric',month:'long'});
+      return d.toLocaleDateString('ar-EG',{weekday:'long', day:'numeric', month:'long'});
     }
-    if(isMonthly) { // 2026-04 → أبريل 2026
+    if(isWeekly) {
+      // p = "2026-04-14" (start of week) → أسبوع 14 أبريل
+      const d = new Date(p + 'T00:00:00');
+      return 'أسبوع ' + d.toLocaleDateString('ar-EG',{day:'numeric', month:'long', year:'numeric'});
+    }
+    if(isMonthly) {
+      // p = "2026-04" → أبريل 2026
       const [y,m] = p.split('-');
-      return new Date(+y,+m-1,1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+      return new Date(+y,+m-1,1).toLocaleDateString('ar-EG',{month:'long', year:'numeric'});
     }
     if(isYearly) return `عام ${p}`;
     return p;
@@ -3538,7 +3547,7 @@ async function generateOpCard() {
   function fmt(n) { return fmtNum(n); }
   function fmtDate(d) { return d ? new Date(d+'T00:00:00').toLocaleDateString('ar-EG') : '—'; }
 
-  const periodHeader = isDaily?'اليوم' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
+  const periodHeader = isDaily?'اليوم' : isWeekly?'الأسبوع' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
 
   const tableRows = data.rows.map((r,i)=>{
     const km  = Math.max(0, (r.max_odo||0) - (r.min_odo||0));
