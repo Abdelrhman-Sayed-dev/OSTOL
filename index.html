@@ -7186,92 +7186,26 @@ function dpWsModal(type) {
   const isFuelType = type.startsWith('fuel_');
   if(isFuelType) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
   else if(type==='oil') specific=`
-    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.8rem 1rem;margin-bottom:.6rem">
-      <div style="font-size:.78rem;font-weight:700;color:#0369a1;margin-bottom:.7rem">🛢️ اختر الزيوت المصروفة</div>
-      <div style="font-size:.72rem;color:#64748b;margin-bottom:.6rem">اختر "تم الصرف" لكل نوع وأدخل الكمية</div>
-        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
-          <div style="font-size:.8rem;font-weight:600;color:#334155">🔴 زيت المحرك</div>
-          <select id="oil_chk_oil_motor" onchange="toggleOilQty('oil_motor')"
-            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
-            <option value="no">لم يُصرف</option>
-            <option value="yes">✅ تم الصرف</option>
-          </select>
-          <div style="position:relative">
-            <div id="oil_qty_wrap_oil_motor" style="display:none">
-              <input type="number" id="oil_qty_oil_motor" placeholder="لتر"
-                min="0.1" step="0.1"
-                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
-            </div>
-            <div id="oil_qty_empty_oil_motor" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
-          <div style="font-size:.8rem;font-weight:600;color:#334155">🟠 زيت التروس</div>
-          <select id="oil_chk_oil_gear" onchange="toggleOilQty('oil_gear')"
-            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
-            <option value="no">لم يُصرف</option>
-            <option value="yes">✅ تم الصرف</option>
-          </select>
-          <div style="position:relative">
-            <div id="oil_qty_wrap_oil_gear" style="display:none">
-              <input type="number" id="oil_qty_oil_gear" placeholder="لتر"
-                min="0.1" step="0.1"
-                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
-            </div>
-            <div id="oil_qty_empty_oil_gear" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
-          <div style="font-size:.8rem;font-weight:600;color:#334155">🟡 زيت الفرامل</div>
-          <select id="oil_chk_oil_brake" onchange="toggleOilQty('oil_brake')"
-            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
-            <option value="no">لم يُصرف</option>
-            <option value="yes">✅ تم الصرف</option>
-          </select>
-          <div style="position:relative">
-            <div id="oil_qty_wrap_oil_brake" style="display:none">
-              <input type="number" id="oil_qty_oil_brake" placeholder="لتر"
-                min="0.1" step="0.1"
-                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
-            </div>
-            <div id="oil_qty_empty_oil_brake" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
-          <div style="font-size:.8rem;font-weight:600;color:#334155">🔵 زيت الهيدروليك</div>
-          <select id="oil_chk_oil_hydro" onchange="toggleOilQty('oil_hydro')"
-            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
-            <option value="no">لم يُصرف</option>
-            <option value="yes">✅ تم الصرف</option>
-          </select>
-          <div style="position:relative">
-            <div id="oil_qty_wrap_oil_hydro" style="display:none">
-              <input type="number" id="oil_qty_oil_hydro" placeholder="لتر"
-                min="0.1" step="0.1"
-                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
-            </div>
-            <div id="oil_qty_empty_oil_hydro" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
-          <div style="font-size:.8rem;font-weight:600;color:#334155">⚫ شحم</div>
-          <select id="oil_chk_oil_grease" onchange="toggleOilQty('oil_grease')"
-            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
-            <option value="no">لم يُصرف</option>
-            <option value="yes">✅ تم الصرف</option>
-          </select>
-          <div style="position:relative">
-            <div id="oil_qty_wrap_oil_grease" style="display:none">
-              <input type="number" id="oil_qty_oil_grease" placeholder="كجم"
-                min="0.1" step="0.1"
-                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
-            </div>
-            <div id="oil_qty_empty_oil_grease" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
-          </div>
-        </div>
+    <div class="form-group">
+      <label>نوع الزيت <span class="req">*</span></label>
+      <select id="wOilType" onchange="document.getElementById('wOilUnit').textContent=this.value==='oil_grease'?'كجم':'لتر'"
+        style="font-size:.88rem">
+        <option value="">-- اختر نوع الزيت --</option>
+        <option value="oil_motor">🔴 زيت المحرك</option>
+        <option value="oil_gear">🟠 زيت التروس</option>
+        <option value="oil_brake">🟡 زيت الفرامل</option>
+        <option value="oil_hydro">🔵 زيت الهيدروليك</option>
+        <option value="oil_grease">⚫ شحم</option>
+      </select>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group">
+        <label>الكمية <span class="req">*</span> (<span id="wOilUnit">لتر</span>)</label>
+        <input type="number" id="wQty" placeholder="0.0" min="0.1" step="0.1">
+      </div>
       <div class="form-group"><label>ساعات المحرك</label><input type="number" id="wEngHours" placeholder="2500" min="0"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
       <div class="form-group"><label>رقم المستند</label><input type="text" id="wDocNum" placeholder="2024/001"></div>
       <div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="ورشة الموقع"></div>
     </div>
@@ -7353,37 +7287,30 @@ function dpWsModal(type) {
       if(q&&q>0) payload.quantity=q;
     }
 
-    // Oil — multiple records (one per subtype selected)
+    // Oil — single record with chosen subtype
     if(selWsType==='oil'){
+      const oilType = document.getElementById('wOilType')?.value;
+      if(!oilType) return showNotification('اختر نوع الزيت', 'error');
+      const qty = parseFloat(document.getElementById('wQty')?.value)||0;
+      if(!qty || qty <= 0) return showNotification('أدخل الكمية', 'error');
       const eh  = parseFloat(document.getElementById('wEngHours')?.value)||null;
       const dn  = document.getElementById('wDocNum')?.value?.trim()||'';
       const sup = document.getElementById('wSupply')?.value?.trim()||'';
-      const oilEntries = OIL_SUBTYPES
-        .filter(s => document.getElementById('oil_chk_'+s.key)?.value === 'yes')
-        .map(s => ({
-          type: s.key,
-          qty:  parseFloat(document.getElementById('oil_qty_'+s.key)?.value)||0,
-        }))
-        .filter(e => e.qty > 0);
-      if(oilEntries.length === 0)
-        return showNotification('اختر نوع زيت واحد على الأقل وأدخل الكمية', 'error');
       btn.disabled=true; btn.textContent='جاري...';
       payload.location = await silentGetLocation();
       const prices = window._currentWsPrices || {};
+      const unitPrice = prices[oilType] || prices['oil'] || 0;
       try{
-        for(const entry of oilEntries){
-          const unitPrice = prices[entry.type] || prices['oil'] || 0;
-          await apiCall('/workshops','POST',{
-            ...payload,
-            type:     entry.type,
-            quantity: entry.qty,
-            price:    unitPrice * entry.qty,
-            engine_hours:  eh,
-            doc_number:    dn,
-            supply_source: sup,
-          });
-        }
-        showNotification('✅ تم حفظ ' + oilEntries.length + ' نوع زيت', 'success');
+        await apiCall('/workshops','POST',{
+          ...payload,
+          type:          oilType,
+          quantity:      qty,
+          price:         unitPrice * qty,
+          engine_hours:  eh,
+          doc_number:    dn,
+          supply_source: sup,
+        });
+        showNotification('✅ تم حفظ تغيير الزيت', 'success');
         closeModal();
       }catch(e){
         showNotification(e.message,'error');
@@ -8285,7 +8212,13 @@ function showLogin() {
         </div>
       </div>
       <button class="login-btn" id="doLoginBtn">تسجيل الدخول</button>
-      
+      <div class="login-roles">
+        <div class="login-roles-icon">👥</div>
+        <div class="login-roles-text">
+          <strong>يسمح النظام بالدخول للأدوار التالية:</strong>
+          مدير النظام • مشرف • سائق
+        </div>
+      </div>
     </div>
     <div class="login-panel-footer">
       جميع الحقوق محفوظة © ${new Date().getFullYear()} نظام إدارة الأسطول
