@@ -3621,7 +3621,18 @@ async function generateOpCard() {
     : 'جميع المركبات';
 
   function fmt(n) { return fmtNum(n); }
-  function fmtDate(d) { return d ? new Date(d+'T00:00:00').toLocaleDateString('ar-EG') : '—'; }
+  function fmtDate(d) {
+    if(!d) return '—';
+    // YYYY-MM → أول يوم في الشهر
+    if(/^\d{4}-\d{2}$/.test(d)) {
+      const [y,m] = d.split('-');
+      return new Date(+y, +m-1, 1).toLocaleDateString('ar-EG', {month:'long', year:'numeric'});
+    }
+    // YYYY → سنة فقط
+    if(/^\d{4}$/.test(d)) return `عام ${d}`;
+    // YYYY-MM-DD
+    return new Date(d + 'T00:00:00').toLocaleDateString('ar-EG');
+  }
 
   const periodHeader = isDaily?'اليوم' : isWeekly?'الأسبوع' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
 
