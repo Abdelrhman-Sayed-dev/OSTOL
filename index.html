@@ -3524,9 +3524,12 @@ async function generateOpCard() {
       return d.toLocaleDateString('ar-EG',{weekday:'long', day:'numeric', month:'long'});
     }
     if(isWeekly) {
-      // p = "2026-04-14" (start of week) → أسبوع 14 أبريل
-      const d = new Date(p + 'T00:00:00');
-      return 'أسبوع ' + d.toLocaleDateString('ar-EG',{day:'numeric', month:'long', year:'numeric'});
+      // p = "2026-04-14" (Monday) → 14 أبريل – 20 أبريل 2026
+      const start = new Date(p + 'T00:00:00');
+      const end   = new Date(start); end.setDate(end.getDate() + 6);
+      const opts  = {day:'numeric', month:'long'};
+      const optsY = {day:'numeric', month:'long', year:'numeric'};
+      return start.toLocaleDateString('ar-EG', opts) + ' – ' + end.toLocaleDateString('ar-EG', optsY);
     }
     if(isMonthly) {
       // p = "2026-04" → أبريل 2026
