@@ -9332,6 +9332,20 @@ function printMonthlyReport() {
     <td><strong>${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
   </tr>`).join('');
 
+  // ====== build print content based on selected reportType ======
+  const reportType   = d._reportType || 'drivers';
+  const drvSortLabel = d._drvSortLabel || 'أعلى مسافة';
+  const carSortLabel = d._carSortLabel || 'أعلى تكلفة';
+  const carColor     = d._carSortColor || '#10b981';
+
+  const tableSection = (reportType === 'drivers') ? `
+  <div class="sec-title"><span class="badge" style="background:${drvColor}">TOP 10</span> السائقون — ${drvSortLabel} <span class="note">من ${d.drivers.length} سائق</span></div>
+  <table><thead><tr><th></th><th>السائق</th><th>الرقم الثابت</th><th>رحلات</th><th>إجمالي كم</th><th>متوسط/رحلة</th></tr></thead>
+  <tbody>${drvRows}</tbody></table>` : `
+  <div class="sec-title g"><span class="badge g" style="background:${carColor}">TOP 10</span> المركبات — ${carSortLabel} <span class="note">من ${d.cars.length} مركبة</span></div>
+  <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>وقود (لتر)</th><th>تكلفة وقود</th><th>صيانة</th><th>الإجمالي (جنيه)</th></tr></thead>
+  <tbody>${carRows}</tbody></table>`;
+
   const win = window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head>
   <meta charset="UTF-8"><title>تقرير شهري — ${d.month}</title>
@@ -9347,8 +9361,7 @@ function printMonthlyReport() {
     .sbox.hi .sn{color:#065f46}
     .sec-title{font-size:9pt;font-weight:700;margin:12px 0 5px;padding-right:7px;border-right:3px solid #3b82f6}
     .sec-title.g{border-color:#10b981}
-    .badge{display:inline-block;background:#3b82f6;color:#fff;border-radius:4px;padding:0 5px;font-size:7pt;font-weight:800;margin-left:4px}
-    .badge.g{background:#10b981}
+    .badge{display:inline-block;color:#fff;border-radius:4px;padding:0 5px;font-size:7pt;font-weight:800;margin-left:4px}
     .note{font-size:7.5pt;color:#94a3b8;margin-right:6px}
     table{width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px}
     th,td{border:0.5px solid #cbd5e1;padding:4px 6px;text-align:right}
@@ -9372,20 +9385,13 @@ function printMonthlyReport() {
     <div class="sbox"><div class="sn" style="font-size:11pt">${Math.round(s.total_maint_cost).toLocaleString('ar-EG')}</div><div class="sl">تكلفة صيانة (جنيه)</div></div>
   </div>
 
-  <div class="sec-title"><span class="badge">TOP 10</span> السائقون — أعلى مسافة <span class="note">من ${d.drivers.length} سائق</span></div>
-  <table><thead><tr><th></th><th>السائق</th><th>الرقم الثابت</th><th>رحلات</th><th>إجمالي كم</th><th>متوسط/رحلة</th></tr></thead>
-  <tbody>${drvRows}</tbody></table>
-
-  <div class="sec-title g"><span class="badge g">TOP 10</span> المركبات — أعلى تكلفة <span class="note">من ${d.cars.length} مركبة</span></div>
-  <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>وقود (لتر)</th><th>تكلفة وقود</th><th>صيانة</th><th>الإجمالي (جنيه)</th></tr></thead>
-  <tbody>${carRows}</tbody></table>
+  ${tableSection}
 
   <div class="footer">صدر بتاريخ: ${new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})} — إدارة الأسطول</div>
   <script>window.onload=function(){ window.print(); window.onafterprint=function(){ window.close(); }; }<\/script>
   </body></html>`);
   win.document.close();
 }
-
 function exportMonthlyCSV() {
   const d = window._mrData;
   if(!d) return showNotification('أنشئ التقرير أولاً','error');
