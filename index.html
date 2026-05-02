@@ -3366,6 +3366,61 @@ function calcDistance(c1, c2) {
 }
 
 /* ── OPERATIONAL CARD ── */
+
+// ─── بيان مسحوبات السولار ───
+function buildFuelDetailTable(rows) {
+  if(!rows || !rows.length) return '';
+  let totalQty = 0, totalCost = 0;
+  const tRows = rows.map((r, i) => {
+    const qty  = r.quantity || 0;
+    const cost = r.price    || 0;
+    totalQty  += qty;
+    totalCost += cost;
+    return `<tr>
+      <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
+      <td style="text-align:center">${r.fuel_date || '—'}</td>
+      <td style="text-align:center;font-weight:700;color:#ea580c">${qty.toLocaleString('ar-EG')} لتر</td>
+      <td style="text-align:center;color:#64748b;font-size:.82rem">${r.odometer_reading ? r.odometer_reading.toLocaleString('ar-EG')+' كم' : '—'}</td>
+      <td style="text-align:center;color:#64748b;font-size:.82rem">${cost > 0 ? cost.toLocaleString('ar-EG')+' ج' : '—'}</td>
+      <td style="font-size:.78rem;color:#94a3b8">${r.driver_name || '—'}</td>
+      <td style="font-size:.78rem;color:#94a3b8">${r.notes || ''}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="margin-bottom:.8rem">
+      <div style="font-size:.85rem;font-weight:800;color:#1e3a5f;
+                  border-right:3px solid #ea580c;padding-right:.5rem;margin-bottom:.5rem">
+        ⛽ بيان مسحوبات السولار (${rows.length} عملية تمويل)
+      </div>
+      <div style="overflow-x:auto">
+        <table class="op-table" style="font-size:.8rem">
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th>التاريخ</th>
+              <th>الكمية (لتر)</th>
+              <th>قراءة العداد</th>
+              <th>التكلفة</th>
+              <th>السائق</th>
+              <th>ملاحظات</th>
+            </tr>
+          </thead>
+          <tbody>${tRows}</tbody>
+          <tfoot>
+            <tr style="background:#fff7ed;font-weight:800">
+              <td colspan="2" style="color:#ea580c">🏁 الإجمالي</td>
+              <td style="text-align:center;color:#ea580c">${totalQty.toLocaleString('ar-EG')} لتر</td>
+              <td>—</td>
+              <td style="text-align:center;color:#64748b">${totalCost > 0 ? totalCost.toLocaleString('ar-EG')+' ج' : '—'}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>`;
+}
+
 async function renderOperationalCard() {
   const c = document.getElementById('pageContent');
 
@@ -3612,20 +3667,45 @@ async function generateOpCard() {
     try {
       const dData = await apiCall(`/reports/operational-by-driver?car_id=${car_id}&date_from=${date_from}&date_to=${date_to}`);
 
-      // نوع الوقود
+      // ── نوع الوقود + كمية السولار + معدل الاستهلاك + جدول المسحوبات ──
+      const solarRec   = (dData.fuel_records||[]).find(f=>f.type==='fuel_solar');
+      const totalSolar = solarRec ? (solarRec.total_qty||0) : 0;
+      const fuelDetail = dData.fuel_detail || [];
+      const solarDetail= fuelDetail.filter(f=>f.type==='fuel_solar');
+
+      // معدل الاستهلاك: ليتر/100كم
+      const consumption = (totalSolar > 0 && realTotalKm > 0)
+        ? ((totalSolar / realTotalKm) * 100).toFixed(1)
+        : null;
+
       if(dData.fuel_records && dData.fuel_records.length > 0) {
-        const topFuel = dData.fuel_records.sort((a,b)=>b.count-a.count)[0];
-        const fuelLabel = WT[topFuel.type]?.label || topFuel.type;
-        const fuelIcon  = WT[topFuel.type]?.icon  || '⛽';
-        const allFuels  = dData.fuel_records.map(f=>`${WT[f.type]?.icon||'⛽'} ${WT[f.type]?.label||f.type} (${f.count} مرة)`).join(' &nbsp;·&nbsp; ');
+        const allFuels = dData.fuel_records.map(f=>`${WT[f.type]?.icon||'⛽'} ${WT[f.type]?.label||f.type} (${f.count} مرة)`).join(' &nbsp;·&nbsp; ');
+
+        // كروت الوقود الإضافية
+        const fuelCards = [
+          totalSolar > 0 ? `<div style="background:#fff;border:1.5px solid #f9731622;border-radius:14px;padding:.8rem 1rem;text-align:center">
+            <div style="font-size:1.4rem">⛽</div>
+            <div style="font-size:.72rem;color:#64748b;margin:.2rem 0">إجمالي السولار</div>
+            <div style="font-weight:800;color:#ea580c;font-size:.95rem">${totalSolar.toLocaleString('ar-EG')} لتر</div>
+          </div>` : '',
+          consumption ? `<div style="background:#fff;border:1.5px solid #8b5cf622;border-radius:14px;padding:.8rem 1rem;text-align:center">
+            <div style="font-size:1.4rem">📊</div>
+            <div style="font-size:.72rem;color:#64748b;margin:.2rem 0">معدل الاستهلاك</div>
+            <div style="font-weight:800;color:#7c3aed;font-size:.95rem">${consumption} ل/100كم</div>
+          </div>` : '',
+        ].filter(Boolean).join('');
+
         fuelTypeHtml = `
           <div style="display:flex;align-items:center;gap:.6rem;background:#f0fdf4;
                       border:1.5px solid #86efac;border-radius:10px;padding:.55rem 1rem;
-                      margin-bottom:.8rem;font-size:.82rem">
-            <span style="font-size:1.2rem">${fuelIcon}</span>
+                      margin-bottom:.5rem;font-size:.82rem">
+            <span style="font-size:1.2rem">⛽</span>
             <span><strong style="color:#166534">نوع الوقود:</strong>
             <span style="color:#15803d">${allFuels}</span></span>
-          </div>`;
+          </div>
+          ${fuelCards ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:.8rem">${fuelCards}</div>` : ''}
+          ${solarDetail.length > 0 ? buildFuelDetailTable(solarDetail) : ''}
+        `;
       } else {
         fuelTypeHtml = `
           <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;
