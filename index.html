@@ -8960,74 +8960,145 @@ async function renderMonthlyReport() {
   const c = document.getElementById('pageContent');
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-
-  // جيب قائمة الفروع
   const branches = isSuperuser() ? await loadBranches() : [];
 
-  const branchSelectHtml = isSuperuser() ? `
-    <select id="mrBranch" style="padding:.42rem .75rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.85rem;min-width:200px">
-      <option value="">🌐 كل الفروع</option>
-      ${branches.map(b=>`<option value="${b}">${b}</option>`).join('')}
-    </select>` : `<span style="font-size:.88rem;color:var(--muted);font-weight:600">${currentUser?.branch||'فرعك'}</span>`;
+  // ── reset state ──
+  window._mrDrvSort  = 'best';
+  window._mrCarSort  = 'cost_high';
+  window._mrReportType = 'drivers'; // 'drivers' | 'cars'
+
+  const branchOpts = isSuperuser()
+    ? `<select id="mrBranch" style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;min-width:170px;background:var(--surface)">
+        <option value="">🌐 كل الفروع</option>
+        ${branches.map(b=>`<option value="${b}">${b}</option>`).join('')}
+       </select>`
+    : `<span style="font-size:.85rem;font-weight:700;color:var(--primary);padding:.45rem .85rem;background:var(--surface-2);border-radius:10px;border:1.5px solid var(--border)">📍 ${currentUser?.branch||'فرعك'}</span>`;
 
   c.innerHTML = `
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">📄 التقرير الشهري الشامل</div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn btn-outline btn-sm" onclick="printMonthlyReport()">🖨️ طباعة / PDF</button>
-          <button class="btn btn-outline btn-sm" onclick="exportMonthlyCSV()">⬇️ CSV</button>
-        </div>
+  <div class="card" style="overflow:visible">
+    <!-- Header -->
+    <div class="card-header">
+      <div class="card-title">📄 التقرير الشهري</div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline btn-sm" onclick="printMonthlyReport()">🖨️ طباعة / PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="exportMonthlyCSV()">⬇️ CSV</button>
       </div>
-      <div class="srch-bar" style="border-radius:0;gap:.6rem;flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:.4rem">
-          <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">الشهر:</label>
-          <input type="month" id="mrMonth" value="${defaultMonth}"
-            style="padding:.42rem .75rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.85rem">
-        </div>
-        ${branchSelectHtml}
-        <div style="display:flex;align-items:center;gap:.4rem">
-          <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">ترتيب السائقين:</label>
-          <div class="cs-wrapper" style="min-width:155px">
-            <div class="cs-trigger" id="mrSortTrigger" onclick="toggleMrSort()" tabindex="0">
-              <span id="mrSortLabel">🏆 الأفضل (أعلى مسافة)</span>
-              <span class="cs-arrow">▼</span>
-            </div>
-            <div class="cs-dropdown" id="mrSortDropdown" style="display:none">
-              <div class="cs-option cs-selected" data-val="best" onclick="selectMrSort(this,'best','🏆 الأفضل (أعلى مسافة)')">🏆 الأفضل (أعلى مسافة)</div>
-              <div class="cs-option" data-val="worst" onclick="selectMrSort(this,'worst','⬇️ الأسوأ (أقل مسافة)')">⬇️ الأسوأ (أقل مسافة)</div>
-              <div class="cs-option" data-val="trips_best" onclick="selectMrSort(this,'trips_best','🗺️ الأكثر رحلات')">🗺️ الأكثر رحلات</div>
-              <div class="cs-option" data-val="trips_worst" onclick="selectMrSort(this,'trips_worst','📉 الأقل رحلات')">📉 الأقل رحلات</div>
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:.4rem">
-          <label style="font-size:.82rem;color:var(--muted);white-space:nowrap">ترتيب المركبات:</label>
-          <div class="cs-wrapper" style="min-width:155px">
-            <div class="cs-trigger" id="mrCarSortTrigger" onclick="toggleMrCarSort()" tabindex="0">
-              <span id="mrCarSortLabel">💰 الأعلى تكلفة</span>
-              <span class="cs-arrow">▼</span>
-            </div>
-            <div class="cs-dropdown" id="mrCarSortDropdown" style="display:none">
-              <div class="cs-option cs-selected" data-val="cost_high" onclick="selectMrCarSort(this,'cost_high','💰 الأعلى تكلفة')">💰 الأعلى تكلفة</div>
-              <div class="cs-option" data-val="cost_low" onclick="selectMrCarSort(this,'cost_low','💸 الأقل تكلفة')">💸 الأقل تكلفة</div>
-              <div class="cs-option" data-val="fuel_high" onclick="selectMrCarSort(this,'fuel_high','⛽ الأكثر وقوداً')">⛽ الأكثر وقوداً</div>
-              <div class="cs-option" data-val="fuel_low" onclick="selectMrCarSort(this,'fuel_low','🪫 الأقل وقوداً')">🪫 الأقل وقوداً</div>
-            </div>
-          </div>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="loadMonthlyReport()">📊 إنشاء التقرير</button>
-        <span class="srch-count" id="mrStatus"></span>
-      </div>
-      <div id="mrContent" style="padding:1rem">
-        <div class="empty-state"><div class="empty-icon">📄</div><p>اختر الشهر والفرع ثم انقر "إنشاء التقرير"</p></div>
-      </div>
-    </div>`;
+    </div>
 
+    <!-- ─── Step 1: الشهر + الفرع + نوع التقرير ─── -->
+    <div style="padding:1.1rem 1.2rem;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:flex-end;gap:1rem">
+
+      <!-- الشهر -->
+      <div style="display:flex;flex-direction:column;gap:.35rem">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">الشهر</label>
+        <input type="month" id="mrMonth" value="${defaultMonth}"
+          style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;background:var(--surface)">
+      </div>
+
+      <!-- الفرع -->
+      <div style="display:flex;flex-direction:column;gap:.35rem">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">الفرع</label>
+        ${branchOpts}
+      </div>
+
+      <!-- نوع التقرير — toggle pills -->
+      <div style="display:flex;flex-direction:column;gap:.35rem">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">نوع التقرير</label>
+        <div style="display:flex;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)">
+          <button id="mrTabDrivers" onclick="mrSelectTab('drivers')"
+            style="flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer;transition:.15s;background:var(--primary);color:#fff;border-radius:8px 0 0 8px">
+            👨‍✈️ سائقين
+          </button>
+          <button id="mrTabCars" onclick="mrSelectTab('cars')"
+            style="flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;transition:.15s;background:transparent;color:var(--muted);border-radius:0 8px 8px 0">
+            🚙 مركبات
+          </button>
+        </div>
+      </div>
+
+      <!-- فلتر الترتيب — يتغير حسب التاب -->
+      <div style="display:flex;flex-direction:column;gap:.35rem" id="mrSortWrap">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">ترتيب حسب</label>
+        <div id="mrSortInner">
+          <!-- يتملى بـ mrRenderSortFilter() -->
+        </div>
+      </div>
+
+      <!-- زر إنشاء -->
+      <button class="btn btn-primary" onclick="loadMonthlyReport()" style="padding:.48rem 1.4rem;align-self:flex-end">
+        📊 إنشاء التقرير
+      </button>
+      <span class="srch-count" id="mrStatus" style="align-self:flex-end"></span>
+    </div>
+
+    <!-- ─── النتائج ─── -->
+    <div id="mrContent" style="padding:1.1rem">
+      <div class="empty-state"><div class="empty-icon">📄</div><p>اختر الشهر ونوع التقرير ثم انقر "إنشاء التقرير"</p></div>
+    </div>
+  </div>`;
+
+  // ابني فلتر الترتيب الابتدائي
+  mrRenderSortFilter();
+  // حمّل التقرير
   await loadMonthlyReport();
 }
 
+function mrSelectTab(type) {
+  window._mrReportType = type;
+  const btnD = document.getElementById('mrTabDrivers');
+  const btnC = document.getElementById('mrTabCars');
+  if(btnD && btnC) {
+    if(type === 'drivers') {
+      btnD.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer;transition:.15s;background:var(--primary);color:#fff;border-radius:8px 0 0 8px';
+      btnC.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;transition:.15s;background:transparent;color:var(--muted);border-radius:0 8px 8px 0';
+    } else {
+      btnC.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer;transition:.15s;background:var(--primary);color:#fff;border-radius:0 8px 8px 0';
+      btnD.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;transition:.15s;background:transparent;color:var(--muted);border-radius:8px 0 0 8px';
+    }
+  }
+  mrRenderSortFilter();
+  if(window._mrData) loadMonthlyReport();
+}
+
+function mrRenderSortFilter() {
+  const wrap = document.getElementById('mrSortInner');
+  if(!wrap) return;
+  const type = window._mrReportType || 'drivers';
+
+  if(type === 'drivers') {
+    const cur = window._mrDrvSort || 'best';
+    const opts = [
+      {v:'best',       l:'🏆 أعلى مسافة'},
+      {v:'worst',      l:'⬇️ أقل مسافة'},
+      {v:'trips_best', l:'🗺️ أكثر رحلات'},
+      {v:'trips_worst',l:'📉 أقل رحلات'},
+    ];
+    wrap.innerHTML = `<select id="mrDrvSortSel" onchange="window._mrDrvSort=this.value"
+      style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;min-width:150px;background:var(--surface)">
+      ${opts.map(o=>`<option value="${o.v}" ${cur===o.v?'selected':''}>${o.l}</option>`).join('')}
+    </select>`;
+  } else {
+    const cur = window._mrCarSort || 'cost_high';
+    const opts = [
+      {v:'cost_high', l:'💰 أعلى تكلفة'},
+      {v:'cost_low',  l:'💸 أقل تكلفة'},
+      {v:'fuel_high', l:'⛽ أكثر وقوداً'},
+      {v:'fuel_low',  l:'🪫 أقل وقوداً'},
+    ];
+    wrap.innerHTML = `<select id="mrCarSortSel" onchange="window._mrCarSort=this.value"
+      style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;min-width:150px;background:var(--surface)">
+      ${opts.map(o=>`<option value="${o.v}" ${cur===o.v?'selected':''}>${o.l}</option>`).join('')}
+    </select>`;
+  }
+}
+
 async function loadMonthlyReport() {
+  // sync select values before loading
+  const drvSel = document.getElementById('mrDrvSortSel');
+  const carSel = document.getElementById('mrCarSortSel');
+  if(drvSel) window._mrDrvSort = drvSel.value;
+  if(carSel) window._mrCarSort = carSel.value;
+
   const month  = document.getElementById('mrMonth')?.value;
   const branch = document.getElementById('mrBranch')?.value || '';
   if(!month) return;
@@ -9041,155 +9112,163 @@ async function loadMonthlyReport() {
     const data = await apiCall(url);
     window._mrData = data;
     const s = data.summary;
-    document.getElementById('mrStatus').textContent =
-      `${data.branch} — ${data.month}`;
+    document.getElementById('mrStatus').textContent = `${data.branch} — ${data.month}`;
 
     const [yr, mo] = month.split('-');
     const monthName = new Date(yr, mo-1, 1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+    const type = window._mrReportType || 'drivers';
+
+    // ── ملخص الشهر (مشترك) ──
+    const summaryHtml = `
+      <div style="margin-bottom:1.3rem">
+        <div style="font-weight:700;font-size:.9rem;margin-bottom:.7rem;border-right:3px solid var(--primary);padding-right:.6rem">📊 ملخص الشهر</div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-icon">👨‍✈️</div><div class="stat-value">${s.total_drivers}</div><div class="stat-label">سائق</div></div>
+          <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${s.total_cars}</div><div class="stat-label">مركبة</div></div>
+          <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value">${s.total_trips}</div><div class="stat-label">رحلة</div></div>
+          <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value">${Math.round(s.total_km).toLocaleString('ar-EG')}</div><div class="stat-label">كم إجمالي</div></div>
+          <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${Math.round(s.total_fuel_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة وقود (ج)</div></div>
+          <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${Math.round(s.total_maint_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة صيانة (ج)</div></div>
+          <div class="stat-card" style="border:2px solid var(--primary)"><div class="stat-icon">💰</div><div class="stat-value" style="color:var(--primary)">${Math.round(s.total_cost).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي التكاليف (ج)</div></div>
+        </div>
+      </div>`;
+
+    const medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+
+    // ══ تقرير السائقين ══
+    let mainHtml = '';
+    if(type === 'drivers') {
+      const drvSort = window._mrDrvSort || 'best';
+      let sorted, sortLabel, badgeColor = '#3b82f6';
+      if(drvSort==='worst') {
+        sorted=[...data.drivers].filter(d=>d.trips>0).sort((a,b)=>a.km-b.km).slice(0,10);
+        sortLabel='أقل مسافة'; badgeColor='#ef4444';
+      } else if(drvSort==='trips_best') {
+        sorted=[...data.drivers].sort((a,b)=>b.trips-a.trips).slice(0,10);
+        sortLabel='أكثر رحلات'; badgeColor='#8b5cf6';
+      } else if(drvSort==='trips_worst') {
+        sorted=[...data.drivers].filter(d=>d.trips>0).sort((a,b)=>a.trips-b.trips).slice(0,10);
+        sortLabel='أقل رحلات'; badgeColor='#f59e0b';
+      } else {
+        sorted=data.drivers.filter(d=>d.km>0).slice(0,10);
+        sortLabel='أعلى مسافة';
+      }
+      const refVal = (drvSort==='trips_best'||drvSort==='trips_worst') ? (sorted[0]?.trips||1) : (sorted[0]?.km||1);
+      const isBad = drvSort==='worst'||drvSort==='trips_worst';
+
+      const rows = sorted.map((d,i) => {
+        const val = (drvSort==='trips_best'||drvSort==='trips_worst') ? d.trips : d.km;
+        const barW = Math.round((val/refVal)*100);
+        // المركبات اللي كان بيسوقها
+        const carsForDriver = (data.drivers_per_car)
+          ? Object.values(data.drivers_per_car).flat().filter(x=>x.name===d.name)
+          : [];
+        // اجمع اللوحات من drivers_per_car
+        const driverCars = [];
+        if(data.drivers_per_car) {
+          for(const [carId, drList] of Object.entries(data.drivers_per_car)) {
+            if(drList.some(x=>x.name===d.name)) {
+              const car = data.cars.find(c=>c.car_id==carId);
+              if(car) driverCars.push(car);
+            }
+          }
+        }
+        const carBadges = driverCars.length
+          ? driverCars.map(car=>`<span dir="ltr" style="display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:.1rem .5rem;font-size:.73rem;font-weight:700;color:var(--primary)">${car.plate} <span style="font-weight:400;color:var(--muted)">${car.model}</span></span>`).join(' ')
+          : '<span style="color:var(--muted);font-size:.75rem">—</span>';
+        return `<tr style="${isBad?'background:rgba(239,68,68,.04)':''}">
+          <td style="text-align:center;font-size:.85rem">${isBad?i+1:(medals[i]||i+1)}</td>
+          <td><strong>${d.name}</strong></td>
+          <td style="font-size:.75rem"><code>${d.fixed_number||'—'}</code></td>
+          <td>${d.trips}</td>
+          <td><div style="display:flex;align-items:center;gap:.35rem">
+            <div style="width:45px;background:#e2e8f0;border-radius:3px;height:4px">
+              <div style="width:${barW}%;background:${badgeColor};border-radius:3px;height:4px"></div>
+            </div>
+            <strong style="${isBad?'color:#ef4444':''}">${Math.round(d.km).toLocaleString('ar-EG')}</strong>
+          </div></td>
+          <td style="font-size:.78rem">${d.trips>0?Math.round(d.km/d.trips):0} كم</td>
+          <td style="max-width:220px">${carBadges}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>';
+
+      mainHtml = `
+        <div>
+          <div style="font-weight:700;font-size:.88rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
+            <span style="background:${badgeColor};color:white;border-radius:6px;padding:.15rem .55rem;font-size:.72rem;font-weight:800">TOP 10</span>
+            <span>${sortLabel}</span>
+            <span style="font-size:.72rem;color:var(--muted)">(${data.drivers.length} سائق)</span>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr style="font-size:.73rem">
+              <th style="width:28px">#</th><th>السائق</th><th>الرقم</th><th>رحلات</th><th>كم</th><th>متوسط</th><th>المركبات المستخدمة</th>
+            </tr></thead>
+            <tbody>${rows}</tbody></table>
+          </div>
+        </div>`;
+
+    // ══ تقرير المركبات ══
+    } else {
+      const carSort = window._mrCarSort || 'cost_high';
+      let sortedCars, carSortLabel, carBadgeColor='#10b981';
+      if(carSort==='cost_low') {
+        sortedCars=[...data.cars].filter(c=>c.total_cost>0).sort((a,b)=>a.total_cost-b.total_cost).slice(0,10);
+        carSortLabel='أقل تكلفة'; carBadgeColor='#f59e0b';
+      } else if(carSort==='fuel_high') {
+        sortedCars=[...data.cars].sort((a,b)=>b.fuel_liters-a.fuel_liters).slice(0,10);
+        carSortLabel='أكثر وقوداً'; carBadgeColor='#ef4444';
+      } else if(carSort==='fuel_low') {
+        sortedCars=[...data.cars].filter(c=>c.fuel_liters>0).sort((a,b)=>a.fuel_liters-b.fuel_liters).slice(0,10);
+        carSortLabel='أقل وقوداً'; carBadgeColor='#6366f1';
+      } else {
+        sortedCars=[...data.cars].filter(c=>c.total_cost>0).sort((a,b)=>b.total_cost-a.total_cost).slice(0,10);
+        carSortLabel='أعلى تكلفة';
+      }
+
+      const carRows = sortedCars.map((c,i) => {
+        const driversForCar = (data.drivers_per_car && data.drivers_per_car[c.car_id]) || [];
+        const driverBadges = driversForCar.length
+          ? driversForCar.map(dr=>`<span style="display:inline-block;background:${driversForCar.length>1?'#fef3c7':'#f0fdf4'};border:1px solid ${driversForCar.length>1?'#fcd34d':'#6ee7b7'};border-radius:6px;padding:.1rem .5rem;font-size:.73rem;font-weight:600;color:${driversForCar.length>1?'#92400e':'#065f46'}">👤 ${dr.name}${dr.fixed_number?' <code style="font-size:.68rem">'+dr.fixed_number+'</code>':''}</span>`).join(' ')
+          : '<span style="color:var(--muted);font-size:.75rem">—</span>';
+        return `<tr>
+          <td style="text-align:center">${i+1}</td>
+          <td dir="ltr"><strong>${c.plate}</strong></td>
+          <td style="font-size:.75rem">${c.model}</td>
+          <td style="text-align:center">${c.trips||0}</td>
+          <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
+          <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
+          <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
+          <td><strong style="color:var(--primary)">${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
+          <td style="max-width:200px">${driverBadges}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>';
+
+      mainHtml = `
+        <div>
+          <div style="font-weight:700;font-size:.88rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
+            <span style="background:${carBadgeColor};color:white;border-radius:6px;padding:.15rem .55rem;font-size:.72rem;font-weight:800">TOP 10</span>
+            <span>${carSortLabel}</span>
+            <span style="font-size:.72rem;color:var(--muted)">(${data.cars.length} مركبة)</span>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr style="font-size:.73rem">
+              <th>#</th><th>اللوحة</th><th>الموديل</th><th>رحلات</th><th>وقود(ل)</th><th>تكلفة وقود</th><th>صيانة</th><th>إجمالي</th><th>السائقون</th>
+            </tr></thead>
+            <tbody>${carRows}</tbody></table>
+          </div>
+        </div>`;
+    }
 
     el.innerHTML = `
       <div id="mrPrintArea">
-        <div style="text-align:center;padding:1rem 0;border-bottom:2px solid var(--border);margin-bottom:1.2rem">
-          <div style="font-size:1.3rem;font-weight:700">إدارة الأسطول — تقرير شهري</div>
-          <div style="font-size:.95rem;color:var(--muted);margin-top:.3rem">${monthName} | الفرع: ${data.branch}</div>
-          <div style="font-size:.75rem;color:var(--muted);margin-top:.2rem">صدر بتاريخ: ${fmtDT(data.generated_at)}</div>
+        <!-- رأس الصفحة -->
+        <div style="text-align:center;padding:.8rem 0 1rem;border-bottom:2px solid var(--border);margin-bottom:1.2rem">
+          <div style="font-size:1.2rem;font-weight:700">إدارة الأسطول — تقرير شهري</div>
+          <div style="font-size:.9rem;color:var(--muted);margin-top:.25rem">${monthName} | الفرع: ${data.branch}</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.15rem">صدر بتاريخ: ${fmtDT(data.generated_at)}</div>
         </div>
-
-        <!-- إجمالي الشهر -->
-        <div style="margin-bottom:1.2rem">
-          <div style="font-weight:700;font-size:.95rem;margin-bottom:.6rem;border-right:3px solid var(--primary);padding-right:.6rem">📊 ملخص الشهر</div>
-          <div class="stats-row">
-            <div class="stat-card"><div class="stat-icon">👨‍✈️</div><div class="stat-value">${s.total_drivers}</div><div class="stat-label">سائق</div></div>
-            <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${s.total_cars}</div><div class="stat-label">مركبة</div></div>
-            <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value">${s.total_trips}</div><div class="stat-label">رحلة</div></div>
-            <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value">${Math.round(s.total_km).toLocaleString('ar-EG')}</div><div class="stat-label">كم إجمالي</div></div>
-            <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${Math.round(s.total_fuel_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة وقود (جنيه)</div></div>
-            <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${Math.round(s.total_maint_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة صيانة (جنيه)</div></div>
-            <div class="stat-card" style="border:2px solid var(--primary);grid-column:span 2"><div class="stat-icon">💰</div><div class="stat-value" style="color:var(--primary)">${Math.round(s.total_cost).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي التكاليف (جنيه)</div></div>
-          </div>
-        </div>
-
-        <!-- TOP 10 حسب الاختيار — السائقين والمركبات -->
-        ${(()=>{
-          const medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
-          const drvSort = window._mrDrvSort||'best';
-          const carSort = window._mrCarSort||'cost_high';
-
-          // ترتيب السائقين
-          let sorted10, sortLabel, sortBadgeColor='#3b82f6';
-          if(drvSort==='worst') {
-            sorted10=[...data.drivers].filter(d=>d.trips>0).sort((a,b)=>a.km-b.km).slice(0,10);
-            sortLabel='أقل السائقين مسافة'; sortBadgeColor='#ef4444';
-          } else if(drvSort==='trips_best') {
-            sorted10=[...data.drivers].sort((a,b)=>b.trips-a.trips).slice(0,10);
-            sortLabel='الأكثر رحلات'; sortBadgeColor='#8b5cf6';
-          } else if(drvSort==='trips_worst') {
-            sorted10=[...data.drivers].filter(d=>d.trips>0).sort((a,b)=>a.trips-b.trips).slice(0,10);
-            sortLabel='الأقل رحلات'; sortBadgeColor='#f59e0b';
-          } else {
-            sorted10=data.drivers.filter(d=>d.km>0).slice(0,10);
-            sortLabel='أفضل السائقين — مسافة';
-          }
-          const refVal = (drvSort==='trips_best'||drvSort==='trips_worst') ? (sorted10[0]?.trips||1) : (sorted10[0]?.km||1);
-          const isBad = drvSort==='worst'||drvSort==='trips_worst';
-
-          // ترتيب المركبات
-          let sortedCars, carSortLabel, carBadgeColor='#10b981';
-          if(carSort==='cost_low') {
-            sortedCars=[...data.cars].filter(c=>c.total_cost>0).sort((a,b)=>a.total_cost-b.total_cost).slice(0,10);
-            carSortLabel='أقل المركبات تكلفة'; carBadgeColor='#f59e0b';
-          } else if(carSort==='fuel_high') {
-            sortedCars=[...data.cars].sort((a,b)=>b.fuel_liters-a.fuel_liters).slice(0,10);
-            carSortLabel='الأكثر استهلاكاً وقوداً'; carBadgeColor='#ef4444';
-          } else if(carSort==='fuel_low') {
-            sortedCars=[...data.cars].filter(c=>c.fuel_liters>0).sort((a,b)=>a.fuel_liters-b.fuel_liters).slice(0,10);
-            carSortLabel='الأقل استهلاكاً وقوداً'; carBadgeColor='#6366f1';
-          } else {
-            sortedCars=[...data.cars].filter(c=>c.total_cost>0).sort((a,b)=>b.total_cost-a.total_cost).slice(0,10);
-            carSortLabel='أعلى المركبات تكلفة';
-          }
-
-          function drvRow(d,i) {
-            const val = (drvSort==='trips_best'||drvSort==='trips_worst') ? d.trips : d.km;
-            const barW = Math.round((val/refVal)*100);
-            return `<tr ${isBad?'style="background:rgba(239,68,68,.04)"':''}>
-              <td style="text-align:center;font-size:.85rem;${isBad?'color:#ef4444;font-weight:700':''}">${isBad?i+1:(medals[i]||i+1)}</td>
-              <td><strong>${d.name}</strong></td>
-              <td style="font-size:.75rem"><code>${d.fixed_number||'—'}</code></td>
-              <td>${d.trips}</td>
-              <td><div style="display:flex;align-items:center;gap:.35rem">
-                <div style="width:45px;background:#e2e8f0;border-radius:3px;height:4px">
-                  <div style="width:${barW}%;background:${sortBadgeColor};border-radius:3px;height:4px"></div>
-                </div>
-                <strong style="${isBad?'color:#ef4444':''}">${Math.round(d.km).toLocaleString('ar-EG')}</strong>
-              </div></td>
-              <td style="font-size:.78rem">${d.trips>0?Math.round(d.km/d.trips):0} كم</td>
-            </tr>`;
-          }
-
-          function carRow(c,i) {
-            const isCBad = carSort==='cost_low'||carSort==='fuel_low';
-            return `<tr ${isCBad?'style="background:rgba(239,68,68,.04)"':''}>
-              <td style="text-align:center;${isCBad?'color:#ef4444;font-weight:700':''}">${i+1}</td>
-              <td dir="ltr"><strong>${c.plate}</strong></td>
-              <td style="font-size:.75rem">${c.model}</td>
-              <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
-              <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
-              <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
-              <td><strong style="color:${isCBad?'#ef4444':'var(--primary)'}">${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
-            </tr>`;
-          }
-
-          return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.2rem">
-            <div>
-              <div style="font-weight:700;font-size:.85rem;margin-bottom:.45rem;display:flex;align-items:center;gap:.4rem">
-                <span style="background:${sortBadgeColor};color:white;border-radius:6px;padding:.1rem .5rem;font-size:.7rem;font-weight:800">TOP 10</span>
-                ${sortLabel} <span style="font-size:.7rem;color:var(--muted)">(${data.drivers.length})</span>
-              </div>
-              <div class="table-wrap" style="max-height:320px;overflow-y:auto">
-                <table><thead><tr style="font-size:.73rem"><th style="width:26px"></th><th>السائق</th><th>الرقم</th><th>رحلات</th><th>كم</th><th>متوسط</th></tr></thead>
-                <tbody>${sorted10.map((d,i)=>drvRow(d,i)).join('')}${!sorted10.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>':''}</tbody></table>
-              </div>
-            </div>
-            <div>
-              <div style="font-weight:700;font-size:.85rem;margin-bottom:.45rem;display:flex;align-items:center;gap:.4rem">
-                <span style="background:${carBadgeColor};color:white;border-radius:6px;padding:.1rem .5rem;font-size:.7rem;font-weight:800">TOP 10</span>
-                ${carSortLabel} <span style="font-size:.7rem;color:var(--muted)">(${data.cars.length})</span>
-              </div>
-              <div class="table-wrap" style="max-height:320px;overflow-y:auto">
-                <table><thead><tr style="font-size:.73rem"><th>#</th><th>اللوحة</th><th>الموديل</th><th>وقود(ل)</th><th>تكلفة وقود</th><th>صيانة</th><th>إجمالي</th></tr></thead>
-                <tbody>${sortedCars.map((c,i)=>carRow(c,i)).join('')}${!sortedCars.length?'<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>':''}</tbody></table>
-              </div>
-            </div>
-          </div>
-
-          <!-- سجل السائقين لكل مركبة -->
-          <div style="margin-bottom:1.2rem">
-            <div style="font-weight:700;font-size:.85rem;margin-bottom:.45rem;display:flex;align-items:center;gap:.5rem;border-right:3px solid #7c3aed;padding-right:.6rem">
-              <span style="background:#7c3aed;color:white;border-radius:6px;padding:.1rem .5rem;font-size:.7rem;font-weight:800">📋 سجل</span>
-              سائقو كل مركبة خلال الشهر
-              <span style="font-size:.72rem;color:var(--muted);font-weight:400">(اضغط للتوسيع)</span>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:.4rem">
-              ${data.cars.filter(c=>c.trips>0).map((c,ci)=>{
-                const carDrivers = (data.drivers_per_car && data.drivers_per_car[c.car_id]) || [];
-                const hasMulti = carDrivers.length > 1;
-                const driverBadges = carDrivers.length
-                  ? carDrivers.map(dr=>`<span style="display:inline-flex;align-items:center;gap:.3rem;background:${hasMulti?'#fef3c7':'#f0fdf4'};border:1px solid ${hasMulti?'#fcd34d':'#6ee7b7'};border-radius:20px;padding:.2rem .6rem;font-size:.78rem;font-weight:600;color:${hasMulti?'#92400e':'#065f46'}">👨‍✈️ ${dr.name}${dr.fixed_number?' <code style=\'font-size:.7rem\'>'+ dr.fixed_number+'</code>':''}${dr.period?' <small style=\'color:#64748b\'>('+dr.period+')</small>':''}</span>`).join(' ')
-                  : '<span style="color:var(--muted);font-size:.8rem">لا يوجد سائق مسجل</span>';
-                return `<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
-                  <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'flex':'none'" style="padding:.5rem .9rem;background:var(--surface-2);cursor:pointer;display:flex;align-items:center;gap:.6rem;font-size:.85rem;user-select:none">
-                    <span style="font-weight:700;color:var(--primary)" dir="ltr">${c.plate}</span>
-                    <span style="color:var(--muted);font-size:.78rem">${c.model}</span>
-                    ${hasMulti?'<span style="background:#fef3c7;border:1px solid #fcd34d;border-radius:20px;padding:.05rem .4rem;font-size:.68rem;color:#92400e;font-weight:700">⚠️ أكثر من سائق</span>':''}
-                    <span style="margin-right:auto;font-size:.75rem;color:var(--muted)">${c.trips} رحلة · ${Math.round(c.km||0).toLocaleString('ar-EG')} كم ▾</span>
-                  </div>
-                  <div style="display:none;padding:.6rem .9rem;border-top:1px solid var(--border);flex-wrap:wrap;gap:.35rem">${driverBadges}</div>
-                </div>`;
-              }).join('')}
-            </div>
-          </div>`;
-        })()}
+        ${summaryHtml}
+        ${mainHtml}
       </div>`;
   } catch(e) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
@@ -9200,42 +9279,7 @@ async function loadMonthlyReport() {
 // ── Monthly Report Dropdown Helpers ──
 window._mrDrvSort = 'best';
 window._mrCarSort = 'cost_high';
-
-function toggleMrSort() {
-  const dd = document.getElementById('mrSortDropdown');
-  const tr = document.getElementById('mrSortTrigger');
-  const isOpen = dd.style.display !== 'none';
-  // close all other dropdowns
-  document.querySelectorAll('.cs-dropdown').forEach(d=>d.style.display='none');
-  document.querySelectorAll('.cs-trigger').forEach(t=>t.classList.remove('cs-open'));
-  if(!isOpen){ dd.style.display='block'; tr.classList.add('cs-open'); }
-}
-function selectMrSort(el, val, label) {
-  window._mrDrvSort = val;
-  document.getElementById('mrSortLabel').textContent = label;
-  document.getElementById('mrSortDropdown').style.display='none';
-  document.getElementById('mrSortTrigger').classList.remove('cs-open');
-  document.querySelectorAll('#mrSortDropdown .cs-option').forEach(o=>o.classList.remove('cs-selected'));
-  el.classList.add('cs-selected');
-  if(window._mrData) loadMonthlyReport();
-}
-function toggleMrCarSort() {
-  const dd = document.getElementById('mrCarSortDropdown');
-  const tr = document.getElementById('mrCarSortTrigger');
-  const isOpen = dd.style.display !== 'none';
-  document.querySelectorAll('.cs-dropdown').forEach(d=>d.style.display='none');
-  document.querySelectorAll('.cs-trigger').forEach(t=>t.classList.remove('cs-open'));
-  if(!isOpen){ dd.style.display='block'; tr.classList.add('cs-open'); }
-}
-function selectMrCarSort(el, val, label) {
-  window._mrCarSort = val;
-  document.getElementById('mrCarSortLabel').textContent = label;
-  document.getElementById('mrCarSortDropdown').style.display='none';
-  document.getElementById('mrCarSortTrigger').classList.remove('cs-open');
-  document.querySelectorAll('#mrCarSortDropdown .cs-option').forEach(o=>o.classList.remove('cs-selected'));
-  el.classList.add('cs-selected');
-  if(window._mrData) loadMonthlyReport();
-}
+window._mrReportType = 'drivers';
 
 function printMonthlyReport() {
   const d = window._mrData;
