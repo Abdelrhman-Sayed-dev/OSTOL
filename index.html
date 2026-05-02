@@ -1870,8 +1870,14 @@ async function renderOverview() {
 
 /* ── DRIVERS — Modal UX ── */
 async function renderDriversSection() {
-  const drivers = await loadDrivers();
+  const [drivers, perms, cars] = await Promise.all([
+    loadDrivers(),
+    apiCall('/permissions').catch(()=>[]),
+    loadCars().catch(()=>[])
+  ]);
   window._driversCSVData = drivers;
+  window._allPerms = perms;
+  window._allCars  = cars;
   document.getElementById('pageContent').innerHTML = `
     <div class="card">
       <div class="card-header">
@@ -1896,15 +1902,23 @@ async function renderDriversSection() {
       <div class="table-wrap" id="driversList">
         <table><thead><tr>
           <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم الثابت</th>
+          <th>السيارة المخصصة</th>
           <th>انتهاء رخصة السائق</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody id="driversBody">
         ${drivers.length ? drivers.map(d=>{
+          // find assigned car from permissions
+          const perm = window._allPerms ? window._allPerms.find(p=>p.driver_id===d.id) : null;
+          const car  = perm && window._allCars ? window._allCars.find(c=>c.id===perm.car_id) : null;
+          const carBadge = car
+            ? `<span class="badge badge-navy" dir="ltr">🚗 ${car.plate}</span>`
+            : '<span style="color:var(--muted);font-size:.78rem">—</span>';
           return `<tr>
             <td>${d.id}</td>
             <td><strong>${d.name}</strong></td>
             <td dir="ltr">${d.phone||'—'}</td>
             <td><code>${d.fixed_number||'—'}</code></td>
+            <td>${carBadge}</td>
             <td>${licBadge(d.driver_license_expiry, true)}</td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
@@ -1921,7 +1935,7 @@ async function renderDriversSection() {
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
-        }).join('') : '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
+        }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
         </tbody></table>
       </div>
     </div>`;
@@ -2197,10 +2211,33 @@ async function openAssignPermModal() {
 
 /* ── CARS ── */
 async function renderCarsSection() {
-  const cars = await loadCars();
-  window._carsCache = cars;
+  const [cars, perms, drivers] = await Promise.all([
+    loadCars(),
+    apiCall('/permissions').catch(()=>[]),
+    loadDrivers().catch(()=>[])
+  ]);
+  window._carsCache   = cars;
   window._carsCSVData = cars;
+  window._allPerms    = perms;
+
+  // Unassigned cars (no active permission)
+  const assignedCarIds = new Set(perms.map(p=>p.car_id));
+  const unassignedCars = cars.filter(c=>!assignedCarIds.has(c.id));
+
+  // Drivers with no car
+  const assignedDriverIds = new Set(perms.map(p=>p.driver_id));
+  const noCarDrivers = drivers.filter(d=>d.status==='active' && !assignedDriverIds.has(d.id));
+
   document.getElementById('pageContent').innerHTML = `
+    <!-- Tabs -->
+    <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button id="carsTabBtn_all" class="btn btn-primary btn-sm" onclick="switchCarsTab('all')">🚗 كل المركبات (${cars.length})</button>
+      <button id="carsTabBtn_unassigned" class="btn btn-ghost btn-sm" onclick="switchCarsTab('unassigned')">⚠️ غير مخصصة (${unassignedCars.length})</button>
+      <button id="carsTabBtn_nodrivers" class="btn btn-ghost btn-sm" onclick="switchCarsTab('nodrivers')">👤 سائقون بلا سيارة (${noCarDrivers.length})</button>
+    </div>
+
+    <!-- Tab: all cars -->
+    <div id="carsTabPane_all">
     <div class="card">
       <div class="card-header">
         <div class="card-title">🚘 قائمة المركبات (${cars.length})</div>
@@ -2260,7 +2297,58 @@ async function renderCarsSection() {
         }).join('')}
         </tbody></table>
       </div>
+    </div>
+    </div>
+
+    <!-- Tab: unassigned cars -->
+    <div id="carsTabPane_unassigned" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">⚠️ مركبات بدون سائق مخصص (${unassignedCars.length})</div>
+        </div>
+        ${unassignedCars.length ? `<div class="table-wrap">
+          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>الفرع</th><th>الحالة</th></tr></thead>
+          <tbody>${unassignedCars.map(c=>`<tr>
+            <td>${c.id}</td>
+            <td dir="ltr"><strong>${c.plate}</strong></td>
+            <td>${c.car_name||'—'}</td>
+            <td>${c.model||'—'}</td>
+            <td>${c.branch||'—'}</td>
+            <td><span class="badge ${c.status==='available'?'badge-green':'badge-warning'}">${c.status==='available'?'متاحة':'صيانة'}</span></td>
+          </tr>`).join('')}</tbody></table>
+        </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل المركبات مخصصة لسائقين</p></div>'}
+      </div>
+    </div>
+
+    <!-- Tab: drivers without car -->
+    <div id="carsTabPane_nodrivers" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">👤 سائقون نشطون بدون سيارة (${noCarDrivers.length})</div>
+        </div>
+        ${noCarDrivers.length ? `<div class="table-wrap">
+          <table><thead><tr><th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم الثابت</th><th>الفرع</th></tr></thead>
+          <tbody>${noCarDrivers.map(d=>`<tr>
+            <td>${d.id}</td>
+            <td><strong>${d.name}</strong></td>
+            <td dir="ltr">${d.phone||'—'}</td>
+            <td><code>${d.fixed_number||'—'}</code></td>
+            <td>${d.branch||'—'}</td>
+          </tr>`).join('')}</tbody></table>
+        </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل السائقين النشطين لديهم سيارات</p></div>'}
+      </div>
     </div>`;
+
+  // Tab switching function
+  window.switchCarsTab = function(tab) {
+    ['all','unassigned','nodrivers'].forEach(t=>{
+      const pane = document.getElementById('carsTabPane_'+t);
+      const btn  = document.getElementById('carsTabBtn_'+t);
+      if(pane) pane.style.display = t===tab ? 'block' : 'none';
+      if(btn)  { btn.className = t===tab ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'; }
+    });
+  };
+
   document.getElementById('carsList').addEventListener('click',async e=>{
     if(e.target.closest('.edit-car')){const cid=e.target.closest('.edit-car').dataset.id; const car=(window._carsCache||[]).find(c=>String(c.id)===String(cid))||{}; openAddCarModal(cid,car);}
     if(e.target.closest('.del-car')){const id=+e.target.closest('.del-car').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/cars/${id}`,'DELETE');showNotification('تم الحذف','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');}}
@@ -7099,25 +7187,91 @@ function dpWsModal(type) {
   if(isFuelType) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
   else if(type==='oil') specific=`
     <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.8rem 1rem;margin-bottom:.6rem">
-      <div style="font-size:.78rem;font-weight:700;color:#0369a1;margin-bottom:.7rem">🛢️ أنواع الزيوت المصروفة</div>
-      ${OIL_SUBTYPES.map(s=>`
+      <div style="font-size:.78rem;font-weight:700;color:#0369a1;margin-bottom:.7rem">🛢️ اختر الزيوت المصروفة</div>
+      <div style="font-size:.72rem;color:#64748b;margin-bottom:.6rem">اختر "تم الصرف" لكل نوع وأدخل الكمية</div>
         <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
-          <div style="font-size:.8rem;font-weight:600;color:#334155">${s.icon} ${s.label}</div>
-          <select id="oil_chk_${s.key}" onchange="toggleOilQty('${s.key}')"
+          <div style="font-size:.8rem;font-weight:600;color:#334155">🔴 زيت المحرك</div>
+          <select id="oil_chk_oil_motor" onchange="toggleOilQty('oil_motor')"
             style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
             <option value="no">لم يُصرف</option>
             <option value="yes">✅ تم الصرف</option>
           </select>
-          <div id="oil_qty_wrap_${s.key}" style="display:none">
-            <input type="number" id="oil_qty_${s.key}" placeholder="الكمية (${s.unit})"
-              min="0.1" step="0.1"
-              style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
+          <div style="position:relative">
+            <div id="oil_qty_wrap_oil_motor" style="display:none">
+              <input type="number" id="oil_qty_oil_motor" placeholder="لتر"
+                min="0.1" step="0.1"
+                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
+            </div>
+            <div id="oil_qty_empty_oil_motor" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
           </div>
-          <div id="oil_qty_empty_${s.key}" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
-        </div>`).join('')}
+        </div>
+        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
+          <div style="font-size:.8rem;font-weight:600;color:#334155">🟠 زيت التروس</div>
+          <select id="oil_chk_oil_gear" onchange="toggleOilQty('oil_gear')"
+            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
+            <option value="no">لم يُصرف</option>
+            <option value="yes">✅ تم الصرف</option>
+          </select>
+          <div style="position:relative">
+            <div id="oil_qty_wrap_oil_gear" style="display:none">
+              <input type="number" id="oil_qty_oil_gear" placeholder="لتر"
+                min="0.1" step="0.1"
+                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
+            </div>
+            <div id="oil_qty_empty_oil_gear" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
+          <div style="font-size:.8rem;font-weight:600;color:#334155">🟡 زيت الفرامل</div>
+          <select id="oil_chk_oil_brake" onchange="toggleOilQty('oil_brake')"
+            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
+            <option value="no">لم يُصرف</option>
+            <option value="yes">✅ تم الصرف</option>
+          </select>
+          <div style="position:relative">
+            <div id="oil_qty_wrap_oil_brake" style="display:none">
+              <input type="number" id="oil_qty_oil_brake" placeholder="لتر"
+                min="0.1" step="0.1"
+                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
+            </div>
+            <div id="oil_qty_empty_oil_brake" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
+          <div style="font-size:.8rem;font-weight:600;color:#334155">🔵 زيت الهيدروليك</div>
+          <select id="oil_chk_oil_hydro" onchange="toggleOilQty('oil_hydro')"
+            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
+            <option value="no">لم يُصرف</option>
+            <option value="yes">✅ تم الصرف</option>
+          </select>
+          <div style="position:relative">
+            <div id="oil_qty_wrap_oil_hydro" style="display:none">
+              <input type="number" id="oil_qty_oil_hydro" placeholder="لتر"
+                min="0.1" step="0.1"
+                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
+            </div>
+            <div id="oil_qty_empty_oil_hydro" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:.4rem;align-items:center;margin-bottom:.45rem">
+          <div style="font-size:.8rem;font-weight:600;color:#334155">⚫ شحم</div>
+          <select id="oil_chk_oil_grease" onchange="toggleOilQty('oil_grease')"
+            style="padding:.35rem .5rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.8rem;background:#fff">
+            <option value="no">لم يُصرف</option>
+            <option value="yes">✅ تم الصرف</option>
+          </select>
+          <div style="position:relative">
+            <div id="oil_qty_wrap_oil_grease" style="display:none">
+              <input type="number" id="oil_qty_oil_grease" placeholder="كجم"
+                min="0.1" step="0.1"
+                style="width:100%;padding:.35rem .5rem;border:1.5px solid #0ea5e9;border-radius:8px;font-size:.82rem">
+            </div>
+            <div id="oil_qty_empty_oil_grease" style="color:#94a3b8;font-size:.75rem;text-align:center">—</div>
+          </div>
+        </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
-      <div class="form-group"><label>ساعات المحرك</label><input type="number" id="wEngHours" placeholder="مثال: 2500" min="0"></div>
+      <div class="form-group"><label>ساعات المحرك</label><input type="number" id="wEngHours" placeholder="2500" min="0"></div>
       <div class="form-group"><label>رقم المستند</label><input type="text" id="wDocNum" placeholder="2024/001"></div>
       <div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="ورشة الموقع"></div>
     </div>
