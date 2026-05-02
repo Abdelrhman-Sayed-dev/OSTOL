@@ -8596,14 +8596,16 @@ async function openEditMaintenanceModal(id) {
     const maintenance_type = document.getElementById('eMaintType').value;
     const interval_km      = parseFloat(document.getElementById('eMaintKmInt').value)  || null;
     const interval_days    = parseInt(document.getElementById('eMaintDayInt').value)   || null;
+    const last_done_km     = parseFloat(document.getElementById('eMaintLastKm').value) || null;
+    const last_done_date   = document.getElementById('eMaintLastDate').value           || null;
     if(!car_id)           return showNotification('اختر المركبة', 'error');
     if(!maintenance_type) return showNotification('اختر نوع الصيانة', 'error');
-    if(!interval_km && !interval_days) return showNotification('حدد الفاصل الزمني (كم أو يوم)', 'error');
+    if(!interval_km && !interval_days) return showNotification('حدد الفاصل الزمني (كم أو يوم على الأقل)', 'error');
 
+    // نبعت فقط الحقول اللي اتغيرت + car_id دايماً
     const body = {
       car_id, maintenance_type, interval_km, interval_days,
-      last_done_km:      parseFloat(document.getElementById('eMaintLastKm').value)   || null,
-      last_done_date:    document.getElementById('eMaintLastDate').value              || null,
+      last_done_km, last_done_date,
       alert_km_before:   parseFloat(document.getElementById('eMaintAlertKm').value)  || 500,
       alert_days_before: parseInt(document.getElementById('eMaintAlertDay').value)   || 7,
       notes:             document.getElementById('eMaintNotes').value.trim(),
