@@ -699,8 +699,34 @@ BRANCHES = [
 
 WORKSHOP_TYPES = [
     "fuel_solar", "fuel_92", "fuel_95", "fuel_80", "fuel_cng",
-    "oil", "filter", "tire", "battery", "belt", "other",
+    "oil",           # إجمالي الزيوت (legacy)
+    "oil_motor",     # زيت المحرك
+    "oil_gear",      # زيت التروس
+    "oil_brake",     # زيت الفرامل
+    "oil_hydro",     # زيت الهيدروليك
+    "oil_grease",    # شحم
+    "filter", "tire", "battery", "belt", "other",
 ]
+
+# أنواع الزيت التفصيلية
+OIL_SUBTYPES = ["oil_motor","oil_gear","oil_brake","oil_hydro","oil_grease"]
+
+OIL_SUBTYPE_LABELS = {
+    "oil_motor":  "زيت المحرك",
+    "oil_gear":   "زيت التروس",
+    "oil_brake":  "زيت الفرامل",
+    "oil_hydro":  "زيت الهيدروليك",
+    "oil_grease": "شحم",
+}
+
+# col name for page2 mapping
+OIL_SUBTYPE_COL = {
+    "oil_motor":  "motor",
+    "oil_gear":   "gear",
+    "oil_brake":  "brake",
+    "oil_hydro":  "hydraulic",
+    "oil_grease": "grease",
+}
 
 class CarCreate(BaseModel):
     plate: str; model: str; status: str = "available"
@@ -1859,7 +1885,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
         raise HTTPException(403, "غير مصرح")
     # ── احسب السعر الإجمالي بشكل موحّد لكل الأدوار ──
     # الأنواع اللي ليها كمية: الوقود بكل أنواعه + الزيت + الكوتش
-    QUANTITY_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t in ("oil","tire")}
+    QUANTITY_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil") or t in ("tire",)}
     HAS_QUANTITY   = rec.type in QUANTITY_TYPES
 
     with get_db() as conn:
@@ -2028,7 +2054,7 @@ async def get_operational_page2(
     tires     = []
     batteries = []
 
-    OIL_TYPES     = {"oil", "filter"}
+    OIL_TYPES     = {"oil", "oil_motor", "oil_gear", "oil_brake", "oil_hydro", "oil_grease", "filter"}
     TIRE_TYPES    = {"tire"}
     BATTERY_TYPES = {"battery"}
 
@@ -2040,7 +2066,15 @@ async def get_operational_page2(
         "فلتر مكيف":    "أخرى",
     }
 
-    # Oil type mapping from operation_type
+    # Map oil subtype → column
+    OIL_TYPE_COL = {
+        "oil_motor":  "motor",
+        "oil_gear":   "gear",
+        "oil_brake":  "brake",
+        "oil_hydro":  "hydraulic",
+        "oil_grease": "grease",
+        "oil":        "other",   # legacy
+    }
     OIL_OP_LABELS = {
         "زيت محرك":    "motor",
         "زيت تروس":    "gear",
@@ -2065,8 +2099,11 @@ async def get_operational_page2(
         recv     = r.get("receiver_name","") or ""
 
         if t in OIL_TYPES:
-            # Determine oil column from operation_type
-            oil_col = OIL_OP_LABELS.get(op, "other")
+            # If it's a subtype, use type directly; else fall back to operation_type
+            if t in OIL_TYPE_COL:
+                oil_col = OIL_TYPE_COL[t]
+            else:
+                oil_col = OIL_OP_LABELS.get(op, "other")
             oils.append({
                 "date":         date_str,
                 "oil_col":      oil_col,      # motor/gear/brake/hydraulic/grease/other
@@ -2968,7 +3005,8 @@ async def operational_report(
     date_from:   Optional[str] = None,
     date_to:     Optional[str] = None,
     report_type: str = "summary",   # summary | detailed
-    group_by:    str = "day",       # day | month | year  (used only when detailed)
+    group_by:    str = "month",     # day | week | month | year  (used only when detailed)
+    granularity: str = "monthly",   # daily | weekly | monthly (alias, mapped by frontend)
     cu: dict = Depends(require_admin_or_reporter)
 ):
     """
