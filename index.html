@@ -9115,7 +9115,7 @@ async function renderDriverKpiSection() {
       </div>
     </div>
   `;
-  await loadKpiData();
+  setTimeout(() => loadKpiData(), 50);
 }
 
 let _kpiData = [];
