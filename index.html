@@ -9049,7 +9049,7 @@ async function doMaintenanceImportConfirm() {
 // DRIVER KPI — مؤشرات أداء السائقين
 // ═══════════════════════════════════════════════════════
 async function renderDriverKpiSection() {
-  const c = document.getElementById('mainContent');
+  const c = document.getElementById('pageContent');
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
@@ -9115,7 +9115,7 @@ async function renderDriverKpiSection() {
       </div>
     </div>
   `;
-  setTimeout(() => loadKpiData(), 50);
+  await loadKpiData();
 }
 
 let _kpiData = [];
