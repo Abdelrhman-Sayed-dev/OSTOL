@@ -8563,7 +8563,7 @@ async function openAddMaintenanceModal() {
     </div>
     <div class="two-col">
       <div class="form-group"><label>كل كام كم</label><input type="number" id="mMaintKmInt" placeholder="مثال: 5000" min="0" step="100"></div>
-      <div class="form-group"><label>أو كل كام يوم</label><input type="number" id="mMaintDayInt" placeholder="مثال: 90" min="0"></div>
+      <div class="form-group"><label>أو كل كام يوم</label><input type="number" id="mMaintDayInt" placeholder="مثال: 50" min="0" value="50"></div>
     </div>
     <div class="two-col">
       <div class="form-group"><label>آخر قراءة عداد عند الصيانة (كم)</label><input type="number" id="mMaintLastKm" placeholder="مثال: 45000" min="0"></div>
@@ -8672,7 +8672,7 @@ async function openEditMaintenanceModal(id) {
       <div class="form-group"><label>كل كام كم</label>
         <input type="number" id="eMaintKmInt" value="${rec.interval_km||''}" placeholder="مثال: 5000" min="0" step="100"></div>
       <div class="form-group"><label>أو كل كام يوم</label>
-        <input type="number" id="eMaintDayInt" value="${rec.interval_days||''}" placeholder="مثال: 90" min="0"></div>
+        <input type="number" id="eMaintDayInt" value="${rec.interval_days||50}" placeholder="مثال: 50" min="0"></div>
     </div>
     <div class="two-col">
       <div class="form-group"><label>آخر قراءة عداد (كم)</label>
