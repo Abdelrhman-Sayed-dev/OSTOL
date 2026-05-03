@@ -1476,6 +1476,7 @@ function buildAdminNav() {
     {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
+    {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
@@ -1556,6 +1557,7 @@ async function renderSection(id) {
     case 'super-logs':      await renderSuperLogs(); break;
     case 'driver-photos': await renderDriverPhotosSection(); break;
     case 'import-data':     await renderImportSection(); break;
+    case 'driver-kpi':      await renderDriverKpiSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -6067,7 +6069,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -9040,6 +9042,259 @@ async function doMaintenanceImportConfirm() {
       </div>
     </div>`;
   window._maintImportData = null;
+}
+
+
+// ═══════════════════════════════════════════════════════
+// DRIVER KPI — مؤشرات أداء السائقين
+// ═══════════════════════════════════════════════════════
+async function renderDriverKpiSection() {
+  const c = document.getElementById('mainContent');
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  c.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">🏆 مؤشرات أداء السائقين (KPI)</div>
+    </div>
+
+    <!-- فلاتر -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;min-width:140px">
+            <label>الشهر</label>
+            <input type="month" id="kpiMonth" value="${defaultMonth}"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+          </div>
+          <div class="form-group" style="margin:0;min-width:180px">
+            <label>الفرع</label>
+            <input type="text" id="kpiBranch" placeholder="الكل" value=""
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="loadKpiData()">🔍 عرض</button>
+          <button class="btn btn-outline btn-sm" onclick="exportKpiCSV()">📥 تصدير CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ملخص إجمالي -->
+    <div id="kpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1rem"></div>
+
+    <!-- جدول المقارنة -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏅 ترتيب السائقين</div>
+        <input type="text" id="kpiSearch" placeholder="ابحث باسم السائق..."
+          oninput="filterKpiTable(this.value)"
+          style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:200px">
+      </div>
+      <div class="table-wrap">
+        <table id="kpiTable">
+          <thead>
+            <tr>
+              <th style="width:40px">#</th>
+              <th>السائق</th>
+              <th>الفرع</th>
+              <th style="text-align:center">النقاط الكلية</th>
+              <th style="text-align:center">الكيلومترات</th>
+              <th style="text-align:center">نقاط الكم</th>
+              <th style="text-align:center">الطوارئ</th>
+              <th style="text-align:center">نقاط الطوارئ</th>
+              <th style="text-align:center">الوقود (ل)</th>
+              <th style="text-align:center">استهلاك ل/100كم</th>
+              <th style="text-align:center">الطلبات المفتوحة</th>
+              <th style="text-align:center">التصنيف</th>
+              <th style="text-align:center">تفاصيل</th>
+            </tr>
+          </thead>
+          <tbody id="kpiTableBody">
+            <tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  await loadKpiData();
+}
+
+let _kpiData = [];
+
+async function loadKpiData() {
+  const month  = document.getElementById('kpiMonth')?.value || '';
+  const branch = document.getElementById('kpiBranch')?.value?.trim() || '';
+  const tbody  = document.getElementById('kpiTableBody');
+  const summary = document.getElementById('kpiSummary');
+
+  if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
+
+  try {
+    let url = `/reports/driver-kpi?month=${month}`;
+    if (branch) url += `&branch=${encodeURIComponent(branch)}`;
+
+    const data = await apiCall(url);
+    _kpiData = data.drivers || [];
+
+    // ── ملخص ──
+    const active = _kpiData.length;
+    const avgScore = active ? (_kpiData.reduce((s,d)=>s+d.total_score,0)/active).toFixed(1) : 0;
+    const topDriver = _kpiData[0];
+    const excellent = _kpiData.filter(d=>d.grade==='ممتاز').length;
+    const needsWork = _kpiData.filter(d=>d.grade==='يحتاج تحسين').length;
+
+    if (summary) summary.innerHTML = [
+      {label:'إجمالي السائقين', value: active, icon:'👨‍✈️', color:'var(--primary)'},
+      {label:'متوسط النقاط',    value: avgScore+'%', icon:'📊', color:'#3b82f6'},
+      {label:'تصنيف ممتاز',    value: excellent, icon:'🌟', color:'#10b981'},
+      {label:'يحتاج تحسين',    value: needsWork, icon:'⚠️', color:'#ef4444'},
+      {label:'أفضل سائق',       value: topDriver?.driver_name||'—', icon:'🏆', color:'#f59e0b'},
+    ].map(s=>`
+      <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:1.5rem">${s.icon}</div>
+        <div style="font-size:.72rem;color:var(--muted);margin:.3rem 0">${s.label}</div>
+        <div style="font-weight:800;color:${s.color};font-size:1rem">${s.value}</div>
+      </div>`).join('');
+
+    renderKpiTable(_kpiData);
+  } catch(e) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
+  }
+}
+
+function renderKpiTable(rows) {
+  const tbody = document.getElementById('kpiTableBody');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(d => {
+    // شريط النقاط
+    const barColor = d.total_score>=85 ? '#10b981' : d.total_score>=70 ? '#3b82f6' : d.total_score>=50 ? '#f97316' : '#ef4444';
+    const scoreBar = `
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <div style="flex:1;background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+          <div style="width:${d.total_score}%;height:100%;background:${barColor};border-radius:4px;transition:width .4s"></div>
+        </div>
+        <span style="font-weight:800;color:${barColor};min-width:36px">${d.total_score}%</span>
+      </div>`;
+
+    const grade = `<span style="background:${d.grade_color}20;color:${d.grade_color};font-size:.75rem;padding:.2rem .6rem;border-radius:20px;font-weight:700">${d.grade}</span>`;
+
+    const rankEmoji = d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':`#${d.rank}`;
+
+    const consumptionCell = d.consumption
+      ? `<span style="color:${d.consumption<=30?'#10b981':d.consumption<=35?'#f97316':'#ef4444'}">${d.consumption}</span>`
+      : `<span style="color:var(--muted)">—</span>`;
+
+    const fuelScoreCell = d.fuel_score !== null
+      ? `<span style="color:${d.fuel_score>=85?'#10b981':d.fuel_score>=65?'#f97316':'#ef4444'}">${d.fuel_score}%</span>`
+      : `<span style="color:var(--muted)">—</span>`;
+
+    return `<tr>
+      <td style="text-align:center;font-weight:700;font-size:1rem">${rankEmoji}</td>
+      <td><strong>${d.driver_name}</strong></td>
+      <td style="font-size:.82rem;color:var(--muted)">${d.branch||'—'}</td>
+      <td>${scoreBar}</td>
+      <td style="text-align:center">${d.km.toLocaleString('ar-EG')} كم</td>
+      <td style="text-align:center;color:${d.km_score>=85?'#10b981':d.km_score>=50?'#f97316':'#ef4444'}">${d.km_score}%</td>
+      <td style="text-align:center;color:${d.emergencies===0?'#10b981':'#ef4444'}">${d.emergencies}</td>
+      <td style="text-align:center;color:${d.emg_score===100?'#10b981':d.emg_score>=70?'#f97316':'#ef4444'}">${d.emg_score}%</td>
+      <td style="text-align:center">${d.fuel_liters>0?d.fuel_liters.toLocaleString('ar-EG')+' ل':'—'}</td>
+      <td style="text-align:center">${consumptionCell}</td>
+      <td style="text-align:center;color:${d.open_requests===0?'#10b981':'#f97316'}">${d.open_requests}</td>
+      <td style="text-align:center">${grade}</td>
+      <td style="text-align:center">
+        <button class="btn btn-ghost btn-sm" onclick="showKpiDetail(${d.driver_id})">📋</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterKpiTable(q) {
+  const filtered = q.trim()
+    ? _kpiData.filter(d => d.driver_name.includes(q.trim()))
+    : _kpiData;
+  renderKpiTable(filtered);
+}
+
+function showKpiDetail(driverId) {
+  const d = _kpiData.find(x => x.driver_id === driverId);
+  if (!d) return;
+
+  const meter = (label, score, detail) => {
+    if (score === null) return '';
+    const color = score>=85?'#10b981':score>=70?'#3b82f6':score>=50?'#f97316':'#ef4444';
+    return `
+      <div style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
+          <span style="font-weight:700;font-size:.88rem">${label}</span>
+          <span style="color:${color};font-weight:800">${score}%</span>
+        </div>
+        <div style="background:var(--border);border-radius:6px;height:10px;overflow:hidden">
+          <div style="width:${score}%;height:100%;background:${color};border-radius:6px;transition:width .5s"></div>
+        </div>
+        ${detail ? `<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${detail}</div>` : ''}
+      </div>`;
+  };
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🏆 تفاصيل KPI — ${d.driver_name}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="padding:.5rem 0">
+
+      <!-- النقاط الكلية -->
+      <div style="text-align:center;padding:1.5rem;background:var(--surface-2);border-radius:16px;margin-bottom:1.5rem">
+        <div style="font-size:3rem;font-weight:900;color:${d.grade_color};line-height:1">${d.total_score}%</div>
+        <div style="font-size:1.1rem;color:${d.grade_color};margin-top:.5rem">${d.grade}</div>
+        <div style="font-size:.82rem;color:var(--muted);margin-top:.3rem">
+          ${d.month} &nbsp;|&nbsp; الترتيب: ${d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':'#'+d.rank}
+        </div>
+      </div>
+
+      <!-- المؤشرات -->
+      <div style="margin-bottom:1.5rem">
+        ${meter('📍 الكيلومترات ('+d.km.toLocaleString('ar-EG')+' كم)', d.km_score, 'الهدف: 3,000 كم')}
+        ${meter('🚨 سلامة الطوارئ', d.emg_score, d.emergencies+' بلاغ هذا الشهر')}
+        ${meter('⛽ كفاءة الوقود', d.fuel_score, d.consumption?d.consumption+' ل/100كم':null)}
+        ${meter('📋 الطلبات المفتوحة', d.req_score, d.open_requests+' طلب معلق')}
+      </div>
+
+      <!-- إحصائيات إضافية -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        ${[
+          ['🗺️ الرحلات', d.trips+' رحلة'],
+          ['⛽ الوقود', d.fuel_liters>0?d.fuel_liters+' لتر':'—'],
+          ['🔧 الورشة', d.maint_count+' سجل'],
+          ['💰 تكلفة الورشة', d.maint_cost>0?d.maint_cost.toLocaleString('ar-EG')+' ج':'—'],
+        ].map(([lbl,val])=>`
+          <div style="background:var(--surface-2);border-radius:10px;padding:.75rem;text-align:center">
+            <div style="font-size:.72rem;color:var(--muted)">${lbl}</div>
+            <div style="font-weight:700;margin-top:.2rem">${val}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+  `);
+}
+
+function exportKpiCSV() {
+  if (!_kpiData.length) return showNotification('لا توجد بيانات للتصدير', 'error');
+  const headers = ['الترتيب','السائق','الفرع','النقاط الكلية','التصنيف','الكيلومترات','نقاط الكم','الرحلات','الطوارئ','نقاط الطوارئ','الوقود (ل)','استهلاك ل/100كم','نقاط الوقود','طلبات مفتوحة','نقاط الطلبات'];
+  const rows = _kpiData.map(d=>[
+    d.rank, d.driver_name, d.branch, d.total_score+'%', d.grade,
+    d.km, d.km_score+'%', d.trips, d.emergencies, d.emg_score+'%',
+    d.fuel_liters, d.consumption??'', d.fuel_score??'', d.open_requests, d.req_score+'%'
+  ]);
+  const csv = '\uFEFF' + [headers,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download = `kpi_${document.getElementById('kpiMonth')?.value||'report'}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showNotification('✅ تم تصدير التقرير', 'success');
 }
 
 // ═══════════════════════════════════════════════════════════════
