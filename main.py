@@ -4689,3 +4689,206 @@ async def monthly_report(
         "cars":    cars_report,
         "drivers_per_car": drivers_per_car,
     }
+
+# ══════════════════════════════════════════════════════
+# 35. DRIVER KPI — مؤشرات أداء السائقين
+# ══════════════════════════════════════════════════════
+
+def _calc_kpi_score(trips: int, km: float, fuel_liters: float, fuel_consumption: float,
+                    emergencies: int, open_requests: int, target_km: float = 3000.0) -> dict:
+    """حساب نقاط KPI لسائق واحد."""
+    if target_km > 0:
+        km_score = min(100, round((km / target_km) * 100, 1))
+    else:
+        km_score = 0.0
+
+    if emergencies == 0:
+        emg_score = 100.0
+    elif emergencies == 1:
+        emg_score = 70.0
+    elif emergencies == 2:
+        emg_score = 40.0
+    else:
+        emg_score = 0.0
+
+    if km > 0 and fuel_liters > 0:
+        consumption = (fuel_liters / km) * 100
+        if consumption <= 25:
+            fuel_score = 100.0
+        elif consumption <= 30:
+            fuel_score = 85.0
+        elif consumption <= 35:
+            fuel_score = 65.0
+        elif consumption <= 40:
+            fuel_score = 45.0
+        else:
+            fuel_score = 20.0
+    else:
+        fuel_score = None
+
+    if open_requests == 0:
+        req_score = 100.0
+    elif open_requests <= 2:
+        req_score = 75.0
+    elif open_requests <= 4:
+        req_score = 50.0
+    else:
+        req_score = 25.0
+
+    scores = [km_score, emg_score, req_score]
+    if fuel_score is not None:
+        scores.append(fuel_score)
+    total = round(sum(scores) / len(scores), 1)
+
+    if total >= 85:
+        grade = "ممتاز"
+        grade_color = "#10b981"
+    elif total >= 70:
+        grade = "جيد"
+        grade_color = "#3b82f6"
+    elif total >= 50:
+        grade = "مقبول"
+        grade_color = "#f97316"
+    else:
+        grade = "يحتاج تحسين"
+        grade_color = "#ef4444"
+
+    return {
+        "total_score":   total,
+        "grade":         grade,
+        "grade_color":   grade_color,
+        "km_score":      km_score,
+        "emg_score":     emg_score,
+        "fuel_score":    fuel_score,
+        "req_score":     req_score,
+    }
+
+
+@app.get("/reports/driver-kpi")
+async def driver_kpi_report(
+    month:     str = Query(None, description="YYYY-MM"),
+    driver_id: int = Query(None),
+    branch:    str = Query(None),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """تقرير مؤشرات أداء السائقين KPI."""
+    if not month:
+        month = datetime.utcnow().strftime("%Y-%m")
+
+    try:
+        y, m = month.split("-")
+        month_start = f"{y}-{m}-01"
+        next_m = int(m) + 1
+        next_y = int(y)
+        if next_m > 12:
+            next_m = 1
+            next_y += 1
+        month_end = f"{next_y}-{next_m:02d}-01"
+    except Exception:
+        raise HTTPException(400, "صيغة الشهر خاطئة — استخدم YYYY-MM")
+
+    eff_branch = _branch_filter(cu) or branch
+
+    with get_db() as conn:
+        c = conn.cursor()
+        q = "SELECT d.id, d.name, d.branch, d.status FROM drivers d WHERE d.status='active'"
+        params: list = []
+        if eff_branch:
+            q += " AND d.branch=?"
+            params.append(eff_branch)
+        if driver_id:
+            q += " AND d.id=?"
+            params.append(driver_id)
+        q += " ORDER BY d.name"
+        c.execute(q, params)
+        drivers = [dict(r) for r in c.fetchall()]
+
+        results = []
+        for d in drivers:
+            did = d["id"]
+
+            c.execute("""
+                SELECT COUNT(*) as cnt,
+                       COALESCE(SUM(end_odometer - start_odometer),0) as km,
+                       MIN(start_time) as first_trip,
+                       MAX(end_time)   as last_trip
+                FROM trips
+                WHERE driver_id=?
+                  AND end_time IS NOT NULL AND end_odometer IS NOT NULL
+                  AND date(start_time) >= ? AND date(start_time) < ?
+            """, (did, month_start, month_end))
+            tr = dict(c.fetchone())
+            trips_count = tr["cnt"] or 0
+            km_total    = max(0.0, float(tr["km"] or 0))
+
+            c.execute("""
+                SELECT COALESCE(SUM(quantity),0) as liters,
+                       COALESCE(SUM(price),0)    as cost
+                FROM workshop_records
+                WHERE driver_id=? AND type LIKE 'fuel_%'
+                  AND date(created_at) >= ? AND date(created_at) < ?
+            """, (did, month_start, month_end))
+            fr = dict(c.fetchone())
+            fuel_liters = float(fr["liters"] or 0)
+            fuel_cost   = float(fr["cost"]   or 0)
+            consumption = round((fuel_liters / km_total) * 100, 1) if km_total > 0 and fuel_liters > 0 else None
+
+            c.execute("""
+                SELECT COUNT(*) FROM emergency_reports
+                WHERE driver_id=?
+                  AND date(created_at) >= ? AND date(created_at) < ?
+            """, (did, month_start, month_end))
+            emg_count = c.fetchone()[0] or 0
+
+            c.execute("""
+                SELECT COUNT(*) FROM driver_requests
+                WHERE driver_id=? AND status='pending'
+            """, (did,))
+            open_req = c.fetchone()[0] or 0
+
+            c.execute("""
+                SELECT COALESCE(SUM(price),0) as mc, COUNT(*) as mcc
+                FROM workshop_records
+                WHERE driver_id=? AND type NOT LIKE 'fuel_%'
+                  AND date(created_at) >= ? AND date(created_at) < ?
+            """, (did, month_start, month_end))
+            wr = dict(c.fetchone())
+            maint_cost  = float(wr["mc"] or 0)
+            maint_count = int(wr["mcc"] or 0)
+
+            scores = _calc_kpi_score(
+                trips=trips_count, km=km_total,
+                fuel_liters=fuel_liters, fuel_consumption=consumption or 0,
+                emergencies=emg_count, open_requests=open_req,
+            )
+
+            results.append({
+                "driver_id":    did,
+                "driver_name":  d["name"],
+                "branch":       d["branch"] or "",
+                "month":        month,
+                "trips":        trips_count,
+                "km":           round(km_total, 1),
+                "fuel_liters":  round(fuel_liters, 1),
+                "fuel_cost":    round(fuel_cost, 2),
+                "consumption":  consumption,
+                "emergencies":  emg_count,
+                "open_requests":open_req,
+                "maint_cost":   round(maint_cost, 2),
+                "maint_count":  maint_count,
+                "first_trip":   tr["first_trip"],
+                "last_trip":    tr["last_trip"],
+                **scores,
+            })
+
+    results.sort(key=lambda x: x["total_score"], reverse=True)
+    for i, r in enumerate(results, 1):
+        r["rank"] = i
+
+    return {
+        "month":         month,
+        "branch":        eff_branch or "كل الفروع",
+        "generated_at":  datetime.utcnow().isoformat() + "Z",
+        "total_drivers": len(results),
+        "drivers":       results,
+    }
