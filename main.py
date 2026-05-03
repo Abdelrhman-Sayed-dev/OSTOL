@@ -25,7 +25,7 @@ import jwt
 import sqlite3
 from fastapi import (
     FastAPI, Depends, HTTPException, Request,
-    UploadFile, File, status
+    UploadFile, File, status, Query
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
