@@ -4222,9 +4222,16 @@ async def get_maintenance_schedule(cu: dict = Depends(require_admin_or_reporter)
     branch = _branch_filter(cu)
     with get_db() as conn:
         c = conn.cursor()
-        # جيب أحدث عداد لكل عربية من الرحلات المنتهية
-        c.execute("""SELECT car_id, MAX(end_odometer) as max_odo
-                     FROM trips WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL
+        # جيب أحدث عداد لكل عربية من آخر رحلة منتهية (بالتاريخ مش بأكبر قيمة)
+        c.execute("""SELECT car_id, end_odometer as max_odo
+                     FROM trips
+                     WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL
+                     AND id IN (
+                         SELECT id FROM trips
+                         WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL
+                         GROUP BY car_id
+                         HAVING end_time = MAX(end_time)
+                     )
                      GROUP BY car_id""")
         odo_map = {r["car_id"]: r["max_odo"] for r in c.fetchall()}
 
