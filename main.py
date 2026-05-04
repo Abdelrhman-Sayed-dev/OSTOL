@@ -4164,78 +4164,97 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_su
 
     try:
         with get_db() as conn:
-            c = conn.cursor()
 
-            # ── تحقق من الـ schema وعمل migration لو لازم ──
+            # ══ Step 1: تحقق من الـ schema ══
+            c = conn.cursor()
             c.execute("PRAGMA table_info(voice_notes)")
             vn_cols = {r["name"] for r in c.fetchall()}
 
+            # ══ Step 2: Migration فوري لو الجدول قديم ══
             if "target_user_id" not in vn_cols:
+                log.info("🔄 voice_notes migration starting in POST...")
                 try:
-                    c.execute("""CREATE TABLE IF NOT EXISTS vn_post_tmp(
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        sender_id INTEGER NOT NULL,
-                        sender_role TEXT NOT NULL DEFAULT 'superuser',
-                        target_group TEXT DEFAULT '',
+                    # أوقف foreign keys أثناء الـ DDL
+                    conn.execute("PRAGMA foreign_keys=OFF")
+
+                    conn.execute("""CREATE TABLE vn_new(
+                        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sender_id      INTEGER NOT NULL,
+                        sender_role    TEXT    NOT NULL DEFAULT 'superuser',
+                        target_group   TEXT    DEFAULT '',
                         target_user_id INTEGER DEFAULT NULL,
-                        audio_data TEXT NOT NULL,
-                        duration_sec REAL DEFAULT 0,
-                        created_at TEXT NOT NULL,
-                        expires_at TEXT NOT NULL,
-                        play_count INTEGER DEFAULT 0,
-                        max_plays INTEGER DEFAULT 2,
-                        is_deleted INTEGER DEFAULT 0
+                        audio_data     TEXT    NOT NULL,
+                        duration_sec   REAL    DEFAULT 0,
+                        created_at     TEXT    NOT NULL,
+                        expires_at     TEXT    NOT NULL,
+                        play_count     INTEGER DEFAULT 0,
+                        max_plays      INTEGER DEFAULT 2,
+                        is_deleted     INTEGER DEFAULT 0
                     )""")
-                    shared = ",".join(x for x in
+
+                    # انقل البيانات القديمة
+                    safe = ",".join(x for x in
                         ["id","sender_id","target_group","audio_data","duration_sec",
                          "created_at","expires_at","play_count","max_plays","is_deleted"]
                         if x in vn_cols)
-                    if shared:
-                        c.execute(f"INSERT INTO vn_post_tmp({shared}) SELECT {shared} FROM voice_notes")
-                    c.execute("DROP TABLE voice_notes")
-                    c.execute("ALTER TABLE vn_post_tmp RENAME TO voice_notes")
+                    if safe:
+                        conn.execute(f"INSERT INTO vn_new({safe}) SELECT {safe} FROM voice_notes")
+
+                    conn.execute("DROP TABLE voice_notes")
+                    conn.execute("ALTER TABLE vn_new RENAME TO voice_notes")
+
+                    # commit الـ DDL
+                    conn.commit()
+                    conn.execute("PRAGMA foreign_keys=ON")
+
                     vn_cols = {"id","sender_id","sender_role","target_group","target_user_id",
                                "audio_data","duration_sec","created_at","expires_at",
                                "play_count","max_plays","is_deleted"}
-                    log.info("✅ POST migration done")
-                except Exception as me:
-                    log.error(f"POST migration error: {me}")
-                    # fallback: ابعت للـ group بدل الشخص المعين
+                    log.info("✅ voice_notes migration done!")
+
+                except Exception as mig_err:
+                    log.error(f"Migration error: {mig_err}", exc_info=True)
+                    conn.execute("PRAGMA foreign_keys=ON")
+                    # Fallback: لو migration فشل، ارجع للـ group القديم
                     if tg == "specific":
-                        tg   = "admins"
-                        tuid = None
-                    vn_cols = set()  # يستخدم الـ simple INSERT
+                        tg, tuid = "admins", None
+                    vn_cols = set()
 
-            # ── INSERT حسب الـ schema ──
-            has_uid = "target_user_id" in vn_cols
-            has_role = "sender_role" in vn_cols
-
-            if has_uid and has_role:
-                c.execute("""INSERT INTO voice_notes(sender_id,sender_role,target_group,
-                             target_user_id,audio_data,duration_sec,created_at,expires_at,max_plays)
-                             VALUES(?,?,?,?,?,?,?,?,?)""",
-                          (cu["user_id"], cu.get("role","superuser"), tg, tuid,
-                           body.audio_data, body.duration_sec,
-                           now.isoformat()+"Z", expires, body.max_plays))
-            elif has_uid:
-                c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,
-                             audio_data,duration_sec,created_at,expires_at,max_plays)
-                             VALUES(?,?,?,?,?,?,?,?)""",
-                          (cu["user_id"], tg, tuid, body.audio_data,
-                           body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+            # ══ Step 3: INSERT ══
+            if "target_user_id" in vn_cols and "sender_role" in vn_cols:
+                conn.execute(
+                    """INSERT INTO voice_notes
+                       (sender_id,sender_role,target_group,target_user_id,
+                        audio_data,duration_sec,created_at,expires_at,max_plays)
+                       VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (cu["user_id"], cu.get("role","superuser"), tg, tuid,
+                     body.audio_data, body.duration_sec,
+                     now.isoformat()+"Z", expires, body.max_plays))
+            elif "target_user_id" in vn_cols:
+                conn.execute(
+                    """INSERT INTO voice_notes
+                       (sender_id,target_group,target_user_id,
+                        audio_data,duration_sec,created_at,expires_at,max_plays)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (cu["user_id"], tg, tuid, body.audio_data,
+                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
             else:
-                # جدول قديم - fallback
+                # Fallback للجدول القديم (مش المفروض يحصل)
                 safe_tg = tg if tg in ("admins","drivers") else "admins"
-                c.execute("""INSERT INTO voice_notes(sender_id,target_group,
-                             audio_data,duration_sec,created_at,expires_at,max_plays)
-                             VALUES(?,?,?,?,?,?,?)""",
-                          (cu["user_id"], safe_tg, body.audio_data,
-                           body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+                conn.execute(
+                    """INSERT INTO voice_notes
+                       (sender_id,target_group,audio_data,
+                        duration_sec,created_at,expires_at,max_plays)
+                       VALUES(?,?,?,?,?,?,?)""",
+                    (cu["user_id"], safe_tg, body.audio_data,
+                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
 
-            note_id = c.lastrowid
+            note_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
         return {"id": note_id, "expires_at": expires}
 
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(f"POST /voice-notes error: {e}", exc_info=True)
         raise HTTPException(500, f"خطأ في إرسال الرسالة: {str(e)}")
