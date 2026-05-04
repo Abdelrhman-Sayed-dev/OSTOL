@@ -9563,7 +9563,8 @@ async function renderSuperVoice() {
   try { targets = await apiCall('/voice-notes/targets'); } catch(e){}
 
   const adminsOpts  = (targets.admins  ||[]).map(a=>`<option value="${a.id}">[أدمن] ${a.username}${a.branch?' — '+a.branch:''}</option>`).join('');
-  const driversOpts = (targets.drivers ||[]).map(d=>`<option value="${d.user_id}">[سائق] ${d.name}${d.branch?' — '+d.branch:''}</option>`).join('');
+  const driversOpts = (targets.drivers ||[]).map(d=>`<option value="${d.user_id}">[سائق] ${d.name||d.username}${d.branch?' — '+d.branch:''}</option>`).join('');
+  const hasTargets = (targets.admins||[]).length > 0 || (targets.drivers||[]).length > 0;
 
   // خيارات الهدف حسب الصلاحية
   const targetGroupOptions = isSuperuser
@@ -9591,7 +9592,9 @@ async function renderSuperVoice() {
           <div id="voiceSpecificWrap" class="form-group" style="margin:0;${isSuperuser?'display:none':''}">
             <label>اختر ${isSuperuser ? 'الأدمن أو السائق' : 'السائق'}</label>
             <select id="voiceSpecificUser" class="form-control">
+              <option value="" disabled selected>اختر...</option>
               ${isSuperuser ? `<optgroup label="أدمنز">${adminsOpts}</optgroup><optgroup label="سائقين">${driversOpts}</optgroup>` : driversOpts}
+              ${!hasTargets ? '<option disabled>لا يوجد مستخدمون متاحون</option>' : ''}
             </select>
           </div>
 
