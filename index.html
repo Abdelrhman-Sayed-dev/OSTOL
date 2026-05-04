@@ -1475,8 +1475,10 @@ function buildAdminNav() {
     {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'}, // 9. التقارير
     {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
+    {id:'rental',        icon:'🔄', label:'المعدات المؤجرة'},
+    {id:'monthly-odometer', icon:'📏', label:'العداد الشهري'},
+    {id:'projects',      icon:'🏗️', label:'المشروعات'},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
-    {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
@@ -1545,6 +1547,9 @@ async function renderSection(id) {
     case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
     case 'maintenance':     await renderMaintenanceSection(); break;
+    case 'rental':          await renderRentalSection(); break;
+    case 'monthly-odometer': await renderMonthlyOdometerSection(); break;
+    case 'projects':        await renderProjectsSection(); break;
     case 'monthly-report':   await renderMonthlyReport(); break;
     case 'super-supervisors':await renderSuperSupervisors(); break;
     case 'super-decisions':  await renderSuperDecisions(); break;
@@ -1557,7 +1562,6 @@ async function renderSection(id) {
     case 'super-logs':      await renderSuperLogs(); break;
     case 'driver-photos': await renderDriverPhotosSection(); break;
     case 'import-data':     await renderImportSection(); break;
-    case 'driver-kpi':      await renderDriverKpiSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -6069,7 +6073,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','rental','monthly-odometer','projects'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -9044,259 +9048,6 @@ async function doMaintenanceImportConfirm() {
   window._maintImportData = null;
 }
 
-
-// ═══════════════════════════════════════════════════════
-// DRIVER KPI — مؤشرات أداء السائقين
-// ═══════════════════════════════════════════════════════
-async function renderDriverKpiSection() {
-  const c = document.getElementById('pageContent');
-  const now = new Date();
-  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-
-  c.innerHTML = `
-    <div class="page-header">
-      <div class="page-title">🏆 مؤشرات أداء السائقين (KPI)</div>
-    </div>
-
-    <!-- فلاتر -->
-    <div class="card" style="margin-bottom:1rem">
-      <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
-          <div class="form-group" style="margin:0;min-width:140px">
-            <label>الشهر</label>
-            <input type="month" id="kpiMonth" value="${defaultMonth}"
-              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
-          </div>
-          <div class="form-group" style="margin:0;min-width:180px">
-            <label>الفرع</label>
-            <input type="text" id="kpiBranch" placeholder="الكل" value=""
-              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="loadKpiData()">🔍 عرض</button>
-          <button class="btn btn-outline btn-sm" onclick="exportKpiCSV()">📥 تصدير CSV</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ملخص إجمالي -->
-    <div id="kpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1rem"></div>
-
-    <!-- جدول المقارنة -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">🏅 ترتيب السائقين</div>
-        <input type="text" id="kpiSearch" placeholder="ابحث باسم السائق..."
-          oninput="filterKpiTable(this.value)"
-          style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:200px">
-      </div>
-      <div class="table-wrap">
-        <table id="kpiTable">
-          <thead>
-            <tr>
-              <th style="width:40px">#</th>
-              <th>السائق</th>
-              <th>الفرع</th>
-              <th style="text-align:center">النقاط الكلية</th>
-              <th style="text-align:center">الكيلومترات</th>
-              <th style="text-align:center">نقاط الكم</th>
-              <th style="text-align:center">الطوارئ</th>
-              <th style="text-align:center">نقاط الطوارئ</th>
-              <th style="text-align:center">الوقود (ل)</th>
-              <th style="text-align:center">استهلاك ل/100كم</th>
-              <th style="text-align:center">الطلبات المفتوحة</th>
-              <th style="text-align:center">التصنيف</th>
-              <th style="text-align:center">تفاصيل</th>
-            </tr>
-          </thead>
-          <tbody id="kpiTableBody">
-            <tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-  await loadKpiData();
-}
-
-let _kpiData = [];
-
-async function loadKpiData() {
-  const month  = document.getElementById('kpiMonth')?.value || '';
-  const branch = document.getElementById('kpiBranch')?.value?.trim() || '';
-  const tbody  = document.getElementById('kpiTableBody');
-  const summary = document.getElementById('kpiSummary');
-
-  if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
-
-  try {
-    let url = `/reports/driver-kpi?month=${month}`;
-    if (branch) url += `&branch=${encodeURIComponent(branch)}`;
-
-    const data = await apiCall(url);
-    _kpiData = data.drivers || [];
-
-    // ── ملخص ──
-    const active = _kpiData.length;
-    const avgScore = active ? (_kpiData.reduce((s,d)=>s+d.total_score,0)/active).toFixed(1) : 0;
-    const topDriver = _kpiData[0];
-    const excellent = _kpiData.filter(d=>d.grade==='ممتاز').length;
-    const needsWork = _kpiData.filter(d=>d.grade==='يحتاج تحسين').length;
-
-    if (summary) summary.innerHTML = [
-      {label:'إجمالي السائقين', value: active, icon:'👨‍✈️', color:'var(--primary)'},
-      {label:'متوسط النقاط',    value: avgScore+'%', icon:'📊', color:'#3b82f6'},
-      {label:'تصنيف ممتاز',    value: excellent, icon:'🌟', color:'#10b981'},
-      {label:'يحتاج تحسين',    value: needsWork, icon:'⚠️', color:'#ef4444'},
-      {label:'أفضل سائق',       value: topDriver?.driver_name||'—', icon:'🏆', color:'#f59e0b'},
-    ].map(s=>`
-      <div class="card" style="text-align:center;padding:1rem">
-        <div style="font-size:1.5rem">${s.icon}</div>
-        <div style="font-size:.72rem;color:var(--muted);margin:.3rem 0">${s.label}</div>
-        <div style="font-weight:800;color:${s.color};font-size:1rem">${s.value}</div>
-      </div>`).join('');
-
-    renderKpiTable(_kpiData);
-  } catch(e) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
-  }
-}
-
-function renderKpiTable(rows) {
-  const tbody = document.getElementById('kpiTableBody');
-  if (!tbody) return;
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = rows.map(d => {
-    // شريط النقاط
-    const barColor = d.total_score>=85 ? '#10b981' : d.total_score>=70 ? '#3b82f6' : d.total_score>=50 ? '#f97316' : '#ef4444';
-    const scoreBar = `
-      <div style="display:flex;align-items:center;gap:.5rem">
-        <div style="flex:1;background:var(--border);border-radius:4px;height:6px;overflow:hidden">
-          <div style="width:${d.total_score}%;height:100%;background:${barColor};border-radius:4px;transition:width .4s"></div>
-        </div>
-        <span style="font-weight:800;color:${barColor};min-width:36px">${d.total_score}%</span>
-      </div>`;
-
-    const grade = `<span style="background:${d.grade_color}20;color:${d.grade_color};font-size:.75rem;padding:.2rem .6rem;border-radius:20px;font-weight:700">${d.grade}</span>`;
-
-    const rankEmoji = d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':`#${d.rank}`;
-
-    const consumptionCell = d.consumption
-      ? `<span style="color:${d.consumption<=30?'#10b981':d.consumption<=35?'#f97316':'#ef4444'}">${d.consumption}</span>`
-      : `<span style="color:var(--muted)">—</span>`;
-
-    const fuelScoreCell = d.fuel_score !== null
-      ? `<span style="color:${d.fuel_score>=85?'#10b981':d.fuel_score>=65?'#f97316':'#ef4444'}">${d.fuel_score}%</span>`
-      : `<span style="color:var(--muted)">—</span>`;
-
-    return `<tr>
-      <td style="text-align:center;font-weight:700;font-size:1rem">${rankEmoji}</td>
-      <td><strong>${d.driver_name}</strong></td>
-      <td style="font-size:.82rem;color:var(--muted)">${d.branch||'—'}</td>
-      <td>${scoreBar}</td>
-      <td style="text-align:center">${d.km.toLocaleString('ar-EG')} كم</td>
-      <td style="text-align:center;color:${d.km_score>=85?'#10b981':d.km_score>=50?'#f97316':'#ef4444'}">${d.km_score}%</td>
-      <td style="text-align:center;color:${d.emergencies===0?'#10b981':'#ef4444'}">${d.emergencies}</td>
-      <td style="text-align:center;color:${d.emg_score===100?'#10b981':d.emg_score>=70?'#f97316':'#ef4444'}">${d.emg_score}%</td>
-      <td style="text-align:center">${d.fuel_liters>0?d.fuel_liters.toLocaleString('ar-EG')+' ل':'—'}</td>
-      <td style="text-align:center">${consumptionCell}</td>
-      <td style="text-align:center;color:${d.open_requests===0?'#10b981':'#f97316'}">${d.open_requests}</td>
-      <td style="text-align:center">${grade}</td>
-      <td style="text-align:center">
-        <button class="btn btn-ghost btn-sm" onclick="showKpiDetail(${d.driver_id})">📋</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function filterKpiTable(q) {
-  const filtered = q.trim()
-    ? _kpiData.filter(d => d.driver_name.includes(q.trim()))
-    : _kpiData;
-  renderKpiTable(filtered);
-}
-
-function showKpiDetail(driverId) {
-  const d = _kpiData.find(x => x.driver_id === driverId);
-  if (!d) return;
-
-  const meter = (label, score, detail) => {
-    if (score === null) return '';
-    const color = score>=85?'#10b981':score>=70?'#3b82f6':score>=50?'#f97316':'#ef4444';
-    return `
-      <div style="margin-bottom:1rem">
-        <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
-          <span style="font-weight:700;font-size:.88rem">${label}</span>
-          <span style="color:${color};font-weight:800">${score}%</span>
-        </div>
-        <div style="background:var(--border);border-radius:6px;height:10px;overflow:hidden">
-          <div style="width:${score}%;height:100%;background:${color};border-radius:6px;transition:width .5s"></div>
-        </div>
-        ${detail ? `<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${detail}</div>` : ''}
-      </div>`;
-  };
-
-  openModal(`
-    <div class="modal-header">
-      <div class="modal-title">🏆 تفاصيل KPI — ${d.driver_name}</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div style="padding:.5rem 0">
-
-      <!-- النقاط الكلية -->
-      <div style="text-align:center;padding:1.5rem;background:var(--surface-2);border-radius:16px;margin-bottom:1.5rem">
-        <div style="font-size:3rem;font-weight:900;color:${d.grade_color};line-height:1">${d.total_score}%</div>
-        <div style="font-size:1.1rem;color:${d.grade_color};margin-top:.5rem">${d.grade}</div>
-        <div style="font-size:.82rem;color:var(--muted);margin-top:.3rem">
-          ${d.month} &nbsp;|&nbsp; الترتيب: ${d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':'#'+d.rank}
-        </div>
-      </div>
-
-      <!-- المؤشرات -->
-      <div style="margin-bottom:1.5rem">
-        ${meter('📍 الكيلومترات ('+d.km.toLocaleString('ar-EG')+' كم)', d.km_score, 'الهدف: 3,000 كم')}
-        ${meter('🚨 سلامة الطوارئ', d.emg_score, d.emergencies+' بلاغ هذا الشهر')}
-        ${meter('⛽ كفاءة الوقود', d.fuel_score, d.consumption?d.consumption+' ل/100كم':null)}
-        ${meter('📋 الطلبات المفتوحة', d.req_score, d.open_requests+' طلب معلق')}
-      </div>
-
-      <!-- إحصائيات إضافية -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
-        ${[
-          ['🗺️ الرحلات', d.trips+' رحلة'],
-          ['⛽ الوقود', d.fuel_liters>0?d.fuel_liters+' لتر':'—'],
-          ['🔧 الورشة', d.maint_count+' سجل'],
-          ['💰 تكلفة الورشة', d.maint_cost>0?d.maint_cost.toLocaleString('ar-EG')+' ج':'—'],
-        ].map(([lbl,val])=>`
-          <div style="background:var(--surface-2);border-radius:10px;padding:.75rem;text-align:center">
-            <div style="font-size:.72rem;color:var(--muted)">${lbl}</div>
-            <div style="font-weight:700;margin-top:.2rem">${val}</div>
-          </div>`).join('')}
-      </div>
-    </div>
-  `);
-}
-
-function exportKpiCSV() {
-  if (!_kpiData.length) return showNotification('لا توجد بيانات للتصدير', 'error');
-  const headers = ['الترتيب','السائق','الفرع','النقاط الكلية','التصنيف','الكيلومترات','نقاط الكم','الرحلات','الطوارئ','نقاط الطوارئ','الوقود (ل)','استهلاك ل/100كم','نقاط الوقود','طلبات مفتوحة','نقاط الطلبات'];
-  const rows = _kpiData.map(d=>[
-    d.rank, d.driver_name, d.branch, d.total_score+'%', d.grade,
-    d.km, d.km_score+'%', d.trips, d.emergencies, d.emg_score+'%',
-    d.fuel_liters, d.consumption??'', d.fuel_score??'', d.open_requests, d.req_score+'%'
-  ]);
-  const csv = '\uFEFF' + [headers,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download = `kpi_${document.getElementById('kpiMonth')?.value||'report'}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  showNotification('✅ تم تصدير التقرير', 'success');
-}
-
 // ═══════════════════════════════════════════════════════════════
 // FEATURE 2: ATTENDANCE REPORT — الحضور والانصراف
 // ═══════════════════════════════════════════════════════════════
@@ -10748,4 +10499,584 @@ async function deleteAvatar() {
     showNotification('فشل الحذف','error');
   }
 }
+
+/* ══════════════════════════════════════════════════════
+   🔄 المعدات المؤجرة
+   ══════════════════════════════════════════════════════ */
+let _rentalData = [];
+
+async function renderRentalSection() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1.2rem">
+    <h2 style="flex:1;font-size:1.25rem;font-weight:700">🔄 المعدات المؤجرة</h2>
+    <button class="btn btn-primary btn-sm" onclick="openRentalModal()">+ إضافة تأجير</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.2rem" id="rentalStats"></div>
+  <div class="card">
+    <div class="card-header" style="gap:.75rem;flex-wrap:wrap">
+      <div class="card-title">سجلات التأجير</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <select id="rentalSrcFilter" class="form-control" style="width:130px;padding:.35rem .7rem;font-size:.82rem" onchange="loadRentals()">
+          <option value="">كل المصادر</option>
+          <option value="internal">داخل الشركة</option>
+          <option value="external">خارج الشركة</option>
+        </select>
+        <select id="rentalStatusFilter" class="form-control" style="width:110px;padding:.35rem .7rem;font-size:.82rem" onchange="loadRentals()">
+          <option value="">كل الحالات</option>
+          <option value="active">نشط</option>
+          <option value="ended">منتهي</option>
+          <option value="suspended">موقوف</option>
+        </select>
+        <input type="month" id="rentalMonthFilter" class="form-control" style="width:150px;padding:.35rem .7rem;font-size:.82rem" onchange="loadRentals()">
+      </div>
+    </div>
+    <div class="table-wrap"><table id="rentalTable">
+      <thead><tr>
+        <th>#</th><th>المركبة</th><th>الفرع</th><th>المصدر</th>
+        <th>المورد/الجهة</th><th>النوع</th><th>من</th><th>إلى</th>
+        <th>أيام</th><th>ساعات</th><th>التكلفة</th><th>الحالة</th><th></th>
+      </tr></thead>
+      <tbody id="rentalTbody"><tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">⏳ جاري التحميل...</td></tr></tbody>
+    </table></div>
+  </div>`;
+  await loadRentals();
+}
+
+async function loadRentals() {
+  const src    = document.getElementById('rentalSrcFilter')?.value || '';
+  const status = document.getElementById('rentalStatusFilter')?.value || '';
+  const month  = document.getElementById('rentalMonthFilter')?.value || '';
+  try {
+    let url = '/rental?limit=200';
+    if(src)    url += `&source=${src}`;
+    if(status) url += `&status=${status}`;
+    if(month)  url += `&month=${month}`;
+    _rentalData = await apiCall(url);
+    renderRentalTable(_rentalData);
+    renderRentalStats(_rentalData);
+  } catch(e) { showNotification('فشل تحميل المعدات المؤجرة','error'); }
+}
+
+function renderRentalStats(rows) {
+  const el = document.getElementById('rentalStats');
+  if(!el) return;
+  const internal = rows.filter(r=>r.rental_source==='internal').length;
+  const external = rows.filter(r=>r.rental_source==='external').length;
+  const totalCost = rows.reduce((s,r)=>s+(r.total_cost||0),0);
+  const active    = rows.filter(r=>r.status==='active').length;
+  el.innerHTML = [
+    {lbl:'إجمالي السجلات', val:rows.length, icon:'🔄', color:'var(--primary)'},
+    {lbl:'داخل الشركة',    val:internal,   icon:'🏢', color:'var(--success)'},
+    {lbl:'خارج الشركة',   val:external,    icon:'🤝', color:'var(--gold)'},
+    {lbl:'إجمالي التكلفة', val:totalCost.toLocaleString('ar-EG')+'  ج', icon:'💰', color:'var(--warning)'},
+  ].map(s=>`<div class="card" style="text-align:center;padding:1rem">
+    <div style="font-size:1.5rem">${s.icon}</div>
+    <div style="font-size:1.6rem;font-weight:800;color:${s.color}">${s.val}</div>
+    <div style="font-size:.8rem;color:var(--muted)">${s.lbl}</div>
+  </div>`).join('');
+}
+
+function renderRentalTable(rows) {
+  const tbody = document.getElementById('rentalTbody');
+  if(!tbody) return;
+  if(!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد سجلات</td></tr>';
+    return;
+  }
+  const srcLabel  = s => s==='internal'?'<span class="badge badge-green">داخل</span>':'<span class="badge badge-navy">خارج</span>';
+  const stLabel   = s => s==='active'?'<span class="badge badge-green">نشط</span>':s==='ended'?'<span class="badge">منتهي</span>':'<span class="badge badge-orange">موقوف</span>';
+  tbody.innerHTML = rows.map((r,i)=>`<tr>
+    <td>${i+1}</td>
+    <td>${r.car_plate?`<strong dir="ltr">${r.car_plate}</strong><br><small style="color:var(--muted)">${r.car_model||''}</small>`:'—'}</td>
+    <td>${r.branch||'—'}</td>
+    <td>${srcLabel(r.rental_source)}</td>
+    <td>${r.supplier_name||'—'}</td>
+    <td style="font-size:.82rem">${r.rental_type||'—'}</td>
+    <td style="font-size:.82rem">${r.start_date||'—'}</td>
+    <td style="font-size:.82rem">${r.end_date||'—'}</td>
+    <td>${r.working_days||'—'}</td>
+    <td>${r.working_hours||'—'}</td>
+    <td>${r.total_cost?r.total_cost.toLocaleString('ar-EG'):'—'}</td>
+    <td>${stLabel(r.status)}</td>
+    <td>
+      <button class="btn btn-ghost btn-sm" onclick="openRentalModal(${r.id})" title="تعديل">✏️</button>
+      <button class="btn btn-ghost btn-sm" onclick="deleteRental(${r.id})" title="حذف" style="color:var(--danger)">🗑️</button>
+    </td>
+  </tr>`).join('');
+}
+
+function openRentalModal(id=null) {
+  const edit = id ? _rentalData.find(r=>r.id===id) : null;
+  const title = edit ? 'تعديل سجل التأجير' : 'إضافة معدة مؤجرة';
+  const m = document.createElement('div');
+  m.className = 'modal-overlay'; m.id = 'rentalModal';
+  m.innerHTML = `<div class="modal" style="max-width:700px;width:95%">
+    <div class="modal-header"><h3>${title}</h3><button onclick="document.getElementById('rentalModal').remove()">✕</button></div>
+    <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div class="form-group"><label>المركبة (اختياري)</label>
+        <input id="rCarId" class="form-control" type="number" placeholder="ID المركبة" value="${edit?.car_id||''}"></div>
+      <div class="form-group"><label>الفرع <span class="req">*</span></label>
+        <select id="rBranch" class="form-control">
+          ${window.BRANCHES_LIST.map(b=>`<option value="${b}" ${(edit?.branch||currentUser?.branch)===b?'selected':''}>${b}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label>المصدر <span class="req">*</span></label>
+        <select id="rSource" class="form-control">
+          <option value="internal" ${edit?.rental_source==='internal'?'selected':''}>داخل الشركة</option>
+          <option value="external" ${edit?.rental_source==='external'?'selected':''}>خارج الشركة</option>
+        </select></div>
+      <div class="form-group"><label>المورد / الجهة</label>
+        <input id="rSupplier" class="form-control" value="${edit?.supplier_name||''}" placeholder="اسم المورد أو الجهة"></div>
+      <div class="form-group"><label>نوع التأجير</label>
+        <input id="rType" class="form-control" value="${edit?.rental_type||''}" placeholder="مثال: أسبوعي / شهري"></div>
+      <div class="form-group"><label>المشروع</label>
+        <input id="rProject" class="form-control" value="${edit?.project||''}" placeholder="اسم المشروع"></div>
+      <div class="form-group"><label>تاريخ البداية <span class="req">*</span></label>
+        <input id="rStart" class="form-control" type="date" value="${edit?.start_date?.slice(0,10)||''}"></div>
+      <div class="form-group"><label>تاريخ الانتهاء</label>
+        <input id="rEnd" class="form-control" type="date" value="${edit?.end_date?.slice(0,10)||''}"></div>
+      <div class="form-group"><label>أيام العمل</label>
+        <input id="rDays" class="form-control" type="number" min="0" value="${edit?.working_days||0}"></div>
+      <div class="form-group"><label>ساعات العمل</label>
+        <input id="rHours" class="form-control" type="number" min="0" step="0.5" value="${edit?.working_hours||0}"></div>
+      <div class="form-group"><label>سعر يومي</label>
+        <input id="rDaily" class="form-control" type="number" min="0" step="0.01" value="${edit?.daily_rate||0}"></div>
+      <div class="form-group"><label>إجمالي التكلفة</label>
+        <input id="rTotal" class="form-control" type="number" min="0" step="0.01" value="${edit?.total_cost||0}"></div>
+      <div class="form-group"><label>وقود مستهلك (لتر)</label>
+        <input id="rFuel" class="form-control" type="number" min="0" step="0.1" value="${edit?.fuel_consumed||0}"></div>
+      <div class="form-group"><label>رقم المستند</label>
+        <input id="rDoc" class="form-control" value="${edit?.doc_number||''}" placeholder="رقم أمر الصرف"></div>
+      <div class="form-group"><label>معتمد بواسطة</label>
+        <input id="rApproved" class="form-control" value="${edit?.approved_by||''}" placeholder="اسم المسؤول"></div>
+      <div class="form-group"><label>الحالة</label>
+        <select id="rStatus" class="form-control">
+          <option value="active" ${(edit?.status||'active')==='active'?'selected':''}>نشط</option>
+          <option value="ended" ${edit?.status==='ended'?'selected':''}>منتهي</option>
+          <option value="suspended" ${edit?.status==='suspended'?'selected':''}>موقوف</option>
+        </select></div>
+      <div class="form-group" style="grid-column:1/-1"><label>ملاحظات</label>
+        <textarea id="rNotes" class="form-control" rows="2">${edit?.notes||''}</textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('rentalModal').remove()">إلغاء</button>
+      <button class="btn btn-primary" onclick="saveRental(${id||'null'})">💾 حفظ</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveRental(id) {
+  const body = {
+    car_id:        parseInt(document.getElementById('rCarId').value)||null,
+    branch:        document.getElementById('rBranch').value,
+    project:       document.getElementById('rProject').value,
+    rental_source: document.getElementById('rSource').value,
+    supplier_name: document.getElementById('rSupplier').value,
+    rental_type:   document.getElementById('rType').value,
+    start_date:    document.getElementById('rStart').value,
+    end_date:      document.getElementById('rEnd').value,
+    working_days:  parseInt(document.getElementById('rDays').value)||0,
+    working_hours: parseFloat(document.getElementById('rHours').value)||0,
+    daily_rate:    parseFloat(document.getElementById('rDaily').value)||0,
+    total_cost:    parseFloat(document.getElementById('rTotal').value)||0,
+    fuel_consumed: parseFloat(document.getElementById('rFuel').value)||0,
+    doc_number:    document.getElementById('rDoc').value,
+    approved_by:   document.getElementById('rApproved').value,
+    status:        document.getElementById('rStatus').value,
+    notes:         document.getElementById('rNotes').value,
+  };
+  if(!body.branch) return showNotification('الفرع مطلوب','error');
+  if(!body.start_date) return showNotification('تاريخ البداية مطلوب','error');
+  try {
+    if(id) await apiCall(`/rental/${id}`,'PUT',body);
+    else   await apiCall('/rental','POST',body);
+    document.getElementById('rentalModal')?.remove();
+    showNotification('✅ تم الحفظ بنجاح','success');
+    await loadRentals();
+  } catch(e) { showNotification(e.message||'فشل الحفظ','error'); }
+}
+
+async function deleteRental(id) {
+  if(!confirm('هل تريد حذف هذا السجل؟')) return;
+  try {
+    await apiCall(`/rental/${id}`,'DELETE');
+    showNotification('تم الحذف','success');
+    await loadRentals();
+  } catch(e) { showNotification(e.message||'فشل الحذف','error'); }
+}
+
+/* ══════════════════════════════════════════════════════
+   📏 العداد الشهري
+   ══════════════════════════════════════════════════════ */
+let _modoData = [];
+
+async function renderMonthlyOdometerSection() {
+  const now  = new Date();
+  const defMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1.2rem;flex-wrap:wrap">
+    <h2 style="flex:1;font-size:1.25rem;font-weight:700">📏 العداد الشهري</h2>
+    <button class="btn btn-outline btn-sm" onclick="openBulkOdometerModal()">📋 إدخال دفعة</button>
+    <button class="btn btn-primary btn-sm" onclick="openOdometerModal()">+ إضافة سجل</button>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <div style="padding:.75rem 1.25rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+      <div style="font-weight:600;font-size:.9rem">🔍 فلترة:</div>
+      <input type="month" id="modoMonth" class="form-control" style="width:160px;padding:.35rem .7rem;font-size:.82rem" value="${defMonth}" onchange="loadMonthlyOdometer()">
+      <select id="modoBranchFilter" class="form-control" style="width:180px;padding:.35rem .7rem;font-size:.82rem" onchange="loadMonthlyOdometer()">
+        <option value="">كل الفروع</option>
+        ${(window.BRANCHES_LIST||[]).map(b=>`<option value="${b}">${b}</option>`).join('')}
+      </select>
+      <div style="margin-right:auto;display:flex;gap:.5rem" id="modoSummaryBadges"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">قراءات العداد الشهري</div></div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>#</th><th>المركبة</th><th>الفرع</th><th>الشهر</th>
+        <th>عداد أول الشهر</th><th>عداد آخر الشهر</th><th>الكيلومترات</th>
+        <th>وقود (لتر)</th><th>أيام عمل</th><th>الحالة</th><th></th>
+      </tr></thead>
+      <tbody id="modoTbody"><tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">⏳ جاري التحميل...</td></tr></tbody>
+    </table></div>
+  </div>`;
+  await loadMonthlyOdometer();
+}
+
+async function loadMonthlyOdometer() {
+  const month  = document.getElementById('modoMonth')?.value || '';
+  const branch = document.getElementById('modoBranchFilter')?.value || '';
+  try {
+    let url = '/monthly-odometer?limit=500';
+    if(month)  url += `&month=${month}`;
+    if(branch) url += `&branch=${encodeURIComponent(branch)}`;
+    _modoData = await apiCall(url);
+    renderOdometerTable(_modoData);
+    // summary badges
+    const totalKm   = _modoData.reduce((s,r)=>(r.odometer_end||0)-(r.odometer_start||0)+s,0);
+    const totalFuel = _modoData.reduce((s,r)=>s+(r.fuel_consumed||0),0);
+    const badges = document.getElementById('modoSummaryBadges');
+    if(badges) badges.innerHTML = `
+      <span class="badge badge-blue">${_modoData.length} مركبة</span>
+      <span class="badge badge-green">🛣️ ${Math.round(totalKm).toLocaleString('ar-EG')} كم</span>
+      <span class="badge badge-navy">⛽ ${Math.round(totalFuel).toLocaleString('ar-EG')} لتر</span>`;
+  } catch(e) { showNotification('فشل تحميل العداد الشهري','error'); }
+}
+
+function renderOdometerTable(rows) {
+  const tbody = document.getElementById('modoTbody');
+  if(!tbody) return;
+  if(!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد قراءات لهذا الشهر</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map((r,i)=>{
+    const km = (r.odometer_end||0)-(r.odometer_start||0);
+    return `<tr>
+      <td>${i+1}</td>
+      <td>${r.car_plate?`<strong dir="ltr">${r.car_plate}</strong><br><small style="color:var(--muted)">${r.car_model||''}</small>`:'—'}</td>
+      <td style="font-size:.82rem">${r.car_branch||'—'}</td>
+      <td style="font-size:.82rem">${r.month||'—'}</td>
+      <td>${(r.odometer_start||0).toLocaleString('ar-EG')}</td>
+      <td>${(r.odometer_end||0).toLocaleString('ar-EG')}</td>
+      <td><strong style="color:${km>0?'var(--success)':'var(--muted)'}">${km.toLocaleString('ar-EG')}</strong></td>
+      <td>${r.fuel_consumed||'—'}</td>
+      <td>${r.working_days||'—'}</td>
+      <td><span class="badge badge-${r.status==='active'?'green':'blue'}">${r.status==='active'?'نشط':'موقوف'}</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openOdometerModal(${r.id})" title="تعديل">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteOdometer(${r.id})" style="color:var(--danger)">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openOdometerModal(id=null) {
+  const edit = id ? _modoData.find(r=>r.id===id) : null;
+  const now  = new Date();
+  const defMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const m = document.createElement('div');
+  m.className='modal-overlay'; m.id='modoModal';
+  m.innerHTML=`<div class="modal" style="max-width:560px;width:95%">
+    <div class="modal-header"><h3>${edit?'تعديل قراءة العداد':'إضافة قراءة عداد شهري'}</h3>
+      <button onclick="document.getElementById('modoModal').remove()">✕</button></div>
+    <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div class="form-group"><label>رقم المركبة (ID) <span class="req">*</span></label>
+        <input id="mCarId" class="form-control" type="number" placeholder="ID المركبة" value="${edit?.car_id||''}"></div>
+      <div class="form-group"><label>الشهر <span class="req">*</span></label>
+        <input id="mMonth" class="form-control" type="month" value="${edit?.month||defMonth}"></div>
+      <div class="form-group"><label>عداد أول الشهر (كم)</label>
+        <input id="mStart" class="form-control" type="number" min="0" step="1" value="${edit?.odometer_start||0}"></div>
+      <div class="form-group"><label>عداد آخر الشهر (كم)</label>
+        <input id="mEnd" class="form-control" type="number" min="0" step="1" value="${edit?.odometer_end||0}"></div>
+      <div class="form-group"><label>وقود مستهلك (لتر)</label>
+        <input id="mFuel" class="form-control" type="number" min="0" step="0.1" value="${edit?.fuel_consumed||0}"></div>
+      <div class="form-group"><label>أيام العمل</label>
+        <input id="mDays" class="form-control" type="number" min="0" max="31" value="${edit?.working_days||0}"></div>
+      <div class="form-group"><label>الحالة</label>
+        <select id="mStatus" class="form-control">
+          <option value="active" ${(edit?.status||'active')==='active'?'selected':''}>نشط</option>
+          <option value="suspended" ${edit?.status==='suspended'?'selected':''}>موقوف</option>
+        </select></div>
+      <div class="form-group" style="grid-column:1/-1"><label>ملاحظات</label>
+        <textarea id="mNotes" class="form-control" rows="2">${edit?.notes||''}</textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('modoModal').remove()">إلغاء</button>
+      <button class="btn btn-primary" onclick="saveOdometer(${id||'null'})">💾 حفظ</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveOdometer(id) {
+  const body = {
+    car_id:        parseInt(document.getElementById('mCarId').value),
+    month:         document.getElementById('mMonth').value,
+    odometer_start: parseFloat(document.getElementById('mStart').value)||0,
+    odometer_end:  parseFloat(document.getElementById('mEnd').value)||0,
+    fuel_consumed: parseFloat(document.getElementById('mFuel').value)||0,
+    working_days:  parseInt(document.getElementById('mDays').value)||0,
+    status:        document.getElementById('mStatus').value,
+    notes:         document.getElementById('mNotes').value,
+  };
+  if(!body.car_id) return showNotification('ID المركبة مطلوب','error');
+  if(!body.month)  return showNotification('الشهر مطلوب','error');
+  try {
+    if(id) await apiCall(`/monthly-odometer/${id}`,'PUT',body);
+    else   await apiCall('/monthly-odometer','POST',body);
+    document.getElementById('modoModal')?.remove();
+    showNotification('✅ تم الحفظ بنجاح','success');
+    await loadMonthlyOdometer();
+  } catch(e) { showNotification(e.message||'فشل الحفظ','error'); }
+}
+
+async function deleteOdometer(id) {
+  if(!confirm('هل تريد حذف هذه القراءة؟')) return;
+  try {
+    await apiCall(`/monthly-odometer/${id}`,'DELETE');
+    showNotification('تم الحذف','success');
+    await loadMonthlyOdometer();
+  } catch(e) { showNotification(e.message||'فشل الحذف','error'); }
+}
+
+function openBulkOdometerModal() {
+  const month = document.getElementById('modoMonth')?.value || '';
+  const m = document.createElement('div');
+  m.className='modal-overlay'; m.id='bulkModoModal';
+  m.innerHTML=`<div class="modal" style="max-width:680px;width:95%">
+    <div class="modal-header"><h3>📋 إدخال عدادات دفعة واحدة</h3>
+      <button onclick="document.getElementById('bulkModoModal').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>الشهر <span class="req">*</span></label>
+        <input id="bMonth" class="form-control" type="month" value="${month}" style="max-width:200px"></div>
+      <div style="background:var(--surface-2);border-radius:10px;padding:1rem;margin-bottom:1rem;font-size:.85rem;color:var(--muted)">
+        <strong>صيغة البيانات:</strong> كل سطر = سجل واحد<br>
+        <code style="font-size:.8rem">ID المركبة | عداد أول الشهر | عداد آخر الشهر | وقود (لتر) | أيام</code><br>
+        مثال: <code>15 | 125000 | 127500 | 320 | 26</code>
+      </div>
+      <div class="form-group"><label>البيانات <span class="req">*</span></label>
+        <textarea id="bData" class="form-control" rows="10" dir="ltr" style="font-family:monospace;font-size:.85rem" placeholder="15 | 125000 | 127500 | 320 | 26&#10;22 | 87000  | 89200  | 180 | 26&#10;..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('bulkModoModal').remove()">إلغاء</button>
+      <button class="btn btn-primary" onclick="saveBulkOdometer()">📥 رفع الدفعة</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveBulkOdometer() {
+  const month = document.getElementById('bMonth')?.value;
+  const raw   = document.getElementById('bData')?.value || '';
+  if(!month) return showNotification('الشهر مطلوب','error');
+  const records = [];
+  const lines = raw.trim().split('\n');
+  for(const line of lines) {
+    if(!line.trim()) continue;
+    const parts = line.split('|').map(p=>p.trim());
+    if(parts.length < 3) continue;
+    records.push({
+      car_id:        parseInt(parts[0])||0,
+      month,
+      odometer_start: parseFloat(parts[1])||0,
+      odometer_end:  parseFloat(parts[2])||0,
+      fuel_consumed: parseFloat(parts[3])||0,
+      working_days:  parseInt(parts[4])||0,
+      status: 'active', notes: ''
+    });
+  }
+  if(!records.length) return showNotification('لا توجد بيانات صحيحة','error');
+  try {
+    const res = await apiCall(`/monthly-odometer/bulk?month=${month}`,'POST',records);
+    document.getElementById('bulkModoModal')?.remove();
+    showNotification(`✅ تم: ${res.inserted} جديد، ${res.updated} محدّث${res.errors?.length?'، '+res.errors.length+' خطأ':''}`, 'success');
+    await loadMonthlyOdometer();
+  } catch(e) { showNotification(e.message||'فشل الرفع','error'); }
+}
+
+/* ══════════════════════════════════════════════════════
+   🏗️ المشروعات
+   ══════════════════════════════════════════════════════ */
+let _projectsData = [];
+
+async function renderProjectsSection() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1.2rem;flex-wrap:wrap">
+    <h2 style="flex:1;font-size:1.25rem;font-weight:700">🏗️ المشروعات</h2>
+    <button class="btn btn-primary btn-sm" onclick="openProjectModal()">+ إضافة مشروع</button>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <div style="padding:.75rem 1.25rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+      <select id="projBranchFilter" class="form-control" style="width:200px;padding:.35rem .7rem;font-size:.82rem" onchange="loadProjects()">
+        <option value="">كل الفروع</option>
+        ${(window.BRANCHES_LIST||[]).map(b=>`<option value="${b}">${b}</option>`).join('')}
+      </select>
+      <select id="projStatusFilter" class="form-control" style="width:130px;padding:.35rem .7rem;font-size:.82rem" onchange="loadProjects()">
+        <option value="">كل الحالات</option>
+        <option value="active">نشط</option>
+        <option value="completed">مكتمل</option>
+        <option value="suspended">موقوف</option>
+      </select>
+      <div style="margin-right:auto;display:flex;gap:.5rem" id="projStats"></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem" id="projGrid">
+    <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--muted)">⏳ جاري التحميل...</div>
+  </div>`;
+  await loadProjects();
+}
+
+async function loadProjects() {
+  const branch = document.getElementById('projBranchFilter')?.value || '';
+  const status = document.getElementById('projStatusFilter')?.value || '';
+  try {
+    let url = '/projects?limit=500';
+    if(branch) url += `&branch=${encodeURIComponent(branch)}`;
+    if(status) url += `&status=${status}`;
+    _projectsData = await apiCall(url);
+    renderProjectsGrid(_projectsData);
+    const el = document.getElementById('projStats');
+    if(el) el.innerHTML = `
+      <span class="badge badge-blue">${_projectsData.length} مشروع</span>
+      <span class="badge badge-green">${_projectsData.filter(p=>p.status==='active').length} نشط</span>`;
+  } catch(e) { showNotification('فشل تحميل المشروعات','error'); }
+}
+
+function renderProjectsGrid(projects) {
+  const grid = document.getElementById('projGrid');
+  if(!grid) return;
+  if(!projects.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--muted)">لا توجد مشروعات</div>';
+    return;
+  }
+  const stColor = s => s==='active'?'var(--success)':s==='completed'?'var(--gold)':'var(--danger)';
+  const stLabel = s => s==='active'?'نشط':s==='completed'?'مكتمل':'موقوف';
+  grid.innerHTML = projects.map(p=>`
+    <div class="card" style="border-right:4px solid ${stColor(p.status)}">
+      <div class="card-header" style="border-bottom:none;padding-bottom:.3rem">
+        <div>
+          <div class="card-title" style="font-size:1rem">${p.name}</div>
+          ${p.project_code?`<code style="font-size:.75rem;color:var(--muted)">${p.project_code}</code>`:''}
+        </div>
+        <span class="badge badge-${p.status==='active'?'green':p.status==='completed'?'blue':'orange'}">${stLabel(p.status)}</span>
+      </div>
+      <div style="padding:0 1.25rem 1rem;display:grid;gap:.4rem;font-size:.85rem">
+        ${p.branch?`<div>📍 <strong>الفرع:</strong> ${p.branch}</div>`:''}
+        ${p.sector?`<div>🏢 <strong>القطاع:</strong> ${p.sector}</div>`:''}
+        ${p.manager?`<div>👤 <strong>المدير:</strong> ${p.manager}</div>`:''}
+        ${p.location?`<div>📌 <strong>الموقع:</strong> ${p.location}</div>`:''}
+        ${p.start_date?`<div>📅 <strong>من:</strong> ${p.start_date}${p.end_date?' → '+p.end_date:''}</div>`:''}
+        ${p.budget>0?`<div>💰 <strong>الميزانية:</strong> ${p.budget.toLocaleString('ar-EG')} ج.م</div>`:''}
+        ${p.notes?`<div style="color:var(--muted);margin-top:.3rem;font-size:.8rem">📝 ${p.notes}</div>`:''}
+      </div>
+      <div style="padding:0 1.25rem 1rem;display:flex;gap:.5rem">
+        <button class="btn btn-outline btn-sm" onclick="openProjectModal(${p.id})" style="flex:1">✏️ تعديل</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteProject(${p.id})" style="color:var(--danger)">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+
+function openProjectModal(id=null) {
+  const edit = id ? _projectsData.find(p=>p.id===id) : null;
+  const m = document.createElement('div');
+  m.className='modal-overlay'; m.id='projModal';
+  m.innerHTML=`<div class="modal" style="max-width:640px;width:95%">
+    <div class="modal-header"><h3>${edit?'تعديل المشروع':'إضافة مشروع جديد'}</h3>
+      <button onclick="document.getElementById('projModal').remove()">✕</button></div>
+    <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div class="form-group" style="grid-column:1/-1"><label>اسم المشروع <span class="req">*</span></label>
+        <input id="pName" class="form-control" value="${edit?.name||''}" placeholder="اسم المشروع"></div>
+      <div class="form-group"><label>الفرع <span class="req">*</span></label>
+        <select id="pBranch" class="form-control">
+          ${(window.BRANCHES_LIST||[]).map(b=>`<option value="${b}" ${(edit?.branch||currentUser?.branch)===b?'selected':''}>${b}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label>القطاع</label>
+        <input id="pSector" class="form-control" value="${edit?.sector||''}" placeholder="مثال: قطاع القاهرة الكبرى"></div>
+      <div class="form-group"><label>كود المشروع</label>
+        <input id="pCode" class="form-control" value="${edit?.project_code||''}" placeholder="مثال: PRJ-001"></div>
+      <div class="form-group"><label>مدير المشروع</label>
+        <input id="pManager" class="form-control" value="${edit?.manager||''}" placeholder="اسم المدير"></div>
+      <div class="form-group" style="grid-column:1/-1"><label>الموقع</label>
+        <input id="pLocation" class="form-control" value="${edit?.location||''}" placeholder="عنوان أو وصف الموقع"></div>
+      <div class="form-group"><label>تاريخ البداية</label>
+        <input id="pStart" class="form-control" type="date" value="${edit?.start_date||''}"></div>
+      <div class="form-group"><label>تاريخ الانتهاء</label>
+        <input id="pEnd" class="form-control" type="date" value="${edit?.end_date||''}"></div>
+      <div class="form-group"><label>الميزانية (ج.م)</label>
+        <input id="pBudget" class="form-control" type="number" min="0" step="1000" value="${edit?.budget||0}"></div>
+      <div class="form-group"><label>الحالة</label>
+        <select id="pStatus" class="form-control">
+          <option value="active" ${(edit?.status||'active')==='active'?'selected':''}>نشط</option>
+          <option value="completed" ${edit?.status==='completed'?'selected':''}>مكتمل</option>
+          <option value="suspended" ${edit?.status==='suspended'?'selected':''}>موقوف</option>
+        </select></div>
+      <div class="form-group" style="grid-column:1/-1"><label>ملاحظات</label>
+        <textarea id="pNotes" class="form-control" rows="3">${edit?.notes||''}</textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('projModal').remove()">إلغاء</button>
+      <button class="btn btn-primary" onclick="saveProject(${id||'null'})">💾 حفظ</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveProject(id) {
+  const body = {
+    name:         document.getElementById('pName').value.trim(),
+    branch:       document.getElementById('pBranch').value,
+    sector:       document.getElementById('pSector').value,
+    project_code: document.getElementById('pCode').value,
+    manager:      document.getElementById('pManager').value,
+    location:     document.getElementById('pLocation').value,
+    start_date:   document.getElementById('pStart').value,
+    end_date:     document.getElementById('pEnd').value,
+    budget:       parseFloat(document.getElementById('pBudget').value)||0,
+    status:       document.getElementById('pStatus').value,
+    notes:        document.getElementById('pNotes').value,
+  };
+  if(!body.name)   return showNotification('اسم المشروع مطلوب','error');
+  if(!body.branch) return showNotification('الفرع مطلوب','error');
+  try {
+    if(id) await apiCall(`/projects/${id}`,'PUT',body);
+    else   await apiCall('/projects','POST',body);
+    document.getElementById('projModal')?.remove();
+    showNotification('✅ تم الحفظ بنجاح','success');
+    await loadProjects();
+  } catch(e) { showNotification(e.message||'فشل الحفظ','error'); }
+}
+
+async function deleteProject(id) {
+  if(!confirm('هل تريد حذف هذا المشروع؟')) return;
+  try {
+    await apiCall(`/projects/${id}`,'DELETE');
+    showNotification('تم الحذف','success');
+    await loadProjects();
+  } catch(e) { showNotification(e.message||'فشل الحذف','error'); }
+}
+
+// expose branches list globally for the modals
+window.BRANCHES_LIST = ["القاهرة","مدينة نصر","حلوان","صيانة القصور والآثار","المنشآت المتميزة","مشروع منوريل 6 أكتوبر","مشروع المرحلة الأولى من الخط الرابع مترو الأنفاق القاهرة الكبرى","الأعمال الكهربائية","مشروعات كهروميكانيكية للمباني العامة والمرافق","مشروعات كهروميكانيكية لمياه الشرب والصرف الصحي والمصانع","المصانع والورش المركزية","ترسانة المعصرة","الأعمال الاعتيادية","أعمال الصحي والتشطيبات","الشدات والأعمال التخصصية","الكباري والأعمال التخصصية"];
 </script>
