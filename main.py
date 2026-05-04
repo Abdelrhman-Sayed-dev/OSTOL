@@ -4159,31 +4159,41 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
 
     now     = datetime.utcnow()
     expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
+    tgt_group = body.target_group or ""
+    tgt_uid   = body.target_user_id if body.target_user_id else None
+
+    # ── Migration منفصلة قبل الـ transaction (ALTER TABLE مش بيشتغل جوه transaction) ──
+    import sqlite3 as _sqlite3
+    _mconn = _sqlite3.connect(DATABASE_PATH)
+    try:
+        for _col, _def in [
+            ("sender_role",    "TEXT DEFAULT 'superuser'"),
+            ("target_user_id", "INTEGER DEFAULT NULL"),
+            ("target_group",   "TEXT DEFAULT ''"),
+        ]:
+            try:
+                _mconn.execute(f"ALTER TABLE voice_notes ADD COLUMN {_col} {_def}")
+                _mconn.commit()
+            except Exception:
+                pass
+    finally:
+        _mconn.close()
+
+    # ── INSERT في transaction عادية ──
     with get_db() as conn:
         c = conn.cursor()
-        tgt_group = body.target_group or ""
-        tgt_uid   = body.target_user_id if body.target_user_id else None
-        # تأكد من وجود الأعمدة الجديدة قبل الـ INSERT
-        try:
-            c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT DEFAULT 'superuser'")
-        except Exception: pass
-        try:
-            c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
-        except Exception: pass
-        try:
-            c.execute("ALTER TABLE voice_notes ADD COLUMN target_group TEXT DEFAULT ''")
-        except Exception: pass
-        try:
+        # تحقق من الأعمدة الموجودة فعلاً
+        c.execute("PRAGMA table_info(voice_notes)")
+        existing_cols = {row[1] for row in c.fetchall()}
+        if "sender_role" in existing_cols and "target_user_id" in existing_cols:
             c.execute("""INSERT INTO voice_notes(sender_id, sender_role, target_group, target_user_id,
                          audio_data, duration_sec, created_at, expires_at, max_plays)
                          VALUES(?,?,?,?,?,?,?,?,?)""",
-                      (cu["user_id"], role,
-                       tgt_group, tgt_uid,
+                      (cu["user_id"], role, tgt_group, tgt_uid,
                        body.audio_data, body.duration_sec,
                        now.isoformat()+"Z", expires, body.max_plays))
-        except Exception as e:
-            # fallback: insert without new columns (older DB schema)
-            log.warning(f"voice_note insert fallback: {e}")
+        else:
+            # fallback للـ schema القديم
             c.execute("""INSERT INTO voice_notes(sender_id, target_group,
                          audio_data, duration_sec, created_at, expires_at, max_plays)
                          VALUES(?,?,?,?,?,?,?)""",
