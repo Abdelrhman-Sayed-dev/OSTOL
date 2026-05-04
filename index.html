@@ -3202,6 +3202,76 @@ async function renderMapSection() {
 
     if(markers.length>0) map.fitBounds(L.latLngBounds(markers.map(c=>L.latLng(c[0],c[1]))),{padding:[60,60],maxZoom:8});
     else map.setView([27.0, 33.0], 5);
+
+    // ── Zone Density Visualization ──
+    // تقسيم الخريطة لزونات حسب كثافة العربيات
+    if(markers.length >= 2) {
+      // Grid-based zone clustering (0.5° cells ≈ 55km)
+      const CELL = 0.5;
+      const zoneMap = {};
+      markers.forEach(([lat, lng]) => {
+        const zLat = Math.floor(lat / CELL) * CELL;
+        const zLng = Math.floor(lng / CELL) * CELL;
+        const key = `${zLat},${zLng}`;
+        if(!zoneMap[key]) zoneMap[key] = {lat: zLat, lng: zLng, count: 0};
+        zoneMap[key].count++;
+      });
+
+      // رسم الزونات اللي فيها أكتر من عربية واحدة
+      const maxCount = Math.max(...Object.values(zoneMap).map(z=>z.count));
+      Object.values(zoneMap).forEach(zone => {
+        if(zone.count < 1) return;
+        const intensity = zone.count / maxCount; // 0–1
+        // لون الزونة: أخضر فاتح → برتقالي → أحمر حسب الكثافة
+        const r = Math.round(255 * Math.min(intensity * 2, 1));
+        const g = Math.round(255 * Math.min((1 - intensity) * 2, 1));
+        const color = `rgba(${r},${g},60,${0.12 + intensity * 0.18})`;
+        const borderColor = intensity > 0.6 ? '#dc2626' : intensity > 0.3 ? '#d97706' : '#10b981';
+
+        L.rectangle(
+          [[zone.lat, zone.lng], [zone.lat + CELL, zone.lng + CELL]],
+          {
+            color: borderColor, weight: 1.5,
+            fillColor: color, fillOpacity: 1,
+            dashArray: '4 3'
+          }
+        ).addTo(map).bindTooltip(
+          `<div dir="rtl" style="font-family:Cairo,sans-serif;font-weight:700">
+            📍 زونة نشطة<br>
+            <span style="color:${borderColor};font-size:1.1rem">${zone.count} مركبة</span>
+          </div>`,
+          {sticky: true, className: 'zone-tooltip'}
+        );
+
+        // Badge عدد العربيات في مركز الزونة
+        if(zone.count > 1) {
+          const centerLat = zone.lat + CELL/2;
+          const centerLng = zone.lng + CELL/2;
+          L.marker([centerLat, centerLng], {
+            icon: L.divIcon({
+              className: '',
+              html: `<div style="background:${borderColor};color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:900;border:2px solid white;box-shadow:0 2px 8px rgba(0,0,0,.3)">${zone.count}</div>`,
+              iconSize: [28, 28], iconAnchor: [14, 14]
+            }),
+            zIndexOffset: -100
+          }).addTo(map);
+        }
+      });
+
+      // Legend للزونات
+      const legend = L.control({position:'bottomright'});
+      legend.onAdd = () => {
+        const div = L.DomUtil.create('div');
+        div.style.cssText = 'background:white;padding:.6rem .9rem;border-radius:10px;border:1px solid #e2e8f0;font-family:Cairo,sans-serif;font-size:.75rem;direction:rtl;box-shadow:0 2px 10px rgba(0,0,0,.12)';
+        div.innerHTML = `<div style="font-weight:700;margin-bottom:.4rem">🗺️ كثافة الزونات</div>
+          <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.25rem"><span style="display:inline-block;width:14px;height:14px;background:rgba(0,200,60,.2);border:1.5px solid #10b981;border-radius:3px"></span> كثافة منخفضة</div>
+          <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.25rem"><span style="display:inline-block;width:14px;height:14px;background:rgba(255,150,60,.2);border:1.5px solid #d97706;border-radius:3px"></span> كثافة متوسطة</div>
+          <div style="display:flex;align-items:center;gap:.4rem"><span style="display:inline-block;width:14px;height:14px;background:rgba(220,38,38,.2);border:1.5px solid #dc2626;border-radius:3px"></span> كثافة عالية</div>`;
+        return div;
+      };
+      legend.addTo(map);
+    }
+
     window._fleetMap = map;
   },100);
 
