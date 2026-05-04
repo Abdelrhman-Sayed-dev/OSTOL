@@ -259,19 +259,71 @@ def migrate_db():
 
         # VOICE NOTES (سوبر يوزر → أدمنز أو سائقين)
         c.execute("""CREATE TABLE IF NOT EXISTS voice_notes(
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender_id    INTEGER NOT NULL,
-            target_group TEXT NOT NULL CHECK(target_group IN('admins','drivers')),
-            audio_data   TEXT NOT NULL,
-            duration_sec REAL DEFAULT 0,
-            created_at   TEXT NOT NULL,
-            expires_at   TEXT NOT NULL,
-            play_count   INTEGER DEFAULT 0,
-            max_plays    INTEGER DEFAULT 2,
-            is_deleted   INTEGER DEFAULT 0
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id      INTEGER NOT NULL,
+            sender_role    TEXT    NOT NULL DEFAULT 'superuser',
+            target_group   TEXT    DEFAULT '',
+            target_user_id INTEGER DEFAULT NULL,
+            audio_data     TEXT    NOT NULL,
+            duration_sec   REAL    DEFAULT 0,
+            created_at     TEXT    NOT NULL,
+            expires_at     TEXT    NOT NULL,
+            play_count     INTEGER DEFAULT 0,
+            max_plays      INTEGER DEFAULT 2,
+            is_deleted     INTEGER DEFAULT 0
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target  ON voice_notes(target_user_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
+
+        # ── Migration جذري لـ voice_notes ──
+        # تحقق من الـ schema - لو الجدول القديم عنده CHECK constraint المقيّد، نعمل recreate
+        try:
+            c.execute("PRAGMA table_info(voice_notes)")
+            cols_info = {row["name"]: row for row in c.fetchall()}
+            needs_recreate = False
+
+            # تحقق من وجود target_user_id
+            if "target_user_id" not in cols_info:
+                needs_recreate = True  # جدول قديم جداً
+
+            if needs_recreate:
+                # إعادة بناء الجدول مع schema الجديد (يحتفظ بالبيانات القديمة)
+                c.execute("""CREATE TABLE IF NOT EXISTS voice_notes_new(
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id      INTEGER NOT NULL,
+                    sender_role    TEXT    NOT NULL DEFAULT 'superuser',
+                    target_group   TEXT    DEFAULT '',
+                    target_user_id INTEGER DEFAULT NULL,
+                    audio_data     TEXT    NOT NULL,
+                    duration_sec   REAL    DEFAULT 0,
+                    created_at     TEXT    NOT NULL,
+                    expires_at     TEXT    NOT NULL,
+                    play_count     INTEGER DEFAULT 0,
+                    max_plays      INTEGER DEFAULT 2,
+                    is_deleted     INTEGER DEFAULT 0
+                )""")
+                # نقل البيانات القديمة
+                old_cols = list(cols_info.keys())
+                safe_cols = [col for col in ["id","sender_id","target_group","audio_data",
+                             "duration_sec","created_at","expires_at","play_count",
+                             "max_plays","is_deleted"] if col in old_cols]
+                if safe_cols:
+                    cols_str = ",".join(safe_cols)
+                    c.execute(f"INSERT INTO voice_notes_new({cols_str}) SELECT {cols_str} FROM voice_notes")
+                c.execute("DROP TABLE voice_notes")
+                c.execute("ALTER TABLE voice_notes_new RENAME TO voice_notes")
+                log.info("✅ voice_notes table migrated to new schema")
+            else:
+                # الجدول موجود لكن ممكن ينقصه sender_role
+                try:
+                    c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT NOT NULL DEFAULT 'superuser'")
+                except Exception: pass
+        except Exception as mig_err:
+            log.warning(f"voice_notes migration: {mig_err}")
+        try:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target ON voice_notes(target_user_id)")
+        except Exception: pass
 
         # Safe migrations for existing columns
         _safe_add_columns(c)
@@ -4096,10 +4148,10 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_su
     expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
+        c.execute("""INSERT INTO voice_notes(sender_id,sender_role,target_group,target_user_id,audio_data,
                      duration_sec,created_at,expires_at,max_plays)
-                     VALUES(?,?,?,?,?,?,?,?)""",
-                  (cu["user_id"], tg, tuid, body.audio_data,
+                     VALUES(?,?,?,?,?,?,?,?,?)""",
+                  (cu["user_id"], cu.get("role","superuser"), tg, tuid, body.audio_data,
                    body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
         note_id = c.lastrowid
     return {"id": note_id, "expires_at": expires}
