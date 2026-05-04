@@ -9553,11 +9553,8 @@ async function renderSuperVoice() {
   let myNotes = [], inboxNotes = [], targets = {admins:[], drivers:[]};
   try {
     const data = await apiCall('/voice-notes');
-    if(isSuperuser) {
+    if(isSuperuser || isAdmin) {
       myNotes = Array.isArray(data) ? data : [];
-    } else if(isAdmin) {
-      myNotes    = Array.isArray(data.sent)  ? data.sent  : [];
-      inboxNotes = Array.isArray(data.inbox) ? data.inbox : [];
     }
   } catch(e){}
   try { targets = await apiCall('/voice-notes/targets'); } catch(e){}
@@ -9571,7 +9568,8 @@ async function renderSuperVoice() {
     ? `<option value="group_admins">👨‍💼 كل الأدمنز</option>
        <option value="group_drivers">🚗 كل السائقين</option>
        <option value="specific">👤 شخص معين</option>`
-    : `<option value="specific">👤 سائق معين</option>`;
+    : `<option value="group_drivers">🚗 كل السائقين</option>
+       <option value="specific">👤 سائق معين</option>`;
 
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
@@ -9589,7 +9587,7 @@ async function renderSuperVoice() {
           </div>
 
           <!-- اختيار شخص معين - Searchable -->
-          <div id="voiceSpecificWrap" class="form-group" style="margin:0;${isSuperuser?'display:none':''}">
+          <div id="voiceSpecificWrap" class="form-group" style="margin:0;display:none">
             <label>اختر ${isSuperuser ? 'الأدمن أو السائق' : 'السائق'}</label>
             <div style="position:relative">
               <div id="voiceUserSelected" onclick="toggleVoiceDropdown()"
@@ -9623,7 +9621,7 @@ async function renderSuperVoice() {
                       h += (targets.admins||[]).map(a=>mkItem(a.id, `[أدمن] ${a.username}${a.branch?' — '+a.branch:''}`)).join('');
                     }
                     if((targets.drivers||[]).length > 0){
-                      if(isSuperuser) h += '<div style="padding:.3rem .75rem;font-size:.75rem;font-weight:700;color:#6b7280;background:#f9fafb">سائقين</div>';
+                      h += '<div style="padding:.3rem .75rem;font-size:.75rem;font-weight:700;color:#6b7280;background:#f9fafb">سائقين</div>';
                       h += (targets.drivers||[]).map(d=>mkItem(d.user_id, `[سائق] ${d.name||d.username}${d.branch?' — '+d.branch:''}`)).join('');
                     }
                     return h;
@@ -9687,6 +9685,8 @@ async function renderSuperVoice() {
                 toLabel = '👨‍💼 كل الأدمنز';
               } else if(n.target_group==='drivers') {
                 toLabel = '🚗 كل السائقين';
+              } else {
+                toLabel = '📢 مجموعة';
               }
               return `<div style="border:1.5px solid ${isExp||n.is_deleted?'#fca5a5':'#e2e8f0'};border-radius:12px;padding:.9rem">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">

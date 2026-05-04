@@ -4129,27 +4129,43 @@ async def debug_voice_schema(cu: dict = Depends(require_superuser)):
             "has_sender_role": any(col["name"]=="sender_role" for col in cols)}
 
 @app.get("/voice-notes/targets")
-async def get_voice_note_targets(cu: dict = Depends(require_superuser)):
-    """قائمة الأدمنز والسائقين للإرسال المباشر"""
+async def get_voice_note_targets(cu: dict = Depends(get_user)):
+    """قائمة الأدمنز والسائقين للإرسال المباشر - متاح للسوبر والأدمن"""
+    role = cu["role"]
+    if role not in ("superuser", "admin"):
+        raise HTTPException(403, "غير مصرح")
+
     with get_db() as conn:
-        c = conn.cursor()
-        # الأدمنز
-        c.execute("SELECT id, username, branch FROM users WHERE role IN ('admin','superuser') ORDER BY username")
-        admins = [{"id": r["id"], "username": r["username"], "branch": r["branch"] or ""} for r in c.fetchall()]
-        # السائقين مع user_id
-        c.execute("""SELECT d.id, d.name, d.branch, d.user_id FROM drivers d
-                     WHERE d.status='active' AND d.user_id IS NOT NULL ORDER BY d.name""")
-        drivers = [{"id": r["id"], "name": r["name"], "branch": r["branch"] or "", "user_id": r["user_id"]} for r in c.fetchall()]
+        if role == "superuser":
+            # السوبر يشوف الأدمنز + السائقين
+            admins = [{"id": r["id"], "username": r["username"], "branch": r["branch"] or ""}
+                      for r in conn.execute(
+                          "SELECT id, username, branch FROM users WHERE role IN ('admin','superuser') ORDER BY username"
+                      ).fetchall()]
+        else:
+            # الأدمن مش بيشوف أدمنز تانيين
+            admins = []
+
+        drivers = [{"id": r["id"], "name": r["name"], "branch": r["branch"] or "", "user_id": r["user_id"]}
+                   for r in conn.execute(
+                       """SELECT d.id, d.name, d.branch, d.user_id FROM drivers d
+                          WHERE d.status='active' AND d.user_id IS NOT NULL ORDER BY d.name"""
+                   ).fetchall()]
+
     return {"admins": admins, "drivers": drivers}
 
 @app.post("/voice-notes")
-async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_superuser)):
+async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user)):
     """
     إرسال رسالة صوتية:
-    - كل الأدمنز:  target_group='admins'
-    - كل السائقين: target_group='drivers'
-    - شخص معين:   target_group='admins'|'drivers' + target_user_id=uid
+    - كل الأدمنز:  target_group='admins'  (سوبر فقط)
+    - كل السائقين: target_group='drivers' (سوبر + أدمن)
+    - شخص معين:   target_user_id=uid      (سوبر + أدمن)
     """
+    role = cu["role"]
+    if role not in ("superuser", "admin"):
+        raise HTTPException(403, "غير مصرح بإرسال رسائل صوتية")
+
     now     = datetime.utcnow()
     expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
     tuid    = body.target_user_id or None
