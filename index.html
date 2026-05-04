@@ -1490,6 +1490,9 @@ function buildAdminNav() {
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
     base.push({id:'driver-photos',      icon:'📷', label:'صور السائقين'});
   }
+  if(currentUser && currentUser.role === 'admin') {
+    base.push({id:'super-voice', icon:'🎙️', label:'رسائل صوتية'});
+  }
   return base;
 }
 function buildDriverNav() {
@@ -9542,8 +9545,32 @@ async function renderSuperFraud() {
 // ══════════════════════════════════════════════════════
 async function renderSuperVoice() {
   const el = document.getElementById('pageContent');
-  let myNotes = [];
-  try { myNotes = await apiCall('/voice-notes'); } catch(e){}
+  const role = currentUser.role;
+  const isSuperuser = role === 'superuser';
+  const isAdmin     = role === 'admin';
+
+  // جلب البيانات
+  let myNotes = [], inboxNotes = [], targets = {admins:[], drivers:[]};
+  try {
+    const data = await apiCall('/voice-notes');
+    if(isSuperuser) {
+      myNotes = Array.isArray(data) ? data : [];
+    } else if(isAdmin) {
+      myNotes    = Array.isArray(data.sent)  ? data.sent  : [];
+      inboxNotes = Array.isArray(data.inbox) ? data.inbox : [];
+    }
+  } catch(e){}
+  try { targets = await apiCall('/voice-notes/targets'); } catch(e){}
+
+  const adminsOpts  = (targets.admins  ||[]).map(a=>`<option value="${a.id}">[أدمن] ${a.username}${a.branch?' — '+a.branch:''}</option>`).join('');
+  const driversOpts = (targets.drivers ||[]).map(d=>`<option value="${d.user_id}">[سائق] ${d.name}${d.branch?' — '+d.branch:''}</option>`).join('');
+
+  // خيارات الهدف حسب الصلاحية
+  const targetGroupOptions = isSuperuser
+    ? `<option value="group_admins">👨‍💼 كل الأدمنز</option>
+       <option value="group_drivers">🚗 كل السائقين</option>
+       <option value="specific">👤 شخص معين</option>`
+    : `<option value="specific">👤 سائق معين</option>`;
 
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
@@ -9555,9 +9582,16 @@ async function renderSuperVoice() {
 
           <div class="form-group" style="margin:0">
             <label>إرسال إلى</label>
-            <select id="voiceTarget" class="form-control">
-              <option value="admins">👨‍💼 الأدمنز فقط</option>
-              <option value="drivers">🚗 السائقين فقط</option>
+            <select id="voiceTargetMode" class="form-control" onchange="onVoiceTargetChange()">
+              ${targetGroupOptions}
+            </select>
+          </div>
+
+          <!-- اختيار شخص معين -->
+          <div id="voiceSpecificWrap" class="form-group" style="margin:0;${isSuperuser?'display:none':''}">
+            <label>اختر ${isSuperuser ? 'الأدمن أو السائق' : 'السائق'}</label>
+            <select id="voiceSpecificUser" class="form-control">
+              ${isSuperuser ? `<optgroup label="أدمنز">${adminsOpts}</optgroup><optgroup label="سائقين">${driversOpts}</optgroup>` : driversOpts}
             </select>
           </div>
 
@@ -9602,12 +9636,19 @@ async function renderSuperVoice() {
           <div class="card-title">📬 رسائلي المرسلة</div>
           <button class="btn btn-ghost btn-sm" onclick="renderSuperVoice()">🔄</button>
         </div>
-        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem;max-height:500px;overflow-y:auto">
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem;max-height:420px;overflow-y:auto">
           ${myNotes.length===0 ? '<div style="text-align:center;color:var(--muted);padding:2rem">لا توجد رسائل مرسلة</div>' :
             myNotes.map(n=>{
               const isExp = new Date(n.expires_at) < new Date();
-              const toLabel = n.target_group==='admins'?'👨‍💼 أدمنز':'🚗 سائقين';
               const playsLeft = n.max_plays - n.play_count;
+              let toLabel = '';
+              if(n.target_user_id) {
+                toLabel = `👤 ${n.target_username||'شخص معين'}`;
+              } else if(n.target_group==='admins') {
+                toLabel = '👨‍💼 كل الأدمنز';
+              } else if(n.target_group==='drivers') {
+                toLabel = '🚗 كل السائقين';
+              }
               return `<div style="border:1.5px solid ${isExp||n.is_deleted?'#fca5a5':'#e2e8f0'};border-radius:12px;padding:.9rem">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
                   <span style="font-weight:700;font-size:.88rem">${toLabel}</span>
@@ -9618,12 +9659,39 @@ async function renderSuperVoice() {
               </div>`;
             }).join('')}
         </div>
+
+        <!-- صندوق الوارد للأدمن -->
+        ${isAdmin && inboxNotes.length > 0 ? `
+        <div style="border-top:1.5px solid #e2e8f0;padding:1.25rem">
+          <div style="font-weight:700;font-size:.9rem;margin-bottom:.75rem">📥 الرسائل الواردة إليك (${inboxNotes.length})</div>
+          <div style="display:flex;flex-direction:column;gap:.75rem;max-height:250px;overflow-y:auto">
+            ${inboxNotes.map(n=>{
+              const playsLeft = n.max_plays - n.play_count;
+              return `<div style="border:1.5px solid #bfdbfe;border-radius:12px;padding:.9rem;background:#eff6ff">
+                <div style="font-size:.75rem;color:var(--muted);margin-bottom:.5rem">${(n.created_at||'').slice(0,16)}</div>
+                <audio src="data:audio/webm;base64,${n.audio_data}" controls style="width:100%;border-radius:8px"
+                       onplay="markVoicePlay(${n.id})"></audio>
+                <div style="font-size:.72rem;color:#64748b;margin-top:.4rem">متبقي ${playsLeft} استماع</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>` : ''}
       </div>
     </div>`;
 
   // ── recorder state ──
   let mediaRecorder = null, audioChunks = [], timerInterval = null, audioBlob = null;
   let seconds = 0;
+
+  window.onVoiceTargetChange = function() {
+    const mode = document.getElementById('voiceTargetMode').value;
+    document.getElementById('voiceSpecificWrap').style.display =
+      mode === 'specific' ? 'block' : 'none';
+  };
+
+  window.markVoicePlay = async function(id) {
+    try { await apiCall(`/voice-notes/${id}/play`, 'POST'); } catch(e){}
+  };
 
   window.startVoiceRec = async function() {
     try {
@@ -9662,19 +9730,28 @@ async function renderSuperVoice() {
 
   window.sendVoiceNote = async function() {
     if(!audioBlob) return showNotification('سجّل رسالة أولاً','error');
-    const target   = document.getElementById('voiceTarget').value;
+    const mode     = document.getElementById('voiceTargetMode').value;
     const ttl      = parseInt(document.getElementById('voiceTTL').value);
     const maxPlays = parseInt(document.getElementById('voiceMaxPlays').value);
+
+    let payload = { audio_data: '', duration_sec: seconds, max_plays: maxPlays, hours_ttl: ttl };
+    if(mode === 'specific') {
+      const uid = parseInt(document.getElementById('voiceSpecificUser').value);
+      if(!uid) return showNotification('اختر شخصاً محدداً','error');
+      payload.target_user_id = uid;
+    } else if(mode === 'group_admins') {
+      payload.target_group = 'admins';
+    } else if(mode === 'group_drivers') {
+      payload.target_group = 'drivers';
+    }
+
     const btn = document.getElementById('voiceSendBtn');
     btn.disabled=true; btn.textContent='⏳ جاري الإرسال...';
     const reader = new FileReader();
     reader.onload = async (e) => {
-      const b64 = e.target.result.split(',')[1];
+      payload.audio_data = e.target.result.split(',')[1];
       try {
-        await apiCall('/voice-notes','POST',{
-          target_group:target, audio_data:b64,
-          duration_sec:seconds, max_plays:maxPlays, hours_ttl:ttl
-        });
+        await apiCall('/voice-notes','POST', payload);
         showNotification('✅ تم إرسال الرسالة الصوتية','success');
         await renderSuperVoice();
       } catch(err) { showNotification(err.message,'error'); btn.disabled=false; btn.textContent='📤 إرسال الرسالة'; }
@@ -9695,11 +9772,17 @@ async function checkAndShowVoiceNotes() {
   const role = currentUser.role;
   if(!['admin','driver','reporter','supervisor_workshop','supervisor_field'].includes(role)) return;
   try {
-    const notes = await apiCall('/voice-notes');
-    if(!notes||!notes.length) return;
+    const data = await apiCall('/voice-notes');
+    let notes = [];
+    // الأدمن يستلم {sent, inbox} — السائق يستلم array مباشرة
+    if(Array.isArray(data)) {
+      notes = data;
+    } else if(data && Array.isArray(data.inbox)) {
+      notes = data.inbox;
+    }
+    if(!notes.length) return;
     // اعرض أول رسالة غير مسموعة
-    const note = notes[0];
-    showVoiceNotePopup(note);
+    showVoiceNotePopup(notes[0]);
   } catch(e) {}
 }
 

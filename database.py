@@ -183,7 +183,23 @@ def create_database():
         )
     """)
 
-    # ── جدول سجلات التدقيق (Audit Log) ──
+    # ── جدول الرسائل الصوتية ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS voice_notes (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id      INTEGER NOT NULL,
+            sender_role    TEXT    NOT NULL DEFAULT 'superuser',
+            target_group   TEXT    DEFAULT '',
+            target_user_id INTEGER DEFAULT NULL,
+            audio_data     TEXT    NOT NULL,
+            duration_sec   REAL    DEFAULT 0,
+            created_at     TEXT    NOT NULL,
+            expires_at     TEXT    NOT NULL,
+            play_count     INTEGER DEFAULT 0,
+            max_plays      INTEGER DEFAULT 2,
+            is_deleted     INTEGER DEFAULT 0
+        )
+    """)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS audit_logs (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -220,6 +236,9 @@ def create_database():
         "CREATE INDEX IF NOT EXISTS idx_drivers_user   ON drivers(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_user     ON audit_logs(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_logs(created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)",
+        "CREATE INDEX IF NOT EXISTS idx_vnotes_target  ON voice_notes(target_user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)",
         # الرقم الثابت يجب أن يكون فريداً (unique) — اللي ممكن يتكرر هو اسم المستخدم فقط
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_fixed_number ON drivers(fixed_number) WHERE fixed_number IS NOT NULL AND fixed_number != ''",
     ]
