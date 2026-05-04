@@ -25,7 +25,7 @@ import jwt
 import sqlite3
 from fastapi import (
     FastAPI, Depends, HTTPException, Request,
-    UploadFile, File, status, Query
+    UploadFile, File, status
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -466,6 +466,85 @@ def _safe_add_columns(c):
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_live_updated ON live_locations(updated_at)")
 
+    # ══════════════════════════════════════════════════════
+    # جداول جديدة: المعدات المؤجرة + العداد الشهري + المشروعات
+    # ══════════════════════════════════════════════════════
+
+    # ── جدول المعدات المؤجرة (داخل/خارج الشركة) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS rental_equipment (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_id           INTEGER,
+        branch           TEXT    NOT NULL DEFAULT '',
+        project          TEXT    DEFAULT '',
+        rental_source    TEXT    NOT NULL CHECK(rental_source IN ('internal','external')),
+        supplier_name    TEXT    DEFAULT '',
+        rental_type      TEXT    DEFAULT '',
+        start_date       TEXT    NOT NULL,
+        end_date         TEXT    DEFAULT '',
+        daily_rate       REAL    DEFAULT 0,
+        monthly_rate     REAL    DEFAULT 0,
+        total_cost       REAL    DEFAULT 0,
+        currency         TEXT    DEFAULT 'EGP',
+        working_days     INTEGER DEFAULT 0,
+        working_hours    REAL    DEFAULT 0,
+        odometer_start   REAL    DEFAULT 0,
+        odometer_end     REAL    DEFAULT 0,
+        fuel_consumed    REAL    DEFAULT 0,
+        status           TEXT    DEFAULT 'active' CHECK(status IN ('active','ended','suspended')),
+        notes            TEXT    DEFAULT '',
+        doc_number       TEXT    DEFAULT '',
+        approved_by      TEXT    DEFAULT '',
+        created_by       TEXT    DEFAULT '',
+        created_at       TEXT    NOT NULL,
+        updated_at       TEXT    NOT NULL,
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_rental_car    ON rental_equipment(car_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_rental_branch ON rental_equipment(branch)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_rental_source ON rental_equipment(rental_source)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_rental_status ON rental_equipment(status)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_rental_dates  ON rental_equipment(start_date, end_date)")
+
+    # ── جدول العداد الشهري (عداد أول وآخر الشهر لكل مركبة) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS monthly_odometer (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_id           INTEGER NOT NULL,
+        month            TEXT    NOT NULL,
+        odometer_start   REAL    DEFAULT 0,
+        odometer_end     REAL    DEFAULT 0,
+        fuel_consumed    REAL    DEFAULT 0,
+        working_days     INTEGER DEFAULT 0,
+        status           TEXT    DEFAULT 'active',
+        notes            TEXT    DEFAULT '',
+        recorded_by      TEXT    DEFAULT '',
+        created_at       TEXT    NOT NULL,
+        updated_at       TEXT    NOT NULL,
+        UNIQUE(car_id, month),
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_modometer_car   ON monthly_odometer(car_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_modometer_month ON monthly_odometer(month)")
+
+    # ── جدول المشروعات (قائمة مشروعات الفروع) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS projects (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT    NOT NULL,
+        branch       TEXT    NOT NULL DEFAULT '',
+        sector       TEXT    DEFAULT '',
+        project_code TEXT    DEFAULT '',
+        manager      TEXT    DEFAULT '',
+        location     TEXT    DEFAULT '',
+        start_date   TEXT    DEFAULT '',
+        end_date     TEXT    DEFAULT '',
+        status       TEXT    DEFAULT 'active' CHECK(status IN ('active','completed','suspended')),
+        budget       REAL    DEFAULT 0,
+        notes        TEXT    DEFAULT '',
+        created_at   TEXT    NOT NULL,
+        updated_at   TEXT    NOT NULL
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_projects_branch ON projects(branch)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)")
+
     # ── تصحيح السجلات القديمة: price كان سعر/وحدة، دلوقتي يبقى إجمالي ──
     # نضرب السجلات اللي price فيها صغيرة (< 200) وعندها كمية > 0
     FUEL_TYPES_FOR_MIGRATION = [t for t in WORKSHOP_TYPES if t.startswith("fuel_")] + ["oil"]
@@ -821,6 +900,107 @@ class WorkshopCreate(BaseModel):
     item_name:     Optional[str]   = ""    # اسم الصنف (كاوتش/بطارية)
     item_spec:     Optional[str]   = ""    # المقاس
     receiver_name: Optional[str]   = ""    # اسم المتسلم
+
+# ── نماذج المعدات المؤجرة ──
+class RentalCreate(BaseModel):
+    car_id:         Optional[int]   = None
+    branch:         str             = ""
+    project:        Optional[str]   = ""
+    rental_source:  str             = "internal"   # internal | external
+    supplier_name:  Optional[str]   = ""
+    rental_type:    Optional[str]   = ""
+    start_date:     str
+    end_date:       Optional[str]   = ""
+    daily_rate:     Optional[float] = 0
+    monthly_rate:   Optional[float] = 0
+    total_cost:     Optional[float] = 0
+    currency:       Optional[str]   = "EGP"
+    working_days:   Optional[int]   = 0
+    working_hours:  Optional[float] = 0
+    odometer_start: Optional[float] = 0
+    odometer_end:   Optional[float] = 0
+    fuel_consumed:  Optional[float] = 0
+    status:         Optional[str]   = "active"
+    notes:          Optional[str]   = ""
+    doc_number:     Optional[str]   = ""
+    approved_by:    Optional[str]   = ""
+
+    @validator("rental_source")
+    def chk_source(cls, v):
+        if v not in ("internal","external"):
+            raise ValueError("rental_source يجب أن يكون internal أو external")
+        return v
+
+class RentalUpdate(RentalCreate):
+    pass
+
+class RentalResp(BaseModel):
+    id: int; car_id: Optional[int]; branch: str; project: Optional[str]
+    rental_source: str; supplier_name: Optional[str]; rental_type: Optional[str]
+    start_date: str; end_date: Optional[str]
+    daily_rate: Optional[float]; monthly_rate: Optional[float]; total_cost: Optional[float]
+    currency: Optional[str]; working_days: Optional[int]; working_hours: Optional[float]
+    odometer_start: Optional[float]; odometer_end: Optional[float]; fuel_consumed: Optional[float]
+    status: str; notes: Optional[str]; doc_number: Optional[str]; approved_by: Optional[str]
+    created_at: str; updated_at: str
+    car_plate: Optional[str] = None
+    car_model: Optional[str] = None
+
+# ── نماذج العداد الشهري ──
+class MonthlyOdometerCreate(BaseModel):
+    car_id:        int
+    month:         str             # YYYY-MM
+    odometer_start: Optional[float] = 0
+    odometer_end:  Optional[float] = 0
+    fuel_consumed: Optional[float] = 0
+    working_days:  Optional[int]   = 0
+    status:        Optional[str]   = "active"
+    notes:         Optional[str]   = ""
+
+    @validator("month")
+    def chk_month(cls, v):
+        try:
+            datetime.strptime(v, "%Y-%m")
+        except ValueError:
+            raise ValueError("صيغة الشهر: YYYY-MM")
+        return v
+
+class MonthlyOdometerUpdate(MonthlyOdometerCreate):
+    pass
+
+class MonthlyOdometerResp(BaseModel):
+    id: int; car_id: int; month: str
+    odometer_start: Optional[float]; odometer_end: Optional[float]
+    fuel_consumed: Optional[float]; working_days: Optional[int]
+    status: Optional[str]; notes: Optional[str]; recorded_by: Optional[str]
+    created_at: str; updated_at: str
+    car_plate: Optional[str] = None
+    car_model: Optional[str] = None
+    car_branch: Optional[str] = None
+
+# ── نماذج المشروعات ──
+class ProjectCreate(BaseModel):
+    name:         str
+    branch:       str             = ""
+    sector:       Optional[str]   = ""
+    project_code: Optional[str]   = ""
+    manager:      Optional[str]   = ""
+    location:     Optional[str]   = ""
+    start_date:   Optional[str]   = ""
+    end_date:     Optional[str]   = ""
+    status:       Optional[str]   = "active"
+    budget:       Optional[float] = 0
+    notes:        Optional[str]   = ""
+
+class ProjectUpdate(ProjectCreate):
+    pass
+
+class ProjectResp(BaseModel):
+    id: int; name: str; branch: str; sector: Optional[str]
+    project_code: Optional[str]; manager: Optional[str]; location: Optional[str]
+    start_date: Optional[str]; end_date: Optional[str]
+    status: str; budget: Optional[float]; notes: Optional[str]
+    created_at: str; updated_at: str
 
 class EmergencyCreate(BaseModel):
     driver_id: int; car_id: Optional[int] = None
@@ -4691,204 +4871,444 @@ async def monthly_report(
     }
 
 # ══════════════════════════════════════════════════════
-# 35. DRIVER KPI — مؤشرات أداء السائقين
+# 40. RENTAL EQUIPMENT — المعدات المؤجرة (داخل/خارج)
 # ══════════════════════════════════════════════════════
 
-def _calc_kpi_score(trips: int, km: float, fuel_liters: float, fuel_consumption: float,
-                    emergencies: int, open_requests: int, target_km: float = 3000.0) -> dict:
-    """حساب نقاط KPI لسائق واحد."""
-    if target_km > 0:
-        km_score = min(100, round((km / target_km) * 100, 1))
-    else:
-        km_score = 0.0
-
-    if emergencies == 0:
-        emg_score = 100.0
-    elif emergencies == 1:
-        emg_score = 70.0
-    elif emergencies == 2:
-        emg_score = 40.0
-    else:
-        emg_score = 0.0
-
-    if km > 0 and fuel_liters > 0:
-        consumption = (fuel_liters / km) * 100
-        if consumption <= 25:
-            fuel_score = 100.0
-        elif consumption <= 30:
-            fuel_score = 85.0
-        elif consumption <= 35:
-            fuel_score = 65.0
-        elif consumption <= 40:
-            fuel_score = 45.0
+def _rental_row(r: dict, c) -> dict:
+    """Enrich rental row with car info."""
+    out = dict(r)
+    if r.get("car_id"):
+        c.execute("SELECT plate, model FROM cars WHERE id=?", (r["car_id"],))
+        car = c.fetchone()
+        if car:
+            out["car_plate"] = car["plate"]
+            out["car_model"] = car["model"]
         else:
-            fuel_score = 20.0
+            out["car_plate"] = None; out["car_model"] = None
     else:
-        fuel_score = None
-
-    if open_requests == 0:
-        req_score = 100.0
-    elif open_requests <= 2:
-        req_score = 75.0
-    elif open_requests <= 4:
-        req_score = 50.0
-    else:
-        req_score = 25.0
-
-    scores = [km_score, emg_score, req_score]
-    if fuel_score is not None:
-        scores.append(fuel_score)
-    total = round(sum(scores) / len(scores), 1)
-
-    if total >= 85:
-        grade = "ممتاز"
-        grade_color = "#10b981"
-    elif total >= 70:
-        grade = "جيد"
-        grade_color = "#3b82f6"
-    elif total >= 50:
-        grade = "مقبول"
-        grade_color = "#f97316"
-    else:
-        grade = "يحتاج تحسين"
-        grade_color = "#ef4444"
-
-    return {
-        "total_score":   total,
-        "grade":         grade,
-        "grade_color":   grade_color,
-        "km_score":      km_score,
-        "emg_score":     emg_score,
-        "fuel_score":    fuel_score,
-        "req_score":     req_score,
-    }
+        out["car_plate"] = None; out["car_model"] = None
+    return out
 
 
-@app.get("/reports/driver-kpi")
-async def driver_kpi_report(
-    month:     str = Query(None, description="YYYY-MM"),
-    driver_id: int = Query(None),
-    branch:    str = Query(None),
-    cu: dict = Depends(require_admin_or_reporter),
+@app.get("/rental")
+async def list_rentals(
+    branch:  Optional[str] = None,
+    source:  Optional[str] = None,   # internal | external
+    status:  Optional[str] = None,
+    month:   Optional[str] = None,   # YYYY-MM
+    page:    int = 1,
+    limit:   int = 50,
+    cu: dict = Depends(require_admin_or_reporter)
 ):
-    """تقرير مؤشرات أداء السائقين KPI."""
-    if not month:
-        month = datetime.utcnow().strftime("%Y-%m")
-
-    try:
-        y, m = month.split("-")
-        month_start = f"{y}-{m}-01"
-        next_m = int(m) + 1
-        next_y = int(y)
-        if next_m > 12:
-            next_m = 1
-            next_y += 1
-        month_end = f"{next_y}-{next_m:02d}-01"
-    except Exception:
-        raise HTTPException(400, "صيغة الشهر خاطئة — استخدم YYYY-MM")
-
-    eff_branch = _branch_filter(cu) or branch
-
+    eff = _effective_branch(cu, branch)
     with get_db() as conn:
         c = conn.cursor()
-        q = "SELECT d.id, d.name, d.branch, d.status FROM drivers d WHERE d.status='active'"
+        q = "SELECT * FROM rental_equipment WHERE 1=1"
         params: list = []
-        if eff_branch:
-            q += " AND d.branch=?"
-            params.append(eff_branch)
-        if driver_id:
-            q += " AND d.id=?"
-            params.append(driver_id)
-        q += " ORDER BY d.name"
+        if eff:
+            q += " AND branch=?"; params.append(eff)
+        if source in ("internal","external"):
+            q += " AND rental_source=?"; params.append(source)
+        if status:
+            q += " AND status=?"; params.append(status)
+        if month:
+            q += " AND (start_date LIKE ? OR end_date LIKE ?)"; params += [month+"%", month+"%"]
+        q += " ORDER BY start_date DESC LIMIT ? OFFSET ?"
+        params += [min(limit,200), (page-1)*limit]
         c.execute(q, params)
-        drivers = [dict(r) for r in c.fetchall()]
+        rows = [_rental_row(dict(r), c) for r in c.fetchall()]
+    return rows
 
-        results = []
-        for d in drivers:
-            did = d["id"]
 
-            c.execute("""
-                SELECT COUNT(*) as cnt,
-                       COALESCE(SUM(end_odometer - start_odometer),0) as km,
-                       MIN(start_time) as first_trip,
-                       MAX(end_time)   as last_trip
-                FROM trips
-                WHERE driver_id=?
-                  AND end_time IS NOT NULL AND end_odometer IS NOT NULL
-                  AND date(start_time) >= ? AND date(start_time) < ?
-            """, (did, month_start, month_end))
-            tr = dict(c.fetchone())
-            trips_count = tr["cnt"] or 0
-            km_total    = max(0.0, float(tr["km"] or 0))
+@app.get("/rental/{rid}")
+async def get_rental(rid: int, cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT * FROM rental_equipment WHERE id=?", (rid,))
+        r = c.fetchone()
+        if not r:
+            raise HTTPException(404, "السجل غير موجود")
+        return _rental_row(dict(r), c)
 
-            c.execute("""
-                SELECT COALESCE(SUM(quantity),0) as liters,
-                       COALESCE(SUM(price),0)    as cost
-                FROM workshop_records
-                WHERE driver_id=? AND type LIKE 'fuel_%'
-                  AND date(created_at) >= ? AND date(created_at) < ?
-            """, (did, month_start, month_end))
-            fr = dict(c.fetchone())
-            fuel_liters = float(fr["liters"] or 0)
-            fuel_cost   = float(fr["cost"]   or 0)
-            consumption = round((fuel_liters / km_total) * 100, 1) if km_total > 0 and fuel_liters > 0 else None
 
-            c.execute("""
-                SELECT COUNT(*) FROM emergency_reports
-                WHERE driver_id=?
-                  AND date(created_at) >= ? AND date(created_at) < ?
-            """, (did, month_start, month_end))
-            emg_count = c.fetchone()[0] or 0
+@app.post("/rental", status_code=201)
+async def create_rental(request: Request, body: RentalCreate, cu: dict = Depends(require_admin)):
+    now = datetime.utcnow().isoformat() + "Z"
+    branch = body.branch or cu.get("branch","")
+    with get_db() as conn:
+        c = conn.cursor()
+        if body.car_id:
+            c.execute("SELECT id FROM cars WHERE id=?", (body.car_id,))
+            if not c.fetchone():
+                raise HTTPException(404, "المركبة غير موجودة")
+        c.execute("""INSERT INTO rental_equipment
+            (car_id,branch,project,rental_source,supplier_name,rental_type,
+             start_date,end_date,daily_rate,monthly_rate,total_cost,currency,
+             working_days,working_hours,odometer_start,odometer_end,fuel_consumed,
+             status,notes,doc_number,approved_by,created_by,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (body.car_id, branch, body.project, body.rental_source,
+             body.supplier_name, body.rental_type, body.start_date, body.end_date,
+             body.daily_rate, body.monthly_rate, body.total_cost, body.currency,
+             body.working_days, body.working_hours, body.odometer_start,
+             body.odometer_end, body.fuel_consumed, body.status, body.notes,
+             body.doc_number, body.approved_by, cu["username"], now, now))
+        rid = c.lastrowid
+        c.execute("SELECT * FROM rental_equipment WHERE id=?", (rid,))
+        row = _rental_row(dict(c.fetchone()), c)
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "rental_create",
+                    f"إضافة تأجير #{rid}",
+                    request.client.host if request.client else "")
+    return row
 
-            c.execute("""
-                SELECT COUNT(*) FROM driver_requests
-                WHERE driver_id=? AND status='pending'
-            """, (did,))
-            open_req = c.fetchone()[0] or 0
 
-            c.execute("""
-                SELECT COALESCE(SUM(price),0) as mc, COUNT(*) as mcc
-                FROM workshop_records
-                WHERE driver_id=? AND type NOT LIKE 'fuel_%'
-                  AND date(created_at) >= ? AND date(created_at) < ?
-            """, (did, month_start, month_end))
-            wr = dict(c.fetchone())
-            maint_cost  = float(wr["mc"] or 0)
-            maint_count = int(wr["mcc"] or 0)
+@app.put("/rental/{rid}")
+async def update_rental(request: Request, rid: int, body: RentalUpdate, cu: dict = Depends(require_admin)):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM rental_equipment WHERE id=?", (rid,))
+        if not c.fetchone():
+            raise HTTPException(404, "السجل غير موجود")
+        c.execute("""UPDATE rental_equipment SET
+            car_id=?,branch=?,project=?,rental_source=?,supplier_name=?,rental_type=?,
+            start_date=?,end_date=?,daily_rate=?,monthly_rate=?,total_cost=?,currency=?,
+            working_days=?,working_hours=?,odometer_start=?,odometer_end=?,fuel_consumed=?,
+            status=?,notes=?,doc_number=?,approved_by=?,updated_at=? WHERE id=?""",
+            (body.car_id, body.branch, body.project, body.rental_source,
+             body.supplier_name, body.rental_type, body.start_date, body.end_date,
+             body.daily_rate, body.monthly_rate, body.total_cost, body.currency,
+             body.working_days, body.working_hours, body.odometer_start,
+             body.odometer_end, body.fuel_consumed, body.status, body.notes,
+             body.doc_number, body.approved_by, now, rid))
+        c.execute("SELECT * FROM rental_equipment WHERE id=?", (rid,))
+        row = _rental_row(dict(c.fetchone()), c)
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "rental_update",
+                    f"تعديل تأجير #{rid}",
+                    request.client.host if request.client else "")
+    return row
 
-            scores = _calc_kpi_score(
-                trips=trips_count, km=km_total,
-                fuel_liters=fuel_liters, fuel_consumption=consumption or 0,
-                emergencies=emg_count, open_requests=open_req,
-            )
 
-            results.append({
-                "driver_id":    did,
-                "driver_name":  d["name"],
-                "branch":       d["branch"] or "",
-                "month":        month,
-                "trips":        trips_count,
-                "km":           round(km_total, 1),
-                "fuel_liters":  round(fuel_liters, 1),
-                "fuel_cost":    round(fuel_cost, 2),
-                "consumption":  consumption,
-                "emergencies":  emg_count,
-                "open_requests":open_req,
-                "maint_cost":   round(maint_cost, 2),
-                "maint_count":  maint_count,
-                "first_trip":   tr["first_trip"],
-                "last_trip":    tr["last_trip"],
-                **scores,
-            })
+@app.delete("/rental/{rid}", status_code=204)
+async def delete_rental(request: Request, rid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM rental_equipment WHERE id=?", (rid,))
+        if not c.fetchone():
+            raise HTTPException(404, "السجل غير موجود")
+        c.execute("DELETE FROM rental_equipment WHERE id=?", (rid,))
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "rental_delete",
+                    f"حذف تأجير #{rid}",
+                    request.client.host if request.client else "")
 
-    results.sort(key=lambda x: x["total_score"], reverse=True)
-    for i, r in enumerate(results, 1):
-        r["rank"] = i
 
-    return {
-        "month":         month,
-        "branch":        eff_branch or "كل الفروع",
-        "generated_at":  datetime.utcnow().isoformat() + "Z",
-        "total_drivers": len(results),
-        "drivers":       results,
-    }
+@app.get("/rental/summary/by-branch")
+async def rental_summary(
+    month: Optional[str] = None,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """ملخص المؤجر مجمّع حسب الفرع والمصدر — يغذي تقرير مجمع المؤجر."""
+    eff = _effective_branch(cu, None)
+    with get_db() as conn:
+        c = conn.cursor()
+        q = """SELECT branch, rental_source,
+                      COUNT(*) as count,
+                      SUM(working_days) as total_days,
+                      SUM(working_hours) as total_hours,
+                      SUM(total_cost) as total_cost,
+                      SUM(fuel_consumed) as total_fuel
+               FROM rental_equipment WHERE 1=1"""
+        params: list = []
+        if eff:
+            q += " AND branch=?"; params.append(eff)
+        if month:
+            q += " AND (start_date LIKE ? OR end_date LIKE ?)"; params += [month+"%", month+"%"]
+        q += " GROUP BY branch, rental_source ORDER BY branch"
+        c.execute(q, params)
+        rows = [dict(r) for r in c.fetchall()]
+    return rows
+
+
+# ══════════════════════════════════════════════════════
+# 41. MONTHLY ODOMETER — قراءة العداد الشهري
+# ══════════════════════════════════════════════════════
+
+def _mo_row(r: dict, c) -> dict:
+    out = dict(r)
+    c.execute("SELECT plate, model, branch FROM cars WHERE id=?", (r["car_id"],))
+    car = c.fetchone()
+    if car:
+        out["car_plate"]  = car["plate"]
+        out["car_model"]  = car["model"]
+        out["car_branch"] = car["branch"]
+    else:
+        out["car_plate"] = None; out["car_model"] = None; out["car_branch"] = None
+    return out
+
+
+@app.get("/monthly-odometer")
+async def list_monthly_odometer(
+    month:  Optional[str] = None,
+    branch: Optional[str] = None,
+    car_id: Optional[int] = None,
+    page:   int = 1,
+    limit:  int = 100,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    eff = _effective_branch(cu, branch)
+    with get_db() as conn:
+        c = conn.cursor()
+        q = """SELECT mo.* FROM monthly_odometer mo
+               JOIN cars ca ON ca.id = mo.car_id WHERE 1=1"""
+        params: list = []
+        if eff:
+            q += " AND ca.branch=?"; params.append(eff)
+        if month:
+            q += " AND mo.month=?"; params.append(month)
+        if car_id:
+            q += " AND mo.car_id=?"; params.append(car_id)
+        q += " ORDER BY mo.month DESC, ca.branch LIMIT ? OFFSET ?"
+        params += [min(limit,500), (page-1)*limit]
+        c.execute(q, params)
+        rows = [_mo_row(dict(r), c) for r in c.fetchall()]
+    return rows
+
+
+@app.get("/monthly-odometer/summary")
+async def monthly_odometer_summary(
+    month:  Optional[str] = None,
+    branch: Optional[str] = None,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    """ملخص عداد الشهر مجمّع حسب الفرع — يغذي البرنامج الجديد."""
+    if not month:
+        month = datetime.utcnow().strftime("%Y-%m")
+    eff = _effective_branch(cu, branch)
+    with get_db() as conn:
+        c = conn.cursor()
+        q = """SELECT ca.branch,
+                      COUNT(mo.id) as car_count,
+                      SUM(mo.odometer_start) as total_start,
+                      SUM(mo.odometer_end) as total_end,
+                      SUM(mo.odometer_end - mo.odometer_start) as total_km,
+                      SUM(mo.fuel_consumed) as total_fuel,
+                      SUM(mo.working_days) as total_days
+               FROM monthly_odometer mo
+               JOIN cars ca ON ca.id = mo.car_id
+               WHERE mo.month=?"""
+        params: list = [month]
+        if eff:
+            q += " AND ca.branch=?"; params.append(eff)
+        q += " GROUP BY ca.branch ORDER BY ca.branch"
+        c.execute(q, params)
+        rows = [dict(r) for r in c.fetchall()]
+    return {"month": month, "branch": eff or "كل الفروع", "data": rows}
+
+
+@app.post("/monthly-odometer", status_code=201)
+async def create_monthly_odometer(
+    request: Request, body: MonthlyOdometerCreate, cu: dict = Depends(require_admin)
+):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM cars WHERE id=?", (body.car_id,))
+        if not c.fetchone():
+            raise HTTPException(404, "المركبة غير موجودة")
+        # UPSERT — لو موجود يحدّثه
+        c.execute("SELECT id FROM monthly_odometer WHERE car_id=? AND month=?",
+                  (body.car_id, body.month))
+        existing = c.fetchone()
+        if existing:
+            c.execute("""UPDATE monthly_odometer SET
+                odometer_start=?,odometer_end=?,fuel_consumed=?,working_days=?,
+                status=?,notes=?,recorded_by=?,updated_at=?
+                WHERE car_id=? AND month=?""",
+                (body.odometer_start, body.odometer_end, body.fuel_consumed,
+                 body.working_days, body.status, body.notes, cu["username"],
+                 now, body.car_id, body.month))
+            mid = existing["id"]
+        else:
+            c.execute("""INSERT INTO monthly_odometer
+                (car_id,month,odometer_start,odometer_end,fuel_consumed,working_days,
+                 status,notes,recorded_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (body.car_id, body.month, body.odometer_start, body.odometer_end,
+                 body.fuel_consumed, body.working_days, body.status, body.notes,
+                 cu["username"], now, now))
+            mid = c.lastrowid
+        c.execute("SELECT * FROM monthly_odometer WHERE id=?", (mid,))
+        row = _mo_row(dict(c.fetchone()), c)
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "monthly_odometer_upsert",
+                    f"تسجيل عداد {body.month} للمركبة #{body.car_id}",
+                    request.client.host if request.client else "")
+    return row
+
+
+@app.post("/monthly-odometer/bulk", status_code=201)
+async def bulk_monthly_odometer(
+    request: Request,
+    month: str,
+    records: List[MonthlyOdometerCreate],
+    cu: dict = Depends(require_admin)
+):
+    """إدخال عدادات شهرية دفعة واحدة لكل مركبات الفرع."""
+    now = datetime.utcnow().isoformat() + "Z"
+    inserted, updated, errors = 0, 0, []
+    with get_db() as conn:
+        c = conn.cursor()
+        for i, body in enumerate(records):
+            try:
+                body.month = month
+                c.execute("SELECT id FROM cars WHERE id=?", (body.car_id,))
+                if not c.fetchone():
+                    errors.append({"index": i, "car_id": body.car_id, "error": "مركبة غير موجودة"})
+                    continue
+                c.execute("SELECT id FROM monthly_odometer WHERE car_id=? AND month=?",
+                          (body.car_id, month))
+                ex = c.fetchone()
+                if ex:
+                    c.execute("""UPDATE monthly_odometer SET
+                        odometer_start=?,odometer_end=?,fuel_consumed=?,working_days=?,
+                        status=?,notes=?,recorded_by=?,updated_at=?
+                        WHERE id=?""",
+                        (body.odometer_start, body.odometer_end, body.fuel_consumed,
+                         body.working_days, body.status, body.notes, cu["username"],
+                         now, ex["id"]))
+                    updated += 1
+                else:
+                    c.execute("""INSERT INTO monthly_odometer
+                        (car_id,month,odometer_start,odometer_end,fuel_consumed,working_days,
+                         status,notes,recorded_by,created_at,updated_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (body.car_id, month, body.odometer_start, body.odometer_end,
+                         body.fuel_consumed, body.working_days, body.status, body.notes,
+                         cu["username"], now, now))
+                    inserted += 1
+            except Exception as e:
+                errors.append({"index": i, "car_id": body.car_id, "error": str(e)})
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "monthly_odometer_bulk",
+                    f"إدخال {inserted+updated} عداد شهري لـ {month}",
+                    request.client.host if request.client else "")
+    return {"month": month, "inserted": inserted, "updated": updated, "errors": errors}
+
+
+@app.put("/monthly-odometer/{mid}")
+async def update_monthly_odometer(
+    request: Request, mid: int, body: MonthlyOdometerUpdate, cu: dict = Depends(require_admin)
+):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM monthly_odometer WHERE id=?", (mid,))
+        if not c.fetchone():
+            raise HTTPException(404, "السجل غير موجود")
+        c.execute("""UPDATE monthly_odometer SET
+            odometer_start=?,odometer_end=?,fuel_consumed=?,working_days=?,
+            status=?,notes=?,recorded_by=?,updated_at=? WHERE id=?""",
+            (body.odometer_start, body.odometer_end, body.fuel_consumed,
+             body.working_days, body.status, body.notes, cu["username"], now, mid))
+        c.execute("SELECT * FROM monthly_odometer WHERE id=?", (mid,))
+        row = _mo_row(dict(c.fetchone()), c)
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "monthly_odometer_update",
+                    f"تحديث عداد #{mid}",
+                    request.client.host if request.client else "")
+    return row
+
+
+@app.delete("/monthly-odometer/{mid}", status_code=204)
+async def delete_monthly_odometer(request: Request, mid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM monthly_odometer WHERE id=?", (mid,))
+        if not c.fetchone():
+            raise HTTPException(404, "السجل غير موجود")
+        c.execute("DELETE FROM monthly_odometer WHERE id=?", (mid,))
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "monthly_odometer_delete",
+                    f"حذف عداد #{mid}",
+                    request.client.host if request.client else "")
+
+
+# ══════════════════════════════════════════════════════
+# 42. PROJECTS — إدارة المشروعات
+# ══════════════════════════════════════════════════════
+
+@app.get("/projects")
+async def list_projects(
+    branch:  Optional[str] = None,
+    status:  Optional[str] = None,
+    page:    int = 1,
+    limit:   int = 100,
+    cu: dict = Depends(require_admin_or_reporter)
+):
+    eff = _effective_branch(cu, branch)
+    with get_db() as conn:
+        c = conn.cursor()
+        q = "SELECT * FROM projects WHERE 1=1"
+        params: list = []
+        if eff:
+            q += " AND branch=?"; params.append(eff)
+        if status:
+            q += " AND status=?"; params.append(status)
+        q += " ORDER BY branch, name LIMIT ? OFFSET ?"
+        params += [min(limit,500), (page-1)*limit]
+        c.execute(q, params)
+        rows = [dict(r) for r in c.fetchall()]
+    return rows
+
+
+@app.post("/projects", status_code=201)
+async def create_project(request: Request, body: ProjectCreate, cu: dict = Depends(require_admin)):
+    now = datetime.utcnow().isoformat() + "Z"
+    branch = body.branch or cu.get("branch","")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""INSERT INTO projects
+            (name,branch,sector,project_code,manager,location,start_date,end_date,
+             status,budget,notes,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (body.name, branch, body.sector, body.project_code, body.manager,
+             body.location, body.start_date, body.end_date, body.status,
+             body.budget, body.notes, now, now))
+        pid = c.lastrowid
+        c.execute("SELECT * FROM projects WHERE id=?", (pid,))
+        row = dict(c.fetchone())
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "project_create",
+                    f"إضافة مشروع: {body.name}",
+                    request.client.host if request.client else "")
+    return row
+
+
+@app.put("/projects/{pid}")
+async def update_project(request: Request, pid: int, body: ProjectUpdate, cu: dict = Depends(require_admin)):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM projects WHERE id=?", (pid,))
+        if not c.fetchone():
+            raise HTTPException(404, "المشروع غير موجود")
+        c.execute("""UPDATE projects SET
+            name=?,branch=?,sector=?,project_code=?,manager=?,location=?,start_date=?,
+            end_date=?,status=?,budget=?,notes=?,updated_at=? WHERE id=?""",
+            (body.name, body.branch, body.sector, body.project_code, body.manager,
+             body.location, body.start_date, body.end_date, body.status,
+             body.budget, body.notes, now, pid))
+        c.execute("SELECT * FROM projects WHERE id=?", (pid,))
+        row = dict(c.fetchone())
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "project_update",
+                    f"تعديل مشروع #{pid}: {body.name}",
+                    request.client.host if request.client else "")
+    return row
+
+
+@app.delete("/projects/{pid}", status_code=204)
+async def delete_project(request: Request, pid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM projects WHERE id=?", (pid,))
+        if not c.fetchone():
+            raise HTTPException(404, "المشروع غير موجود")
+        c.execute("DELETE FROM projects WHERE id=?", (pid,))
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "project_delete",
+                    f"حذف مشروع #{pid}",
+                    request.client.host if request.client else "")
