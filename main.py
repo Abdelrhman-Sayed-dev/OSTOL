@@ -4126,76 +4126,198 @@ async def get_voice_note_targets(cu: dict = Depends(require_superuser)):
 
 @app.post("/voice-notes")
 async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_superuser)):
-    # التحقق: يجب أن يكون إما target_group أو target_user_id
+    # تحقق target
     if body.target_user_id:
-        # إرسال لشخص معين
         with get_db() as conn:
             c = conn.cursor()
             c.execute("SELECT id FROM users WHERE id=?", (body.target_user_id,))
             if not c.fetchone():
                 raise HTTPException(404, "المستخدم غير موجود")
-        tg = "specific"
+        tg   = "specific"
         tuid = body.target_user_id
     elif body.target_group in ("admins", "drivers"):
         tg   = body.target_group
         tuid = None
     else:
-        raise HTTPException(400, "يجب تحديد target_group (admins/drivers) أو target_user_id")
+        raise HTTPException(400, "يجب تحديد target_group أو target_user_id")
 
     now     = datetime.utcnow()
     expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
+
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""INSERT INTO voice_notes(sender_id,sender_role,target_group,target_user_id,audio_data,
-                     duration_sec,created_at,expires_at,max_plays)
-                     VALUES(?,?,?,?,?,?,?,?,?)""",
-                  (cu["user_id"], cu.get("role","superuser"), tg, tuid, body.audio_data,
-                   body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+
+        # ── migration فوري لو الجدول لسه قديم ──
+        c.execute("PRAGMA table_info(voice_notes)")
+        vn_cols = {row["name"] for row in c.fetchall()}
+
+        if "target_user_id" not in vn_cols:
+            try:
+                c.execute("""CREATE TABLE voice_notes_v2(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id INTEGER NOT NULL,
+                    sender_role TEXT NOT NULL DEFAULT 'superuser',
+                    target_group TEXT DEFAULT '',
+                    target_user_id INTEGER DEFAULT NULL,
+                    audio_data TEXT NOT NULL,
+                    duration_sec REAL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    play_count INTEGER DEFAULT 0,
+                    max_plays INTEGER DEFAULT 2,
+                    is_deleted INTEGER DEFAULT 0
+                )""")
+                common = ",".join(col for col in
+                    ["id","sender_id","target_group","audio_data","duration_sec",
+                     "created_at","expires_at","play_count","max_plays","is_deleted"]
+                    if col in vn_cols)
+                if common:
+                    c.execute(f"INSERT INTO voice_notes_v2({common}) SELECT {common} FROM voice_notes")
+                c.execute("DROP TABLE voice_notes")
+                c.execute("ALTER TABLE voice_notes_v2 RENAME TO voice_notes")
+                log.info("✅ voice_notes POST migration done")
+                vn_cols = {"id","sender_id","sender_role","target_group","target_user_id",
+                           "audio_data","duration_sec","created_at","expires_at",
+                           "play_count","max_plays","is_deleted"}
+            except Exception as me:
+                log.error(f"POST migration error: {me}")
+
+        # ── INSERT حسب الـ schema ──
+        if "target_user_id" in vn_cols and "sender_role" in vn_cols:
+            c.execute("""INSERT INTO voice_notes(sender_id,sender_role,target_group,
+                         target_user_id,audio_data,duration_sec,created_at,expires_at,max_plays)
+                         VALUES(?,?,?,?,?,?,?,?,?)""",
+                      (cu["user_id"], cu.get("role","superuser"), tg, tuid,
+                       body.audio_data, body.duration_sec,
+                       now.isoformat()+"Z", expires, body.max_plays))
+        elif "target_user_id" in vn_cols:
+            c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,
+                         audio_data,duration_sec,created_at,expires_at,max_plays)
+                         VALUES(?,?,?,?,?,?,?,?)""",
+                      (cu["user_id"], tg, tuid, body.audio_data,
+                       body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+        else:
+            # جدول قديم: fallback - بعت فقط للـ group
+            safe_tg = tg if tg in ("admins","drivers") else "admins"
+            c.execute("""INSERT INTO voice_notes(sender_id,target_group,
+                         audio_data,duration_sec,created_at,expires_at,max_plays)
+                         VALUES(?,?,?,?,?,?,?)""",
+                      (cu["user_id"], safe_tg, body.audio_data,
+                       body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+
         note_id = c.lastrowid
+
     return {"id": note_id, "expires_at": expires}
 
 @app.get("/voice-notes")
 async def list_voice_notes(cu: dict = Depends(get_user)):
     role = cu["role"]
     now  = datetime.utcnow().isoformat() + "Z"
+    uid  = cu["user_id"]
 
-    # السوبر يشوف اللي أرسلها هو (مع اسم المستلم)
+    # ── تحقق من الـ schema وعمل migration لو لازم ──
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("PRAGMA table_info(voice_notes)")
+        vn_cols = {row["name"] for row in c.fetchall()}
+
+        if "target_user_id" not in vn_cols:
+            # جدول قديم: migration فوري
+            try:
+                c.execute("""CREATE TABLE voice_notes_v2(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id INTEGER NOT NULL,
+                    sender_role TEXT NOT NULL DEFAULT 'superuser',
+                    target_group TEXT DEFAULT '',
+                    target_user_id INTEGER DEFAULT NULL,
+                    audio_data TEXT NOT NULL,
+                    duration_sec REAL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    play_count INTEGER DEFAULT 0,
+                    max_plays INTEGER DEFAULT 2,
+                    is_deleted INTEGER DEFAULT 0
+                )""")
+                common = ",".join(col for col in
+                    ["id","sender_id","target_group","audio_data","duration_sec",
+                     "created_at","expires_at","play_count","max_plays","is_deleted"]
+                    if col in vn_cols)
+                if common:
+                    c.execute(f"INSERT INTO voice_notes_v2({common}) SELECT {common} FROM voice_notes")
+                c.execute("DROP TABLE voice_notes")
+                c.execute("ALTER TABLE voice_notes_v2 RENAME TO voice_notes")
+                try: c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT NOT NULL DEFAULT 'superuser'")
+                except Exception: pass
+                log.info("✅ voice_notes on-the-fly migration done")
+                vn_cols = {"id","sender_id","sender_role","target_group","target_user_id",
+                           "audio_data","duration_sec","created_at","expires_at",
+                           "play_count","max_plays","is_deleted"}
+            except Exception as mig_e:
+                log.error(f"voice_notes migration failed: {mig_e}")
+
+    # ── السوبر يشوف اللي أرسلها هو ──
     if role == "superuser":
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("""SELECT vn.id, vn.target_group, vn.target_user_id,
-                                vn.duration_sec, vn.created_at,
-                                vn.expires_at, vn.play_count, vn.max_plays, vn.is_deleted,
-                                u.username as target_username
-                         FROM voice_notes vn
-                         LEFT JOIN users u ON u.id = vn.target_user_id
-                         WHERE vn.sender_id=?
-                         ORDER BY vn.created_at DESC""", (cu["user_id"],))
+            # استخدم query تتعامل مع الـ schema القديمة والجديدة
+            if "target_user_id" in vn_cols:
+                c.execute("""SELECT vn.id, vn.target_group, vn.target_user_id,
+                                    vn.duration_sec, vn.created_at, vn.expires_at,
+                                    vn.play_count, vn.max_plays, vn.is_deleted,
+                                    u.username as target_username
+                             FROM voice_notes vn
+                             LEFT JOIN users u ON u.id = vn.target_user_id
+                             WHERE vn.sender_id=?
+                             ORDER BY vn.created_at DESC""", (uid,))
+            else:
+                c.execute("""SELECT id, target_group, duration_sec, created_at,
+                                    expires_at, play_count, max_plays, is_deleted
+                             FROM voice_notes WHERE sender_id=?
+                             ORDER BY created_at DESC""", (uid,))
             return [dict(r) for r in c.fetchall()]
 
-    # أدمن/ريبورتر → يشوف اللي للـ admins + اللي أُرسل إليه مباشرة
+    # ── أدمن/ريبورتر ──
     if role in ("admin", "reporter", "supervisor_workshop", "supervisor_field"):
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                play_count, max_plays, audio_data
-                         FROM voice_notes
-                         WHERE (target_group='admins' OR target_user_id=?)
-                           AND is_deleted=0
-                           AND expires_at > ? AND play_count < max_plays
-                         ORDER BY created_at DESC""", (cu["user_id"], now))
+            if "target_user_id" in vn_cols:
+                c.execute("""SELECT id, duration_sec, created_at, expires_at,
+                                    play_count, max_plays, audio_data
+                             FROM voice_notes
+                             WHERE (target_group='admins' OR target_user_id=?)
+                               AND is_deleted=0 AND expires_at > ?
+                               AND play_count < max_plays
+                             ORDER BY created_at DESC""", (uid, now))
+            else:
+                c.execute("""SELECT id, duration_sec, created_at, expires_at,
+                                    play_count, max_plays, audio_data
+                             FROM voice_notes
+                             WHERE target_group='admins'
+                               AND is_deleted=0 AND expires_at > ?
+                               AND play_count < max_plays
+                             ORDER BY created_at DESC""", (now,))
             return [dict(r) for r in c.fetchall()]
 
+    # ── سائق ──
     elif role == "driver":
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                play_count, max_plays, audio_data
-                         FROM voice_notes
-                         WHERE (target_group='drivers' OR target_user_id=?)
-                           AND is_deleted=0
-                           AND expires_at > ? AND play_count < max_plays
-                         ORDER BY created_at DESC""", (cu["user_id"], now))
+            if "target_user_id" in vn_cols:
+                c.execute("""SELECT id, duration_sec, created_at, expires_at,
+                                    play_count, max_plays, audio_data
+                             FROM voice_notes
+                             WHERE (target_group='drivers' OR target_user_id=?)
+                               AND is_deleted=0 AND expires_at > ?
+                               AND play_count < max_plays
+                             ORDER BY created_at DESC""", (uid, now))
+            else:
+                c.execute("""SELECT id, duration_sec, created_at, expires_at,
+                                    play_count, max_plays, audio_data
+                             FROM voice_notes
+                             WHERE target_group='drivers'
+                               AND is_deleted=0 AND expires_at > ?
+                               AND play_count < max_plays
+                             ORDER BY created_at DESC""", (now,))
             return [dict(r) for r in c.fetchall()]
 
     return []
