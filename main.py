@@ -261,7 +261,7 @@ def migrate_db():
         c.execute("""CREATE TABLE IF NOT EXISTS voice_notes(
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             sender_id      INTEGER NOT NULL,
-            sender_role    TEXT    NOT NULL DEFAULT 'superuser',
+            sender_role    TEXT    DEFAULT 'superuser',
             target_group   TEXT    DEFAULT '',
             target_user_id INTEGER DEFAULT NULL,
             audio_data     TEXT    NOT NULL,
@@ -274,7 +274,7 @@ def migrate_db():
         )""")
         # Migration: add new columns BEFORE creating indexes (columns must exist first)
         try:
-            c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT NOT NULL DEFAULT 'superuser'")
+            c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT DEFAULT 'superuser'")
         except Exception: pass
         try:
             c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
@@ -4128,13 +4128,21 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
             raise HTTPException(403, "الأدمن يقدر يبعت لسائق معين فقط — غير مسموح بالإرسال لمجموعة")
         if not body.target_user_id:
             raise HTTPException(400, "يجب تحديد السائق المستهدف")
-        # التحقق إن الـ target هو سائق فعلاً
+        # التحقق إن الـ target هو سائق فعلاً (الأدمن بس — السوبر يقدر يبعت لأي حد)
         with get_db() as conn:
             c = conn.cursor()
             c.execute("SELECT role FROM users WHERE id=?", (body.target_user_id,))
             tgt = c.fetchone()
             if not tgt or tgt["role"] != "driver":
                 raise HTTPException(400, "الأدمن مسموح له فقط بالإرسال لسائق")
+
+    # السوبر: التحقق من وجود الـ target_user_id لو حدد شخص معين
+    if role == "superuser" and body.target_user_id:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id FROM users WHERE id=?", (body.target_user_id,))
+            if not c.fetchone():
+                raise HTTPException(400, "المستخدم المحدد غير موجود")
 
     # التحقق من صحة target_group
     if body.target_group and body.target_group not in ("admins", "drivers"):
@@ -4144,13 +4152,35 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
     expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""INSERT INTO voice_notes(sender_id, sender_role, target_group, target_user_id,
-                     audio_data, duration_sec, created_at, expires_at, max_plays)
-                     VALUES(?,?,?,?,?,?,?,?,?)""",
-                  (cu["user_id"], role,
-                   body.target_group or "", body.target_user_id,
-                   body.audio_data, body.duration_sec,
-                   now.isoformat()+"Z", expires, body.max_plays))
+        tgt_group = body.target_group or ""
+        tgt_uid   = body.target_user_id if body.target_user_id else None
+        # تأكد من وجود الأعمدة الجديدة قبل الـ INSERT
+        try:
+            c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT DEFAULT 'superuser'")
+        except Exception: pass
+        try:
+            c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
+        except Exception: pass
+        try:
+            c.execute("ALTER TABLE voice_notes ADD COLUMN target_group TEXT DEFAULT ''")
+        except Exception: pass
+        try:
+            c.execute("""INSERT INTO voice_notes(sender_id, sender_role, target_group, target_user_id,
+                         audio_data, duration_sec, created_at, expires_at, max_plays)
+                         VALUES(?,?,?,?,?,?,?,?,?)""",
+                      (cu["user_id"], role,
+                       tgt_group, tgt_uid,
+                       body.audio_data, body.duration_sec,
+                       now.isoformat()+"Z", expires, body.max_plays))
+        except Exception as e:
+            # fallback: insert without new columns (older DB schema)
+            log.warning(f"voice_note insert fallback: {e}")
+            c.execute("""INSERT INTO voice_notes(sender_id, target_group,
+                         audio_data, duration_sec, created_at, expires_at, max_plays)
+                         VALUES(?,?,?,?,?,?,?)""",
+                      (cu["user_id"], tgt_group,
+                       body.audio_data, body.duration_sec,
+                       now.isoformat()+"Z", expires, body.max_plays))
         note_id = c.lastrowid
     return {"id": note_id, "expires_at": expires}
 
