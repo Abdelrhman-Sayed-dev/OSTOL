@@ -1475,7 +1475,6 @@ function buildAdminNav() {
     {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'}, // 9. التقارير
     {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
-    {id:'rental',        icon:'🔄', label:'المعدات المؤجرة'},
     {id:'monthly-odometer', icon:'📏', label:'العداد الشهري'},
     {id:'projects',      icon:'🏗️', label:'المشروعات'},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
@@ -1547,7 +1546,6 @@ async function renderSection(id) {
     case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
     case 'maintenance':     await renderMaintenanceSection(); break;
-    case 'rental':          await renderRentalSection(); break;
     case 'monthly-odometer': await renderMonthlyOdometerSection(); break;
     case 'projects':        await renderProjectsSection(); break;
     case 'monthly-report':   await renderMonthlyReport(); break;
@@ -6073,7 +6071,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','rental','monthly-odometer','projects'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','monthly-odometer','projects'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -10716,7 +10714,8 @@ async function renderMonthlyOdometerSection() {
   const c = document.getElementById('pageContent');
   c.innerHTML = `<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1.2rem;flex-wrap:wrap">
     <h2 style="flex:1;font-size:1.25rem;font-weight:700">📏 العداد الشهري</h2>
-    <button class="btn btn-outline btn-sm" onclick="openBulkOdometerModal()">📋 إدخال دفعة</button>
+    <a href="/import/template/monthly-odometer" class="btn btn-outline btn-sm" download>⬇️ قالب CSV</a>
+    <button class="btn btn-outline btn-sm" onclick="openOdometerCsvModal()">📂 رفع CSV</button>
     <button class="btn btn-primary btn-sm" onclick="openOdometerModal()">+ إضافة سجل</button>
   </div>
   <div class="card" style="margin-bottom:1rem">
@@ -10861,59 +10860,105 @@ async function deleteOdometer(id) {
   } catch(e) { showNotification(e.message||'فشل الحذف','error'); }
 }
 
-function openBulkOdometerModal() {
+function openOdometerCsvModal() {
   const month = document.getElementById('modoMonth')?.value || '';
   const m = document.createElement('div');
-  m.className='modal-overlay'; m.id='bulkModoModal';
-  m.innerHTML=`<div class="modal" style="max-width:680px;width:95%">
-    <div class="modal-header"><h3>📋 إدخال عدادات دفعة واحدة</h3>
-      <button onclick="document.getElementById('bulkModoModal').remove()">✕</button></div>
+  m.className='modal-overlay'; m.id='csvModoModal';
+  m.innerHTML=`<div class="modal" style="max-width:560px;width:95%">
+    <div class="modal-header">
+      <h3>📂 رفع ملف CSV — العداد الشهري</h3>
+      <button onclick="document.getElementById('csvModoModal').remove()">✕</button>
+    </div>
     <div class="modal-body">
-      <div class="form-group"><label>الشهر <span class="req">*</span></label>
-        <input id="bMonth" class="form-control" type="month" value="${month}" style="max-width:200px"></div>
-      <div style="background:var(--surface-2);border-radius:10px;padding:1rem;margin-bottom:1rem;font-size:.85rem;color:var(--muted)">
-        <strong>صيغة البيانات:</strong> كل سطر = سجل واحد<br>
-        <code style="font-size:.8rem">ID المركبة | عداد أول الشهر | عداد آخر الشهر | وقود (لتر) | أيام</code><br>
-        مثال: <code>15 | 125000 | 127500 | 320 | 26</code>
+      <div class="form-group">
+        <label>الشهر <span class="req">*</span></label>
+        <input id="csvModoMonth" class="form-control" type="month" value="${month}" style="max-width:200px">
       </div>
-      <div class="form-group"><label>البيانات <span class="req">*</span></label>
-        <textarea id="bData" class="form-control" rows="10" dir="ltr" style="font-family:monospace;font-size:.85rem" placeholder="15 | 125000 | 127500 | 320 | 26&#10;22 | 87000  | 89200  | 180 | 26&#10;..."></textarea></div>
+      <div style="background:var(--surface-2);border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.83rem;color:var(--muted);line-height:1.7">
+        <strong style="color:var(--text)">أعمدة الملف المطلوبة:</strong><br>
+        <code>car_id | odometer_start | odometer_end | fuel_consumed | working_days | notes</code><br>
+        <span style="font-size:.78rem">الصف الأول رأس (header) — يُتجاهل تلقائياً</span>
+      </div>
+      <div class="form-group">
+        <label>ملف CSV <span class="req">*</span></label>
+        <input type="file" id="csvModoFile" accept=".csv,.xlsx,.xls"
+          style="padding:.5rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
+      </div>
+      <div id="csvModoPreview" style="display:none;margin-top:.75rem;background:var(--surface-2);border-radius:8px;padding:.75rem;font-size:.82rem;max-height:180px;overflow-y:auto"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="document.getElementById('bulkModoModal').remove()">إلغاء</button>
-      <button class="btn btn-primary" onclick="saveBulkOdometer()">📥 رفع الدفعة</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('csvModoModal').remove()">إلغاء</button>
+      <button class="btn btn-outline btn-sm" onclick="previewOdometerCsv()">🔍 استعراض</button>
+      <button class="btn btn-primary" id="csvModoUploadBtn" onclick="uploadOdometerCsv()" disabled>📥 رفع</button>
     </div>
   </div>`;
   document.body.appendChild(m);
 }
 
-async function saveBulkOdometer() {
-  const month = document.getElementById('bMonth')?.value;
-  const raw   = document.getElementById('bData')?.value || '';
+let _csvModoRecords = [];
+
+async function previewOdometerCsv() {
+  const file  = document.getElementById('csvModoFile')?.files[0];
+  const month = document.getElementById('csvModoMonth')?.value;
+  if(!file)  return showNotification('اختر ملف أولاً','error');
   if(!month) return showNotification('الشهر مطلوب','error');
-  const records = [];
-  const lines = raw.trim().split('\n');
-  for(const line of lines) {
-    if(!line.trim()) continue;
-    const parts = line.split('|').map(p=>p.trim());
-    if(parts.length < 3) continue;
-    records.push({
-      car_id:        parseInt(parts[0])||0,
+
+  const text = await file.text();
+  const lines = text.trim().split('\n').filter(l=>l.trim());
+  // skip header row
+  const dataLines = lines[0].toLowerCase().includes('car_id') || isNaN(lines[0].split(/[,|;\t]/)[0]) ? lines.slice(1) : lines;
+
+  _csvModoRecords = [];
+  const preview = [];
+  for(const line of dataLines) {
+    const sep = line.includes('|') ? '|' : line.includes(';') ? ';' : line.includes('\t') ? '\t' : ',';
+    const p = line.split(sep).map(x=>x.trim());
+    if(!p[0] || isNaN(p[0])) continue;
+    const rec = {
+      car_id:         parseInt(p[0])||0,
       month,
-      odometer_start: parseFloat(parts[1])||0,
-      odometer_end:  parseFloat(parts[2])||0,
-      fuel_consumed: parseFloat(parts[3])||0,
-      working_days:  parseInt(parts[4])||0,
-      status: 'active', notes: ''
-    });
+      odometer_start: parseFloat(p[1])||0,
+      odometer_end:   parseFloat(p[2])||0,
+      fuel_consumed:  parseFloat(p[3])||0,
+      working_days:   parseInt(p[4])||0,
+      notes:          p[5]||'',
+      status:         'active'
+    };
+    _csvModoRecords.push(rec);
+    preview.push(`<div style="padding:.3rem 0;border-bottom:1px solid var(--border)">
+      <strong>ID ${rec.car_id}</strong> — ${rec.odometer_start.toLocaleString()} → ${rec.odometer_end.toLocaleString()} كم
+      ${rec.fuel_consumed?` | ⛽ ${rec.fuel_consumed} لتر`:''}
+      ${rec.working_days?` | 📅 ${rec.working_days} يوم`:''}
+    </div>`);
   }
-  if(!records.length) return showNotification('لا توجد بيانات صحيحة','error');
+
+  const prev = document.getElementById('csvModoPreview');
+  if(!_csvModoRecords.length) {
+    prev.style.display='block';
+    prev.innerHTML='<span style="color:var(--danger)">❌ لم يتم العثور على بيانات صحيحة</span>';
+    document.getElementById('csvModoUploadBtn').disabled=true;
+    return;
+  }
+  prev.style.display='block';
+  prev.innerHTML=`<div style="margin-bottom:.5rem;font-weight:600;color:var(--success)">✅ ${_csvModoRecords.length} سجل جاهز للرفع</div>${preview.join('')}`;
+  document.getElementById('csvModoUploadBtn').disabled=false;
+}
+
+async function uploadOdometerCsv() {
+  const month = document.getElementById('csvModoMonth')?.value;
+  if(!month || !_csvModoRecords.length) return;
+  const btn = document.getElementById('csvModoUploadBtn');
+  btn.disabled=true; btn.textContent='⏳ جاري الرفع...';
   try {
-    const res = await apiCall(`/monthly-odometer/bulk?month=${month}`,'POST',records);
-    document.getElementById('bulkModoModal')?.remove();
-    showNotification(`✅ تم: ${res.inserted} جديد، ${res.updated} محدّث${res.errors?.length?'، '+res.errors.length+' خطأ':''}`, 'success');
+    const res = await apiCall(`/monthly-odometer/bulk?month=${month}`,'POST',_csvModoRecords);
+    document.getElementById('csvModoModal')?.remove();
+    showNotification(`✅ تم: ${res.inserted} جديد، ${res.updated} محدّث${res.errors?.length?' — '+res.errors.length+' خطأ':''}`, 'success');
+    _csvModoRecords = [];
     await loadMonthlyOdometer();
-  } catch(e) { showNotification(e.message||'فشل الرفع','error'); }
+  } catch(e) {
+    showNotification(e.message||'فشل الرفع','error');
+    btn.disabled=false; btn.textContent='📥 رفع';
+  }
 }
 
 /* ══════════════════════════════════════════════════════
