@@ -9100,19 +9100,17 @@ async function renderDriverKpiSection() {
               <th>السائق</th>
               <th>الفرع</th>
               <th style="text-align:center">النقاط الكلية</th>
-              <th style="text-align:center">الكيلومترات</th>
-              <th style="text-align:center">نقاط الكم</th>
-              <th style="text-align:center">الطوارئ</th>
-              <th style="text-align:center">نقاط الطوارئ</th>
-              <th style="text-align:center">الوقود (ل)</th>
-              <th style="text-align:center">استهلاك ل/100كم</th>
-              <th style="text-align:center">الطلبات المفتوحة</th>
+              <th style="text-align:center" title="الوزن: 10%">الرحلات<br><small style="color:#94a3b8">10%</small></th>
+              <th style="text-align:center" title="الوزن: 40%">الكيلومترات<br><small style="color:#94a3b8">40%</small></th>
+              <th style="text-align:center" title="الوزن: 40%">وقود ل/100كم<br><small style="color:#94a3b8">40%</small></th>
+              <th style="text-align:center" title="الوزن: 5%">زيوت ل/1000كم<br><small style="color:#94a3b8">5%</small></th>
+              <th style="text-align:center" title="الوزن: 5%">طوارئ<br><small style="color:#94a3b8">5%</small></th>
               <th style="text-align:center">التصنيف</th>
               <th style="text-align:center">تفاصيل</th>
             </tr>
           </thead>
           <tbody id="kpiTableBody">
-            <tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+            <tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
           </tbody>
         </table>
       </div>
@@ -9129,7 +9127,7 @@ async function loadKpiData() {
   const tbody  = document.getElementById('kpiTableBody');
   const summary = document.getElementById('kpiSummary');
 
-  if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
 
   try {
     let url = `/reports/driver-kpi?month=${month}`;
@@ -9139,18 +9137,20 @@ async function loadKpiData() {
     _kpiData = data.drivers || [];
 
     // ── ملخص ──
-    const active = _kpiData.length;
-    const avgScore = active ? (_kpiData.reduce((s,d)=>s+d.total_score,0)/active).toFixed(1) : 0;
+    const active    = _kpiData.length;
+    const avgScore  = active ? (_kpiData.reduce((s,d)=>s+d.total_score,0)/active).toFixed(1) : 0;
+    const avgKmVal  = data.avg_km || (active ? _kpiData.reduce((s,d)=>s+(d.km||0),0)/active : 0);
     const topDriver = _kpiData[0];
     const excellent = _kpiData.filter(d=>d.grade==='ممتاز').length;
     const needsWork = _kpiData.filter(d=>d.grade==='يحتاج تحسين').length;
 
     if (summary) summary.innerHTML = [
-      {label:'إجمالي السائقين', value: active, icon:'👨‍✈️', color:'var(--primary)'},
-      {label:'متوسط النقاط',    value: avgScore+'%', icon:'📊', color:'#3b82f6'},
-      {label:'تصنيف ممتاز',    value: excellent, icon:'🌟', color:'#10b981'},
-      {label:'يحتاج تحسين',    value: needsWork, icon:'⚠️', color:'#ef4444'},
-      {label:'أفضل سائق',       value: topDriver?.driver_name||'—', icon:'🏆', color:'#f59e0b'},
+      {label:'إجمالي السائقين',       value: active,                          icon:'👨‍✈️', color:'var(--primary)'},
+      {label:'متوسط النقاط',           value: avgScore+'%',                    icon:'📊', color:'#3b82f6'},
+      {label:'متوسط الكم / سائق',     value: Math.round(avgKmVal)+' كم',     icon:'📍', color:'#8b5cf6'},
+      {label:'تصنيف ممتاز',            value: excellent,                       icon:'🌟', color:'#10b981'},
+      {label:'يحتاج تحسين',            value: needsWork,                       icon:'⚠️', color:'#ef4444'},
+      {label:'أفضل سائق',              value: topDriver?.driver_name||'—',     icon:'🏆', color:'#f59e0b'},
     ].map(s=>`
       <div class="card" style="text-align:center;padding:1rem">
         <div style="font-size:1.5rem">${s.icon}</div>
@@ -9160,7 +9160,7 @@ async function loadKpiData() {
 
     renderKpiTable(_kpiData);
   } catch(e) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
   }
 }
 
@@ -9168,48 +9168,74 @@ function renderKpiTable(rows) {
   const tbody = document.getElementById('kpiTableBody');
   if (!tbody) return;
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
     return;
   }
 
+  const avgKm = _kpiData.length ? (_kpiData.reduce((s,d)=>s+(d.avg_km_peers||0),0)/_kpiData.length) : 0;
+
   tbody.innerHTML = rows.map(d => {
-    // شريط النقاط
-    const barColor = d.total_score>=85 ? '#10b981' : d.total_score>=70 ? '#3b82f6' : d.total_score>=50 ? '#f97316' : '#ef4444';
+    const barColor = d.total_score>=85?'#10b981':d.total_score>=70?'#3b82f6':d.total_score>=50?'#f97316':'#ef4444';
     const scoreBar = `
       <div style="display:flex;align-items:center;gap:.5rem">
-        <div style="flex:1;background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+        <div style="flex:1;background:var(--border);border-radius:4px;height:8px;overflow:hidden">
           <div style="width:${d.total_score}%;height:100%;background:${barColor};border-radius:4px;transition:width .4s"></div>
         </div>
-        <span style="font-weight:800;color:${barColor};min-width:36px">${d.total_score}%</span>
+        <span style="font-weight:900;color:${barColor};min-width:40px;font-size:.95rem">${d.total_score}%</span>
       </div>`;
 
-    const grade = `<span style="background:${d.grade_color}20;color:${d.grade_color};font-size:.75rem;padding:.2rem .6rem;border-radius:20px;font-weight:700">${d.grade}</span>`;
+    const grade = `<span style="background:${d.grade_color}20;color:${d.grade_color};font-size:.75rem;padding:.2rem .7rem;border-radius:20px;font-weight:700">${d.grade}</span>`;
+    const rankEmoji = d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':`<span style="font-weight:700">#${d.rank}</span>`;
 
-    const rankEmoji = d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':`#${d.rank}`;
+    // الرحلات (10%)
+    const tripsCell = `<div style="text-align:center">
+      <div style="font-weight:700">${d.trips}</div>
+      <div style="font-size:.72rem;color:${d.trips_score>=85?'#10b981':d.trips_score>=50?'#f97316':'#ef4444'}">${d.trips_score??0}%</div>
+    </div>`;
 
-    const consumptionCell = d.consumption
-      ? `<span style="color:${d.consumption<=30?'#10b981':d.consumption<=35?'#f97316':'#ef4444'}">${d.consumption}</span>`
-      : `<span style="color:var(--muted)">—</span>`;
+    // الكيلومترات (40%) - مع المقارنة بالمتوسط
+    const kmRef = d.avg_km_peers || 0;
+    const kmVsAvg = kmRef>0 ? (d.km>=kmRef*1.1?'↑':d.km<kmRef*0.9?'↓':'=') : '';
+    const kmCell = `<div style="text-align:center">
+      <div style="font-weight:700">${d.km.toLocaleString('ar-EG')} كم <span style="color:${kmVsAvg==='↑'?'#10b981':kmVsAvg==='↓'?'#ef4444':'#94a3b8'}">${kmVsAvg}</span></div>
+      <div style="font-size:.72rem;color:${d.km_score>=85?'#10b981':d.km_score>=50?'#f97316':'#ef4444'}">${d.km_score??0}%</div>
+    </div>`;
 
-    const fuelScoreCell = d.fuel_score !== null
-      ? `<span style="color:${d.fuel_score>=85?'#10b981':d.fuel_score>=65?'#f97316':'#ef4444'}">${d.fuel_score}%</span>`
-      : `<span style="color:var(--muted)">—</span>`;
+    // وقود (40%)
+    const fuelCell = d.consumption!=null
+      ? `<div style="text-align:center">
+          <div style="font-weight:700;color:${d.consumption<=25?'#10b981':d.consumption<=30?'#3b82f6':d.consumption<=35?'#f97316':'#ef4444'}">${d.consumption}</div>
+          <div style="font-size:.72rem;color:${(d.fuel_score??0)>=85?'#10b981':(d.fuel_score??0)>=55?'#f97316':'#ef4444'}">${d.fuel_score??'—'}%</div>
+         </div>`
+      : `<span style="color:var(--muted);font-size:.8rem">—</span>`;
+
+    // زيوت (5%)
+    const oilCell = d.oil_per_1000!=null
+      ? `<div style="text-align:center">
+          <div style="font-weight:700;color:${d.oil_per_1000<=0.5?'#10b981':d.oil_per_1000<=1?'#3b82f6':d.oil_per_1000<=2?'#f97316':'#ef4444'}">${d.oil_per_1000}</div>
+          <div style="font-size:.72rem;color:${(d.oil_score??0)>=85?'#10b981':(d.oil_score??0)>=55?'#f97316':'#ef4444'}">${d.oil_score??'—'}%</div>
+         </div>`
+      : `<span style="color:var(--muted);font-size:.8rem">—</span>`;
+
+    // طوارئ (5%)
+    const emgCell = `<div style="text-align:center">
+      <div style="font-weight:700;color:${d.emergencies===0?'#10b981':'#ef4444'}">${d.emergencies} 🚨</div>
+      <div style="font-size:.72rem;color:${d.emg_score===100?'#10b981':d.emg_score>=60?'#f97316':'#ef4444'}">${d.emg_score}%</div>
+    </div>`;
 
     return `<tr>
-      <td style="text-align:center;font-weight:700;font-size:1rem">${rankEmoji}</td>
+      <td style="text-align:center;font-size:1.1rem">${rankEmoji}</td>
       <td><strong>${d.driver_name}</strong></td>
-      <td style="font-size:.82rem;color:var(--muted)">${d.branch||'—'}</td>
+      <td style="font-size:.8rem;color:var(--muted)">${d.branch||'—'}</td>
       <td>${scoreBar}</td>
-      <td style="text-align:center">${d.km.toLocaleString('ar-EG')} كم</td>
-      <td style="text-align:center;color:${d.km_score>=85?'#10b981':d.km_score>=50?'#f97316':'#ef4444'}">${d.km_score}%</td>
-      <td style="text-align:center;color:${d.emergencies===0?'#10b981':'#ef4444'}">${d.emergencies}</td>
-      <td style="text-align:center;color:${d.emg_score===100?'#10b981':d.emg_score>=70?'#f97316':'#ef4444'}">${d.emg_score}%</td>
-      <td style="text-align:center">${d.fuel_liters>0?d.fuel_liters.toLocaleString('ar-EG')+' ل':'—'}</td>
-      <td style="text-align:center">${consumptionCell}</td>
-      <td style="text-align:center;color:${d.open_requests===0?'#10b981':'#f97316'}">${d.open_requests}</td>
+      <td>${tripsCell}</td>
+      <td>${kmCell}</td>
+      <td>${fuelCell}</td>
+      <td>${oilCell}</td>
+      <td>${emgCell}</td>
       <td style="text-align:center">${grade}</td>
       <td style="text-align:center">
-        <button class="btn btn-ghost btn-sm" onclick="showKpiDetail(${d.driver_id})">📋</button>
+        <button class="btn btn-ghost btn-sm" onclick="showKpiDetail(${d.driver_id})" title="تفاصيل">📋</button>
       </td>
     </tr>`;
   }).join('');
@@ -9258,12 +9284,13 @@ function showKpiDetail(driverId) {
         </div>
       </div>
 
-      <!-- المؤشرات -->
+      <!-- المؤشرات بالأوزان الجديدة -->
       <div style="margin-bottom:1.5rem">
-        ${meter('📍 الكيلومترات ('+d.km.toLocaleString('ar-EG')+' كم)', d.km_score, 'الهدف: 3,000 كم')}
-        ${meter('🚨 سلامة الطوارئ', d.emg_score, d.emergencies+' بلاغ هذا الشهر')}
-        ${meter('⛽ كفاءة الوقود', d.fuel_score, d.consumption?d.consumption+' ل/100كم':null)}
-        ${meter('📋 الطلبات المفتوحة', d.req_score, d.open_requests+' طلب معلق')}
+        ${meter('🗺️ عدد الرحلات — 10% ('+d.trips+' رحلة)', d.trips_score??null, 'كلما زادت الرحلات زادت النقاط')}
+        ${meter('📍 الكيلومترات — 40% ('+d.km.toLocaleString('ar-EG')+' كم)', d.km_score, 'المتوسط: '+(d.avg_km_peers||0).toLocaleString('ar-EG')+' كم')}
+        ${meter('⛽ استهلاك الوقود — 40%'+(d.consumption?' ('+d.consumption+' ل/100كم)':''), d.fuel_score, d.fuel_liters>0?d.fuel_liters+' لتر وقود':null)}
+        ${meter('🛢️ استهلاك الزيوت — 5%'+(d.oil_per_1000?' ('+d.oil_per_1000+' ل/1000كم)':''), d.oil_score, d.oil_liters>0?d.oil_liters+' لتر زيت':null)}
+        ${meter('🚨 الحوادث والطوارئ — 5% ('+d.emergencies+' حادثة)', d.emg_score, 'كلما قل عدد الحوادث زادت النقاط')}
       </div>
 
       <!-- إحصائيات إضافية -->
@@ -9285,11 +9312,18 @@ function showKpiDetail(driverId) {
 
 function exportKpiCSV() {
   if (!_kpiData.length) return showNotification('لا توجد بيانات للتصدير', 'error');
-  const headers = ['الترتيب','السائق','الفرع','النقاط الكلية','التصنيف','الكيلومترات','نقاط الكم','الرحلات','الطوارئ','نقاط الطوارئ','الوقود (ل)','استهلاك ل/100كم','نقاط الوقود','طلبات مفتوحة','نقاط الطلبات'];
+  const headers = ['الترتيب','السائق','الفرع','النقاط الكلية','التصنيف',
+    'الرحلات','نقاط الرحلات(10%)','الكيلومترات','متوسط الكم','نقاط الكم(40%)',
+    'وقود(ل)','استهلاك ل/100كم','نقاط الوقود(40%)',
+    'زيوت(ل)','استهلاك ل/1000كم','نقاط الزيوت(5%)',
+    'طوارئ','نقاط الطوارئ(5%)'];
   const rows = _kpiData.map(d=>[
     d.rank, d.driver_name, d.branch, d.total_score+'%', d.grade,
-    d.km, d.km_score+'%', d.trips, d.emergencies, d.emg_score+'%',
-    d.fuel_liters, d.consumption??'', d.fuel_score??'', d.open_requests, d.req_score+'%'
+    d.trips, (d.trips_score??0)+'%',
+    d.km, d.avg_km_peers||0, (d.km_score??0)+'%',
+    d.fuel_liters, d.consumption??'', d.fuel_score!=null?d.fuel_score+'%':'—',
+    d.oil_liters||0, d.oil_per_1000??'', d.oil_score!=null?d.oil_score+'%':'—',
+    d.emergencies, d.emg_score+'%'
   ]);
   const csv = '\uFEFF' + [headers,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
   const a = document.createElement('a');
