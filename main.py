@@ -4144,111 +4144,67 @@ async def get_voice_note_targets(cu: dict = Depends(require_superuser)):
 
 @app.post("/voice-notes")
 async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_superuser)):
-    # التحقق من الـ target
-    if body.target_user_id:
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute("SELECT id FROM users WHERE id=?", (body.target_user_id,))
-            if not c.fetchone():
+    """
+    إرسال رسالة صوتية:
+    - كل الأدمنز:  target_group='admins'
+    - كل السائقين: target_group='drivers'
+    - شخص معين:   target_group='admins'|'drivers' + target_user_id=uid
+    """
+    now     = datetime.utcnow()
+    expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
+    tuid    = body.target_user_id or None
+
+    # حدد الـ target_group المناسب
+    if body.target_group in ("admins", "drivers"):
+        tg = body.target_group
+    elif body.target_user_id:
+        # شخص معين - نحدد هل هو أدمن أو سائق
+        try:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT role FROM users WHERE id=?", (body.target_user_id,)
+                ).fetchone()
+            if not row:
                 raise HTTPException(404, "المستخدم غير موجود")
-        tg   = "specific"
-        tuid = body.target_user_id
-    elif body.target_group in ("admins", "drivers"):
-        tg   = body.target_group
-        tuid = None
+            tg = "drivers" if row["role"] == "driver" else "admins"
+        except HTTPException:
+            raise
+        except Exception:
+            tg = "admins"  # default
     else:
         raise HTTPException(400, "يجب تحديد target_group أو target_user_id")
 
-    now     = datetime.utcnow()
-    expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-
     try:
         with get_db() as conn:
-
-            # ══ Step 1: تحقق من الـ schema ══
-            c = conn.cursor()
-            c.execute("PRAGMA table_info(voice_notes)")
-            vn_cols = {r["name"] for r in c.fetchall()}
-
-            # ══ Step 2: Migration فوري لو الجدول قديم ══
-            if "target_user_id" not in vn_cols:
-                log.info("🔄 voice_notes migration starting in POST...")
-                try:
-                    # أوقف foreign keys أثناء الـ DDL
-                    conn.execute("PRAGMA foreign_keys=OFF")
-
-                    conn.execute("""CREATE TABLE vn_new(
-                        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                        sender_id      INTEGER NOT NULL,
-                        sender_role    TEXT    NOT NULL DEFAULT 'superuser',
-                        target_group   TEXT    DEFAULT '',
-                        target_user_id INTEGER DEFAULT NULL,
-                        audio_data     TEXT    NOT NULL,
-                        duration_sec   REAL    DEFAULT 0,
-                        created_at     TEXT    NOT NULL,
-                        expires_at     TEXT    NOT NULL,
-                        play_count     INTEGER DEFAULT 0,
-                        max_plays      INTEGER DEFAULT 2,
-                        is_deleted     INTEGER DEFAULT 0
-                    )""")
-
-                    # انقل البيانات القديمة
-                    safe = ",".join(x for x in
-                        ["id","sender_id","target_group","audio_data","duration_sec",
-                         "created_at","expires_at","play_count","max_plays","is_deleted"]
-                        if x in vn_cols)
-                    if safe:
-                        conn.execute(f"INSERT INTO vn_new({safe}) SELECT {safe} FROM voice_notes")
-
-                    conn.execute("DROP TABLE voice_notes")
-                    conn.execute("ALTER TABLE vn_new RENAME TO voice_notes")
-
-                    # commit الـ DDL
-                    conn.commit()
-                    conn.execute("PRAGMA foreign_keys=ON")
-
-                    vn_cols = {"id","sender_id","sender_role","target_group","target_user_id",
-                               "audio_data","duration_sec","created_at","expires_at",
-                               "play_count","max_plays","is_deleted"}
-                    log.info("✅ voice_notes migration done!")
-
-                except Exception as mig_err:
-                    log.error(f"Migration error: {mig_err}", exc_info=True)
-                    conn.execute("PRAGMA foreign_keys=ON")
-                    # Fallback: لو migration فشل، ارجع للـ group القديم
-                    if tg == "specific":
-                        tg, tuid = "admins", None
-                    vn_cols = set()
-
-            # ══ Step 3: INSERT ══
-            if "target_user_id" in vn_cols and "sender_role" in vn_cols:
+            # ── Step 1: أضف الأعمدة الجديدة لو مش موجودة (ALTER فقط - آمن) ──
+            try:
                 conn.execute(
-                    """INSERT INTO voice_notes
-                       (sender_id,sender_role,target_group,target_user_id,
-                        audio_data,duration_sec,created_at,expires_at,max_plays)
-                       VALUES(?,?,?,?,?,?,?,?,?)""",
-                    (cu["user_id"], cu.get("role","superuser"), tg, tuid,
-                     body.audio_data, body.duration_sec,
-                     now.isoformat()+"Z", expires, body.max_plays))
-            elif "target_user_id" in vn_cols:
-                conn.execute(
-                    """INSERT INTO voice_notes
-                       (sender_id,target_group,target_user_id,
-                        audio_data,duration_sec,created_at,expires_at,max_plays)
-                       VALUES(?,?,?,?,?,?,?,?)""",
-                    (cu["user_id"], tg, tuid, body.audio_data,
-                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
-            else:
-                # Fallback للجدول القديم (مش المفروض يحصل)
-                safe_tg = tg if tg in ("admins","drivers") else "admins"
-                conn.execute(
-                    """INSERT INTO voice_notes
-                       (sender_id,target_group,audio_data,
-                        duration_sec,created_at,expires_at,max_plays)
-                       VALUES(?,?,?,?,?,?,?)""",
-                    (cu["user_id"], safe_tg, body.audio_data,
-                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+                    "ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL"
+                )
+                conn.commit()
+                log.info("✅ Added target_user_id column")
+            except Exception:
+                pass  # موجودة بالفعل
 
+            try:
+                conn.execute(
+                    "ALTER TABLE voice_notes ADD COLUMN sender_role TEXT DEFAULT 'superuser'"
+                )
+                conn.commit()
+                log.info("✅ Added sender_role column")
+            except Exception:
+                pass  # موجودة بالفعل
+
+            # ── Step 2: INSERT ──
+            conn.execute(
+                """INSERT INTO voice_notes
+                   (sender_id, sender_role, target_group, target_user_id,
+                    audio_data, duration_sec, created_at, expires_at, max_plays)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (cu["user_id"], cu.get("role", "superuser"), tg, tuid,
+                 body.audio_data, body.duration_sec,
+                 now.isoformat() + "Z", expires, body.max_plays)
+            )
             note_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
         return {"id": note_id, "expires_at": expires}
@@ -4266,131 +4222,86 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
     now  = datetime.utcnow().isoformat() + "Z"
     uid  = cu["user_id"]
 
-    def _migrate_if_needed(c):
-        """Migration فوري - يشتغل في أي request"""
-        try:
-            c.execute("PRAGMA table_info(voice_notes)")
-            cols = {r["name"] for r in c.fetchall()}
-            if cols and "target_user_id" not in cols:
-                c.execute("""CREATE TABLE IF NOT EXISTS vn_tmp(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sender_id INTEGER NOT NULL,
-                    sender_role TEXT NOT NULL DEFAULT 'superuser',
-                    target_group TEXT DEFAULT '',
-                    target_user_id INTEGER DEFAULT NULL,
-                    audio_data TEXT NOT NULL,
-                    duration_sec REAL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    play_count INTEGER DEFAULT 0,
-                    max_plays INTEGER DEFAULT 2,
-                    is_deleted INTEGER DEFAULT 0
-                )""")
-                shared = ",".join(x for x in
-                    ["id","sender_id","target_group","audio_data","duration_sec",
-                     "created_at","expires_at","play_count","max_plays","is_deleted"]
-                    if x in cols)
-                if shared:
-                    c.execute(f"INSERT INTO vn_tmp({shared}) SELECT {shared} FROM voice_notes")
-                c.execute("DROP TABLE voice_notes")
-                c.execute("ALTER TABLE vn_tmp RENAME TO voice_notes")
-                cols = {"id","sender_id","sender_role","target_group","target_user_id",
-                        "audio_data","duration_sec","created_at","expires_at",
-                        "play_count","max_plays","is_deleted"}
-        except Exception as e:
-            log.error(f"_migrate_if_needed: {e}")
-        return cols
-
     try:
         with get_db() as conn:
+            # تحقق هل target_user_id موجود
             c = conn.cursor()
-            vn_cols = _migrate_if_needed(c)
-            has_uid_col = "target_user_id" in vn_cols
+            c.execute("PRAGMA table_info(voice_notes)")
+            vn_cols = {r["name"] for r in c.fetchall()}
+            has_uid = "target_user_id" in vn_cols
 
             if role == "superuser":
-                if has_uid_col:
-                    try:
-                        c.execute("""SELECT vn.id, vn.target_group, vn.target_user_id,
-                                            vn.duration_sec, vn.created_at, vn.expires_at,
-                                            vn.play_count, vn.max_plays, vn.is_deleted,
-                                            u.username as target_username
-                                     FROM voice_notes vn
-                                     LEFT JOIN users u ON u.id = vn.target_user_id
-                                     WHERE vn.sender_id=?
-                                     ORDER BY vn.created_at DESC""", (uid,))
-                    except Exception:
-                        c.execute("""SELECT id, target_group, duration_sec, created_at,
-                                            expires_at, play_count, max_plays, is_deleted
-                                     FROM voice_notes WHERE sender_id=?
-                                     ORDER BY created_at DESC""", (uid,))
+                if has_uid:
+                    rows = conn.execute(
+                        """SELECT vn.id, vn.target_group, vn.target_user_id,
+                                  vn.duration_sec, vn.created_at, vn.expires_at,
+                                  vn.play_count, vn.max_plays, vn.is_deleted,
+                                  u.username as target_username
+                           FROM voice_notes vn
+                           LEFT JOIN users u ON u.id = vn.target_user_id
+                           WHERE vn.sender_id = ?
+                           ORDER BY vn.created_at DESC""", (uid,)
+                    ).fetchall()
                 else:
-                    c.execute("""SELECT id, target_group, duration_sec, created_at,
-                                        expires_at, play_count, max_plays, is_deleted
-                                 FROM voice_notes WHERE sender_id=?
-                                 ORDER BY created_at DESC""", (uid,))
-                return [dict(r) for r in c.fetchall()]
+                    rows = conn.execute(
+                        """SELECT id, target_group, duration_sec, created_at,
+                                  expires_at, play_count, max_plays, is_deleted
+                           FROM voice_notes WHERE sender_id = ?
+                           ORDER BY created_at DESC""", (uid,)
+                    ).fetchall()
+                return [dict(r) for r in rows]
 
             elif role in ("admin", "reporter", "supervisor_workshop", "supervisor_field"):
-                if has_uid_col:
-                    try:
-                        c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                            play_count, max_plays, audio_data
-                                     FROM voice_notes
-                                     WHERE (target_group='admins' OR target_user_id=?)
-                                       AND is_deleted=0 AND expires_at > ?
-                                       AND play_count < max_plays
-                                     ORDER BY created_at DESC""", (uid, now))
-                    except Exception:
-                        c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                            play_count, max_plays, audio_data
-                                     FROM voice_notes
-                                     WHERE target_group='admins'
-                                       AND is_deleted=0 AND expires_at > ?
-                                       AND play_count < max_plays
-                                     ORDER BY created_at DESC""", (now,))
+                if has_uid:
+                    rows = conn.execute(
+                        """SELECT id, duration_sec, created_at, expires_at,
+                                  play_count, max_plays, audio_data
+                           FROM voice_notes
+                           WHERE (target_group='admins' OR target_user_id=?)
+                             AND is_deleted=0 AND expires_at > ?
+                             AND play_count < max_plays
+                           ORDER BY created_at DESC""", (uid, now)
+                    ).fetchall()
                 else:
-                    c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                        play_count, max_plays, audio_data
-                                 FROM voice_notes
-                                 WHERE target_group='admins'
-                                   AND is_deleted=0 AND expires_at > ?
-                                   AND play_count < max_plays
-                                 ORDER BY created_at DESC""", (now,))
-                return [dict(r) for r in c.fetchall()]
+                    rows = conn.execute(
+                        """SELECT id, duration_sec, created_at, expires_at,
+                                  play_count, max_plays, audio_data
+                           FROM voice_notes
+                           WHERE target_group='admins'
+                             AND is_deleted=0 AND expires_at > ?
+                             AND play_count < max_plays
+                           ORDER BY created_at DESC""", (now,)
+                    ).fetchall()
+                return [dict(r) for r in rows]
 
             elif role == "driver":
-                if has_uid_col:
-                    try:
-                        c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                            play_count, max_plays, audio_data
-                                     FROM voice_notes
-                                     WHERE (target_group='drivers' OR target_user_id=?)
-                                       AND is_deleted=0 AND expires_at > ?
-                                       AND play_count < max_plays
-                                     ORDER BY created_at DESC""", (uid, now))
-                    except Exception:
-                        c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                            play_count, max_plays, audio_data
-                                     FROM voice_notes
-                                     WHERE target_group='drivers'
-                                       AND is_deleted=0 AND expires_at > ?
-                                       AND play_count < max_plays
-                                     ORDER BY created_at DESC""", (now,))
+                if has_uid:
+                    rows = conn.execute(
+                        """SELECT id, duration_sec, created_at, expires_at,
+                                  play_count, max_plays, audio_data
+                           FROM voice_notes
+                           WHERE (target_group='drivers' OR target_user_id=?)
+                             AND is_deleted=0 AND expires_at > ?
+                             AND play_count < max_plays
+                           ORDER BY created_at DESC""", (uid, now)
+                    ).fetchall()
                 else:
-                    c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                                        play_count, max_plays, audio_data
-                                 FROM voice_notes
-                                 WHERE target_group='drivers'
-                                   AND is_deleted=0 AND expires_at > ?
-                                   AND play_count < max_plays
-                                 ORDER BY created_at DESC""", (now,))
-                return [dict(r) for r in c.fetchall()]
+                    rows = conn.execute(
+                        """SELECT id, duration_sec, created_at, expires_at,
+                                  play_count, max_plays, audio_data
+                           FROM voice_notes
+                           WHERE target_group='drivers'
+                             AND is_deleted=0 AND expires_at > ?
+                             AND play_count < max_plays
+                           ORDER BY created_at DESC""", (now,)
+                    ).fetchall()
+                return [dict(r) for r in rows]
 
         return []
 
     except Exception as e:
         log.error(f"GET /voice-notes error: {e}", exc_info=True)
-        raise HTTPException(500, f"خطأ في جلب الرسائل: {str(e)}")
+        return []  # مش 500 - رجع list فاضية
 
 
 @app.post("/voice-notes/{note_id}/play")
