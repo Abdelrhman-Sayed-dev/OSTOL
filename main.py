@@ -3964,6 +3964,23 @@ async def import_template(import_type: str, cu: dict = Depends(require_admin)):
     )
 
 
+@app.get("/import/template/monthly-odometer")
+async def monthly_odometer_template(cu: dict = Depends(require_admin)):
+    """قالب CSV للعداد الشهري."""
+    cols   = ["car_id","odometer_start","odometer_end","fuel_consumed","working_days","notes"]
+    sample = ["15","125000","127500","320","26","سيارة بيك اب"]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(cols)
+    writer.writerow(sample)
+    from fastapi.responses import Response
+    return Response(
+        content=output.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=monthly_odometer_template.csv"}
+    )
+
+
 # ══════════════════════════════════════════════════════
 # 30. PERMISSIONS BULK IMPORT — CSV / Excel
 #     الأعمدة: fixed_number + plate أو car_code
