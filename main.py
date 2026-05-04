@@ -4091,18 +4091,27 @@ async def voice_note_targets(cu: dict = Depends(get_user)):
         raise HTTPException(403, "غير مسموح")
     with get_db() as conn:
         c = conn.cursor()
-        # الأدمنز (superuser يشوف كل الأدمنز؛ الأدمن يشوف أدمنز الفرع فقط)
+        admins = []
+        # السوبر يوزر: يشوف كل الأدمنز والسوبر يوزرز (ما عدا نفسه)
         if cu["role"] == "superuser":
-            c.execute("SELECT id, username, role, branch FROM users WHERE role IN('admin','superuser') AND id!=? ORDER BY username", (cu["user_id"],))
-        else:
-            # الأدمن يقدر يبعت لسائقين فقط
-            c.execute("SELECT id, username, role, branch FROM users WHERE role='admin' AND id!=? ORDER BY username", (cu["user_id"],))
-        admins = [dict(r) for r in c.fetchall()]
+            c.execute("""SELECT id, username, role, COALESCE(branch,'') as branch
+                         FROM users
+                         WHERE role IN('admin','superuser') AND id!=?
+                         ORDER BY username""", (cu["user_id"],))
+            admins = [dict(r) for r in c.fetchall()]
 
-        # السائقين النشطين
-        c.execute("""SELECT d.id as driver_id, d.name, d.branch, u.id as user_id, u.username
-                     FROM drivers d JOIN users u ON u.id=d.user_id
-                     WHERE d.status='active' ORDER BY d.name""")
+        # السائقين: جلب كل المستخدمين بدور driver مباشرة من جدول users
+        # ثم نجيب اسم السائق من جدول drivers
+        c.execute("""SELECT u.id as user_id,
+                            u.username,
+                            COALESCE(u.branch,'') as branch,
+                            COALESCE(d.name, u.username) as name,
+                            d.id as driver_id
+                     FROM users u
+                     LEFT JOIN drivers d ON d.user_id = u.id
+                     WHERE u.role = 'driver'
+                       AND (d.status IS NULL OR d.status = 'active')
+                     ORDER BY COALESCE(d.name, u.username)""")
         drivers = [dict(r) for r in c.fetchall()]
     return {"admins": admins, "drivers": drivers}
 
