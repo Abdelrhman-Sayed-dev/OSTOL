@@ -258,70 +258,20 @@ def migrate_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)")
 
         # VOICE NOTES (سوبر يوزر → أدمنز أو سائقين)
-        # ══ voice_notes: Migration أولاً ثم إنشاء الجدول ══
-        # الترتيب مهم: تحقق من الـ schema الموجودة أولاً
-        try:
-            c.execute("PRAGMA table_info(voice_notes)")
-            vn_cols = {row["name"] for row in c.fetchall()}
-
-            if vn_cols and "target_user_id" not in vn_cols:
-                # جدول قديم بـ CHECK constraint → إعادة بناء كاملة
-                log.info("🔄 Migrating voice_notes table to new schema...")
-                c.execute("""CREATE TABLE voice_notes_v2(
-                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sender_id      INTEGER NOT NULL,
-                    sender_role    TEXT    NOT NULL DEFAULT 'superuser',
-                    target_group   TEXT    DEFAULT '',
-                    target_user_id INTEGER DEFAULT NULL,
-                    audio_data     TEXT    NOT NULL,
-                    duration_sec   REAL    DEFAULT 0,
-                    created_at     TEXT    NOT NULL,
-                    expires_at     TEXT    NOT NULL,
-                    play_count     INTEGER DEFAULT 0,
-                    max_plays      INTEGER DEFAULT 2,
-                    is_deleted     INTEGER DEFAULT 0
-                )""")
-                common = ",".join(col for col in
-                    ["id","sender_id","target_group","audio_data",
-                     "duration_sec","created_at","expires_at",
-                     "play_count","max_plays","is_deleted"]
-                    if col in vn_cols)
-                if common:
-                    c.execute(f"INSERT INTO voice_notes_v2({common}) SELECT {common} FROM voice_notes")
-                c.execute("DROP TABLE voice_notes")
-                c.execute("ALTER TABLE voice_notes_v2 RENAME TO voice_notes")
-                log.info("✅ voice_notes migrated successfully")
-
-            elif vn_cols and "sender_role" not in vn_cols:
-                # جدول جديد لكن ينقصه sender_role
-                try:
-                    c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT NOT NULL DEFAULT 'superuser'")
-                except Exception: pass
-
-        except Exception as vn_mig_err:
-            log.warning(f"voice_notes migration check: {vn_mig_err}")
-
-        # إنشاء الجدول لو مش موجود أصلاً (installation جديدة)
         c.execute("""CREATE TABLE IF NOT EXISTS voice_notes(
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender_id      INTEGER NOT NULL,
-            sender_role    TEXT    NOT NULL DEFAULT 'superuser',
-            target_group   TEXT    DEFAULT '',
-            target_user_id INTEGER DEFAULT NULL,
-            audio_data     TEXT    NOT NULL,
-            duration_sec   REAL    DEFAULT 0,
-            created_at     TEXT    NOT NULL,
-            expires_at     TEXT    NOT NULL,
-            play_count     INTEGER DEFAULT 0,
-            max_plays      INTEGER DEFAULT 2,
-            is_deleted     INTEGER DEFAULT 0
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id    INTEGER NOT NULL,
+            target_group TEXT NOT NULL CHECK(target_group IN('admins','drivers')),
+            audio_data   TEXT NOT NULL,
+            duration_sec REAL DEFAULT 0,
+            created_at   TEXT NOT NULL,
+            expires_at   TEXT NOT NULL,
+            play_count   INTEGER DEFAULT 0,
+            max_plays    INTEGER DEFAULT 2,
+            is_deleted   INTEGER DEFAULT 0
         )""")
-        try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
-        except Exception: pass
-        try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target  ON voice_notes(target_user_id)")
-        except Exception: pass
-        try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
-        except Exception: pass
+        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
 
         # Safe migrations for existing columns
         _safe_add_columns(c)
@@ -4103,222 +4053,60 @@ async def fraud_detection(cu: dict = Depends(require_superuser)):
 # 33. VOICE NOTES — رسائل صوتية من السوبر
 # ══════════════════════════════════════════════════════
 class VoiceNoteCreate(BaseModel):
-    target_group:   str  = ""       # 'admins' | 'drivers' | '' (if specific user)
-    target_user_id: int  = None     # user.id عند الإرسال لشخص معين
-    audio_data:     str  = ""       # base64
-    duration_sec:   float = 0
-    max_plays:      int   = 2       # مرتين افتراضياً
-    hours_ttl:      int   = 24      # يتمسح بعد 24 ساعة
-
-
-@app.get("/voice-notes/debug-schema")
-async def debug_voice_schema(cu: dict = Depends(require_superuser)):
-    """🔍 للتشخيص: شوف schema الجدول الفعلية"""
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("PRAGMA table_info(voice_notes)")
-        cols = [{"name": r["name"], "type": r["type"], "notnull": r["notnull"],
-                 "default": r["dflt_value"]} for r in c.fetchall()]
-        c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='voice_notes'")
-        row = c.fetchone()
-        sql = row["sql"] if row else "TABLE NOT FOUND"
-        c.execute("SELECT COUNT(*) as cnt FROM voice_notes")
-        cnt = c.fetchone()["cnt"]
-    return {"columns": cols, "create_sql": sql, "row_count": cnt,
-            "has_target_user_id": any(col["name"]=="target_user_id" for col in cols),
-            "has_sender_role": any(col["name"]=="sender_role" for col in cols)}
-
-@app.get("/voice-notes/targets")
-async def get_voice_note_targets(cu: dict = Depends(get_user)):
-    """قائمة الأدمنز والسائقين للإرسال المباشر - متاح للسوبر والأدمن"""
-    role = cu["role"]
-    if role not in ("superuser", "admin"):
-        raise HTTPException(403, "غير مصرح")
-
-    with get_db() as conn:
-        if role == "superuser":
-            # السوبر يشوف الأدمنز + السائقين
-            admins = [{"id": r["id"], "username": r["username"], "branch": r["branch"] or ""}
-                      for r in conn.execute(
-                          "SELECT id, username, branch FROM users WHERE role IN ('admin','superuser') ORDER BY username"
-                      ).fetchall()]
-        else:
-            # الأدمن مش بيشوف أدمنز تانيين
-            admins = []
-
-        drivers = [{"id": r["id"], "name": r["name"], "branch": r["branch"] or "", "user_id": r["user_id"]}
-                   for r in conn.execute(
-                       """SELECT d.id, d.name, d.branch, d.user_id FROM drivers d
-                          WHERE d.status='active' AND d.user_id IS NOT NULL ORDER BY d.name"""
-                   ).fetchall()]
-
-    return {"admins": admins, "drivers": drivers}
+    target_group: str          # 'admins' | 'drivers'
+    audio_data:   str          # base64
+    duration_sec: float = 0
+    max_plays:    int   = 2    # مرتين افتراضياً
+    hours_ttl:    int   = 24   # يتمسح بعد 24 ساعة
 
 @app.post("/voice-notes")
-async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user)):
-    """
-    إرسال رسالة صوتية:
-    - كل الأدمنز:  target_group='admins'  (سوبر فقط)
-    - كل السائقين: target_group='drivers' (سوبر + أدمن)
-    - شخص معين:   target_user_id=uid      (سوبر + أدمن)
-    """
-    role = cu["role"]
-    if role not in ("superuser", "admin"):
-        raise HTTPException(403, "غير مصرح بإرسال رسائل صوتية")
-
-    now     = datetime.utcnow()
-    expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    tuid    = body.target_user_id or None
-
-    # حدد الـ target_group المناسب
-    if body.target_group in ("admins", "drivers"):
-        tg = body.target_group
-    elif body.target_user_id:
-        # شخص معين - نحدد هل هو أدمن أو سائق
-        try:
-            with get_db() as conn:
-                row = conn.execute(
-                    "SELECT role FROM users WHERE id=?", (body.target_user_id,)
-                ).fetchone()
-            if not row:
-                raise HTTPException(404, "المستخدم غير موجود")
-            tg = "drivers" if row["role"] == "driver" else "admins"
-        except HTTPException:
-            raise
-        except Exception:
-            tg = "admins"  # default
-    else:
-        raise HTTPException(400, "يجب تحديد target_group أو target_user_id")
-
-    try:
-        with get_db() as conn:
-            # ── Step 1: أضف الأعمدة الجديدة لو مش موجودة (ALTER فقط - آمن) ──
-            try:
-                conn.execute(
-                    "ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL"
-                )
-                conn.commit()
-                log.info("✅ Added target_user_id column")
-            except Exception:
-                pass  # موجودة بالفعل
-
-            try:
-                conn.execute(
-                    "ALTER TABLE voice_notes ADD COLUMN sender_role TEXT DEFAULT 'superuser'"
-                )
-                conn.commit()
-                log.info("✅ Added sender_role column")
-            except Exception:
-                pass  # موجودة بالفعل
-
-            # ── Step 2: INSERT ──
-            conn.execute(
-                """INSERT INTO voice_notes
-                   (sender_id, sender_role, target_group, target_user_id,
-                    audio_data, duration_sec, created_at, expires_at, max_plays)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (cu["user_id"], cu.get("role", "superuser"), tg, tuid,
-                 body.audio_data, body.duration_sec,
-                 now.isoformat() + "Z", expires, body.max_plays)
-            )
-            note_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-        return {"id": note_id, "expires_at": expires}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"POST /voice-notes error: {e}", exc_info=True)
-        raise HTTPException(500, f"خطأ في إرسال الرسالة: {str(e)}")
-
+async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_superuser)):
+    if body.target_group not in ("admins", "drivers"):
+        raise HTTPException(400, "target_group يجب أن يكون admins أو drivers")
+    now      = datetime.utcnow()
+    expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""INSERT INTO voice_notes(sender_id,target_group,audio_data,
+                     duration_sec,created_at,expires_at,max_plays)
+                     VALUES(?,?,?,?,?,?,?)""",
+                  (cu["user_id"], body.target_group, body.audio_data,
+                   body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+        note_id = c.lastrowid
+    return {"id": note_id, "expires_at": expires}
 
 @app.get("/voice-notes")
 async def list_voice_notes(cu: dict = Depends(get_user)):
-    role = cu["role"]
-    now  = datetime.utcnow().isoformat() + "Z"
-    uid  = cu["user_id"]
+    role   = cu["role"]
+    now    = datetime.utcnow().isoformat() + "Z"
 
-    try:
+    # السوبر يشوف اللي أرسلها هو
+    if role == "superuser":
         with get_db() as conn:
-            # تحقق هل target_user_id موجود
             c = conn.cursor()
-            c.execute("PRAGMA table_info(voice_notes)")
-            vn_cols = {r["name"] for r in c.fetchall()}
-            has_uid = "target_user_id" in vn_cols
+            c.execute("""SELECT id, target_group, duration_sec, created_at,
+                                expires_at, play_count, max_plays, is_deleted
+                         FROM voice_notes WHERE sender_id=?
+                         ORDER BY created_at DESC""", (cu["user_id"],))
+            return [dict(r) for r in c.fetchall()]
 
-            if role == "superuser":
-                if has_uid:
-                    rows = conn.execute(
-                        """SELECT vn.id, vn.target_group, vn.target_user_id,
-                                  vn.duration_sec, vn.created_at, vn.expires_at,
-                                  vn.play_count, vn.max_plays, vn.is_deleted,
-                                  u.username as target_username
-                           FROM voice_notes vn
-                           LEFT JOIN users u ON u.id = vn.target_user_id
-                           WHERE vn.sender_id = ?
-                           ORDER BY vn.created_at DESC""", (uid,)
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        """SELECT id, target_group, duration_sec, created_at,
-                                  expires_at, play_count, max_plays, is_deleted
-                           FROM voice_notes WHERE sender_id = ?
-                           ORDER BY created_at DESC""", (uid,)
-                    ).fetchall()
-                return [dict(r) for r in rows]
-
-            elif role in ("admin", "reporter", "supervisor_workshop", "supervisor_field"):
-                if has_uid:
-                    rows = conn.execute(
-                        """SELECT id, duration_sec, created_at, expires_at,
-                                  play_count, max_plays, audio_data
-                           FROM voice_notes
-                           WHERE (target_group='admins' OR target_user_id=?)
-                             AND is_deleted=0 AND expires_at > ?
-                             AND play_count < max_plays
-                           ORDER BY created_at DESC""", (uid, now)
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        """SELECT id, duration_sec, created_at, expires_at,
-                                  play_count, max_plays, audio_data
-                           FROM voice_notes
-                           WHERE target_group='admins'
-                             AND is_deleted=0 AND expires_at > ?
-                             AND play_count < max_plays
-                           ORDER BY created_at DESC""", (now,)
-                    ).fetchall()
-                return [dict(r) for r in rows]
-
-            elif role == "driver":
-                if has_uid:
-                    rows = conn.execute(
-                        """SELECT id, duration_sec, created_at, expires_at,
-                                  play_count, max_plays, audio_data
-                           FROM voice_notes
-                           WHERE (target_group='drivers' OR target_user_id=?)
-                             AND is_deleted=0 AND expires_at > ?
-                             AND play_count < max_plays
-                           ORDER BY created_at DESC""", (uid, now)
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        """SELECT id, duration_sec, created_at, expires_at,
-                                  play_count, max_plays, audio_data
-                           FROM voice_notes
-                           WHERE target_group='drivers'
-                             AND is_deleted=0 AND expires_at > ?
-                             AND play_count < max_plays
-                           ORDER BY created_at DESC""", (now,)
-                    ).fetchall()
-                return [dict(r) for r in rows]
-
+    # أدمن → يشوف اللي للـ admins
+    if role in ("admin","reporter","superuser","supervisor_workshop","supervisor_field"):
+        group = "admins"
+    elif role == "driver":
+        group = "drivers"
+    else:
         return []
 
-    except Exception as e:
-        log.error(f"GET /voice-notes error: {e}", exc_info=True)
-        return []  # مش 500 - رجع list فاضية
-
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT id, duration_sec, created_at, expires_at,
+                            play_count, max_plays, audio_data
+                     FROM voice_notes
+                     WHERE target_group=? AND is_deleted=0
+                       AND expires_at > ? AND play_count < max_plays
+                     ORDER BY created_at DESC""", (group, now))
+        return [dict(r) for r in c.fetchall()]
 
 @app.post("/voice-notes/{note_id}/play")
 async def play_voice_note(note_id: int, cu: dict = Depends(get_user)):
@@ -4906,73 +4694,147 @@ async def monthly_report(
 # 35. DRIVER KPI — مؤشرات أداء السائقين
 # ══════════════════════════════════════════════════════
 
-def _calc_kpi_score(trips: int, km: float, fuel_liters: float, fuel_consumption: float,
-                    emergencies: int, open_requests: int, target_km: float = 3000.0) -> dict:
-    """حساب نقاط KPI لسائق واحد."""
-    if target_km > 0:
-        km_score = min(100, round((km / target_km) * 100, 1))
+def _calc_kpi_score(
+    trips: int, km: float, fuel_liters: float, fuel_consumption: float,
+    emergencies: int, open_requests: int,
+    target_km: float = 3000.0,
+    oil_liters: float = 0.0, avg_km_all_drivers: float = 0.0,
+) -> dict:
+    """
+    حساب نقاط KPI لسائق واحد بالأوزان الجديدة:
+      عدد الرحلات         → 10%
+      كمية الكيلومترات    → 40%
+      استهلاك الوقود      → 40%  (لو مفيش بيانات وقود يُعوَّض من الكم)
+      استهلاك الزيوت      → 5%   (لو مفيش بيانات يُعوَّض من الكم)
+      الحوادث والطوارئ    → 5%
+    """
+    # ── 1. عدد الرحلات (10%) ──
+    if trips >= 20:
+        trips_score = 100.0
+    elif trips >= 15:
+        trips_score = 85.0
+    elif trips >= 10:
+        trips_score = 65.0
+    elif trips >= 5:
+        trips_score = 40.0
+    elif trips >= 1:
+        trips_score = 20.0
+    else:
+        trips_score = 0.0
+
+    # ── 2. الكيلومترات (40%) ──
+    # المرجع: متوسط كيلومترات كل السائقين في نفس الفترة
+    ref_km = avg_km_all_drivers if avg_km_all_drivers > 0 else target_km
+    if ref_km > 0:
+        km_ratio = km / ref_km
+        if km_ratio >= 1.2:
+            km_score = 100.0
+        elif km_ratio >= 1.0:
+            km_score = 90.0
+        elif km_ratio >= 0.8:
+            km_score = 75.0
+        elif km_ratio >= 0.6:
+            km_score = 55.0
+        elif km_ratio >= 0.4:
+            km_score = 35.0
+        else:
+            km_score = 10.0
     else:
         km_score = 0.0
 
+    # ── 3. استهلاك الوقود (40%) ──
+    if km > 50 and fuel_liters > 0:
+        consumption = (fuel_liters / km) * 100  # لتر / 100كم
+        if consumption <= 20:
+            fuel_score = 100.0
+        elif consumption <= 25:
+            fuel_score = 90.0
+        elif consumption <= 30:
+            fuel_score = 75.0
+        elif consumption <= 35:
+            fuel_score = 55.0
+        elif consumption <= 40:
+            fuel_score = 35.0
+        else:
+            fuel_score = 15.0
+    else:
+        fuel_score = None  # بيانات وقود غير كافية
+
+    # ── 4. استهلاك الزيوت (5%) ──
+    # معدل: لتر زيت / 1000 كم — كلما أقل أفضل
+    if km > 0 and oil_liters > 0:
+        oil_per_1000km = (oil_liters / km) * 1000
+        if oil_per_1000km <= 0.5:
+            oil_score = 100.0
+        elif oil_per_1000km <= 1.0:
+            oil_score = 80.0
+        elif oil_per_1000km <= 2.0:
+            oil_score = 55.0
+        elif oil_per_1000km <= 3.0:
+            oil_score = 30.0
+        else:
+            oil_score = 10.0
+    else:
+        oil_score = None  # مفيش بيانات زيوت
+
+    # ── 5. الحوادث والطوارئ (5%) ──
     if emergencies == 0:
         emg_score = 100.0
     elif emergencies == 1:
-        emg_score = 70.0
+        emg_score = 60.0
     elif emergencies == 2:
-        emg_score = 40.0
+        emg_score = 20.0
     else:
         emg_score = 0.0
 
-    if km > 0 and fuel_liters > 0:
-        consumption = (fuel_liters / km) * 100
-        if consumption <= 25:
-            fuel_score = 100.0
-        elif consumption <= 30:
-            fuel_score = 85.0
-        elif consumption <= 35:
-            fuel_score = 65.0
-        elif consumption <= 40:
-            fuel_score = 45.0
-        else:
-            fuel_score = 20.0
-    else:
-        fuel_score = None
+    # ── حساب المجموع الموزون ──
+    # الأوزان الأساسية: رحلات 10% | كم 40% | وقود 40% | زيوت 5% | طوارئ 5%
+    W_TRIPS = 0.10
+    W_KM    = 0.40
+    W_FUEL  = 0.40
+    W_OIL   = 0.05
+    W_EMG   = 0.05
 
-    if open_requests == 0:
-        req_score = 100.0
-    elif open_requests <= 2:
-        req_score = 75.0
-    elif open_requests <= 4:
-        req_score = 50.0
-    else:
-        req_score = 25.0
+    weighted = trips_score * W_TRIPS + km_score * W_KM + emg_score * W_EMG
 
-    scores = [km_score, emg_score, req_score]
+    # لو مفيش وقود: وزنه ينتقل للكيلومترات
     if fuel_score is not None:
-        scores.append(fuel_score)
-    total = round(sum(scores) / len(scores), 1)
+        weighted += fuel_score * W_FUEL
+        avail_w   = W_TRIPS + W_KM + W_FUEL + W_EMG
+    else:
+        weighted += km_score * W_FUEL   # عوّض الوقود بالكيلومترات
+        avail_w   = W_TRIPS + W_KM + W_FUEL + W_EMG
+
+    # لو مفيش زيوت: وزنه ينتقل للكيلومترات
+    if oil_score is not None:
+        weighted += oil_score * W_OIL
+        avail_w  += W_OIL
+    else:
+        weighted += km_score * W_OIL    # عوّض الزيوت بالكيلومترات
+        avail_w  += W_OIL
+
+    total = round(weighted, 1)
 
     if total >= 85:
-        grade = "ممتاز"
-        grade_color = "#10b981"
+        grade, grade_color = "ممتاز",       "#10b981"
     elif total >= 70:
-        grade = "جيد"
-        grade_color = "#3b82f6"
+        grade, grade_color = "جيد",         "#3b82f6"
     elif total >= 50:
-        grade = "مقبول"
-        grade_color = "#f97316"
+        grade, grade_color = "مقبول",       "#f97316"
     else:
-        grade = "يحتاج تحسين"
-        grade_color = "#ef4444"
+        grade, grade_color = "يحتاج تحسين", "#ef4444"
 
     return {
-        "total_score":   total,
-        "grade":         grade,
-        "grade_color":   grade_color,
-        "km_score":      km_score,
-        "emg_score":     emg_score,
-        "fuel_score":    fuel_score,
-        "req_score":     req_score,
+        "total_score":  total,
+        "grade":        grade,
+        "grade_color":  grade_color,
+        "trips_score":  trips_score,
+        "km_score":     km_score,
+        "fuel_score":   fuel_score,
+        "oil_score":    oil_score,
+        "emg_score":    emg_score,
+        "consumption":  round((fuel_liters / km) * 100, 1) if km > 50 and fuel_liters > 0 else None,
+        "oil_per_1000": round((oil_liters / km) * 1000, 2) if km > 0 and oil_liters > 0 else None,
     }
 
 
@@ -5015,7 +4877,8 @@ async def driver_kpi_report(
         c.execute(q, params)
         drivers = [dict(r) for r in c.fetchall()]
 
-        results = []
+        results  = []
+        raw_data = []
         for d in drivers:
             did = d["id"]
 
@@ -5033,6 +4896,7 @@ async def driver_kpi_report(
             trips_count = tr["cnt"] or 0
             km_total    = max(0.0, float(tr["km"] or 0))
 
+            # ── وقود ──
             c.execute("""
                 SELECT COALESCE(SUM(quantity),0) as liters,
                        COALESCE(SUM(price),0)    as cost
@@ -5043,8 +4907,17 @@ async def driver_kpi_report(
             fr = dict(c.fetchone())
             fuel_liters = float(fr["liters"] or 0)
             fuel_cost   = float(fr["cost"]   or 0)
-            consumption = round((fuel_liters / km_total) * 100, 1) if km_total > 0 and fuel_liters > 0 else None
 
+            # ── زيوت (oil, filter) ──
+            c.execute("""
+                SELECT COALESCE(SUM(quantity),0) as liters
+                FROM workshop_records
+                WHERE driver_id=? AND type IN ('oil','filter')
+                  AND date(created_at) >= ? AND date(created_at) < ?
+            """, (did, month_start, month_end))
+            oil_liters = float(c.fetchone()[0] or 0)
+
+            # ── طوارئ ──
             c.execute("""
                 SELECT COUNT(*) FROM emergency_reports
                 WHERE driver_id=?
@@ -5052,12 +4925,14 @@ async def driver_kpi_report(
             """, (did, month_start, month_end))
             emg_count = c.fetchone()[0] or 0
 
+            # ── طلبات مفتوحة ──
             c.execute("""
                 SELECT COUNT(*) FROM driver_requests
                 WHERE driver_id=? AND status='pending'
             """, (did,))
             open_req = c.fetchone()[0] or 0
 
+            # ── صيانة ──
             c.execute("""
                 SELECT COALESCE(SUM(price),0) as mc, COUNT(*) as mcc
                 FROM workshop_records
@@ -5068,28 +4943,60 @@ async def driver_kpi_report(
             maint_cost  = float(wr["mc"] or 0)
             maint_count = int(wr["mcc"] or 0)
 
+            raw_data.append({
+                "driver_id":   did,
+                "driver_name": d["name"],
+                "branch":      d["branch"] or "",
+                "trips":       trips_count,
+                "km":          km_total,
+                "fuel_liters": fuel_liters,
+                "fuel_cost":   fuel_cost,
+                "oil_liters":  oil_liters,
+                "emergencies": emg_count,
+                "open_req":    open_req,
+                "maint_cost":  maint_cost,
+                "maint_count": maint_count,
+                "first_trip":  tr["first_trip"],
+                "last_trip":   tr["last_trip"],
+            })
+
+        # ── متوسط الكيلومترات لكل السائقين (للمقارنة النسبية) ──
+        km_values = [d["km"] for d in raw_data if d["km"] > 0]
+        avg_km = (sum(km_values) / len(km_values)) if km_values else 0.0
+
+        # ── حساب الـ KPI لكل سائق ──
+        for d in raw_data:
             scores = _calc_kpi_score(
-                trips=trips_count, km=km_total,
-                fuel_liters=fuel_liters, fuel_consumption=consumption or 0,
-                emergencies=emg_count, open_requests=open_req,
+                trips=d["trips"],
+                km=d["km"],
+                fuel_liters=d["fuel_liters"],
+                fuel_consumption=0,
+                emergencies=d["emergencies"],
+                open_requests=d["open_req"],
+                oil_liters=d["oil_liters"],
+                avg_km_all_drivers=avg_km,
             )
+            consumption = scores.pop("consumption", None)
 
             results.append({
-                "driver_id":    did,
-                "driver_name":  d["name"],
-                "branch":       d["branch"] or "",
-                "month":        month,
-                "trips":        trips_count,
-                "km":           round(km_total, 1),
-                "fuel_liters":  round(fuel_liters, 1),
-                "fuel_cost":    round(fuel_cost, 2),
-                "consumption":  consumption,
-                "emergencies":  emg_count,
-                "open_requests":open_req,
-                "maint_cost":   round(maint_cost, 2),
-                "maint_count":  maint_count,
-                "first_trip":   tr["first_trip"],
-                "last_trip":    tr["last_trip"],
+                "driver_id":     d["driver_id"],
+                "driver_name":   d["driver_name"],
+                "branch":        d["branch"],
+                "month":         month,
+                "trips":         d["trips"],
+                "km":            round(d["km"], 1),
+                "fuel_liters":   round(d["fuel_liters"], 1),
+                "fuel_cost":     round(d["fuel_cost"], 2),
+                "oil_liters":    round(d["oil_liters"], 2),
+                "consumption":   consumption,
+                "oil_per_1000":  scores.pop("oil_per_1000", None),
+                "emergencies":   d["emergencies"],
+                "open_requests": d["open_req"],
+                "maint_cost":    round(d["maint_cost"], 2),
+                "maint_count":   d["maint_count"],
+                "first_trip":    d["first_trip"],
+                "last_trip":     d["last_trip"],
+                "avg_km_peers":  round(avg_km, 1),
                 **scores,
             })
 
@@ -5102,5 +5009,6 @@ async def driver_kpi_report(
         "branch":        eff_branch or "كل الفروع",
         "generated_at":  datetime.utcnow().isoformat() + "Z",
         "total_drivers": len(results),
+        "avg_km":        round(avg_km, 1),
         "drivers":       results,
     }
