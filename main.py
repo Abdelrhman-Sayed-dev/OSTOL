@@ -272,10 +272,7 @@ def migrate_db():
             max_plays      INTEGER DEFAULT 2,
             is_deleted     INTEGER DEFAULT 0
         )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target  ON voice_notes(target_user_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
-        # Migration: add new columns if table already exists
+        # Migration: add new columns BEFORE creating indexes (columns must exist first)
         try:
             c.execute("ALTER TABLE voice_notes ADD COLUMN sender_role TEXT NOT NULL DEFAULT 'superuser'")
         except Exception: pass
@@ -284,6 +281,16 @@ def migrate_db():
         except Exception: pass
         try:
             c.execute("ALTER TABLE voice_notes ADD COLUMN target_group TEXT DEFAULT ''")
+        except Exception: pass
+        # Indexes after migration — columns guaranteed to exist now
+        try:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
+        except Exception: pass
+        try:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target  ON voice_notes(target_user_id)")
+        except Exception: pass
+        try:
+            c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
         except Exception: pass
 
         # Safe migrations for existing columns
