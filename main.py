@@ -235,11 +235,55 @@ def migrate_db():
             ("hours_end",        "TEXT DEFAULT ''"),
             ("hours_diff",       "TEXT DEFAULT ''"),
             ("utilization_pct",  "TEXT DEFAULT ''"),
+            ("start_date",       "TEXT DEFAULT ''"),
         ]
         for _col, _def in _rental_new_cols:
             try:
                 c.execute(f"ALTER TABLE rental_equipment ADD COLUMN {_col} {_def}")
             except Exception: pass
+        # ── إصلاح قيد start_date NOT NULL: إذا كان الجدول القديم يحتوي على NOT NULL بدون DEFAULT ──
+        try:
+            c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='rental_equipment'")
+            _rental_row = c.fetchone()
+            _rental_sql = _rental_row["sql"] if _rental_row else ""
+            if "start_date" in _rental_sql and "NOT NULL" in _rental_sql and "DEFAULT" not in _rental_sql.split("start_date")[1].split("\n")[0]:
+                # أعد بناء الجدول بدون قيد NOT NULL على start_date
+                c.execute("PRAGMA foreign_keys=OFF")
+                c.execute("""CREATE TABLE IF NOT EXISTS rental_equipment_v2 (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    branch           TEXT DEFAULT '',
+                    equipment_name   TEXT NOT NULL DEFAULT '',
+                    code             TEXT DEFAULT '',
+                    rental_source    TEXT DEFAULT '',
+                    work_days        TEXT DEFAULT '',
+                    daily_rate       TEXT DEFAULT '',
+                    monthly_rate     TEXT DEFAULT '',
+                    fuel_liters      TEXT DEFAULT '',
+                    hours_start      TEXT DEFAULT '',
+                    hours_end        TEXT DEFAULT '',
+                    hours_diff       TEXT DEFAULT '',
+                    utilization_pct  TEXT DEFAULT '',
+                    consumption_rate TEXT DEFAULT '',
+                    project          TEXT DEFAULT '',
+                    notes            TEXT DEFAULT '',
+                    month            TEXT DEFAULT '',
+                    sector           TEXT DEFAULT '',
+                    start_date       TEXT DEFAULT '',
+                    created_at       TEXT DEFAULT (datetime('now'))
+                )""")
+                c.execute("""INSERT OR IGNORE INTO rental_equipment_v2
+                    SELECT id,branch,
+                           COALESCE(equipment_name,''),code,rental_source,work_days,daily_rate,
+                           monthly_rate,fuel_liters,hours_start,hours_end,hours_diff,
+                           utilization_pct,consumption_rate,project,notes,month,sector,
+                           COALESCE(start_date,''),COALESCE(created_at,'')
+                    FROM rental_equipment""")
+                c.execute("DROP TABLE rental_equipment")
+                c.execute("ALTER TABLE rental_equipment_v2 RENAME TO rental_equipment")
+                c.execute("PRAGMA foreign_keys=ON")
+                log.info("✅ rental_equipment: removed NOT NULL from start_date")
+        except Exception as _e:
+            log.warning(f"rental_equipment migration (start_date fix): {_e}")
         # ── Indexes بعد التأكد إن الأعمدة موجودة ──
         try: c.execute("CREATE INDEX IF NOT EXISTS idx_rental_branch ON rental_equipment(branch)")
         except Exception: pass
@@ -5356,6 +5400,7 @@ class RentalCreate(BaseModel):
     notes:           str = ""
     month:           str = ""
     sector:          str = ""
+    start_date:      str = ""
 
 
 @app.post("/rental-equipment")
@@ -5364,17 +5409,19 @@ async def create_rental(body: RentalCreate, cu: dict = Depends(require_admin)):
     if not body.branch.strip(): raise HTTPException(400, "الفرع مطلوب")
     # تطبيع الشهر: 2026-05-01 → 2026-05 (لا نعدّل body مباشرةً لتفادي مشكلة Pydantic v2)
     month_val = body.month.strip()[:7] if body.month and len(body.month) > 7 else body.month
+    start_date_val = body.start_date.strip() if body.start_date and body.start_date.strip() else datetime.utcnow().strftime("%Y-%m-%d")
     try:
         with get_db() as conn:
             conn.execute("""INSERT INTO rental_equipment
                 (branch,equipment_name,code,rental_source,work_days,daily_rate,monthly_rate,
                  fuel_liters,hours_start,hours_end,hours_diff,utilization_pct,
-                 consumption_rate,project,notes,month,sector)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 consumption_rate,project,notes,month,sector,start_date)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (body.branch, body.equipment_name, body.code, body.rental_source,
                  body.work_days, body.daily_rate, body.monthly_rate, body.fuel_liters,
                  body.hours_start, body.hours_end, body.hours_diff, body.utilization_pct,
-                 body.consumption_rate, body.project, body.notes, month_val, body.sector))
+                 body.consumption_rate, body.project, body.notes, month_val, body.sector,
+                 start_date_val))
             rec_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {"id": rec_id, "message": "تم الإضافة"}
     except Exception as e:
@@ -5392,12 +5439,14 @@ async def update_rental(rec_id: int, body: RentalCreate, cu: dict = Depends(requ
             conn.execute("""UPDATE rental_equipment SET
                 branch=?,equipment_name=?,code=?,rental_source=?,work_days=?,daily_rate=?,
                 monthly_rate=?,fuel_liters=?,hours_start=?,hours_end=?,hours_diff=?,
-                utilization_pct=?,consumption_rate=?,project=?,notes=?,month=?,sector=?
+                utilization_pct=?,consumption_rate=?,project=?,notes=?,month=?,sector=?,start_date=?
                 WHERE id=?""",
                 (body.branch, body.equipment_name, body.code, body.rental_source,
                  body.work_days, body.daily_rate, body.monthly_rate, body.fuel_liters,
                  body.hours_start, body.hours_end, body.hours_diff, body.utilization_pct,
-                 body.consumption_rate, body.project, body.notes, month_val, body.sector, rec_id))
+                 body.consumption_rate, body.project, body.notes, month_val, body.sector,
+                 body.start_date.strip() if body.start_date and body.start_date.strip() else datetime.utcnow().strftime("%Y-%m-%d"),
+                 rec_id))
         return {"message": "تم التعديل"}
     except HTTPException:
         raise
