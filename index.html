@@ -1477,6 +1477,7 @@ function buildAdminNav() {
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
+    {id:'rental-equipment', icon:'🔑', label:'المعدات المستأجرة'},
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
@@ -1561,6 +1562,7 @@ async function renderSection(id) {
     case 'driver-photos': await renderDriverPhotosSection(); break;
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
+    case 'rental-equipment':  await renderRentalEquipment(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -6072,7 +6074,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -9332,6 +9334,184 @@ function exportKpiCSV() {
   a.click();
   URL.revokeObjectURL(a.href);
   showNotification('✅ تم تصدير التقرير', 'success');
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// RENTAL EQUIPMENT — المعدات المستأجرة
+// ═══════════════════════════════════════════════════════════════
+let _rentalData = [];
+
+async function renderRentalEquipment() {
+  const el = document.getElementById('pageContent');
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  el.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">🔑 المعدات المستأجرة</div>
+    </div>
+
+    <!-- فلاتر -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;min-width:140px">
+            <label>الشهر</label>
+            <input type="month" id="rentalMonth" value="${defaultMonth}"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+          </div>
+          <div class="form-group" style="margin:0;min-width:180px">
+            <label>الفرع</label>
+            <input type="text" id="rentalBranch" placeholder="الكل"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          </div>
+          <div class="form-group" style="margin:0;min-width:160px">
+            <label>جهة الإيجار</label>
+            <input type="text" id="rentalSource" placeholder="الكل"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="loadRentalData()">🔍 عرض</button>
+          <button class="btn btn-outline btn-sm" onclick="exportRentalCSV()">📥 تصدير CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- بطاقات ملخص -->
+    <div id="rentalSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1rem"></div>
+
+    <!-- جدول -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 قائمة المعدات المستأجرة</div>
+        <input type="text" id="rentalSearch" placeholder="ابحث باسم المعدة..."
+          oninput="filterRentalTable(this.value)"
+          style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:200px">
+      </div>
+      <div class="table-wrap">
+        <table id="rentalTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>الفرع</th>
+              <th>نوع المعدة</th>
+              <th>الكود</th>
+              <th>جهة الإيجار</th>
+              <th style="text-align:center">أيام العمل</th>
+              <th style="text-align:center">القيمة الشهرية</th>
+              <th style="text-align:center">السولار (ل)</th>
+              <th style="text-align:center">عداد البداية</th>
+              <th style="text-align:center">عداد النهاية</th>
+              <th style="text-align:center">الفرق</th>
+              <th style="text-align:center">نسبة الاستخدام</th>
+            </tr>
+          </thead>
+          <tbody id="rentalTableBody">
+            <tr><td colspan="12" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  await loadRentalData();
+}
+
+async function loadRentalData() {
+  const month  = document.getElementById('rentalMonth')?.value || '';
+  const branch = document.getElementById('rentalBranch')?.value?.trim() || '';
+  const source = document.getElementById('rentalSource')?.value?.trim() || '';
+  const tbody  = document.getElementById('rentalTableBody');
+  const summary = document.getElementById('rentalSummary');
+
+  if(tbody) tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
+
+  try {
+    let url = `/rental-equipment?month=${month}`;
+    if(branch) url += `&branch=${encodeURIComponent(branch)}`;
+    if(source) url += `&source=${encodeURIComponent(source)}`;
+
+    const data = await apiCall(url);
+    _rentalData = data.records || [];
+
+    // ── ملخص ──
+    const totalMonthly = _rentalData.reduce((s,r) => s + (parseFloat(r.monthly_rate)||0), 0);
+    const totalFuel    = _rentalData.reduce((s,r) => s + (parseFloat(r.fuel_liters)||0), 0);
+    const totalDays    = _rentalData.reduce((s,r) => s + (parseFloat(r.work_days)||0), 0);
+    const branches     = new Set(_rentalData.map(r=>r.branch)).size;
+
+    if(summary) summary.innerHTML = [
+      {label:'إجمالي المعدات',   value: _rentalData.length,                            icon:'🔑', color:'var(--primary)'},
+      {label:'إجمالي القيمة',    value: totalMonthly.toLocaleString('ar-EG')+' ج',     icon:'💰', color:'#ef4444'},
+      {label:'إجمالي السولار',   value: totalFuel.toLocaleString('ar-EG')+' ل',        icon:'⛽', color:'#f97316'},
+      {label:'إجمالي أيام العمل',value: totalDays.toLocaleString('ar-EG'),             icon:'📅', color:'#3b82f6'},
+      {label:'عدد الفروع',       value: branches,                                      icon:'🏢', color:'#10b981'},
+    ].map(s=>`
+      <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:1.5rem">${s.icon}</div>
+        <div style="font-size:.72rem;color:var(--muted);margin:.3rem 0">${s.label}</div>
+        <div style="font-weight:800;color:${s.color};font-size:1rem">${s.value}</div>
+      </div>`).join('');
+
+    renderRentalTable(_rentalData);
+  } catch(e) {
+    if(tbody) tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
+  }
+}
+
+function renderRentalTable(rows) {
+  const tbody = document.getElementById('rentalTableBody');
+  if(!tbody) return;
+  if(!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r, i) => {
+    const util = parseFloat(r.utilization_pct);
+    const utilColor = util >= 0.7 ? '#10b981' : util >= 0.4 ? '#f97316' : '#ef4444';
+    const utilPct   = isNaN(util) ? '—' : `<span style="color:${utilColor};font-weight:700">${Math.round(util*100)}%</span>`;
+    const monthly   = parseFloat(r.monthly_rate);
+    const monthlyFmt = isNaN(monthly)||monthly===0 ? '—' : monthly.toLocaleString('ar-EG') + ' ج';
+
+    return `<tr>
+      <td style="text-align:center;color:var(--muted)">${i+1}</td>
+      <td style="font-size:.83rem">${r.branch||'—'}</td>
+      <td><strong>${r.equipment_name}</strong>${r.code?`<br><small style="color:var(--muted)">${r.code}</small>`:''}</td>
+      <td style="font-size:.8rem;color:var(--muted)">${r.code||'—'}</td>
+      <td style="font-size:.83rem">${r.rental_source||'—'}</td>
+      <td style="text-align:center;font-weight:700">${r.work_days||'—'}</td>
+      <td style="text-align:center;font-weight:700;color:#ef4444">${monthlyFmt}</td>
+      <td style="text-align:center">${r.fuel_liters||'—'}</td>
+      <td style="text-align:center;font-size:.82rem;color:var(--muted)">${r.hours_start||'—'}</td>
+      <td style="text-align:center;font-size:.82rem;color:var(--muted)">${r.hours_end||'—'}</td>
+      <td style="text-align:center;font-weight:700">${r.hours_diff||'—'}</td>
+      <td style="text-align:center">${utilPct}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterRentalTable(q) {
+  const filtered = q.trim()
+    ? _rentalData.filter(r => r.equipment_name.includes(q.trim()) || (r.branch||'').includes(q.trim()))
+    : _rentalData;
+  renderRentalTable(filtered);
+}
+
+function exportRentalCSV() {
+  if(!_rentalData.length) return showNotification('لا توجد بيانات','error');
+  const headers = ['الفرع','نوع المعدة','الكود','جهة الإيجار','أيام العمل',
+                   'القيمة الشهرية','السولار(ل)','عداد البداية','عداد النهاية','الفرق','نسبة الاستخدام','الشهر'];
+  const rows = _rentalData.map(r=>[
+    r.branch, r.equipment_name, r.code, r.rental_source,
+    r.work_days, r.monthly_rate, r.fuel_liters,
+    r.hours_start, r.hours_end, r.hours_diff, r.utilization_pct, r.month
+  ]);
+  const csv = '\uFEFF' + [headers,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'\"')+'"').join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download = `rental_${document.getElementById('rentalMonth')?.value||'report'}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showNotification('✅ تم التصدير','success');
 }
 
 // ═══════════════════════════════════════════════════════════════
