@@ -218,6 +218,8 @@ def migrate_db():
         )""")
         # ── Migration: أضف الأعمدة الجديدة لو مش موجودة ──
         _rental_new_cols = [
+            ("equipment_name",   "TEXT NOT NULL DEFAULT ''"),
+            ("code",             "TEXT DEFAULT ''"),
             ("month",            "TEXT DEFAULT ''"),
             ("sector",           "TEXT DEFAULT ''"),
             ("daily_rate",       "TEXT DEFAULT ''"),
@@ -225,6 +227,14 @@ def migrate_db():
             ("project",          "TEXT DEFAULT ''"),
             ("notes",            "TEXT DEFAULT ''"),
             ("created_at",       "TEXT DEFAULT ''"),
+            ("rental_source",    "TEXT DEFAULT ''"),
+            ("work_days",        "TEXT DEFAULT ''"),
+            ("monthly_rate",     "TEXT DEFAULT ''"),
+            ("fuel_liters",      "TEXT DEFAULT ''"),
+            ("hours_start",      "TEXT DEFAULT ''"),
+            ("hours_end",        "TEXT DEFAULT ''"),
+            ("hours_diff",       "TEXT DEFAULT ''"),
+            ("utilization_pct",  "TEXT DEFAULT ''"),
         ]
         for _col, _def in _rental_new_cols:
             try:
@@ -566,7 +576,39 @@ def _safe_add_columns(c):
         except Exception:
             pass
 
-    # ── Migration: voice_notes — أضف target_user_id لو مش موجود ──
+    # ── Migration: voice_notes — أزل CHECK constraint القديم وأضف target_user_id ──
+    try:
+        c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='voice_notes'")
+        row = c.fetchone()
+        vn_sql = row['sql'] if row else ''
+        if vn_sql and "CHECK" in vn_sql and "target_user_id" not in vn_sql:
+            # إعادة بناء الجدول بدون CHECK وبإضافة target_user_id
+            c.execute("PRAGMA foreign_keys=OFF")
+            c.execute("""CREATE TABLE IF NOT EXISTS voice_notes_v2(
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                sender_id      INTEGER NOT NULL,
+                target_group   TEXT    NOT NULL DEFAULT '',
+                target_user_id INTEGER DEFAULT NULL,
+                audio_data     TEXT NOT NULL,
+                duration_sec   REAL DEFAULT 0,
+                created_at     TEXT NOT NULL,
+                expires_at     TEXT NOT NULL,
+                play_count     INTEGER DEFAULT 0,
+                max_plays      INTEGER DEFAULT 2,
+                is_deleted     INTEGER DEFAULT 0
+            )""")
+            c.execute("""INSERT OR IGNORE INTO voice_notes_v2
+                (id,sender_id,target_group,audio_data,duration_sec,
+                 created_at,expires_at,play_count,max_plays,is_deleted)
+                SELECT id,sender_id,target_group,audio_data,duration_sec,
+                       created_at,expires_at,play_count,max_plays,is_deleted
+                FROM voice_notes""")
+            c.execute("DROP TABLE voice_notes")
+            c.execute("ALTER TABLE voice_notes_v2 RENAME TO voice_notes")
+            c.execute("PRAGMA foreign_keys=ON")
+            log.info("✅ voice_notes: removed CHECK constraint, added target_user_id")
+    except Exception as e:
+        log.warning(f"voice_notes migration: {e}")
     try: c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
     except Exception: pass
     try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target ON voice_notes(target_user_id)")
