@@ -10454,16 +10454,70 @@ async function pollMaintenanceAlerts() {
 async function checkAndShowVoiceNotes() {
   try {
     const notes = await apiCall('/voice-notes').catch(() => []);
-    if (notes && notes.length > 0) {
-      const unplayed = notes.filter(n => !n.is_deleted && n.play_count < n.max_plays);
-      if (unplayed.length > 0) {
-        showNotification(
-          '🎤 ' + unplayed.length + ' رسالة صوتية جديدة — <a href="#" onclick="switchSection(\'super-voice\');return false;" style="color:white;text-decoration:underline">اسمع</a>',
-          'info', 6000
-        );
-      }
-    }
+    if (!notes || !notes.length) return;
+    const unplayed = notes.filter(n => !n.is_deleted && n.play_count < n.max_plays && n.audio_data);
+    if (!unplayed.length) return;
+    // عرض أول رسالة غير مشغولة في popup
+    _showVoiceNotePopup(unplayed, 0);
   } catch(e) {}
+}
+
+function _showVoiceNotePopup(notes, idx) {
+  const n   = notes[idx];
+  if (!n) return;
+  const rem  = n.max_plays - n.play_count;
+  const exp  = (n.expires_at || '').slice(0, 16).replace('T', ' ');
+  const sent = (n.created_at || '').slice(0, 16).replace('T', ' ');
+  const total = notes.length;
+  const uid = 'vnp_' + n.id;
+  // احذف popup قديم
+  document.getElementById('voiceNotePopup')?.remove();
+  const popup = document.createElement('div');
+  popup.id = 'voiceNotePopup';
+  popup.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:1rem';
+  popup.innerHTML = `
+    <div style="background:#0f172a;border-radius:20px;padding:1.5rem;max-width:420px;width:100%;
+                box-shadow:0 24px 60px rgba(0,0,0,.5);position:relative;color:white">
+      <button onclick="document.getElementById('voiceNotePopup').remove()"
+        style="position:absolute;top:.8rem;left:.8rem;background:rgba(255,255,255,.12);border:none;
+               color:white;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:1.1rem;
+               display:flex;align-items:center;justify-content:center">✕</button>
+      ${total > 1 ? `<div style="position:absolute;top:.8rem;right:.8rem;background:#3b82f6;border-radius:50px;padding:.2rem .7rem;font-size:.75rem;font-weight:700">${idx+1}/${total}</div>` : ''}
+      <div style="text-align:center;margin-bottom:1.1rem;padding-top:.3rem">
+        <div style="font-size:1.6rem;margin-bottom:.3rem">🎙️</div>
+        <div style="font-size:1rem;font-weight:800;color:#f1f5f9">رسالة من الإدارة</div>
+        <div style="font-size:.75rem;color:#94a3b8;margin-top:.2rem">${sent}</div>
+      </div>
+      <audio id="${uid}" controls style="width:100%;border-radius:10px;margin-bottom:1rem"
+             src="${n.audio_data}">
+        <source src="${n.audio_data}" type="audio/webm">
+        <source src="${n.audio_data}" type="audio/ogg">
+        <source src="${n.audio_data}" type="audio/mp4">
+      </audio>
+      <div style="font-size:.78rem;color:#94a3b8;text-align:center;margin-bottom:1rem">
+        متبقي ${rem} استماع — تنتهي ${exp}
+      </div>
+      <div style="display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">
+        ${idx + 1 < total ? `<button onclick="_showVoiceNotePopup(window._vnPopupNotes, ${idx+1})"
+          style="background:#3b82f6;border:none;color:white;padding:.55rem 1.2rem;border-radius:10px;
+                 cursor:pointer;font-size:.85rem;font-weight:700">التالية ›</button>` : ''}
+        <button onclick="_markVoiceNotePlayed(${n.id});document.getElementById('voiceNotePopup').remove()"
+          style="background:#10b981;border:none;color:white;padding:.55rem 1.2rem;border-radius:10px;
+                 cursor:pointer;font-size:.85rem;font-weight:700">✓ تم السماع</button>
+      </div>
+    </div>`;
+  document.body.appendChild(popup);
+  window._vnPopupNotes = notes;
+  // تشغيل تلقائي
+  const audio = document.getElementById(uid);
+  if (audio) {
+    audio.addEventListener('play', () => _markVoiceNotePlayed(n.id), { once: true });
+    audio.play().catch(() => {});
+  }
+}
+
+async function _markVoiceNotePlayed(noteId) {
+  try { await apiCall('/voice-notes/' + noteId + '/play', 'POST'); } catch(e) {}
 }
 
 // ===================================================================
