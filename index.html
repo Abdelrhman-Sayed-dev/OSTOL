@@ -10665,9 +10665,10 @@ async function renderSuperVoice() {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
           <div class="form-group" style="margin:0">
             <label>المستلم</label>
-            <select id="vnTarget" class="form-control">
+            <select id="vnTarget" class="form-control" onchange="onVnTargetChange()">
               <option value="admins">👑 المشرفون والإداريون</option>
               <option value="drivers">🚗 السائقون</option>
+              <option value="specific">👤 شخص محدد</option>
             </select>
           </div>
           <div class="form-group" style="margin:0">
@@ -10677,6 +10678,21 @@ async function renderSuperVoice() {
           <div class="form-group" style="margin:0">
             <label>انتهاء الصلاحية (ساعات)</label>
             <input type="number" id="vnHours" class="form-control" value="24" min="1" max="168">
+          </div>
+        </div>
+        <!-- بحث شخص محدد -->
+        <div id="vnSpecificUser" style="display:none;margin-bottom:1rem;background:var(--surface-2);border-radius:10px;padding:1rem">
+          <label style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:.5rem;display:block">ابحث باسم الشخص</label>
+          <div style="position:relative">
+            <input type="text" id="vnUserSearch" placeholder="اكتب الاسم للبحث..." class="form-control"
+              oninput="searchVoiceUsers(this.value)" autocomplete="off"
+              style="padding-right:2.5rem">
+            <span style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none">🔍</span>
+          </div>
+          <div id="vnUserDropdown" style="display:none;background:white;border:1.5px solid var(--border-2);border-radius:10px;margin-top:.35rem;max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(15,23,42,.12);z-index:999;position:relative"></div>
+          <div id="vnSelectedUser" style="display:none;margin-top:.6rem;background:var(--primary-glow);border:1.5px solid var(--primary);border-radius:8px;padding:.5rem .85rem;align-items:center;gap:.5rem;font-size:.85rem;font-weight:700;color:var(--primary)">
+            <span>👤 المختار: </span><span id="vnSelectedName"></span>
+            <button onclick="clearVnUser()" style="background:none;border:none;cursor:pointer;color:var(--danger);margin-right:auto;font-size:.9rem">✕ تغيير</button>
           </div>
         </div>
         <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
@@ -10736,7 +10752,7 @@ async function loadVoiceNotes() {
       const expiry = (n.expires_at||'').slice(0,16).replace('T',' ');
       return `<tr style="${deleted?'opacity:.5':''}">
         <td style="text-align:center;color:var(--muted)">${i+1}</td>
-        <td>${targetLabel[n.target_group] || n.target_group}</td>
+        <td>${n.target_user_id ? `👤 ${n.target_name || 'شخص محدد'}` : (targetLabel[n.target_group] || n.target_group)}</td>
         <td style="text-align:center">${dur}</td>
         <td style="text-align:center">${status}</td>
         <td style="font-size:.82rem;color:var(--muted)">${sent}</td>
@@ -10816,14 +10832,19 @@ async function sendVoiceNote() {
   const maxPlays = parseInt(document.getElementById('vnMaxPlays')?.value || '3');
   const hours    = parseInt(document.getElementById('vnHours')?.value    || '24');
   if (!b64) return showNotification('سجّل رسالة أولاً', 'error');
+  if (target === 'specific' && !window._vnSelectedUserId) {
+    return showNotification('يرجى اختيار الشخص المراد إرسال الرسالة إليه', 'error');
+  }
+  const payload = { audio_data: b64, duration_sec: 0, max_plays: maxPlays, hours_ttl: hours };
+  if (target === 'specific') {
+    payload.target_group   = '';
+    payload.target_user_id = window._vnSelectedUserId;
+  } else {
+    payload.target_group   = target;
+    payload.target_user_id = null;
+  }
   try {
-    await apiCall('/voice-notes', 'POST', {
-      target_group: target,
-      audio_data:   b64,
-      duration_sec: 0,
-      max_plays:    maxPlays,
-      hours_ttl:    hours,
-    });
+    await apiCall('/voice-notes', 'POST', payload);
     window._vnAudioB64 = null;
     document.getElementById('vnPreviewAudio').style.display = 'none';
     document.getElementById('vnSendBtn').style.display      = 'none';
@@ -10833,6 +10854,68 @@ async function sendVoiceNote() {
   } catch(e) {
     showNotification('فشل الإرسال: ' + e.message, 'error');
   }
+}
+
+
+// ── Voice Note: specific user helpers ──
+var _vnSearchTimer = null;
+window._vnSelectedUserId = null;
+
+function onVnTargetChange() {
+  const val = document.getElementById('vnTarget')?.value;
+  const el  = document.getElementById('vnSpecificUser');
+  if (el) el.style.display = val === 'specific' ? 'block' : 'none';
+  if (val !== 'specific') { window._vnSelectedUserId = null; }
+}
+
+async function searchVoiceUsers(q) {
+  clearTimeout(_vnSearchTimer);
+  const dd = document.getElementById('vnUserDropdown');
+  if (!q || q.length < 1) { if(dd) dd.style.display='none'; return; }
+  _vnSearchTimer = setTimeout(async () => {
+    try {
+      const data = await apiCall('/voice-notes/users-search?q=' + encodeURIComponent(q));
+      const users = data.users || [];
+      if (!dd) return;
+      if (!users.length) {
+        dd.innerHTML = '<div style="padding:.75rem 1rem;color:var(--muted);font-size:.85rem">لا نتائج</div>';
+        dd.style.display = 'block';
+        return;
+      }
+      dd.innerHTML = users.map(u => {
+        const icon = u.type === 'driver' ? '🚗' : '👑';
+        return `<div onclick="selectVnUser(${u.id},'${u.name.replace(/'/g,"'")}')"
+          style="padding:.6rem 1rem;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem;transition:background .12s"
+          onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
+          <span>${icon}</span><span style="font-weight:600">${u.name}</span>
+          <span style="font-size:.75rem;color:var(--muted);margin-right:auto">${u.role}</span>
+        </div>`;
+      }).join('');
+      dd.style.display = 'block';
+    } catch(e) {
+      console.error('voice user search error:', e);
+    }
+  }, 300);
+}
+
+function selectVnUser(id, name) {
+  window._vnSelectedUserId = id;
+  const dd   = document.getElementById('vnUserDropdown');
+  const sel  = document.getElementById('vnSelectedUser');
+  const sname= document.getElementById('vnSelectedName');
+  const inp  = document.getElementById('vnUserSearch');
+  if (dd)    dd.style.display = 'none';
+  if (inp)   inp.value = '';
+  if (sname) sname.textContent = name;
+  if (sel)   { sel.style.display = 'flex'; }
+}
+
+function clearVnUser() {
+  window._vnSelectedUserId = null;
+  const sel = document.getElementById('vnSelectedUser');
+  const inp = document.getElementById('vnUserSearch');
+  if (sel) sel.style.display = 'none';
+  if (inp) inp.value = '';
 }
 
 </script>
