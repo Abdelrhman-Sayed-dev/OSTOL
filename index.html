@@ -10001,6 +10001,13 @@ function showRentalForm(id=null) {
   ['Branch','Name','Code','Source','Days','Daily','Monthly','Fuel','HoursStart','HoursEnd','Diff','Util','Project','Month','Sector','Notes']
     .forEach(f => { const el = document.getElementById('rn'+f); if(el) el.value = ''; });
   document.getElementById('rnSector').value = 'قطاع القاهرة الكبرى';
+  // تعبئة الشهر تلقائياً بالشهر المختار في الفلتر أو الشهر الحالي
+  if(!id) {
+    const filterMonth = document.getElementById('rentalMonth')?.value || '';
+    const now = new Date();
+    const defaultMonth = filterMonth || (now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0'));
+    document.getElementById('rnMonth').value = defaultMonth;
+  }
   if(id) {
     const r = _rentalData.find(x=>x.id===id);
     if(r) {
