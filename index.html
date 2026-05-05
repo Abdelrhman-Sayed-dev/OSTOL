@@ -10286,6 +10286,7 @@ async function renderSuperFraud() {
   c.innerHTML = `
     <div class="page-header">
       <div class="page-title">🔍 كشف التلاعب</div>
+      <div id="fraudPeriodLabel" style="font-size:.82rem;color:var(--muted);background:var(--surface-2);padding:.3rem .75rem;border-radius:20px"></div>
     </div>
 
     <div class="card" style="margin-bottom:1rem">
@@ -10314,16 +10315,16 @@ async function renderSuperFraud() {
         <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
           <span style="font-weight:700;font-size:.9rem">تصفية حسب النوع:</span>
           <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_dup" checked onchange="filterFraudTable()"> تفويلة مكررة
+            <input type="checkbox" id="flt_dup" checked onchange="filterFraudTable()"> 🔴 مخالفات عالية الخطورة
           </label>
           <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_odo" checked onchange="filterFraudTable()"> عداد متناقص
+            <input type="checkbox" id="flt_odo" checked onchange="filterFraudTable()"> 🟡 مسافة / عداد مشبوه
           </label>
           <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_open" checked onchange="filterFraudTable()"> رحلة مفتوحة
+            <input type="checkbox" id="flt_open" checked onchange="filterFraudTable()"> 🟠 رحلات متداخلة / مفتوحة
           </label>
           <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_fuel" checked onchange="filterFraudTable()"> وقود بتكلفة صفر
+            <input type="checkbox" id="flt_fuel" checked onchange="filterFraudTable()"> ⛽ مشكلات الوقود
           </label>
         </div>
       </div>
@@ -10367,16 +10368,21 @@ async function loadFraudData() {
     const s = data.summary || {};
 
     if (sumEl) sumEl.innerHTML = [
-      {label:'إجمالي التنبيهات', value: s.total||0,  icon:'⚠️', color:'#f97316'},
-      {label:'خطورة عالية',      value: s.high||0,   icon:'🔴', color:'#ef4444'},
-      {label:'خطورة متوسطة',     value: s.medium||0, icon:'🟠', color:'#f97316'},
-      {label:'خطورة منخفضة',     value: s.low||0,    icon:'🟡', color:'#eab308'},
+      {label:'إجمالي التنبيهات', value: s.total||0,  icon:'⚠️', color:'#f97316', bg:'#fff7ed'},
+      {label:'خطورة عالية',      value: s.high||0,   icon:'🔴', color:'#ef4444', bg:'#fef2f2'},
+      {label:'خطورة متوسطة',     value: s.medium||0, icon:'🟠', color:'#f97316', bg:'#fff7ed'},
+      {label:'خطورة منخفضة',     value: s.low||0,    icon:'🟡', color:'#eab308', bg:'#fefce8'},
     ].map(x=>`
-      <div class="card" style="text-align:center;padding:1rem">
-        <div style="font-size:1.5rem">${x.icon}</div>
+      <div class="card" style="text-align:center;padding:1rem;border-right:4px solid ${x.color};background:${x.bg}20;cursor:pointer"
+           onclick="document.getElementById('fraudTable')?.scrollIntoView({behavior:'smooth'})">
+        <div style="font-size:1.6rem">${x.icon}</div>
         <div style="font-size:.72rem;color:var(--muted);margin:.3rem 0">${x.label}</div>
-        <div style="font-weight:800;color:${x.color};font-size:1.1rem">${x.value}</div>
+        <div style="font-weight:900;color:${x.color};font-size:1.4rem">${x.value}</div>
       </div>`).join('');
+
+    // تحديث label الفترة
+    const lbl = document.getElementById('fraudPeriodLabel');
+    if(lbl) lbl.textContent = `📅 ${data.date_from || from} ← ${data.date_to || to} | ${_fraudData.length} تنبيه`;
 
     filterFraudTable();
   } catch(e) {
@@ -10389,13 +10395,19 @@ function filterFraudTable() {
   const showOdo  = document.getElementById('flt_odo')?.checked  ?? true;
   const showOpen = document.getElementById('flt_open')?.checked ?? true;
   const showFuel = document.getElementById('flt_fuel')?.checked ?? true;
-  const typeMap  = {
-    duplicate_fuel:   showDup,
-    odometer_reverse: showOdo,
-    open_trip:        showOpen,
-    zero_cost_fuel:   showFuel
-  };
-  renderFraudTable(_fraudData.filter(a => typeMap[a.type] !== false));
+  // أنواع التنبيهات الكاملة
+  const dupTypes  = ['odometer_reverse','impossible_speed','car_overlap'];
+  const odoTypes  = ['odometer_reverse','repeated_odometer','high_distance'];
+  const openTypes = ['open_trip','driver_overlap'];
+  const fuelTypes = ['zero_cost_fuel','excess_fuel'];
+
+  renderFraudTable(_fraudData.filter(a => {
+    if(dupTypes.includes(a.type)  && !showDup)  return false;
+    if(odoTypes.includes(a.type)  && !showOdo && !dupTypes.includes(a.type)) return false;
+    if(openTypes.includes(a.type) && !showOpen) return false;
+    if(fuelTypes.includes(a.type) && !showFuel) return false;
+    return true;
+  }));
 }
 
 function renderFraudTable(rows) {
@@ -10412,20 +10424,23 @@ function renderFraudTable(rows) {
   };
   tbody.innerHTML = rows.map((a, i) => {
     const sv = sevCfg[a.severity] || sevCfg.low;
-    return `<tr>
-      <td style="text-align:center;color:var(--muted)">${i+1}</td>
+    return `<tr style="background:${sv.bg}">
+      <td style="text-align:center;color:var(--muted);font-size:.8rem">${i+1}</td>
       <td style="text-align:center">
-        <span style="background:${sv.color}20;color:${sv.color};font-size:.75rem;padding:.2rem .6rem;border-radius:20px;font-weight:700;white-space:nowrap">
+        <span style="background:${sv.color}20;color:${sv.color};font-size:.72rem;padding:.2rem .55rem;border-radius:20px;font-weight:700;white-space:nowrap">
           ${sv.icon} ${sv.label}
         </span>
       </td>
-      <td style="font-size:.82rem;font-weight:600">${a.label}</td>
+      <td style="font-size:.82rem;font-weight:700;color:${sv.color}">${a.label}</td>
       <td>
-        <strong>${a.plate}</strong>
-        ${a.model ? `<br><small style="color:var(--muted)">${a.model}</small>` : ''}
+        <strong style="font-size:.88rem">${a.plate}</strong>
+        ${a.model ? `<br><small style="color:var(--muted);font-size:.75rem">${a.model}</small>` : ''}
       </td>
-      <td style="font-size:.82rem;color:var(--muted)">${a.date||'&mdash;'}</td>
-      <td style="font-size:.82rem">${a.detail}</td>
+      <td style="font-size:.78rem;color:var(--muted);white-space:nowrap">${a.date||'—'}</td>
+      <td style="font-size:.82rem">
+        ${a.detail}
+        ${a.trip_id ? `<br><button class="btn btn-ghost btn-sm" style="margin-top:.25rem;font-size:.72rem" onclick="switchSection('trips')">🔗 رحلة #${a.trip_id}</button>` : ''}
+      </td>
     </tr>`;
   }).join('');
 }
