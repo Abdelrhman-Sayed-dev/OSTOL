@@ -1478,6 +1478,7 @@ function buildAdminNav() {
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
     {id:'rental-equipment', icon:'🔑', label:'المعدات المستأجرة'},
+    {id:'equipment-list',   icon:'⚙️', label:'المعدات'},
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
@@ -1563,6 +1564,7 @@ async function renderSection(id) {
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
     case 'rental-equipment':  await renderRentalEquipment(); break;
+    case 'equipment-list':    await renderEquipmentSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -6074,7 +6076,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -9336,6 +9338,433 @@ function exportKpiCSV() {
   showNotification('✅ تم تصدير التقرير', 'success');
 }
 
+
+
+// ═══════════════════════════════════════════════════════════════
+// EQUIPMENT — المعدات (جدول منفصل)
+// ═══════════════════════════════════════════════════════════════
+let _eqData = [];
+let _eqEditId = null;
+
+async function renderEquipmentSection() {
+  const el = document.getElementById('pageContent');
+  el.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">⚙️ المعدات</div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline btn-sm" onclick="showEquipmentImport()">📥 استيراد CSV</button>
+        <button class="btn btn-primary btn-sm" onclick="showEquipmentForm()">+ إضافة معدة</button>
+      </div>
+    </div>
+
+    <!-- فلاتر -->
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0;min-width:200px">
+            <input type="text" id="eqSearch" placeholder="🔍 ابحث باسم المعدة أو الكود..."
+              oninput="filterEquipment()"
+              style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          </div>
+          <div class="form-group" style="margin:0">
+            <select id="eqTypeFilter" onchange="filterEquipment()"
+              style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+              <option value="">كل الأنواع</option>
+              <option>معدات تحريك تربة</option>
+              <option>معدات رفع</option>
+              <option>معدات ثابتة</option>
+              <option>معدات نقل ثقيل</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <select id="eqStatusFilter" onchange="filterEquipment()"
+              style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+              <option value="">كل الحالات</option>
+              <option value="active">عاملة</option>
+              <option value="inactive">عاطلة</option>
+              <option value="maintenance">صيانة</option>
+            </select>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="exportEquipmentCSV()">📥 تصدير</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- بطاقات ملخص -->
+    <div id="eqSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:1rem;margin-bottom:1rem"></div>
+
+    <!-- جدول -->
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:40px">#</th>
+              <th>الكود</th>
+              <th>اسم المعدة</th>
+              <th>الماركة / الموديل</th>
+              <th>النوع</th>
+              <th>الفرع</th>
+              <th>السنة</th>
+              <th style="text-align:center">الحالة</th>
+              <th style="text-align:center">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="eqTableBody">
+            <tr><td colspan="9" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- نموذج الإضافة/التعديل -->
+    <div id="eqFormModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;width:min(700px,95vw);max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h3 id="eqFormTitle" style="margin:0;font-size:1.1rem">➕ إضافة معدة</h3>
+          <button onclick="closeEquipmentForm()" style="background:none;border:none;font-size:1.3rem;cursor:pointer">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group">
+            <label>الكود <span class="req">*</span></label>
+            <input id="eqCode" class="form-control" placeholder="مثال: 12/5/347">
+          </div>
+          <div class="form-group">
+            <label>اسم المعدة <span class="req">*</span></label>
+            <input id="eqName" class="form-control" placeholder="مثال: اسكيد لودر">
+          </div>
+          <div class="form-group">
+            <label>الماركة</label>
+            <input id="eqBrand" class="form-control" placeholder="مثال: CATERPILLAR">
+          </div>
+          <div class="form-group">
+            <label>الموديل</label>
+            <input id="eqModel" class="form-control" placeholder="مثال: 246C">
+          </div>
+          <div class="form-group">
+            <label>سنة الصنع</label>
+            <input id="eqYear" class="form-control" placeholder="2018">
+          </div>
+          <div class="form-group">
+            <label>رقم الشاسيه</label>
+            <input id="eqChassis" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>نوع التصنيف</label>
+            <select id="eqType" class="form-control">
+              <option>معدات تحريك تربة</option>
+              <option>معدات رفع</option>
+              <option>معدات ثابتة</option>
+              <option>معدات نقل ثقيل</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>الحالة</label>
+            <select id="eqStatus" class="form-control">
+              <option value="active">عاملة</option>
+              <option value="inactive">عاطلة</option>
+              <option value="maintenance">صيانة</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>الفرع</label>
+            <input id="eqBranch" class="form-control" placeholder="مثال: مدينة نصر">
+          </div>
+          <div class="form-group">
+            <label>القطاع</label>
+            <input id="eqSector" class="form-control" placeholder="مثال: قطاع القاهرة الكبرى">
+          </div>
+          <div class="form-group">
+            <label>المشروع</label>
+            <input id="eqProject" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>انتهاء الرخصة</label>
+            <input id="eqLicense" class="form-control" type="date">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label>ملاحظات</label>
+            <textarea id="eqNotes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
+          <button class="btn btn-outline" onclick="closeEquipmentForm()">إلغاء</button>
+          <button class="btn btn-primary" onclick="saveEquipment()">💾 حفظ</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- نموذج الاستيراد -->
+    <div id="eqImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;width:min(800px,95vw);max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+          <h3 style="margin:0;font-size:1.1rem">📥 استيراد معدات من CSV</h3>
+          <button onclick="closeEquipmentImport()" style="background:none;border:none;font-size:1.3rem;cursor:pointer">✕</button>
+        </div>
+        <div style="background:var(--surface-2);border-radius:10px;padding:1rem;margin-bottom:1rem;font-size:.85rem;color:var(--muted)">
+          💡 الأعمدة المطلوبة: <strong>car_code</strong> (الكود) و <strong>equipment_name</strong> (اسم المعدة).
+          <a href="/equipment/import/template" download style="color:var(--primary);font-weight:700">⬇️ تحميل القالب</a>
+        </div>
+        <div style="display:flex;gap:1rem;margin-bottom:1rem;align-items:flex-end">
+          <div class="form-group" style="margin:0;flex:1">
+            <label>ملف CSV <span class="req">*</span></label>
+            <input type="file" id="eqImportFile" accept=".csv,.xlsx,.xls"
+              style="padding:.5rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
+          </div>
+          <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="eqUpdateExisting"> تحديث الموجود
+          </label>
+          <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
+            <input type="checkbox" id="eqSkipErrors"> تخطي الأخطاء
+          </label>
+          <button class="btn btn-outline btn-sm" onclick="previewEquipmentImport()">🔍 استعراض</button>
+        </div>
+        <div id="eqImportPreview" style="display:none">
+          <div id="eqImportSummary" style="margin-bottom:.75rem"></div>
+          <div class="table-wrap" style="max-height:300px;overflow-y:auto">
+            <table style="font-size:.82rem">
+              <thead><tr><th>#</th><th>الكود</th><th>اسم المعدة</th><th>النوع</th><th>الفرع</th><th>الحالة</th><th>تكرار</th></tr></thead>
+              <tbody id="eqImportRows"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1rem">
+            <button class="btn btn-outline" onclick="closeEquipmentImport()">إلغاء</button>
+            <button class="btn btn-primary" id="eqImportConfirmBtn" onclick="confirmEquipmentImport()">✅ تأكيد الاستيراد</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  await loadEquipmentData();
+}
+
+async function loadEquipmentData() {
+  try {
+    const data = await apiCall('/equipment');
+    _eqData = data.equipment || [];
+    const s = data.summary || {};
+
+    const summaryEl = document.getElementById('eqSummary');
+    if(summaryEl) summaryEl.innerHTML = [
+      {label:'إجمالي المعدات', value: s.total||0, icon:'⚙️', color:'var(--primary)'},
+      {label:'عاملة',          value: s.active||0, icon:'✅', color:'#10b981'},
+      {label:'عاطلة',          value: s.inactive||0, icon:'🔴', color:'#ef4444'},
+      {label:'صيانة',          value: s.maintenance||0, icon:'🔧', color:'#f97316'},
+      {label:'تحريك تربة',     value: (s.by_type||{})['معدات تحريك تربة']||0, icon:'🏗️', color:'#3b82f6'},
+      {label:'رفع',            value: (s.by_type||{})['معدات رفع']||0, icon:'🏋️', color:'#8b5cf6'},
+    ].map(s=>`
+      <div class="card" style="text-align:center;padding:.85rem">
+        <div style="font-size:1.4rem">${s.icon}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin:.25rem 0">${s.label}</div>
+        <div style="font-weight:800;color:${s.color}">${s.value}</div>
+      </div>`).join('');
+
+    filterEquipment();
+  } catch(e) {
+    const tb = document.getElementById('eqTableBody');
+    if(tb) tb.innerHTML = `<tr><td colspan="9" style="color:#ef4444;text-align:center;padding:1.5rem">❌ ${e.message}</td></tr>`;
+  }
+}
+
+function filterEquipment() {
+  const q = (document.getElementById('eqSearch')?.value||'').trim().toLowerCase();
+  const t = document.getElementById('eqTypeFilter')?.value||'';
+  const s = document.getElementById('eqStatusFilter')?.value||'';
+  const filtered = _eqData.filter(e =>
+    (!q || e.equipment_name.toLowerCase().includes(q) || (e.car_code||'').toLowerCase().includes(q) || (e.brand||'').toLowerCase().includes(q)) &&
+    (!t || e.equipment_type === t) &&
+    (!s || e.status === s)
+  );
+  renderEquipmentTable(filtered);
+}
+
+function renderEquipmentTable(rows) {
+  const tbody = document.getElementById('eqTableBody');
+  if(!tbody) return;
+  if(!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد معدات</td></tr>`;
+    return;
+  }
+  const statusMap = {active:{label:'عاملة',color:'#10b981'}, inactive:{label:'عاطلة',color:'#ef4444'}, maintenance:{label:'صيانة',color:'#f97316'}};
+  tbody.innerHTML = rows.map((e,i) => {
+    const st = statusMap[e.status] || {label:e.status, color:'#94a3b8'};
+    const typeColor = e.equipment_type==='معدات تحريك تربة'?'#3b82f6':e.equipment_type==='معدات رفع'?'#8b5cf6':e.equipment_type==='معدات ثابتة'?'#f59e0b':'#6b7280';
+    return `<tr>
+      <td style="text-align:center;color:var(--muted)">${i+1}</td>
+      <td><code style="background:var(--surface-2);padding:.15rem .4rem;border-radius:4px;font-size:.82rem">${e.car_code}</code></td>
+      <td><strong>${e.equipment_name}</strong>${e.chassis?`<br><small style="color:var(--muted)">شاسيه: ${e.chassis}</small>`:''}</td>
+      <td style="font-size:.85rem">${[e.brand,e.model].filter(Boolean).join(' / ')||'—'}</td>
+      <td><span style="background:${typeColor}20;color:${typeColor};font-size:.72rem;padding:.2rem .55rem;border-radius:20px;font-weight:700;white-space:nowrap">${e.equipment_type}</span></td>
+      <td style="font-size:.85rem">${e.branch||'—'}</td>
+      <td style="text-align:center;color:var(--muted)">${e.year||'—'}</td>
+      <td style="text-align:center"><span style="background:${st.color}20;color:${st.color};font-size:.75rem;padding:.2rem .6rem;border-radius:20px;font-weight:700">${st.label}</span></td>
+      <td style="text-align:center">
+        <button class="btn btn-ghost btn-sm" onclick="showEquipmentForm(${e.id})" title="تعديل">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteEquipment(${e.id},'${e.equipment_name}')" title="حذف" style="color:#ef4444">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function showEquipmentForm(id=null) {
+  _eqEditId = id;
+  document.getElementById('eqFormTitle').textContent = id ? '✏️ تعديل معدة' : '➕ إضافة معدة';
+  const fields = ['Code','Name','Brand','Model','Year','Chassis','Type','Status','Branch','Sector','Project','License','Notes'];
+  fields.forEach(f => { const el = document.getElementById('eq'+f); if(el) el.value = ''; });
+  document.getElementById('eqType').value = 'معدات تحريك تربة';
+  document.getElementById('eqStatus').value = 'active';
+
+  if(id) {
+    const e = _eqData.find(x => x.id === id);
+    if(e) {
+      document.getElementById('eqCode').value    = e.car_code||'';
+      document.getElementById('eqName').value    = e.equipment_name||'';
+      document.getElementById('eqBrand').value   = e.brand||'';
+      document.getElementById('eqModel').value   = e.model||'';
+      document.getElementById('eqYear').value    = e.year||'';
+      document.getElementById('eqChassis').value = e.chassis||'';
+      document.getElementById('eqType').value    = e.equipment_type||'معدات تحريك تربة';
+      document.getElementById('eqStatus').value  = e.status||'active';
+      document.getElementById('eqBranch').value  = e.branch||'';
+      document.getElementById('eqSector').value  = e.sector||'';
+      document.getElementById('eqProject').value = e.project||'';
+      document.getElementById('eqLicense').value = e.license_expiry||'';
+      document.getElementById('eqNotes').value   = e.notes||'';
+    }
+  }
+  const modal = document.getElementById('eqFormModal');
+  modal.style.display = 'flex';
+}
+
+function closeEquipmentForm() {
+  document.getElementById('eqFormModal').style.display = 'none';
+  _eqEditId = null;
+}
+
+async function saveEquipment() {
+  const body = {
+    car_code:       document.getElementById('eqCode').value.trim(),
+    equipment_name: document.getElementById('eqName').value.trim(),
+    brand:          document.getElementById('eqBrand').value.trim(),
+    model:          document.getElementById('eqModel').value.trim(),
+    year:           document.getElementById('eqYear').value.trim(),
+    chassis:        document.getElementById('eqChassis').value.trim(),
+    equipment_type: document.getElementById('eqType').value,
+    status:         document.getElementById('eqStatus').value,
+    branch:         document.getElementById('eqBranch').value.trim(),
+    sector:         document.getElementById('eqSector').value.trim(),
+    project:        document.getElementById('eqProject').value.trim(),
+    license_expiry: document.getElementById('eqLicense').value,
+    notes:          document.getElementById('eqNotes').value.trim(),
+  };
+  if(!body.car_code) return showNotification('الكود مطلوب','error');
+  if(!body.equipment_name) return showNotification('اسم المعدة مطلوب','error');
+  try {
+    if(_eqEditId) {
+      await apiCall(`/equipment/${_eqEditId}`, 'PUT', body);
+      showNotification('✅ تم التعديل بنجاح','success');
+    } else {
+      await apiCall('/equipment', 'POST', body);
+      showNotification('✅ تم الإضافة بنجاح','success');
+    }
+    closeEquipmentForm();
+    await loadEquipmentData();
+  } catch(e) {
+    showNotification(e.message||'خطأ في الحفظ','error');
+  }
+}
+
+async function deleteEquipment(id, name) {
+  if(!confirm(`حذف "${name}"؟`)) return;
+  try {
+    await apiCall(`/equipment/${id}`, 'DELETE');
+    showNotification('✅ تم الحذف','success');
+    await loadEquipmentData();
+  } catch(e) {
+    showNotification(e.message,'error');
+  }
+}
+
+function showEquipmentImport() {
+  document.getElementById('eqImportModal').style.display = 'flex';
+  document.getElementById('eqImportPreview').style.display = 'none';
+  document.getElementById('eqImportFile').value = '';
+}
+function closeEquipmentImport() {
+  document.getElementById('eqImportModal').style.display = 'none';
+}
+
+async function previewEquipmentImport() {
+  const file = document.getElementById('eqImportFile').files[0];
+  if(!file) return showNotification('اختر ملفاً أولاً','error');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const data = await fetch('/equipment/import/preview', {
+      method:'POST', headers:{'Authorization':'Bearer '+localStorage.getItem('token')}, body:fd
+    }).then(r=>r.json());
+    if(data.detail) throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));
+
+    const s = data.summary||{};
+    document.getElementById('eqImportSummary').innerHTML = `
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap">
+        ${[['الإجمالي',s.total,'#3b82f6'],['صالح',s.valid,'#10b981'],['أخطاء',s.invalid,'#ef4444'],['تكرار',s.duplicates,'#f97316']]
+          .map(([l,v,c])=>`<span style="background:${c}15;color:${c};padding:.25rem .75rem;border-radius:20px;font-weight:700;font-size:.83rem">${l}: ${v}</span>`).join('')}
+      </div>`;
+
+    const statusMap = {active:'عاملة',inactive:'عاطلة',maintenance:'صيانة'};
+    document.getElementById('eqImportRows').innerHTML = (data.rows||[]).map(r=>`
+      <tr style="background:${!r.valid?'#fef2f2':r.duplicate?'#fffbeb':''}">
+        <td>${r.row_index}</td>
+        <td>${r.car_code||'—'}</td>
+        <td>${r.equipment_name||'—'}</td>
+        <td style="font-size:.78rem">${r.equipment_type||''}</td>
+        <td style="font-size:.78rem">${r.branch||''}</td>
+        <td style="color:${r.valid?'#10b981':'#ef4444'};font-size:.78rem">${r.valid?'✅':r.errors?.join(', ')}</td>
+        <td style="text-align:center">${r.duplicate?'⚠️ موجود':''}</td>
+      </tr>`).join('');
+
+    document.getElementById('eqImportPreview').style.display = 'block';
+    document.getElementById('eqImportConfirmBtn').disabled = s.valid === 0;
+  } catch(e) {
+    showNotification(e.message,'error');
+  }
+}
+
+async function confirmEquipmentImport() {
+  const file = document.getElementById('eqImportFile').files[0];
+  if(!file) return;
+  const updateExisting = document.getElementById('eqUpdateExisting').checked;
+  const skipErrors     = document.getElementById('eqSkipErrors').checked;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`/equipment/import/confirm?skip_errors=${skipErrors}&update_existing=${updateExisting}`, {
+      method:'POST', headers:{'Authorization':'Bearer '+localStorage.getItem('token')}, body:fd
+    }).then(r=>r.json());
+    if(res.detail) throw new Error(typeof res.detail==='string'?res.detail:JSON.stringify(res.detail));
+    showNotification(`✅ تم استيراد ${res.inserted||0} معدة، تحديث ${res.updated||0}، تخطي ${res.skipped||0}`,'success');
+    closeEquipmentImport();
+    await loadEquipmentData();
+  } catch(e) {
+    showNotification(e.message,'error');
+  }
+}
+
+function exportEquipmentCSV() {
+  if(!_eqData.length) return showNotification('لا توجد بيانات','error');
+  const headers = ['الكود','اسم المعدة','الماركة','الموديل','السنة','الشاسيه','النوع','الفرع','القطاع','المشروع','الحالة','ملاحظات'];
+  const rows = _eqData.map(e=>[
+    e.car_code, e.equipment_name, e.brand, e.model, e.year, e.chassis,
+    e.equipment_type, e.branch, e.sector, e.project, e.status, e.notes
+  ]);
+  const csv = '\uFEFF' + [headers,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'\"')+'"').join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download = 'equipment_export.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // RENTAL EQUIPMENT — المعدات المستأجرة
