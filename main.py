@@ -173,10 +173,26 @@ def migrate_db():
             notes          TEXT    DEFAULT '',
             created_at     TEXT    DEFAULT (datetime('now'))
         )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_code   ON equipment(car_code)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_branch ON equipment(branch)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_type   ON equipment(equipment_type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_status ON equipment(status)")
+        # Migration: أضف أعمدة equipment الجديدة لو الجدول قديم
+        _equip_cols = [
+            ("equipment_name",  "TEXT NOT NULL DEFAULT ''"),
+            ("brand",           "TEXT DEFAULT ''"),
+            ("equipment_type",  "TEXT DEFAULT 'معدات تحريك تربة'"),
+            ("license_expiry",  "TEXT DEFAULT ''"),
+            ("notes",           "TEXT DEFAULT ''"),
+            ("created_at",      "TEXT DEFAULT ''"),
+        ]
+        for _col, _def in _equip_cols:
+            try: c.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
+            except Exception: pass
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_equip_code   ON equipment(car_code)")
+        except Exception: pass
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_equip_branch ON equipment(branch)")
+        except Exception: pass
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_equip_type   ON equipment(equipment_type)")
+        except Exception: pass
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_equip_status ON equipment(status)")
+        except Exception: pass
 
         # RENTAL EQUIPMENT
         c.execute("""CREATE TABLE IF NOT EXISTS rental_equipment (
@@ -200,8 +216,25 @@ def migrate_db():
             sector           TEXT DEFAULT '',
             created_at       TEXT DEFAULT (datetime('now'))
         )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_rental_branch ON rental_equipment(branch)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_rental_month  ON rental_equipment(month)")
+        # ── Migration: أضف الأعمدة الجديدة لو مش موجودة ──
+        _rental_new_cols = [
+            ("month",            "TEXT DEFAULT ''"),
+            ("sector",           "TEXT DEFAULT ''"),
+            ("daily_rate",       "TEXT DEFAULT ''"),
+            ("consumption_rate", "TEXT DEFAULT ''"),
+            ("project",          "TEXT DEFAULT ''"),
+            ("notes",            "TEXT DEFAULT ''"),
+            ("created_at",       "TEXT DEFAULT ''"),
+        ]
+        for _col, _def in _rental_new_cols:
+            try:
+                c.execute(f"ALTER TABLE rental_equipment ADD COLUMN {_col} {_def}")
+            except Exception: pass
+        # ── Indexes بعد التأكد إن الأعمدة موجودة ──
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_rental_branch ON rental_equipment(branch)")
+        except Exception: pass
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_rental_month  ON rental_equipment(month)")
+        except Exception: pass
 
         # PERMISSIONS
         c.execute("""CREATE TABLE IF NOT EXISTS driver_car_permissions(
