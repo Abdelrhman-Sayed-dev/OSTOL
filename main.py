@@ -5362,38 +5362,48 @@ class RentalCreate(BaseModel):
 async def create_rental(body: RentalCreate, cu: dict = Depends(require_admin)):
     if not body.equipment_name.strip(): raise HTTPException(400, "اسم المعدة مطلوب")
     if not body.branch.strip(): raise HTTPException(400, "الفرع مطلوب")
-    # تطبيع الشهر: 2026-05-01 → 2026-05
-    if body.month and len(body.month) > 7:
-        body.month = body.month.strip()[:7]
-    with get_db() as conn:
-        conn.execute("""INSERT INTO rental_equipment
-            (branch,equipment_name,code,rental_source,work_days,daily_rate,monthly_rate,
-             fuel_liters,hours_start,hours_end,hours_diff,utilization_pct,
-             consumption_rate,project,notes,month,sector)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (body.branch, body.equipment_name, body.code, body.rental_source,
-             body.work_days, body.daily_rate, body.monthly_rate, body.fuel_liters,
-             body.hours_start, body.hours_end, body.hours_diff, body.utilization_pct,
-             body.consumption_rate, body.project, body.notes, body.month, body.sector))
-        rec_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    return {"id": rec_id, "message": "تم الإضافة"}
+    # تطبيع الشهر: 2026-05-01 → 2026-05 (لا نعدّل body مباشرةً لتفادي مشكلة Pydantic v2)
+    month_val = body.month.strip()[:7] if body.month and len(body.month) > 7 else body.month
+    try:
+        with get_db() as conn:
+            conn.execute("""INSERT INTO rental_equipment
+                (branch,equipment_name,code,rental_source,work_days,daily_rate,monthly_rate,
+                 fuel_liters,hours_start,hours_end,hours_diff,utilization_pct,
+                 consumption_rate,project,notes,month,sector)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (body.branch, body.equipment_name, body.code, body.rental_source,
+                 body.work_days, body.daily_rate, body.monthly_rate, body.fuel_liters,
+                 body.hours_start, body.hours_end, body.hours_diff, body.utilization_pct,
+                 body.consumption_rate, body.project, body.notes, month_val, body.sector))
+            rec_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return {"id": rec_id, "message": "تم الإضافة"}
+    except Exception as e:
+        log.error(f"create_rental error: {e}")
+        raise HTTPException(500, f"خطأ في الحفظ: {e}")
 
 
 @app.put("/rental-equipment/{rec_id}")
 async def update_rental(rec_id: int, body: RentalCreate, cu: dict = Depends(require_admin)):
-    with get_db() as conn:
-        if not conn.execute("SELECT id FROM rental_equipment WHERE id=?", (rec_id,)).fetchone():
-            raise HTTPException(404, "السجل غير موجود")
-        conn.execute("""UPDATE rental_equipment SET
-            branch=?,equipment_name=?,code=?,rental_source=?,work_days=?,daily_rate=?,
-            monthly_rate=?,fuel_liters=?,hours_start=?,hours_end=?,hours_diff=?,
-            utilization_pct=?,consumption_rate=?,project=?,notes=?,month=?,sector=?
-            WHERE id=?""",
-            (body.branch, body.equipment_name, body.code, body.rental_source,
-             body.work_days, body.daily_rate, body.monthly_rate, body.fuel_liters,
-             body.hours_start, body.hours_end, body.hours_diff, body.utilization_pct,
-             body.consumption_rate, body.project, body.notes, body.month, body.sector, rec_id))
-    return {"message": "تم التعديل"}
+    month_val = body.month.strip()[:7] if body.month and len(body.month) > 7 else body.month
+    try:
+        with get_db() as conn:
+            if not conn.execute("SELECT id FROM rental_equipment WHERE id=?", (rec_id,)).fetchone():
+                raise HTTPException(404, "السجل غير موجود")
+            conn.execute("""UPDATE rental_equipment SET
+                branch=?,equipment_name=?,code=?,rental_source=?,work_days=?,daily_rate=?,
+                monthly_rate=?,fuel_liters=?,hours_start=?,hours_end=?,hours_diff=?,
+                utilization_pct=?,consumption_rate=?,project=?,notes=?,month=?,sector=?
+                WHERE id=?""",
+                (body.branch, body.equipment_name, body.code, body.rental_source,
+                 body.work_days, body.daily_rate, body.monthly_rate, body.fuel_liters,
+                 body.hours_start, body.hours_end, body.hours_diff, body.utilization_pct,
+                 body.consumption_rate, body.project, body.notes, month_val, body.sector, rec_id))
+        return {"message": "تم التعديل"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"update_rental error: {e}")
+        raise HTTPException(500, f"خطأ في التعديل: {e}")
 
 
 @app.delete("/rental-equipment/{rec_id}")
