@@ -363,9 +363,12 @@ def migrate_db():
             max_plays      INTEGER DEFAULT 2,
             is_deleted     INTEGER DEFAULT 0
         )""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target  ON voice_notes(target_user_id)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_group   ON voice_notes(target_group)")
+        except Exception: pass
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target  ON voice_notes(target_user_id)")
+        except Exception: pass
+        try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_expires ON voice_notes(expires_at)")
+        except Exception: pass
 
         # Safe migrations for existing columns
         _safe_add_columns(c)
@@ -4222,7 +4225,8 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
     if role == "superuser":
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("""SELECT id, target_group, target_user_id, duration_sec, created_at,
+            c.execute("""SELECT id, target_group, COALESCE(target_user_id,NULL) as target_user_id,
+                                duration_sec, created_at,
                                 expires_at, play_count, max_plays, is_deleted
                          FROM voice_notes WHERE sender_id=?
                          ORDER BY created_at DESC""", (cu["user_id"],))
@@ -4255,7 +4259,7 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
         c.execute("""SELECT id, duration_sec, created_at, expires_at,
                             play_count, max_plays, audio_data
                      FROM voice_notes
-                     WHERE (target_group=? OR target_user_id=?) AND is_deleted=0
+                     WHERE (target_group=? OR COALESCE(target_user_id,0)=?) AND is_deleted=0
                        AND expires_at > ? AND play_count < max_plays
                      ORDER BY created_at DESC""", (group, uid, now))
         return [dict(r) for r in c.fetchall()]
