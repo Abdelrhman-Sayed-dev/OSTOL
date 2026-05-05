@@ -5179,7 +5179,8 @@ async def get_rental_equipment(
         if source:
             q += " AND rental_source LIKE ?"; params.append(f"%{source}%")
         if month:
-            q += " AND month=?"; params.append(month)
+            month = month.strip()[:7]  # Normalize: 2026-05-01 -> 2026-05
+            q += " AND (month=? OR month LIKE ?)"; params.extend([month, month + "-%"])
         if search:
             q += " AND (equipment_name LIKE ? OR code LIKE ?)"; s=f"%{search}%"; params+=[s,s]
         q += " ORDER BY branch, equipment_name"

@@ -10267,7 +10267,7 @@ async function deleteAvatar() {
 // ===================================================
 // SUPER FRAUD — كشف التلاعب
 // ===================================================
-let _fraudData = [];
+var _fraudData = [];
 
 async function renderSuperFraud() {
   const c = document.getElementById('pageContent');
@@ -10434,6 +10434,405 @@ function exportFraudCSV() {
   el.click();
   URL.revokeObjectURL(el.href);
   showNotification('✅ تم تصدير التقرير', 'success');
+}
+
+
+
+// ===================================================================
+// POLL MAINTENANCE ALERTS
+// ===================================================================
+async function pollMaintenanceAlerts() {
+  try {
+    const alerts = await apiCall('/maintenance/alerts').catch(() => []);
+    window._maintenanceAlertCount = (alerts && alerts.length) ? alerts.length : 0;
+  } catch(e) {}
+}
+
+// ===================================================================
+// CHECK AND SHOW VOICE NOTES
+// ===================================================================
+async function checkAndShowVoiceNotes() {
+  try {
+    const notes = await apiCall('/voice-notes').catch(() => []);
+    if (notes && notes.length > 0) {
+      const unplayed = notes.filter(n => !n.is_deleted && n.play_count < n.max_plays);
+      if (unplayed.length > 0) {
+        showNotification(
+          '🎤 ' + unplayed.length + ' رسالة صوتية جديدة — <a href="#" onclick="switchSection(\'super-voice\');return false;" style="color:white;text-decoration:underline">اسمع</a>',
+          'info', 6000
+        );
+      }
+    }
+  } catch(e) {}
+}
+
+// ===================================================================
+// MONTHLY REPORT — تقرير شهري شامل
+// ===================================================================
+async function renderMonthlyReport() {
+  const c = document.getElementById('pageContent');
+  const now = new Date();
+  const defaultMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+
+  c.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">📄 التقرير الشهري</div>
+      <button class="btn btn-outline btn-sm" onclick="exportMonthlyCSV()">📥 تصدير CSV</button>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="margin:0">
+            <label>الشهر</label>
+            <input type="month" id="mrMonth" value="${defaultMonth}"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+          </div>
+          <div class="form-group" style="margin:0;min-width:160px">
+            <label>الفرع</label>
+            <input type="text" id="mrBranch" placeholder="الكل"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="loadMonthlyReport()">🔍 عرض</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="mrSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin-bottom:1rem"></div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">👨‍✈️ بيانات السائقين</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:35px">#</th>
+              <th>اسم السائق</th>
+              <th>الفرع</th>
+              <th style="text-align:center">الرحلات</th>
+              <th style="text-align:center">مكتملة</th>
+              <th style="text-align:center">الكيلومترات</th>
+            </tr>
+          </thead>
+          <tbody id="mrDriversBody">
+            <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">🚗 بيانات المركبات</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:35px">#</th>
+              <th>اللوحة</th>
+              <th>المركبة</th>
+              <th>الفرع</th>
+              <th style="text-align:center">الرحلات</th>
+              <th style="text-align:center">الكيلومترات</th>
+              <th style="text-align:center">وقود (ل)</th>
+              <th style="text-align:center">تكلفة وقود</th>
+              <th style="text-align:center">تكلفة صيانة</th>
+              <th style="text-align:center">الإجمالي</th>
+            </tr>
+          </thead>
+          <tbody id="mrCarsBody">
+            <tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  await loadMonthlyReport();
+}
+
+let _mrData = null;
+
+async function loadMonthlyReport() {
+  const month  = document.getElementById('mrMonth')?.value  || '';
+  const branch = document.getElementById('mrBranch')?.value?.trim() || '';
+  const dBody  = document.getElementById('mrDriversBody');
+  const cBody  = document.getElementById('mrCarsBody');
+  const sumEl  = document.getElementById('mrSummary');
+
+  [dBody, cBody].forEach(el => {
+    if (el) el.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
+  });
+
+  try {
+    let url = '/reports/monthly?month=' + month;
+    if (branch) url += '&branch=' + encodeURIComponent(branch);
+    const data = await apiCall(url);
+    _mrData = data;
+    const s = data.summary || {};
+
+    if (sumEl) sumEl.innerHTML = [
+      {label:'إجمالي السائقين',   value: s.total_drivers||0,                                   icon:'👨‍✈️', color:'var(--primary)'},
+      {label:'إجمالي المركبات',   value: s.total_cars||0,                                      icon:'🚗', color:'#3b82f6'},
+      {label:'إجمالي الرحلات',    value: s.total_trips||0,                                     icon:'🗺️', color:'#8b5cf6'},
+      {label:'إجمالي الكم',       value: Math.round(s.total_km||0).toLocaleString('ar-EG')+' كم', icon:'📍', color:'#10b981'},
+      {label:'تكلفة الوقود',      value: Math.round(s.total_fuel_cost||0).toLocaleString('ar-EG')+' ج', icon:'⛽', color:'#f97316'},
+      {label:'تكلفة الصيانة',     value: Math.round(s.total_maint_cost||0).toLocaleString('ar-EG')+' ج', icon:'🔧', color:'#ef4444'},
+    ].map(x => `
+      <div class="card" style="text-align:center;padding:.85rem">
+        <div style="font-size:1.4rem">${x.icon}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin:.25rem 0">${x.label}</div>
+        <div style="font-weight:800;color:${x.color}">${x.value}</div>
+      </div>`).join('');
+
+    const drivers = data.drivers || [];
+    if (dBody) {
+      if (!drivers.length) {
+        dBody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
+      } else {
+        dBody.innerHTML = drivers.map((d,i) => `<tr>
+          <td style="text-align:center;color:var(--muted)">${i+1}</td>
+          <td><strong>${d.name}</strong>${d.fixed_number ? ` <small style="color:var(--muted)">#${d.fixed_number}</small>` : ''}</td>
+          <td style="font-size:.82rem;color:var(--muted)">${d.branch||'—'}</td>
+          <td style="text-align:center;font-weight:700">${d.trips}</td>
+          <td style="text-align:center;color:#10b981;font-weight:700">${d.completed}</td>
+          <td style="text-align:center;font-weight:700">${Math.round(d.km).toLocaleString('ar-EG')} كم</td>
+        </tr>`).join('');
+      }
+    }
+
+    const cars = data.cars || [];
+    if (cBody) {
+      if (!cars.length) {
+        cBody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
+      } else {
+        cBody.innerHTML = cars.map((car,i) => `<tr>
+          <td style="text-align:center;color:var(--muted)">${i+1}</td>
+          <td dir="ltr"><strong>${car.plate}</strong></td>
+          <td style="font-size:.82rem">${car.model||''} ${car.car_name?'('+car.car_name+')':''}</td>
+          <td style="font-size:.82rem;color:var(--muted)">${car.branch||'—'}</td>
+          <td style="text-align:center;font-weight:700">${car.trips||0}</td>
+          <td style="text-align:center;font-weight:700">${Math.round(car.km||0).toLocaleString('ar-EG')} كم</td>
+          <td style="text-align:center">${Math.round(car.fuel_liters||0)}</td>
+          <td style="text-align:center;color:#f97316;font-weight:700">${Math.round(car.fuel_cost||0).toLocaleString('ar-EG')}</td>
+          <td style="text-align:center;color:#ef4444;font-weight:700">${Math.round(car.maint_cost||0).toLocaleString('ar-EG')}</td>
+          <td style="text-align:center;font-weight:900;color:var(--primary)">${Math.round(car.total_cost||0).toLocaleString('ar-EG')}</td>
+        </tr>`).join('');
+      }
+    }
+  } catch(e) {
+    const msg = `<tr><td colspan="10" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
+    if (dBody) dBody.innerHTML = msg;
+    if (cBody) cBody.innerHTML = msg;
+  }
+}
+
+function exportMonthlyCSV() {
+  if (!_mrData) return showNotification('لا توجد بيانات', 'error');
+  const month   = document.getElementById('mrMonth')?.value || 'report';
+  const drivers = _mrData.drivers || [];
+  const cars    = _mrData.cars    || [];
+  const dHeaders = ['السائق','الرقم الثابت','الفرع','الرحلات','مكتملة','الكم'];
+  const dRows    = drivers.map(d => [d.name, d.fixed_number, d.branch, d.trips, d.completed, d.km]);
+  const cHeaders = ['اللوحة','المركبة','الفرع','رحلات','كم','وقود(ل)','تكلفة وقود','تكلفة صيانة','الإجمالي'];
+  const cRows    = cars.map(car => [car.plate, car.model, car.branch, car.trips||0, car.km||0, car.fuel_liters||0, car.fuel_cost||0, car.maint_cost||0, car.total_cost||0]);
+  const toCSV = (h, r) => [h, ...r].map(row => row.map(v => '"'+String(v||'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const csv = '\uFEFF' + 'سائقون\r\n' + toCSV(dHeaders, dRows) + '\r\n\r\nمركبات\r\n' + toCSV(cHeaders, cRows);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv;charset=utf-8'}));
+  a.download = 'monthly_report_' + month + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showNotification('✅ تم تصدير التقرير', 'success');
+}
+
+// ===================================================================
+// SUPER VOICE — رسائل صوتية (إدارة السوبر)
+// ===================================================================
+var _voiceNotes    = [];
+var _mediaRecorder = null;
+var _audioChunks   = [];
+var _recordingTimer = null;
+
+async function renderSuperVoice() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">🎙️ الرسائل الصوتية</div>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">🎙️ إرسال رسالة جديدة</div></div>
+      <div style="padding:1.25rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+          <div class="form-group" style="margin:0">
+            <label>المستلم</label>
+            <select id="vnTarget" class="form-control">
+              <option value="admins">👑 المشرفون والإداريون</option>
+              <option value="drivers">🚗 السائقون</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>عدد مرات التشغيل</label>
+            <input type="number" id="vnMaxPlays" class="form-control" value="3" min="1" max="10">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>انتهاء الصلاحية (ساعات)</label>
+            <input type="number" id="vnHours" class="form-control" value="24" min="1" max="168">
+          </div>
+        </div>
+        <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" id="vnRecordBtn" onclick="toggleVoiceRecording()">🔴 ابدأ التسجيل</button>
+          <div id="vnRecordStatus" style="font-size:.85rem;color:var(--muted)"></div>
+          <audio id="vnPreviewAudio" controls style="display:none;flex:1;min-width:200px"></audio>
+          <button id="vnSendBtn" class="btn btn-outline" style="display:none" onclick="sendVoiceNote()">📤 إرسال</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 الرسائل المرسلة</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadVoiceNotes()">🔄 تحديث</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:35px">#</th>
+              <th>المستلم</th>
+              <th style="text-align:center">المدة</th>
+              <th style="text-align:center">تشغيل / حد</th>
+              <th>تاريخ الإرسال</th>
+              <th>الصلاحية حتى</th>
+              <th style="text-align:center">إجراء</th>
+            </tr>
+          </thead>
+          <tbody id="vnTableBody">
+            <tr><td colspan="7" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  await loadVoiceNotes();
+}
+
+async function loadVoiceNotes() {
+  const tbody = document.getElementById('vnTableBody');
+  if (!tbody) return;
+  try {
+    _voiceNotes = await apiCall('/voice-notes');
+    if (!_voiceNotes.length) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد رسائل مرسلة حتى الآن</td></tr>`;
+      return;
+    }
+    const targetLabel = { admins: '👑 المشرفون', drivers: '🚗 السائقون' };
+    tbody.innerHTML = _voiceNotes.map((n, i) => {
+      const deleted = n.is_deleted;
+      const status  = deleted
+        ? '<span style="color:#ef4444;font-size:.78rem">محذوف</span>'
+        : `<span style="font-weight:700">${n.play_count}/${n.max_plays}</span>`;
+      const dur    = n.duration_sec ? Math.round(n.duration_sec) + 'ث' : '—';
+      const sent   = (n.created_at||'').slice(0,16).replace('T',' ');
+      const expiry = (n.expires_at||'').slice(0,16).replace('T',' ');
+      return `<tr style="${deleted?'opacity:.5':''}">
+        <td style="text-align:center;color:var(--muted)">${i+1}</td>
+        <td>${targetLabel[n.target_group] || n.target_group}</td>
+        <td style="text-align:center">${dur}</td>
+        <td style="text-align:center">${status}</td>
+        <td style="font-size:.82rem;color:var(--muted)">${sent}</td>
+        <td style="font-size:.82rem;color:var(--muted)">${expiry}</td>
+        <td style="text-align:center">
+          ${!deleted ? `<button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteVoiceNote(${n.id})" title="حذف">🗑️</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
+  }
+}
+
+async function deleteVoiceNote(id) {
+  if (!confirm('حذف هذه الرسالة؟')) return;
+  try {
+    await apiCall('/voice-notes/' + id, 'DELETE');
+    showNotification('✅ تم حذف الرسالة', 'success');
+    await loadVoiceNotes();
+  } catch(e) {
+    showNotification(e.message, 'error');
+  }
+}
+
+async function toggleVoiceRecording() {
+  const btn     = document.getElementById('vnRecordBtn');
+  const status  = document.getElementById('vnRecordStatus');
+  const sendBtn = document.getElementById('vnSendBtn');
+  const preview = document.getElementById('vnPreviewAudio');
+
+  if (_mediaRecorder && _mediaRecorder.state === 'recording') {
+    _mediaRecorder.stop();
+    clearInterval(_recordingTimer);
+    btn.textContent = '🔴 ابدأ التسجيل';
+    btn.style.background = '';
+    status.textContent = 'تم إيقاف التسجيل';
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _audioChunks = [];
+    _mediaRecorder = new MediaRecorder(stream);
+    _mediaRecorder.ondataavailable = e => { if (e.data.size > 0) _audioChunks.push(e.data); };
+    _mediaRecorder.onstop = () => {
+      const blob = new Blob(_audioChunks, { type: 'audio/webm' });
+      const url  = URL.createObjectURL(blob);
+      preview.src = url;
+      preview.style.display = 'block';
+      sendBtn.style.display  = 'inline-flex';
+      const reader = new FileReader();
+      reader.onload = () => { window._vnAudioB64 = reader.result; };
+      reader.readAsDataURL(blob);
+      stream.getTracks().forEach(t => t.stop());
+    };
+    _mediaRecorder.start();
+    let secs = 0;
+    status.textContent = '⏯️ جاري التسجيل... 0ث';
+    btn.textContent = '⏹️ إيقاف التسجيل';
+    btn.style.background = '#ef4444';
+    preview.style.display = 'none';
+    sendBtn.style.display  = 'none';
+    _recordingTimer = setInterval(() => {
+      secs++;
+      status.textContent = '⏯️ جاري التسجيل... ' + secs + 'ث';
+      if (secs >= 120) { _mediaRecorder.stop(); clearInterval(_recordingTimer); }
+    }, 1000);
+  } catch(e) {
+    showNotification('تعذر الوصول للميكروفون: ' + e.message, 'error');
+  }
+}
+
+async function sendVoiceNote() {
+  const b64      = window._vnAudioB64;
+  const target   = document.getElementById('vnTarget')?.value    || 'admins';
+  const maxPlays = parseInt(document.getElementById('vnMaxPlays')?.value || '3');
+  const hours    = parseInt(document.getElementById('vnHours')?.value    || '24');
+  if (!b64) return showNotification('سجّل رسالة أولاً', 'error');
+  try {
+    await apiCall('/voice-notes', 'POST', {
+      target_group: target,
+      audio_data:   b64,
+      duration_sec: 0,
+      max_plays:    maxPlays,
+      hours_ttl:    hours,
+    });
+    window._vnAudioB64 = null;
+    document.getElementById('vnPreviewAudio').style.display = 'none';
+    document.getElementById('vnSendBtn').style.display      = 'none';
+    document.getElementById('vnRecordStatus').textContent   = '';
+    showNotification('✅ تم إرسال الرسالة بنجاح', 'success');
+    await loadVoiceNotes();
+  } catch(e) {
+    showNotification('فشل الإرسال: ' + e.message, 'error');
+  }
 }
 
 </script>
