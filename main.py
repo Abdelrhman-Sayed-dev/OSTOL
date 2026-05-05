@@ -4227,6 +4227,17 @@ async def cleanup_expired_notes(cu: dict = Depends(require_superuser)):
         return {"deleted": c.rowcount}
 
 
+
+@app.get("/voice-notes/targets")
+async def get_voice_note_targets(cu: dict = Depends(require_superuser)):
+    """يرجع قائمة المجموعات المتاحة لإرسال الرسائل الصوتية إليها."""
+    targets = [
+        {"id": "admins",  "label": "المشرفون والإداريون"},
+        {"id": "drivers", "label": "السائقون"},
+    ]
+    return {"targets": targets}
+
+
 # 24. ENTRY POINT
 # ══════════════════════════════════════════════════════
 
@@ -5160,55 +5171,37 @@ async def get_rental_equipment(
     """قائمة المعدات المستأجرة من الداتابيز"""
     eff_branch = _branch_filter(cu) or branch
 
+    with get_db() as conn:
+        q = "SELECT * FROM rental_equipment WHERE 1=1"
+        params = []
+        if eff_branch:
+            q += " AND branch=?"; params.append(eff_branch)
+        if source:
+            q += " AND rental_source LIKE ?"; params.append(f"%{source}%")
+        if month:
+            q += " AND month=?"; params.append(month)
+        if search:
+            q += " AND (equipment_name LIKE ? OR code LIKE ?)"; s=f"%{search}%"; params+=[s,s]
+        q += " ORDER BY branch, equipment_name"
+        records = [dict(r) for r in conn.execute(q, params).fetchall()]
+
     def _to_f(v):
-        try: return float(str(v).replace(',','').replace(' ',''))
+        try: return float(str(v).replace(',',''))
         except: return 0.0
 
-    try:
-        with get_db() as conn:
-            # تأكد إن الجدول موجود وأضف أعمدة ناقصة لو كانت
-            try:
-                for _col, _def in [
-                    ("month",            "TEXT DEFAULT ''"),
-                    ("sector",           "TEXT DEFAULT ''"),
-                    ("daily_rate",       "TEXT DEFAULT ''"),
-                    ("consumption_rate", "TEXT DEFAULT ''"),
-                    ("project",          "TEXT DEFAULT ''"),
-                    ("notes",            "TEXT DEFAULT ''"),
-                ]:
-                    conn.execute(f"ALTER TABLE rental_equipment ADD COLUMN {_col} {_def}")
-                conn.commit()
-            except Exception: pass
+    total_monthly = sum(_to_f(r.get('monthly_rate')) for r in records)
+    total_fuel    = sum(_to_f(r.get('fuel_liters'))  for r in records)
+    total_days    = sum(_to_f(r.get('work_days'))    for r in records)
 
-            q = "SELECT * FROM rental_equipment WHERE 1=1"
-            params = []
-            if eff_branch:
-                q += " AND branch=?"; params.append(eff_branch)
-            if source:
-                q += " AND rental_source LIKE ?"; params.append(f"%{source}%")
-            if month:
-                q += " AND month=?"; params.append(month)
-            if search:
-                q += " AND (equipment_name LIKE ? OR code LIKE ?)"; s=f"%{search}%"; params+=[s,s]
-            q += " ORDER BY branch, equipment_name"
-            records = [dict(r) for r in conn.execute(q, params).fetchall()]
-
-        total_monthly = sum(_to_f(r.get('monthly_rate')) for r in records)
-        total_fuel    = sum(_to_f(r.get('fuel_liters'))  for r in records)
-        total_days    = sum(_to_f(r.get('work_days'))    for r in records)
-
-        return {
-            "month":              month or "كل الشهور",
-            "branch":             eff_branch or "كل الفروع",
-            "total":              len(records),
-            "total_monthly_cost": round(total_monthly, 2),
-            "total_fuel_liters":  round(total_fuel, 1),
-            "total_work_days":    round(total_days, 0),
-            "records":            records,
-        }
-    except Exception as e:
-        log.error(f"GET /rental-equipment error: {e}", exc_info=True)
-        raise HTTPException(500, f"خطأ في جلب المعدات المستأجرة: {str(e)}")
+    return {
+        "month":              month or "كل الشهور",
+        "branch":             eff_branch or "كل الفروع",
+        "total":              len(records),
+        "total_monthly_cost": round(total_monthly, 2),
+        "total_fuel_liters":  round(total_fuel, 1),
+        "total_work_days":    round(total_days, 0),
+        "records":            records,
+    }
 
 
 @app.get("/rental-equipment/{rec_id}")
