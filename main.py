@@ -4205,14 +4205,31 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_su
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
     now      = datetime.utcnow()
     expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    tg       = body.target_group if body.target_user_id is None else ""
+    # لو target_user_id محدد، نستخدم 'admins' كـ target_group حتى تمر CHECK constraint القديمة
+    # الـ routing الفعلي بيتم بالـ target_user_id وليس target_group
+    tg = body.target_group if body.target_user_id is None else (body.target_group or 'admins')
+    if tg not in ('admins', 'drivers'):
+        tg = 'admins'
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
-                     duration_sec,created_at,expires_at,max_plays)
-                     VALUES(?,?,?,?,?,?,?,?)""",
-                  (cu["user_id"], tg, body.target_user_id, body.audio_data,
-                   body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+        # جرب INSERT مع target_user_id أولاً، لو فشل جرب بدونه (جدول قديم)
+        try:
+            c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
+                         duration_sec,created_at,expires_at,max_plays)
+                         VALUES(?,?,?,?,?,?,?,?)""",
+                      (cu["user_id"], tg, body.target_user_id, body.audio_data,
+                       body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+        except Exception as e:
+            if 'target_user_id' in str(e):
+                # عمود target_user_id مش موجود بعد — اعمل migration وإعادة المحاولة
+                c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
+                c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
+                             duration_sec,created_at,expires_at,max_plays)
+                             VALUES(?,?,?,?,?,?,?,?)""",
+                          (cu["user_id"], tg, body.target_user_id, body.audio_data,
+                           body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+            else:
+                raise
         note_id = c.lastrowid
     return {"id": note_id, "expires_at": expires}
 
@@ -4225,11 +4242,20 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
     if role == "superuser":
         with get_db() as conn:
             c = conn.cursor()
-            c.execute("""SELECT id, target_group, COALESCE(target_user_id,NULL) as target_user_id,
-                                duration_sec, created_at,
-                                expires_at, play_count, max_plays, is_deleted
-                         FROM voice_notes WHERE sender_id=?
-                         ORDER BY created_at DESC""", (cu["user_id"],))
+            try:
+                c.execute("""SELECT id, target_group,
+                                    COALESCE(target_user_id, NULL) as target_user_id,
+                                    duration_sec, created_at,
+                                    expires_at, play_count, max_plays, is_deleted
+                             FROM voice_notes WHERE sender_id=?
+                             ORDER BY created_at DESC""", (cu["user_id"],))
+            except Exception:
+                # fallback: جدول قديم بدون target_user_id
+                c.execute("""SELECT id, target_group, NULL as target_user_id,
+                                    duration_sec, created_at,
+                                    expires_at, play_count, max_plays, is_deleted
+                             FROM voice_notes WHERE sender_id=?
+                             ORDER BY created_at DESC""", (cu["user_id"],))
             rows = [dict(r) for r in c.fetchall()]
             # أضف اسم المستلم لو كان شخص محدد
             for row in rows:
@@ -4237,7 +4263,6 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
                     c.execute("SELECT username FROM users WHERE id=?", (row["target_user_id"],))
                     u = c.fetchone()
                     if not u:
-                        # جرب من drivers
                         c.execute("SELECT name FROM drivers WHERE user_id=?", (row["target_user_id"],))
                         d = c.fetchone()
                         row["target_name"] = d["name"] if d else "مستخدم"
