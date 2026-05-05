@@ -154,6 +154,30 @@ def migrate_db():
             sector TEXT DEFAULT ''
         )""")
 
+        # EQUIPMENT (جدول معدات منفصل - بدون لوحة، بالكود فقط)
+        c.execute("""CREATE TABLE IF NOT EXISTS equipment (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            car_code       TEXT    NOT NULL UNIQUE,
+            equipment_name TEXT    NOT NULL DEFAULT '',
+            model          TEXT    DEFAULT '',
+            brand          TEXT    DEFAULT '',
+            status         TEXT    DEFAULT 'active',
+            branch         TEXT    DEFAULT '',
+            sector         TEXT    DEFAULT '',
+            project        TEXT    DEFAULT '',
+            year           TEXT    DEFAULT '',
+            chassis        TEXT    DEFAULT '',
+            engine_number  TEXT    DEFAULT '',
+            equipment_type TEXT    DEFAULT 'معدات تحريك تربة',
+            license_expiry TEXT    DEFAULT '',
+            notes          TEXT    DEFAULT '',
+            created_at     TEXT    DEFAULT (datetime('now'))
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_code   ON equipment(car_code)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_branch ON equipment(branch)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_type   ON equipment(equipment_type)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_equip_status ON equipment(status)")
+
         # PERMISSIONS
         c.execute("""CREATE TABLE IF NOT EXISTS driver_car_permissions(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3406,6 +3430,9 @@ CAR_IMPORT_COLS     = ["plate","model","car_name","car_code","chassis",
                        "engine_number","year","project","branch",
                        "car_license_expiry","equipment_type","sector","status"]
 
+EQUIPMENT_IMPORT_COLS = ["car_code","equipment_name","brand","model","year","chassis",
+                          "equipment_type","branch","sector","project","status","notes"]
+
 # خريطة أسماء الأعمدة العربية → الإنجليزية
 ARABIC_COL_MAP = {
     "اسم السائق":        "name",
@@ -5051,3 +5078,281 @@ async def get_rental_equipment(
         "total_fuel_liters":  round(total_fuel, 1),
         "records":       records,
     }
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# EQUIPMENT — معدات (جدول منفصل - بدون لوحة، الكود هو المعرف)
+# ══════════════════════════════════════════════════════════════════
+
+EQUIPMENT_TYPES = ["معدات تحريك تربة", "معدات رفع", "معدات ثابتة", "معدات نقل ثقيل"]
+
+def _validate_equipment_row(row: dict, idx: int, admin_branch: Optional[str]) -> dict:
+    """التحقق من صف معدة واحد من ملف CSV"""
+    errors = []
+    code = str(row.get("car_code") or row.get("الكود") or "").strip()
+    name = str(row.get("equipment_name") or row.get("اسم المعدة") or row.get("نوع المعدة") or "").strip()
+    if not code:
+        errors.append("الكود مطلوب")
+    if not name:
+        errors.append("اسم المعدة مطلوب")
+    branch = admin_branch or str(row.get("branch") or row.get("الفرع") or "").strip()
+    eq_type = str(row.get("equipment_type") or row.get("نوع التصنيف") or "معدات تحريك تربة").strip()
+    if eq_type not in EQUIPMENT_TYPES:
+        eq_type = "معدات تحريك تربة"
+    status = str(row.get("status") or row.get("الحالة") or "active").strip()
+    if status not in ("active","inactive","maintenance"):
+        status = "active"
+    return {
+        "row_index":      idx,
+        "valid":          len(errors) == 0,
+        "errors":         errors,
+        "car_code":       code,
+        "equipment_name": name,
+        "brand":          str(row.get("brand") or row.get("الماركة") or "").strip(),
+        "model":          str(row.get("model") or row.get("الموديل") or "").strip(),
+        "year":           str(row.get("year") or row.get("سنة الصنع") or "").strip(),
+        "chassis":        str(row.get("chassis") or row.get("رقم الشاسيه") or "").strip(),
+        "engine_number":  str(row.get("engine_number") or row.get("رقم المحرك") or "").strip(),
+        "equipment_type": eq_type,
+        "branch":         branch,
+        "sector":         str(row.get("sector") or row.get("القطاع") or "").strip(),
+        "project":        str(row.get("project") or row.get("المشروع") or "").strip(),
+        "license_expiry": _normalize_date(row.get("license_expiry") or row.get("انتهاء الرخصة") or ""),
+        "status":         status,
+        "notes":          str(row.get("notes") or row.get("ملاحظات") or "").strip(),
+    }
+
+
+@app.get("/equipment")
+async def list_equipment(
+    branch:    str = Query(None),
+    eq_type:   str = Query(None),
+    status:    str = Query(None),
+    search:    str = Query(None),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """قائمة المعدات"""
+    eff_branch = _branch_filter(cu) or branch
+    with get_db() as conn:
+        q = "SELECT * FROM equipment WHERE 1=1"
+        params = []
+        if eff_branch:
+            q += " AND branch=?"; params.append(eff_branch)
+        if eq_type:
+            q += " AND equipment_type=?"; params.append(eq_type)
+        if status:
+            q += " AND status=?"; params.append(status)
+        if search:
+            q += " AND (equipment_name LIKE ? OR car_code LIKE ? OR brand LIKE ?)"
+            s = f"%{search}%"; params += [s, s, s]
+        q += " ORDER BY branch, equipment_name"
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+
+    summary = {
+        "total":       len(rows),
+        "active":      sum(1 for r in rows if r["status"] == "active"),
+        "inactive":    sum(1 for r in rows if r["status"] == "inactive"),
+        "maintenance": sum(1 for r in rows if r["status"] == "maintenance"),
+        "by_type": {}
+    }
+    for t in EQUIPMENT_TYPES:
+        summary["by_type"][t] = sum(1 for r in rows if r["equipment_type"] == t)
+
+    return {"equipment": rows, "summary": summary}
+
+
+@app.get("/equipment/{eq_id}")
+async def get_equipment(eq_id: int, cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM equipment WHERE id=?", (eq_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "المعدة غير موجودة")
+    return dict(row)
+
+
+class EquipmentCreate(BaseModel):
+    car_code:       str
+    equipment_name: str
+    brand:          str = ""
+    model:          str = ""
+    year:           str = ""
+    chassis:        str = ""
+    engine_number:  str = ""
+    equipment_type: str = "معدات تحريك تربة"
+    branch:         str = ""
+    sector:         str = ""
+    project:        str = ""
+    license_expiry: str = ""
+    status:         str = "active"
+    notes:          str = ""
+
+
+@app.post("/equipment")
+async def create_equipment(body: EquipmentCreate, cu: dict = Depends(require_admin)):
+    if not body.car_code.strip():
+        raise HTTPException(400, "الكود مطلوب")
+    if not body.equipment_name.strip():
+        raise HTTPException(400, "اسم المعدة مطلوب")
+    try:
+        with get_db() as conn:
+            conn.execute("""
+                INSERT INTO equipment
+                (car_code,equipment_name,brand,model,year,chassis,engine_number,
+                 equipment_type,branch,sector,project,license_expiry,status,notes)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (body.car_code.strip(), body.equipment_name.strip(),
+                  body.brand, body.model, body.year, body.chassis, body.engine_number,
+                  body.equipment_type, body.branch, body.sector, body.project,
+                  body.license_expiry, body.status, body.notes))
+            eq_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return {"id": eq_id, "message": "تم إضافة المعدة بنجاح"}
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(409, f"الكود '{body.car_code}' موجود بالفعل")
+        raise HTTPException(500, str(e))
+
+
+@app.put("/equipment/{eq_id}")
+async def update_equipment(eq_id: int, body: EquipmentCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM equipment WHERE id=?", (eq_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "المعدة غير موجودة")
+        conn.execute("""
+            UPDATE equipment SET
+                car_code=?, equipment_name=?, brand=?, model=?, year=?, chassis=?,
+                engine_number=?, equipment_type=?, branch=?, sector=?, project=?,
+                license_expiry=?, status=?, notes=?
+            WHERE id=?
+        """, (body.car_code.strip(), body.equipment_name.strip(),
+              body.brand, body.model, body.year, body.chassis, body.engine_number,
+              body.equipment_type, body.branch, body.sector, body.project,
+              body.license_expiry, body.status, body.notes, eq_id))
+    return {"message": "تم التعديل بنجاح"}
+
+
+@app.delete("/equipment/{eq_id}")
+async def delete_equipment(eq_id: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM equipment WHERE id=?", (eq_id,))
+    return {"message": "تم الحذف"}
+
+
+# ── Equipment Import ──
+@app.post("/equipment/import/preview")
+async def equipment_import_preview(
+    file: UploadFile = File(...),
+    cu: dict = Depends(require_admin),
+):
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(400, "حجم الملف يتجاوز 5 MB")
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ")
+    admin_branch = _branch_filter(cu)
+    rows = [_validate_equipment_row(r, i+1, admin_branch) for i, r in enumerate(raw_rows)]
+    # تحقق من تكرار الكود
+    with get_db() as conn:
+        existing_codes = {r[0] for r in conn.execute("SELECT car_code FROM equipment").fetchall()}
+    for row in rows:
+        if row["valid"] and row["car_code"] in existing_codes:
+            row["duplicate"] = True
+        else:
+            row["duplicate"] = False
+    valid = sum(1 for r in rows if r["valid"])
+    dups  = sum(1 for r in rows if r.get("duplicate"))
+    return {
+        "import_type": "equipment",
+        "rows": rows,
+        "summary": {"total": len(rows), "valid": valid,
+                    "invalid": len(rows)-valid, "duplicates": dups},
+    }
+
+
+@app.post("/equipment/import/confirm")
+async def equipment_import_confirm(
+    file: UploadFile = File(...),
+    skip_errors: bool = False,
+    update_existing: bool = False,
+    cu: dict = Depends(require_admin),
+):
+    content = await file.read()
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ")
+    admin_branch = _branch_filter(cu)
+    rows = [_validate_equipment_row(r, i+1, admin_branch) for i, r in enumerate(raw_rows)]
+    invalid = [r for r in rows if not r["valid"]]
+    if invalid and not skip_errors:
+        raise HTTPException(422, {"message": f"{len(invalid)} صف بأخطاء", "invalid_rows": invalid})
+
+    inserted, updated, skipped = 0, 0, []
+    with get_db() as conn:
+        for row in [r for r in rows if r["valid"]]:
+            try:
+                if update_existing:
+                    conn.execute("""
+                        INSERT INTO equipment
+                        (car_code,equipment_name,brand,model,year,chassis,engine_number,
+                         equipment_type,branch,sector,project,license_expiry,status,notes)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        ON CONFLICT(car_code) DO UPDATE SET
+                            equipment_name=excluded.equipment_name,
+                            brand=excluded.brand, model=excluded.model,
+                            year=excluded.year, chassis=excluded.chassis,
+                            equipment_type=excluded.equipment_type,
+                            branch=excluded.branch, sector=excluded.sector,
+                            project=excluded.project, status=excluded.status
+                    """, (row["car_code"], row["equipment_name"], row["brand"],
+                          row["model"], row["year"], row["chassis"], row["engine_number"],
+                          row["equipment_type"], row["branch"], row["sector"],
+                          row["project"], row["license_expiry"], row["status"], row["notes"]))
+                    updated += 1
+                else:
+                    conn.execute("""
+                        INSERT OR IGNORE INTO equipment
+                        (car_code,equipment_name,brand,model,year,chassis,engine_number,
+                         equipment_type,branch,sector,project,license_expiry,status,notes)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (row["car_code"], row["equipment_name"], row["brand"],
+                          row["model"], row["year"], row["chassis"], row["engine_number"],
+                          row["equipment_type"], row["branch"], row["sector"],
+                          row["project"], row["license_expiry"], row["status"], row["notes"]))
+                    inserted += 1
+            except Exception as e:
+                row["errors"] = [str(e)]; skipped.append(row)
+
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "bulk_import_equipment", f"استيراد {inserted+updated} معدة")
+    return {
+        "inserted": inserted, "updated": updated,
+        "skipped": len(skipped), "skipped_items": skipped,
+    }
+
+
+@app.get("/equipment/import/template")
+async def equipment_import_template(cu: dict = Depends(require_admin)):
+    """تحميل قالب CSV للمعدات"""
+    from fastapi.responses import Response
+    cols = ["car_code","equipment_name","brand","model","year","chassis",
+            "engine_number","equipment_type","branch","sector","project","status","notes"]
+    samples = [
+        ["12/5/347","اسكيد لودر","CATERPILLAR","246C","2015","CH123456","",
+         "معدات تحريك تربة","إدارة صيانة القصور","قطاع القاهرة الكبرى","","active",""],
+        ["12/5/926","مان لفت","MANITOU","180 ATJ","2018","","",
+         "معدات رفع","حلوان","قطاع القاهرة الكبرى","","active",""],
+        ["27/2/2333","مولد كهرباء 50 ك","FG WILSON","P50","2016","","",
+         "معدات ثابتة","مدينة نصر","قطاع القاهرة الكبرى","","active",""],
+    ]
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(cols)
+    for s in samples:
+        writer.writerow(s)
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=equipment_template.csv"}
+    )
