@@ -6084,8 +6084,10 @@ async function pollNotifications() {
       window._licenseAlertsCount = drvAlerts + carAlerts;
     }catch(e){}
   }
-  // Poll maintenance alerts
-  await pollMaintenanceAlerts();
+  // Poll maintenance alerts (guard: might not be defined yet on first run)
+  if(typeof pollMaintenanceAlerts === 'function') {
+    await pollMaintenanceAlerts().catch(()=>{});
+  }
   renderNav(buildAdminNav());
 }
 
@@ -6143,14 +6145,14 @@ function initUI() {
     notifPollInterval=setInterval(pollNotifications,20000);
     setTimeout(pollNotifications,3000);
     // فحص الرسائل الصوتية كل دقيقة
-    setTimeout(checkAndShowVoiceNotes, 5000);
-    setInterval(checkAndShowVoiceNotes, 60000);
+    setTimeout(()=>{ if(typeof checkAndShowVoiceNotes==='function') checkAndShowVoiceNotes(); }, 5000);
+    setInterval(()=>{ if(typeof checkAndShowVoiceNotes==='function') checkAndShowVoiceNotes(); }, 60000);
   } else {
     // Driver: single-page app, no sidebar
     renderDriverSinglePage();
     // فحص الرسائل الصوتية للسائق
-    setTimeout(checkAndShowVoiceNotes, 5000);
-    setInterval(checkAndShowVoiceNotes, 60000);
+    setTimeout(()=>{ if(typeof checkAndShowVoiceNotes==='function') checkAndShowVoiceNotes(); }, 5000);
+    setInterval(()=>{ if(typeof checkAndShowVoiceNotes==='function') checkAndShowVoiceNotes(); }, 60000);
     // ── إرسال الموقع الحي كل 5 ثواني ──
     startLiveLocationSending();
   }
