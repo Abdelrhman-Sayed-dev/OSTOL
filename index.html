@@ -1203,6 +1203,68 @@ body.driver-mode { background:#f5f5f5; }
   background:none; border:none; padding:.3rem .5rem;
 }
 tr.row-hidden { display:none; }
+
+/* ── Responsive Enhanced ── */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100% !important;
+    max-width: 280px;
+  }
+  .main-content {
+    padding: .75rem !important;
+  }
+  .card-header {
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+  .card-header input[type="text"],
+  .card-header input[type="month"],
+  .card-header select {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .5rem;
+  }
+  .page-header .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  table { font-size: .78rem; }
+  th, td { padding: .4rem .5rem !important; }
+  .two-col { grid-template-columns: 1fr !important; }
+  /* إخفاء أعمدة ثانوية على الموبايل */
+  .hide-mobile { display: none !important; }
+  /* بطاقات summary */
+  [style*="grid-template-columns:repeat(auto-fit"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  /* modal */
+  .modal-box { 
+    width: 96vw !important; 
+    max-height: 92vh !important;
+    padding: 1rem !important;
+  }
+  /* الجدول horizontal scroll */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* الفلاتر */
+  .card-header > div[style*="display:flex"] {
+    flex-direction: column !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar { max-width: 260px; }
+  .page-title { font-size: 1rem !important; }
+  .btn-sm { padding: .3rem .6rem !important; font-size: .78rem !important; }
+  [style*="grid-template-columns:repeat(auto-fit"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* ── Map Zones ── */
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
@@ -3082,7 +3144,10 @@ async function renderMapSection() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🗺️ خرائط الأسطول</div>
-        <button class="btn btn-ghost btn-sm" onclick="renderMapSection()">🔄 تحديث</button>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" id="zonesToggleBtn" onclick="toggleMapZones()">🗺️ إظهار الزونات</button>
+          <button class="btn btn-ghost btn-sm" onclick="renderMapSection()">🔄 تحديث</button>
+        </div>
       </div>
 
       <!-- Tabs -->
@@ -8737,6 +8802,1179 @@ async function deleteMaintenanceRecord(id) {
   } catch(e) { showNotification(e.message,'error'); }
 }
 
+async function renderSuperVoice() {
+  const el = document.getElementById('pageContent');
+  const role = currentUser.role;
+  const isSuperuser = role === 'superuser';
+  const isAdmin     = role === 'admin';
+
+  // جلب البيانات
+  let myNotes = [], inboxNotes = [], targets = {admins:[], drivers:[]};
+  try {
+    const data = await apiCall('/voice-notes');
+    if(isSuperuser) {
+      myNotes = Array.isArray(data) ? data : [];
+    } else if(isAdmin) {
+      myNotes    = Array.isArray(data.sent)  ? data.sent  : [];
+      inboxNotes = Array.isArray(data.inbox) ? data.inbox : [];
+    }
+  } catch(e){}
+  try { targets = await apiCall('/voice-notes/targets'); } catch(e){}
+
+  const adminsOpts  = (targets.admins  ||[]).map(a=>`<option value="${a.id}">[أدمن] ${a.username}${a.branch?' — '+a.branch:''}</option>`).join('');
+  const driversOpts = (targets.drivers ||[]).map(d=>`<option value="${d.user_id}">[سائق] ${d.name||d.username}${d.branch?' — '+d.branch:''}</option>`).join('');
+  const hasTargets = (targets.admins||[]).length > 0 || (targets.drivers||[]).length > 0;
+
+  // خيارات الهدف حسب الصلاحية
+  const targetGroupOptions = isSuperuser
+    ? `<option value="group_admins">👨‍💼 كل الأدمنز</option>
+       <option value="group_drivers">🚗 كل السائقين</option>
+       <option value="specific">👤 شخص معين</option>`
+    : `<option value="specific">👤 سائق معين</option>`;
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+
+      <!-- إرسال رسالة جديدة -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">🎙️ رسالة صوتية جديدة</div></div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+
+          <div class="form-group" style="margin:0">
+            <label>إرسال إلى</label>
+            <select id="voiceTargetMode" class="form-control" onchange="onVoiceTargetChange()">
+              ${targetGroupOptions}
+            </select>
+          </div>
+
+          <!-- اختيار شخص معين -->
+          <div id="voiceSpecificWrap" class="form-group" style="margin:0;${isSuperuser?'display:none':''}">
+            <label>اختر ${isSuperuser ? 'الأدمن أو السائق' : 'السائق'}</label>
+            <select id="voiceSpecificUser" class="form-control">
+              <option value="" disabled selected>اختر...</option>
+              ${isSuperuser ? `<optgroup label="أدمنز">${adminsOpts}</optgroup><optgroup label="سائقين">${driversOpts}</optgroup>` : driversOpts}
+              ${!hasTargets ? '<option disabled>لا يوجد مستخدمون متاحون</option>' : ''}
+            </select>
+          </div>
+
+          <div class="form-group" style="margin:0">
+            <label>مدة الظهور</label>
+            <select id="voiceTTL" class="form-control">
+              <option value="24">24 ساعة (ثم تُمسح)</option>
+              <option value="12">12 ساعة</option>
+              <option value="48">48 ساعة</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin:0">
+            <label>عدد مرات الاستماع</label>
+            <select id="voiceMaxPlays" class="form-control">
+              <option value="1">مرة واحدة فقط</option>
+              <option value="2" selected>مرتان</option>
+              <option value="3">3 مرات</option>
+            </select>
+          </div>
+
+          <!-- مؤشر التسجيل -->
+          <div id="voiceRecorderUI" style="border:2px dashed #e2e8f0;border-radius:14px;padding:1.5rem;text-align:center">
+            <div id="voiceRecStatus" style="color:var(--muted);font-size:.9rem;margin-bottom:.75rem">اضغط للتسجيل</div>
+            <div id="voiceTimer" style="font-size:2rem;font-weight:900;color:#1e3a5f;display:none">0:00</div>
+            <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;margin-top:.5rem">
+              <button class="btn btn-danger" id="voiceStartBtn" onclick="startVoiceRec()">🔴 بدء التسجيل</button>
+              <button class="btn btn-outline" id="voiceStopBtn" onclick="stopVoiceRec()" disabled>⏹ إيقاف</button>
+            </div>
+            <audio id="voicePreview" controls style="display:none;margin-top:1rem;width:100%;border-radius:8px"></audio>
+          </div>
+
+          <button class="btn btn-primary" id="voiceSendBtn" onclick="sendVoiceNote()" disabled style="width:100%">
+            📤 إرسال الرسالة
+          </button>
+        </div>
+      </div>
+
+      <!-- رسائلي المرسلة -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📬 رسائلي المرسلة</div>
+          <button class="btn btn-ghost btn-sm" onclick="renderSuperVoice()">🔄</button>
+        </div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.75rem;max-height:420px;overflow-y:auto">
+          ${myNotes.length===0 ? '<div style="text-align:center;color:var(--muted);padding:2rem">لا توجد رسائل مرسلة</div>' :
+            myNotes.map(n=>{
+              const isExp = new Date(n.expires_at) < new Date();
+              const playsLeft = n.max_plays - n.play_count;
+              let toLabel = '';
+              if(n.target_user_id) {
+                toLabel = `👤 ${n.target_username||'شخص معين'}`;
+              } else if(n.target_group==='admins') {
+                toLabel = '👨‍💼 كل الأدمنز';
+              } else if(n.target_group==='drivers') {
+                toLabel = '🚗 كل السائقين';
+              }
+              return `<div style="border:1.5px solid ${isExp||n.is_deleted?'#fca5a5':'#e2e8f0'};border-radius:12px;padding:.9rem">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+                  <span style="font-weight:700;font-size:.88rem">${toLabel}</span>
+                  <span style="font-size:.75rem;color:${isExp||n.is_deleted?'#ef4444':'#64748b'}">${isExp||n.is_deleted?'⛔ منتهية':playsLeft+' استماع متبقي'}</span>
+                </div>
+                <div style="font-size:.75rem;color:var(--muted)">${(n.created_at||'').slice(0,16)} — تنتهي ${(n.expires_at||'').slice(0,16)}</div>
+                ${!isExp&&!n.is_deleted?`<button class="btn btn-danger btn-sm" style="margin-top:.5rem;width:100%" onclick="deleteVoiceNote(${n.id})">🗑️ مسح الآن</button>`:''}
+              </div>`;
+            }).join('')}
+        </div>
+
+        <!-- صندوق الوارد للأدمن -->
+        ${isAdmin && inboxNotes.length > 0 ? `
+        <div style="border-top:1.5px solid #e2e8f0;padding:1.25rem">
+          <div style="font-weight:700;font-size:.9rem;margin-bottom:.75rem">📥 الرسائل الواردة إليك (${inboxNotes.length})</div>
+          <div style="display:flex;flex-direction:column;gap:.75rem;max-height:250px;overflow-y:auto">
+            ${inboxNotes.map(n=>{
+              const playsLeft = n.max_plays - n.play_count;
+              return `<div style="border:1.5px solid #bfdbfe;border-radius:12px;padding:.9rem;background:#eff6ff">
+                <div style="font-size:.75rem;color:var(--muted);margin-bottom:.5rem">${(n.created_at||'').slice(0,16)}</div>
+                <audio src="data:audio/webm;base64,${n.audio_data}" controls style="width:100%;border-radius:8px"
+                       onplay="markVoicePlay(${n.id})"></audio>
+                <div style="font-size:.72rem;color:#64748b;margin-top:.4rem">متبقي ${playsLeft} استماع</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>` : ''}
+      </div>
+    </div>`;
+
+  // ── recorder state ──
+  let mediaRecorder = null, audioChunks = [], timerInterval = null, audioBlob = null;
+  let seconds = 0;
+
+  window.onVoiceTargetChange = function() {
+    const mode = document.getElementById('voiceTargetMode').value;
+    document.getElementById('voiceSpecificWrap').style.display =
+      mode === 'specific' ? 'block' : 'none';
+  };
+
+  window.markVoicePlay = async function(id) {
+    try { await apiCall(`/voice-notes/${id}/play`, 'POST'); } catch(e){}
+  };
+
+  window.startVoiceRec = async function() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = []; seconds = 0;
+      mediaRecorder.ondataavailable = e => { if(e.data.size>0) audioChunks.push(e.data); };
+      mediaRecorder.onstop = () => {
+        audioBlob = new Blob(audioChunks, {type:'audio/webm'});
+        const url = URL.createObjectURL(audioBlob);
+        const prev = document.getElementById('voicePreview');
+        prev.src = url; prev.style.display='block';
+        document.getElementById('voiceSendBtn').disabled = false;
+        document.getElementById('voiceRecStatus').textContent = '✅ جاهز للإرسال';
+        clearInterval(timerInterval);
+      };
+      mediaRecorder.start();
+      document.getElementById('voiceStartBtn').disabled=true;
+      document.getElementById('voiceStopBtn').disabled=false;
+      document.getElementById('voiceTimer').style.display='block';
+      document.getElementById('voiceRecStatus').textContent='🔴 جاري التسجيل...';
+      timerInterval = setInterval(()=>{
+        seconds++;
+        const m=Math.floor(seconds/60), s=seconds%60;
+        document.getElementById('voiceTimer').textContent=`${m}:${String(s).padStart(2,'0')}`;
+        if(seconds>=120){ stopVoiceRec(); showNotification('وصلت للحد الأقصى (دقيقتان)','error'); }
+      },1000);
+    } catch(e) { showNotification('تعذّر الوصول للمايك: '+e.message,'error'); }
+  };
+
+  window.stopVoiceRec = function() {
+    if(mediaRecorder&&mediaRecorder.state==='recording') mediaRecorder.stop();
+    document.getElementById('voiceStartBtn').disabled=false;
+    document.getElementById('voiceStopBtn').disabled=true;
+  };
+
+  window.sendVoiceNote = async function() {
+    if(!audioBlob) return showNotification('سجّل رسالة أولاً','error');
+    const mode     = document.getElementById('voiceTargetMode').value;
+    const ttl      = parseInt(document.getElementById('voiceTTL').value);
+    const maxPlays = parseInt(document.getElementById('voiceMaxPlays').value);
+
+    let payload = { audio_data: '', duration_sec: seconds, max_plays: maxPlays, hours_ttl: ttl };
+    if(mode === 'specific') {
+      const uid = parseInt(document.getElementById('voiceSpecificUser').value);
+      if(!uid) return showNotification('اختر شخصاً محدداً','error');
+      payload.target_user_id = uid;
+    } else if(mode === 'group_admins') {
+      payload.target_group = 'admins';
+    } else if(mode === 'group_drivers') {
+      payload.target_group = 'drivers';
+    }
+
+    const btn = document.getElementById('voiceSendBtn');
+    btn.disabled=true; btn.textContent='⏳ جاري الإرسال...';
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      payload.audio_data = e.target.result.split(',')[1];
+      try {
+        await apiCall('/voice-notes','POST', payload);
+        showNotification('✅ تم إرسال الرسالة الصوتية','success');
+        await renderSuperVoice();
+      } catch(err) { showNotification(err.message,'error'); btn.disabled=false; btn.textContent='📤 إرسال الرسالة'; }
+    };
+    reader.readAsDataURL(audioBlob);
+  };
+
+  window.deleteVoiceNote = async function(id) {
+    if(!confirm('مسح الرسالة الصوتية؟')) return;
+    try { await apiCall(`/voice-notes/${id}`,'DELETE'); await renderSuperVoice(); }
+    catch(e) { showNotification(e.message,'error'); }
+  };
+}
+
+// ── رسائل صوتية عند الأدمن والسائق ──
+async function checkAndShowVoiceNotes() {
+  if(!currentUser) return;
+  const role = currentUser.role;
+  if(!['admin','driver','reporter','supervisor_workshop','supervisor_field'].includes(role)) return;
+  try {
+    const data = await apiCall('/voice-notes');
+    let notes = [];
+    // الأدمن يستلم {sent, inbox} — السائق يستلم array مباشرة
+    if(Array.isArray(data)) {
+      notes = data;
+    } else if(data && Array.isArray(data.inbox)) {
+      notes = data.inbox;
+    }
+    if(!notes.length) return;
+    // اعرض أول رسالة غير مسموعة
+    showVoiceNotePopup(notes[0]);
+  } catch(e) {}
+}
+
+function showVoiceNotePopup(note) {
+  const existing = document.getElementById('voiceNotePopup');
+  if(existing) existing.remove();
+  const div = document.createElement('div');
+  div.id = 'voiceNotePopup';
+  div.style.cssText = `position:fixed;bottom:1.5rem;left:1.5rem;z-index:9999;
+    background:#1e3a5f;color:#fff;border-radius:16px;padding:1.25rem 1.5rem;
+    box-shadow:0 8px 32px rgba(0,0,0,.3);max-width:340px;animation:slideInLeft .3s ease`;
+  div.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+      <span style="font-size:1.5rem">🎙️</span>
+      <div>
+        <div style="font-weight:800;font-size:.95rem">رسالة من الإدارة</div>
+        <div style="font-size:.72rem;opacity:.7">${(note.created_at||'').slice(0,16)}</div>
+      </div>
+      <button onclick="document.getElementById('voiceNotePopup').remove()"
+              style="margin-right:auto;background:rgba(255,255,255,.15);border:none;
+                     color:#fff;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:1rem">✕</button>
+    </div>
+    <audio id="vn_audio_${note.id}" src="data:audio/webm;base64,${note.audio_data}"
+           style="width:100%;border-radius:8px" controls></audio>
+    <div style="font-size:.72rem;opacity:.7;margin-top:.5rem;text-align:center">
+      متبقي ${note.max_plays-note.play_count} استماع — تنتهي ${(note.expires_at||'').slice(0,16)}
+    </div>`;
+  document.body.appendChild(div);
+  // سجّل التشغيل عند الضغط play
+  const audio = div.querySelector('audio');
+  audio.addEventListener('play', async () => {
+    try { await apiCall(`/voice-notes/${note.id}/play`,'POST'); } catch(e){}
+  }, {once:true});
+}
+
+// ── Poll maintenance alerts ──
+async function pollMaintenanceAlerts() {
+  if(!isSuperuser() && !isAdminLike()) return;
+  try {
+    const alerts = await apiCall('/maintenance/alerts').catch(()=>[]);
+    window._maintenanceAlertCount = alerts.length;
+    renderNav(buildAdminNav());
+  } catch(e) {}
+}
+// ═══════════════════════════════════════════════════════════════
+// MONTHLY REPORT — التقرير الشهري الشامل
+// ═══════════════════════════════════════════════════════════════
+async function renderMonthlyReport() {
+  const c = document.getElementById('pageContent');
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const branches = isSuperuser() ? await loadBranches() : [];
+
+  // ── reset state ──
+  window._mrDrvSort  = 'best';
+  window._mrCarSort  = 'cost_high';
+  window._mrReportType = 'drivers'; // 'drivers' | 'cars'
+
+  const branchOpts = isSuperuser()
+    ? `<select id="mrBranch" style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;min-width:170px;background:var(--surface)">
+        <option value="">🌐 كل الفروع</option>
+        ${branches.map(b=>`<option value="${b}">${b}</option>`).join('')}
+       </select>`
+    : `<span style="font-size:.85rem;font-weight:700;color:var(--primary);padding:.45rem .85rem;background:var(--surface-2);border-radius:10px;border:1.5px solid var(--border)">📍 ${currentUser?.branch||'فرعك'}</span>`;
+
+  c.innerHTML = `
+  <div class="card" style="overflow:visible">
+    <!-- Header -->
+    <div class="card-header">
+      <div class="card-title">📄 التقرير الشهري</div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-outline btn-sm" onclick="printMonthlyReport()">🖨️ طباعة / PDF</button>
+        <button class="btn btn-outline btn-sm" onclick="exportMonthlyCSV()">⬇️ CSV</button>
+      </div>
+    </div>
+
+    <!-- ─── Step 1: الشهر + الفرع + نوع التقرير ─── -->
+    <div style="padding:1.1rem 1.2rem;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;align-items:flex-end;gap:1rem">
+
+      <!-- الشهر -->
+      <div style="display:flex;flex-direction:column;gap:.35rem">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">الشهر</label>
+        <input type="month" id="mrMonth" value="${defaultMonth}"
+          style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;background:var(--surface)">
+      </div>
+
+      <!-- الفرع -->
+      <div style="display:flex;flex-direction:column;gap:.35rem">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">الفرع</label>
+        ${branchOpts}
+      </div>
+
+      <!-- نوع التقرير — toggle pills -->
+      <div style="display:flex;flex-direction:column;gap:.35rem">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">نوع التقرير</label>
+        <div style="display:flex;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)">
+          <button id="mrTabDrivers" onclick="mrSelectTab('drivers')"
+            style="flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer;transition:.15s;background:var(--primary);color:#fff;border-radius:8px 0 0 8px">
+            👨‍✈️ سائقين
+          </button>
+          <button id="mrTabCars" onclick="mrSelectTab('cars')"
+            style="flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;transition:.15s;background:transparent;color:var(--muted);border-radius:0 8px 8px 0">
+            🚙 مركبات
+          </button>
+        </div>
+      </div>
+
+      <!-- فلتر الترتيب — يتغير حسب التاب -->
+      <div style="display:flex;flex-direction:column;gap:.35rem" id="mrSortWrap">
+        <label style="font-size:.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px">ترتيب حسب</label>
+        <div id="mrSortInner">
+          <!-- يتملى بـ mrRenderSortFilter() -->
+        </div>
+      </div>
+
+      <!-- زر إنشاء -->
+      <button class="btn btn-primary" onclick="loadMonthlyReport()" style="padding:.48rem 1.4rem;align-self:flex-end">
+        📊 إنشاء التقرير
+      </button>
+      <span class="srch-count" id="mrStatus" style="align-self:flex-end"></span>
+    </div>
+
+    <!-- ─── النتائج ─── -->
+    <div id="mrContent" style="padding:1.1rem">
+      <div class="empty-state"><div class="empty-icon">📄</div><p>اختر الشهر ونوع التقرير ثم انقر "إنشاء التقرير"</p></div>
+    </div>
+  </div>`;
+
+  // ابني فلتر الترتيب الابتدائي
+  mrRenderSortFilter();
+  // حمّل التقرير
+  await loadMonthlyReport();
+}
+
+function mrSelectTab(type) {
+  window._mrReportType = type;
+  const btnD = document.getElementById('mrTabDrivers');
+  const btnC = document.getElementById('mrTabCars');
+  if(btnD && btnC) {
+    if(type === 'drivers') {
+      btnD.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer;transition:.15s;background:var(--primary);color:#fff;border-radius:8px 0 0 8px';
+      btnC.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;transition:.15s;background:transparent;color:var(--muted);border-radius:0 8px 8px 0';
+    } else {
+      btnC.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:700;cursor:pointer;transition:.15s;background:var(--primary);color:#fff;border-radius:0 8px 8px 0';
+      btnD.style.cssText = 'flex:1;padding:.45rem 1.1rem;border:none;font-family:inherit;font-size:.84rem;font-weight:600;cursor:pointer;transition:.15s;background:transparent;color:var(--muted);border-radius:8px 0 0 8px';
+    }
+  }
+  mrRenderSortFilter();
+  if(window._mrData) loadMonthlyReport();
+}
+
+function mrRenderSortFilter() {
+  const wrap = document.getElementById('mrSortInner');
+  if(!wrap) return;
+  const type = window._mrReportType || 'drivers';
+
+  if(type === 'drivers') {
+    const cur = window._mrDrvSort || 'best';
+    const opts = [
+      {v:'best',       l:'🏆 أعلى مسافة'},
+      {v:'worst',      l:'⬇️ أقل مسافة'},
+      {v:'trips_best', l:'🗺️ أكثر رحلات'},
+      {v:'trips_worst',l:'📉 أقل رحلات'},
+    ];
+    wrap.innerHTML = `<select id="mrDrvSortSel" onchange="window._mrDrvSort=this.value"
+      style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;min-width:150px;background:var(--surface)">
+      ${opts.map(o=>`<option value="${o.v}" ${cur===o.v?'selected':''}>${o.l}</option>`).join('')}
+    </select>`;
+  } else {
+    const cur = window._mrCarSort || 'cost_high';
+    const opts = [
+      {v:'cost_high', l:'💰 أعلى تكلفة'},
+      {v:'cost_low',  l:'💸 أقل تكلفة'},
+      {v:'fuel_high', l:'⛽ أكثر وقوداً'},
+      {v:'fuel_low',  l:'🪫 أقل وقوداً'},
+    ];
+    wrap.innerHTML = `<select id="mrCarSortSel" onchange="window._mrCarSort=this.value"
+      style="padding:.45rem .85rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.85rem;min-width:150px;background:var(--surface)">
+      ${opts.map(o=>`<option value="${o.v}" ${cur===o.v?'selected':''}>${o.l}</option>`).join('')}
+    </select>`;
+  }
+}
+
+async function loadMonthlyReport() {
+  // sync select values before loading
+  const drvSel = document.getElementById('mrDrvSortSel');
+  const carSel = document.getElementById('mrCarSortSel');
+  if(drvSel) window._mrDrvSort = drvSel.value;
+  if(carSel) window._mrCarSort = carSel.value;
+
+  const month  = document.getElementById('mrMonth')?.value;
+  const branch = document.getElementById('mrBranch')?.value || '';
+  if(!month) return;
+
+  const el = document.getElementById('mrContent');
+  document.getElementById('mrStatus').textContent = 'جاري التحميل...';
+  el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري إعداد التقرير...</p></div>';
+
+  try {
+    const url = `/reports/monthly?month=${month}${branch?'&branch='+encodeURIComponent(branch):''}`;
+    const data = await apiCall(url);
+    window._mrData = data;
+    const s = data.summary;
+    document.getElementById('mrStatus').textContent = `${data.branch} — ${data.month}`;
+
+    const [yr, mo] = month.split('-');
+    const monthName = new Date(yr, mo-1, 1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+    const type = window._mrReportType || 'drivers';
+
+    // ── ملخص الشهر (مشترك) ──
+    const summaryHtml = `
+      <div style="margin-bottom:1.3rem">
+        <div style="font-weight:700;font-size:.9rem;margin-bottom:.7rem;border-right:3px solid var(--primary);padding-right:.6rem">📊 ملخص الشهر</div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-icon">👨‍✈️</div><div class="stat-value">${s.total_drivers}</div><div class="stat-label">سائق</div></div>
+          <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${s.total_cars}</div><div class="stat-label">مركبة</div></div>
+          <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value">${s.total_trips}</div><div class="stat-label">رحلة</div></div>
+          <div class="stat-card"><div class="stat-icon">📍</div><div class="stat-value">${Math.round(s.total_km).toLocaleString('ar-EG')}</div><div class="stat-label">كم إجمالي</div></div>
+          <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${Math.round(s.total_fuel_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة وقود (ج)</div></div>
+          <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${Math.round(s.total_maint_cost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة صيانة (ج)</div></div>
+          <div class="stat-card" style="border:2px solid var(--primary)"><div class="stat-icon">💰</div><div class="stat-value" style="color:var(--primary)">${Math.round(s.total_cost).toLocaleString('ar-EG')}</div><div class="stat-label">إجمالي التكاليف (ج)</div></div>
+        </div>
+      </div>`;
+
+    const medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+
+    // ══ تقرير السائقين ══
+    let mainHtml = '';
+    if(type === 'drivers') {
+      const drvSort = window._mrDrvSort || 'best';
+      let sorted, sortLabel, badgeColor = '#3b82f6';
+      if(drvSort==='worst') {
+        sorted=[...data.drivers].filter(d=>d.trips>0).sort((a,b)=>a.km-b.km).slice(0,10);
+        sortLabel='أقل مسافة'; badgeColor='#ef4444';
+      } else if(drvSort==='trips_best') {
+        sorted=[...data.drivers].sort((a,b)=>b.trips-a.trips).slice(0,10);
+        sortLabel='أكثر رحلات'; badgeColor='#8b5cf6';
+      } else if(drvSort==='trips_worst') {
+        sorted=[...data.drivers].filter(d=>d.trips>0).sort((a,b)=>a.trips-b.trips).slice(0,10);
+        sortLabel='أقل رحلات'; badgeColor='#f59e0b';
+      } else {
+        sorted=data.drivers.filter(d=>d.km>0).slice(0,10);
+        sortLabel='أعلى مسافة';
+      }
+      const refVal = (drvSort==='trips_best'||drvSort==='trips_worst') ? (sorted[0]?.trips||1) : (sorted[0]?.km||1);
+      const isBad = drvSort==='worst'||drvSort==='trips_worst';
+      // حفظ البيانات المرتبة للطباعة
+      window._mrData._sortedDrivers = sorted;
+      window._mrData._drvSortLabel  = sortLabel;
+      window._mrData._drvSortIsBad  = isBad;
+      window._mrData._drvSortColor  = badgeColor;
+
+      const rows = sorted.map((d,i) => {
+        const val = (drvSort==='trips_best'||drvSort==='trips_worst') ? d.trips : d.km;
+        const barW = Math.round((val/refVal)*100);
+        // المركبات اللي كان بيسوقها
+        const carsForDriver = (data.drivers_per_car)
+          ? Object.values(data.drivers_per_car).flat().filter(x=>x.name===d.name)
+          : [];
+        // اجمع اللوحات من drivers_per_car
+        const driverCars = [];
+        if(data.drivers_per_car) {
+          for(const [carId, drList] of Object.entries(data.drivers_per_car)) {
+            if(drList.some(x=>x.name===d.name)) {
+              const car = data.cars.find(c=>c.car_id==carId);
+              if(car) driverCars.push(car);
+            }
+          }
+        }
+        const carBadges = driverCars.length
+          ? driverCars.map(car=>`<span dir="ltr" style="display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:.1rem .5rem;font-size:.73rem;font-weight:700;color:var(--primary)">${car.plate} <span style="font-weight:400;color:var(--muted)">${car.model}</span></span>`).join(' ')
+          : '<span style="color:var(--muted);font-size:.75rem">—</span>';
+        return `<tr style="${isBad?'background:rgba(239,68,68,.04)':''}">
+          <td style="text-align:center;font-size:.85rem">${isBad?i+1:(medals[i]||i+1)}</td>
+          <td><strong>${d.name}</strong></td>
+          <td style="font-size:.75rem"><code>${d.fixed_number||'—'}</code></td>
+          <td>${d.trips}</td>
+          <td><div style="display:flex;align-items:center;gap:.35rem">
+            <div style="width:45px;background:#e2e8f0;border-radius:3px;height:4px">
+              <div style="width:${barW}%;background:${badgeColor};border-radius:3px;height:4px"></div>
+            </div>
+            <strong style="${isBad?'color:#ef4444':''}">${Math.round(d.km).toLocaleString('ar-EG')}</strong>
+          </div></td>
+          <td style="font-size:.78rem">${d.trips>0?Math.round(d.km/d.trips):0} كم</td>
+          <td style="max-width:220px">${carBadges}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>';
+
+      mainHtml = `
+        <div>
+          <div style="font-weight:700;font-size:.88rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
+            <span style="background:${badgeColor};color:white;border-radius:6px;padding:.15rem .55rem;font-size:.72rem;font-weight:800">TOP 10</span>
+            <span>${sortLabel}</span>
+            <span style="font-size:.72rem;color:var(--muted)">(${data.drivers.length} سائق)</span>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr style="font-size:.73rem">
+              <th style="width:28px">#</th><th>السائق</th><th>الرقم</th><th>رحلات</th><th>كم</th><th>متوسط</th><th>المركبات المستخدمة</th>
+            </tr></thead>
+            <tbody>${rows}</tbody></table>
+          </div>
+        </div>`;
+
+    // ══ تقرير المركبات ══
+    } else {
+      const carSort = window._mrCarSort || 'cost_high';
+      let sortedCars, carSortLabel, carBadgeColor='#10b981';
+      if(carSort==='cost_low') {
+        sortedCars=[...data.cars].filter(c=>c.total_cost>0).sort((a,b)=>a.total_cost-b.total_cost).slice(0,10);
+        carSortLabel='أقل تكلفة'; carBadgeColor='#f59e0b';
+      } else if(carSort==='fuel_high') {
+        sortedCars=[...data.cars].sort((a,b)=>b.fuel_liters-a.fuel_liters).slice(0,10);
+        carSortLabel='أكثر وقوداً'; carBadgeColor='#ef4444';
+      } else if(carSort==='fuel_low') {
+        sortedCars=[...data.cars].filter(c=>c.fuel_liters>0).sort((a,b)=>a.fuel_liters-b.fuel_liters).slice(0,10);
+        carSortLabel='أقل وقوداً'; carBadgeColor='#6366f1';
+      } else {
+        sortedCars=[...data.cars].filter(c=>c.total_cost>0).sort((a,b)=>b.total_cost-a.total_cost).slice(0,10);
+        carSortLabel='أعلى تكلفة';
+      }
+      // حفظ البيانات المرتبة للطباعة
+      window._mrData._sortedCars      = sortedCars;
+      window._mrData._carSortLabel    = carSortLabel;
+      window._mrData._carSortColor    = carBadgeColor;
+      window._mrData._reportType      = type;
+
+      const carRows = sortedCars.map((c,i) => {
+        const driversForCar = (data.drivers_per_car && data.drivers_per_car[c.car_id]) || [];
+        const driverBadges = driversForCar.length
+          ? driversForCar.map(dr=>`<span style="display:inline-block;background:${driversForCar.length>1?'#fef3c7':'#f0fdf4'};border:1px solid ${driversForCar.length>1?'#fcd34d':'#6ee7b7'};border-radius:6px;padding:.1rem .5rem;font-size:.73rem;font-weight:600;color:${driversForCar.length>1?'#92400e':'#065f46'}">👤 ${dr.name}${dr.fixed_number?' <code style="font-size:.68rem">'+dr.fixed_number+'</code>':''}</span>`).join(' ')
+          : '<span style="color:var(--muted);font-size:.75rem">—</span>';
+        return `<tr>
+          <td style="text-align:center">${i+1}</td>
+          <td dir="ltr"><strong>${c.plate}</strong></td>
+          <td style="font-size:.75rem">${c.model}</td>
+          <td style="text-align:center">${c.trips||0}</td>
+          <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
+          <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
+          <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
+          <td><strong style="color:var(--primary)">${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
+          <td style="max-width:200px">${driverBadges}</td>
+        </tr>`;
+      }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted)">لا بيانات</td></tr>';
+
+      mainHtml = `
+        <div>
+          <div style="font-weight:700;font-size:.88rem;margin-bottom:.6rem;display:flex;align-items:center;gap:.5rem">
+            <span style="background:${carBadgeColor};color:white;border-radius:6px;padding:.15rem .55rem;font-size:.72rem;font-weight:800">TOP 10</span>
+            <span>${carSortLabel}</span>
+            <span style="font-size:.72rem;color:var(--muted)">(${data.cars.length} مركبة)</span>
+          </div>
+          <div class="table-wrap">
+            <table><thead><tr style="font-size:.73rem">
+              <th>#</th><th>اللوحة</th><th>الموديل</th><th>رحلات</th><th>وقود(ل)</th><th>تكلفة وقود</th><th>صيانة</th><th>إجمالي</th><th>السائقون</th>
+            </tr></thead>
+            <tbody>${carRows}</tbody></table>
+          </div>
+        </div>`;
+    }
+
+    el.innerHTML = `
+      <div id="mrPrintArea">
+        <!-- رأس الصفحة -->
+        <div style="text-align:center;padding:.8rem 0 1rem;border-bottom:2px solid var(--border);margin-bottom:1.2rem">
+          <div style="font-size:1.2rem;font-weight:700">إدارة الأسطول — تقرير شهري</div>
+          <div style="font-size:.9rem;color:var(--muted);margin-top:.25rem">${monthName} | الفرع: ${data.branch}</div>
+          <div style="font-size:.72rem;color:var(--muted);margin-top:.15rem">صدر بتاريخ: ${fmtDT(data.generated_at)}</div>
+        </div>
+        ${summaryHtml}
+        ${mainHtml}
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+    document.getElementById('mrStatus').textContent = 'خطأ';
+  }
+}
+
+// ── Monthly Report Dropdown Helpers ──
+window._mrDrvSort = 'best';
+window._mrCarSort = 'cost_high';
+window._mrReportType = 'drivers';
+
+function printMonthlyReport() {
+  const d = window._mrData;
+  if(!d) return showNotification('أنشئ التقرير أولاً','error');
+  const s = d.summary;
+  const [yr, mo] = d.month.split('-');
+  const monthName = new Date(yr, mo-1, 1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+  const top10D = d._sortedDrivers || d.drivers.slice(0,10);
+  const top10C = d._sortedCars    || d.cars.slice(0,10);
+  const isBad   = d._drvSortIsBad || false;
+  const drvColor= d._drvSortColor || '#3b82f6';
+  const medals = ['🥇','🥈','🥉','4','5','6','7','8','9','🔟'];
+
+  const drvRows = top10D.map((dr,i) => {
+    const refKm = top10D[0]?.km||1;
+    const barW = dr.km>0 ? Math.round((dr.km/refKm)*100) : 0;
+    return `<tr>
+      <td style="text-align:center">${isBad ? i+1 : (medals[i]||i+1)}</td>
+      <td>${dr.name}</td><td>${dr.fixed_number||'—'}</td>
+      <td style="text-align:center">${dr.trips}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:5px">
+          <div style="width:50px;background:#e2e8f0;border-radius:3px;height:5px">
+            <div style="width:${barW}%;background:${drvColor};border-radius:3px;height:5px"></div>
+          </div>
+          <strong style="${isBad?'color:#ef4444':''}">${Math.round(dr.km).toLocaleString('ar-EG')}</strong>
+        </div>
+      </td>
+      <td>${dr.trips>0?Math.round(dr.km/dr.trips):0} كم</td>
+    </tr>`;
+  }).join('');
+
+  const carRows = top10C.map((c,i) => `<tr>
+    <td style="text-align:center">${i+1}</td>
+    <td dir="ltr"><strong>${c.plate}</strong></td>
+    <td>${c.model}</td>
+    <td>${c.fuel_liters>0?c.fuel_liters.toLocaleString('ar-EG'):'—'}</td>
+    <td>${c.fuel_cost>0?Math.round(c.fuel_cost).toLocaleString('ar-EG'):'—'}</td>
+    <td>${c.maint_cost>0?Math.round(c.maint_cost).toLocaleString('ar-EG'):'—'}</td>
+    <td><strong>${c.total_cost>0?Math.round(c.total_cost).toLocaleString('ar-EG'):'—'}</strong></td>
+  </tr>`).join('');
+
+  // ====== build print content based on selected reportType ======
+  const reportType   = d._reportType || 'drivers';
+  const drvSortLabel = d._drvSortLabel || 'أعلى مسافة';
+  const carSortLabel = d._carSortLabel || 'أعلى تكلفة';
+  const carColor     = d._carSortColor || '#10b981';
+
+  const tableSection = (reportType === 'drivers') ? `
+  <div class="sec-title"><span class="badge" style="background:${drvColor}">TOP 10</span> السائقون — ${drvSortLabel} <span class="note">من ${d.drivers.length} سائق</span></div>
+  <table><thead><tr><th></th><th>السائق</th><th>الرقم الثابت</th><th>رحلات</th><th>إجمالي كم</th><th>متوسط/رحلة</th></tr></thead>
+  <tbody>${drvRows}</tbody></table>` : `
+  <div class="sec-title g"><span class="badge g" style="background:${carColor}">TOP 10</span> المركبات — ${carSortLabel} <span class="note">من ${d.cars.length} مركبة</span></div>
+  <table><thead><tr><th>#</th><th>اللوحة</th><th>الموديل</th><th>وقود (لتر)</th><th>تكلفة وقود</th><th>صيانة</th><th>الإجمالي (جنيه)</th></tr></thead>
+  <tbody>${carRows}</tbody></table>`;
+
+  const win = window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head>
+  <meta charset="UTF-8"><title>تقرير شهري — ${d.month}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;direction:rtl;padding:15mm;font-size:10pt;color:#1e293b}
+    h1{font-size:13pt;font-weight:700;text-align:center;margin-bottom:3px}
+    .sub{font-size:9pt;color:#64748b;text-align:center;margin-bottom:12px;padding-bottom:10px;border-bottom:1.5px solid #1e293b}
+    .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px}
+    .sbox{border:1px solid #e2e8f0;border-radius:6px;padding:8px;text-align:center}
+    .sbox.hi{border:2px solid #10b981;background:#f0fdf4}
+    .sn{font-size:13pt;font-weight:700}.sl{font-size:7.5pt;color:#64748b;margin-top:2px}
+    .sbox.hi .sn{color:#065f46}
+    .sec-title{font-size:9pt;font-weight:700;margin:12px 0 5px;padding-right:7px;border-right:3px solid #3b82f6}
+    .sec-title.g{border-color:#10b981}
+    .badge{display:inline-block;color:#fff;border-radius:4px;padding:0 5px;font-size:7pt;font-weight:800;margin-left:4px}
+    .note{font-size:7.5pt;color:#94a3b8;margin-right:6px}
+    table{width:100%;border-collapse:collapse;font-size:8.5pt;margin-bottom:10px}
+    th,td{border:0.5px solid #cbd5e1;padding:4px 6px;text-align:right}
+    th{background:#f8fafc;font-weight:700;font-size:8pt}
+    tr:nth-child(even){background:#f8fafc}
+    .footer{margin-top:14px;border-top:0.5px solid #e2e8f0;padding-top:7px;font-size:7pt;color:#94a3b8;text-align:center}
+    @page{size:A4;margin:12mm}
+  </style></head><body>
+  <h1>🚛 إدارة الأسطول — التقرير الشهري</h1>
+  <div class="sub">${monthName} &nbsp;|&nbsp; ${d.branch}</div>
+
+  <div class="summary">
+    <div class="sbox"><div class="sn">${s.total_drivers}</div><div class="sl">سائق نشط</div></div>
+    <div class="sbox"><div class="sn">${s.total_cars}</div><div class="sl">مركبة</div></div>
+    <div class="sbox"><div class="sn">${s.total_trips}</div><div class="sl">رحلة</div></div>
+    <div class="sbox hi"><div class="sn">${Math.round(s.total_cost).toLocaleString('ar-EG')}</div><div class="sl">إجمالي التكاليف (جنيه)</div></div>
+  </div>
+  <div class="summary" style="grid-template-columns:1fr 1fr 1fr">
+    <div class="sbox"><div class="sn" style="font-size:11pt">${Math.round(s.total_km).toLocaleString('ar-EG')}</div><div class="sl">إجمالي كم</div></div>
+    <div class="sbox"><div class="sn" style="font-size:11pt">${Math.round(s.total_fuel_cost).toLocaleString('ar-EG')}</div><div class="sl">تكلفة وقود (جنيه)</div></div>
+    <div class="sbox"><div class="sn" style="font-size:11pt">${Math.round(s.total_maint_cost).toLocaleString('ar-EG')}</div><div class="sl">تكلفة صيانة (جنيه)</div></div>
+  </div>
+
+  ${tableSection}
+
+  <div class="footer">صدر بتاريخ: ${new Date().toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'})} — إدارة الأسطول</div>
+  \x3Cscript\x3Ewindow.onload=function(){ window.print(); window.onafterprint=function(){ window.close(); }; }<\/script>
+  </body></html>`);
+  win.document.close();
+}
+function exportMonthlyCSV() {
+  const d = window._mrData;
+  if(!d) return showNotification('أنشئ التقرير أولاً','error');
+  let csv = `التقرير الشهري - ${d.month} - ${d.branch}\n\n`;
+  csv += 'إجمالي الرحلات,إجمالي كم,تكلفة وقود,تكلفة صيانة,الإجمالي\n';
+  csv += `${d.summary.total_trips},${Math.round(d.summary.total_km)},${Math.round(d.summary.total_fuel_cost)},${Math.round(d.summary.total_maint_cost)},${Math.round(d.summary.total_cost)}\n\n`;
+  csv += 'السائقون\nالاسم,الرقم الثابت,الفرع,الرحلات,مكتملة,الكيلومترات\n';
+  d.drivers.forEach(dr=>{ csv+=`${dr.name},${dr.fixed_number||''},${dr.branch||''},${dr.trips},${dr.completed},${Math.round(dr.km)}\n`; });
+  csv += '\nالمركبات\nاللوحة,الموديل,الفرع,وقود لتر,تكلفة وقود,تكلفة صيانة,الإجمالي\n';
+  d.cars.forEach(c=>{ csv+=`${c.plate},${c.model},${c.branch||''},${c.fuel_liters},${Math.round(c.fuel_cost)},${Math.round(c.maint_cost)},${Math.round(c.total_cost)}\n`; });
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download = `monthly_report_${d.month}${d.branch&&d.branch!=='كل الفروع'?'_'+d.branch:''}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUPERVISORS MANAGEMENT — إدارة المشرفين (سوبر يوزر فقط)
+// ═══════════════════════════════════════════════════════════════
+async function renderSuperSupervisors() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+  // جيب كل المستخدمين ذوي صلاحيات مشرف
+  const users = await apiCall('/users/list').catch(()=>[]);
+  const branches = await loadBranches();
+  const supervisors = users.filter(u=>u.role==='supervisor_workshop'||u.role==='supervisor_field');
+
+  const ROLE_LABELS = {
+    supervisor_workshop: {label:'🔧 مشرف ورشة', color:'#7c3aed', bg:'#ede9fe',
+      desc:'يرى: الورش + المركبات + الصيانة'},
+    supervisor_field:    {label:'🗺️ مشرف ميدان', color:'#0369a1', bg:'#e0f2fe',
+      desc:'يرى: الرحلات + الخريطة + الطوارئ + السائقون'},
+  };
+
+  const branchOpts = branches.map(b=>`<option value="${b}">${b}</option>`).join('');
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🎯 إدارة المشرفين (${supervisors.length})</div>
+        <button class="btn btn-primary btn-sm" onclick="openAddSupervisorModal('${branchOpts.replace(/'/g,"\\'")}')">➕ إضافة مشرف</button>
+      </div>
+
+      <!-- شرح الصلاحيات -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:1rem 1.2rem;border-bottom:1px solid var(--border)">
+        ${Object.entries(ROLE_LABELS).map(([role,info])=>`
+          <div style="background:${info.bg};border-radius:10px;padding:.8rem 1rem">
+            <div style="font-weight:700;color:${info.color};margin-bottom:.3rem">${info.label}</div>
+            <div style="font-size:.8rem;color:var(--muted)">${info.desc}</div>
+          </div>`).join('')}
+      </div>
+
+      <!-- جدول المشرفين -->
+      <div class="table-wrap">
+        <table><thead><tr>
+          <th>#</th><th>اسم المستخدم</th><th>النوع</th><th>الفرع</th><th>آخر دخول</th><th>إجراءات</th>
+        </tr></thead><tbody>
+        ${supervisors.map((u,i)=>{
+          const info = ROLE_LABELS[u.role]||{};
+          return `<tr>
+            <td>${i+1}</td>
+            <td><strong>${u.username}</strong></td>
+            <td><span style="background:${info.bg||'#f1f5f9'};color:${info.color||'#475569'};border-radius:20px;font-size:.72rem;font-weight:700;padding:.15rem .55rem">${info.label||u.role}</span></td>
+            <td>${u.branch||'—'}</td>
+            <td style="font-size:.78rem;color:var(--muted)">${u.last_login?fmtDT(u.last_login):'لم يدخل'}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm" onclick="openEditSupervisorModal(${u.id},'${u.username.replace(/'/g,"\\'")}','${u.role}','${(u.branch||'').replace(/'/g,"\\'")}','${branchOpts.replace(/'/g,"\\'")}')">✏️ تعديل</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteSupervisor(${u.id},'${u.username.replace(/'/g,"\\'")}')">🗑️</button>
+            </td>
+          </tr>`;
+        }).join('')}
+        ${!supervisors.length?'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:1.5rem">لا يوجد مشرفون — انقر ➕ لإضافة أول مشرف</td></tr>':''}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+
+function openAddSupervisorModal(branchOpts) {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">➕ إضافة مشرف جديد</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group">
+      <label>نوع الصلاحية <span class="req">*</span></label>
+      <select id="svRole" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="">— اختر النوع —</option>
+        <option value="supervisor_workshop">🔧 مشرف ورشة (الورش + المركبات + الصيانة)</option>
+        <option value="supervisor_field">🗺️ مشرف ميدان (الرحلات + الخريطة + الطوارئ)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>الفرع / الإدارة <span class="req">*</span></label>
+      <select id="svBranch" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="">— اختر الفرع —</option>
+        ${branchOpts}
+      </select>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label><input id="svUser" placeholder="مثال: supervisor_cairo"></div>
+      <div class="form-group"><label>كلمة المرور <span class="req">*</span></label><input id="svPass" type="password" placeholder="كلمة مرور قوية"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="svSave">✅ إنشاء المشرف</button>
+    </div>`);
+
+  document.getElementById('svSave').onclick = async () => {
+    const role     = document.getElementById('svRole').value;
+    const branch   = document.getElementById('svBranch').value;
+    const username = document.getElementById('svUser').value.trim();
+    const password = document.getElementById('svPass').value;
+    if(!role)     return showNotification('اختر نوع الصلاحية','error');
+    if(!branch)   return showNotification('اختر الفرع','error');
+    if(!username) return showNotification('أدخل اسم المستخدم','error');
+    if(password.length<6) return showNotification('كلمة المرور يجب أن تكون 6 أحرف على الأقل','error');
+    const btn = document.getElementById('svSave');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall('/users','POST',{username, password, role, branch});
+      showNotification('✅ تم إنشاء المشرف','success');
+      closeModal(); await renderSuperSupervisors();
+    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='✅ إنشاء المشرف'; }
+  };
+}
+
+function openEditSupervisorModal(uid, oldUser, oldRole, oldBranch, branchOpts) {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">✏️ تعديل المشرف: ${oldUser}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group">
+      <label>نوع الصلاحية</label>
+      <select id="svEditRole" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="supervisor_workshop" ${oldRole==='supervisor_workshop'?'selected':''}>🔧 مشرف ورشة</option>
+        <option value="supervisor_field"    ${oldRole==='supervisor_field'?'selected':''}>🗺️ مشرف ميدان</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>الفرع / الإدارة</label>
+      <select id="svEditBranch" style="width:100%;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit">
+        <option value="">— اختر الفرع —</option>
+        ${branchOpts.replace(`value="${oldBranch}"`,`value="${oldBranch}" selected`)}
+      </select>
+    </div>
+    <div class="two-col">
+      <div class="form-group"><label>اسم المستخدم</label><input id="svEditUser" value="${oldUser}"></div>
+      <div class="form-group"><label>كلمة مرور جديدة (اتركها فاضية للإبقاء)</label><input id="svEditPass" type="password" placeholder="(اختياري)"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="svEditSave">💾 حفظ التعديلات</button>
+    </div>`);
+
+  document.getElementById('svEditSave').onclick = async () => {
+    const body = {
+      role:     document.getElementById('svEditRole').value,
+      branch:   document.getElementById('svEditBranch').value,
+      username: document.getElementById('svEditUser').value.trim(),
+    };
+    const pw = document.getElementById('svEditPass').value;
+    if(pw) body.password = pw;
+    const btn = document.getElementById('svEditSave');
+    btn.disabled=true; btn.textContent='جاري...';
+    try {
+      await apiCall(`/superuser/admins/${uid}`,'PUT',body);
+      showNotification('✅ تم التحديث','success');
+      closeModal(); await renderSuperSupervisors();
+    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ'; }
+  };
+}
+
+async function deleteSupervisor(uid, name) {
+  if(!confirm(`هل تريد حذف المشرف "${name}"؟`)) return;
+  try {
+    await apiCall(`/superuser/admins/${uid}`,'DELETE');
+    showNotification('تم الحذف','success');
+    await renderSuperSupervisors();
+  } catch(e) { showNotification(e.message,'error'); }
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   CUSTOM SELECT ENGINE — نظام القوائم المنسدلة الموحد
+   يحوّل كل <select> في الصفحة لـ custom dropdown بعد الـ render
+   ════════════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+
+  /* ── selects to SKIP (لا تتحوّل) ──
+     أضف data-no-cs="true" على أي select تريد تركه كما هو */
+  const SKIP_ATTR = 'data-no-cs';
+
+  /* ── active dropdown tracker ── */
+  let _activeCS = null;
+
+  /* close all open dropdowns */
+  function closeAll(except) {
+    document.querySelectorAll('.cs-dropdown.cs-open').forEach(d => {
+      if(d !== except) {
+        d.classList.remove('cs-open');
+        const w = d.closest('.cs-wrapper');
+        if(w) w.querySelector('.cs-trigger')?.classList.remove('cs-open');
+      }
+    });
+  }
+
+  /* build highlight html */
+  function highlight(text, q) {
+    if(!q) return text;
+    const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+    return text.replace(re, m => `<mark>${m}</mark>`);
+  }
+
+  /* ── core: upgrade one <select> element ── */
+  function upgradeSelect(sel) {
+    if(sel.dataset.csUpgraded === '1') return;
+    if(sel.hasAttribute(SKIP_ATTR)) return;
+    // skip hidden / file / etc
+    if(sel.type && sel.type !== 'select-one' && sel.type !== 'select-multiple') return;
+
+    sel.dataset.csUpgraded = '1';
+    sel.style.display = 'none';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cs-wrapper';
+    // copy any inline style width hints
+    const selStyle = getComputedStyle(sel);
+    const minW = sel.style.minWidth || '';
+    if(minW) wrapper.style.minWidth = minW;
+
+    /* ── trigger button ── */
+    const trigger = document.createElement('div');
+    trigger.className = 'cs-trigger';
+    trigger.setAttribute('tabindex','0');
+    trigger.setAttribute('role','combobox');
+    trigger.setAttribute('aria-haspopup','listbox');
+    trigger.setAttribute('aria-expanded','false');
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'cs-label';
+    const arrowSpan = document.createElement('span');
+    arrowSpan.className = 'cs-arrow';
+    arrowSpan.textContent = '▾';
+
+    trigger.appendChild(labelSpan);
+    trigger.appendChild(arrowSpan);
+
+    /* ── dropdown ── */
+    const dropdown = document.createElement('div');
+    dropdown.className = 'cs-dropdown';
+    dropdown.setAttribute('role','listbox');
+
+    /* search wrap */
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'cs-search-wrap';
+    searchWrap.style.position = 'relative';
+    const searchIcon = document.createElement('span');
+    searchIcon.className = 'cs-search-icon';
+    searchIcon.textContent = '🔍';
+    const searchInput = document.createElement('input');
+    searchInput.className = 'cs-search';
+    searchInput.placeholder = 'بحث...';
+    searchInput.autocomplete = 'off';
+    searchInput.setAttribute('aria-label','بحث في القائمة');
+    searchWrap.appendChild(searchIcon);
+    searchWrap.appendChild(searchInput);
+
+    /* list */
+    const list = document.createElement('div');
+    list.className = 'cs-list';
+
+    dropdown.appendChild(searchWrap);
+    dropdown.appendChild(list);
+
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(dropdown);
+
+    /* insert wrapper before the original select */
+    sel.parentNode.insertBefore(wrapper, sel);
+    wrapper.appendChild(sel); // keep select inside wrapper (hidden)
+
+    /* ── collect options ── */
+    function getOptions() {
+      return Array.from(sel.options).map(o => ({
+        value: o.value,
+        label: o.textContent.trim(),
+        disabled: o.disabled
+      }));
+    }
+
+    /* ── render list items ── */
+    function renderList(query) {
+      const opts = getOptions();
+      const q = query.trim().toLowerCase();
+      list.innerHTML = '';
+      let count = 0;
+
+      opts.forEach((opt, idx) => {
+        if(opt.disabled && opt.value === '' && !q) {
+          // placeholder — skip in list (shown in trigger)
+          return;
+        }
+        const label = opt.label;
+        if(q && !label.toLowerCase().includes(q)) return;
+        count++;
+
+        const item = document.createElement('div');
+        item.className = 'cs-option' + (sel.value === opt.value ? ' cs-selected':'');
+        item.setAttribute('role','option');
+        item.setAttribute('data-value', opt.value);
+        item.innerHTML = highlight(label, q);
+        if(opt.disabled) { item.style.opacity='.45'; item.style.cursor='not-allowed'; }
+        else {
+          item.addEventListener('mousedown', e => {
+            e.preventDefault();
+            setVal(opt.value, opt.label);
+            closeDropdown();
+          });
+        }
+        list.appendChild(item);
+      });
+
+      if(count === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'cs-empty';
+        empty.textContent = 'لا توجد نتائج';
+        list.appendChild(empty);
+      }
+    }
+
+    /* ── update trigger label ── */
+    function updateLabel() {
+      const cur = sel.options[sel.selectedIndex];
+      if(cur && cur.value !== '' && !cur.disabled) {
+        labelSpan.textContent = cur.textContent.trim();
+        labelSpan.classList.remove('cs-placeholder');
+      } else {
+        // show placeholder
+        const ph = Array.from(sel.options).find(o => o.value === '' || o.disabled);
+        labelSpan.textContent = ph ? ph.textContent.trim() : 'اختر...';
+        labelSpan.classList.add('cs-placeholder');
+      }
+    }
+
+    /* ── set value ── */
+    function setVal(value, label) {
+      sel.value = value;
+      // fire native events so existing onchange handlers work
+      sel.dispatchEvent(new Event('change', {bubbles:true}));
+      sel.dispatchEvent(new Event('input',  {bubbles:true}));
+      updateLabel();
+      renderList('');
+    }
+
+    /* ── open / close ── */
+    function openDropdown() {
+      closeAll(dropdown);
+      dropdown.classList.add('cs-open');
+      trigger.classList.add('cs-open');
+      trigger.setAttribute('aria-expanded','true');
+      _activeCS = dropdown;
+      renderList('');
+      searchInput.value = '';
+      // scroll selected into view
+      setTimeout(() => {
+        searchInput.focus();
+        const sel2 = list.querySelector('.cs-selected');
+        if(sel2) sel2.scrollIntoView({block:'nearest'});
+      }, 30);
+    }
+    function closeDropdown() {
+      dropdown.classList.remove('cs-open');
+      trigger.classList.remove('cs-open');
+      trigger.setAttribute('aria-expanded','false');
+      if(_activeCS === dropdown) _activeCS = null;
+    }
+    function toggleDropdown() {
+      if(dropdown.classList.contains('cs-open')) closeDropdown();
+      else openDropdown();
+    }
+
+    /* ── events ── */
+    trigger.addEventListener('click', e => { e.stopPropagation(); toggleDropdown(); });
+    trigger.addEventListener('keydown', e => {
+      if(e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleDropdown(); }
+      if(e.key === 'Escape') closeDropdown();
+    });
+    searchInput.addEventListener('input', () => renderList(searchInput.value));
+    searchInput.addEventListener('keydown', e => {
+      if(e.key === 'Escape') closeDropdown();
+      if(e.key === 'Enter') {
+        const first = list.querySelector('.cs-option:not([style*="not-allowed"])');
+        if(first) first.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+      }
+    });
+    // prevent closing when clicking inside dropdown
+    dropdown.addEventListener('mousedown', e => e.stopPropagation());
+
+    /* ── observe select value changes from outside code ── */
+    const valObserver = new MutationObserver(() => { updateLabel(); renderList(''); });
+    valObserver.observe(sel, { attributes:true, childList:true, subtree:true });
+
+    // also patch .value setter
+    const origDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    // we can't easily patch per-instance, so we rely on MutationObserver + manual sync
+
+    /* ── sync when select changes programmatically ── */
+    sel.addEventListener('change', () => { updateLabel(); renderList(''); });
+
+    /* initial label */
+    updateLabel();
+  }
+
+  /* ── upgrade all current selects on page ── */
+  function upgradeAll() {
+    document.querySelectorAll('select:not([data-cs-upgraded="1"]):not([data-no-cs])').forEach(upgradeSelect);
+  }
+
+  /* ── watch for dynamically added selects (modals, renders) ── */
+  const observer = new MutationObserver(mutations => {
+    let needScan = false;
+    for(const m of mutations) {
+      for(const n of m.addedNodes) {
+        if(n.nodeType === 1) { needScan = true; break; }
+      }
+      if(needScan) break;
+    }
+    if(needScan) {
+      // small delay so the HTML is fully built
+      clearTimeout(observer._t);
+      observer._t = setTimeout(upgradeAll, 60);
+    }
+  });
+  observer.observe(document.body, { childList:true, subtree:true });
+
+  /* ── close on outside click ── */
+  document.addEventListener('click', () => closeAll());
+  document.addEventListener('keydown', e => { if(e.key==='Escape') closeAll(); });
+
+  /* ── initial upgrade ── */
+  if(document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', upgradeAll);
+  } else {
+    setTimeout(upgradeAll, 80);
+  }
+
+  /* ── expose globally so manual call is possible ── */
+  
+
+
 
 // ═══════════════════════════════════════════════════════════════
 // MAINTENANCE CSV IMPORT — استيراد الصيانة من CSV
@@ -10142,8 +11380,10 @@ function exportRentalCSV() {
   showNotification('✅ تم التصدير','success');
 }
 
-window.CS = { upgrade: function(){}, upgradeAll: function(){} };
+// ── expose globally so manual call is possible ──
+  window.CS = { upgrade: upgradeSelect, upgradeAll };
 
+})();
 
 showLogin();
 
@@ -10261,6 +11501,108 @@ async function deleteAvatar() {
     showNotification('فشل الحذف','error');
   }
 }
+
+
+
+// ══════════════════════════════════════════════
+// MAP ZONES — تقسيم الخريطة لزونات حسب الكثافة
+// ══════════════════════════════════════════════
+let _mapZonesLayer = null;
+
+function showMapZones(driversData) {
+  if(!window._leafletMap) return;
+  
+  // حذف الـ zones القديمة
+  if(_mapZonesLayer) {
+    window._leafletMap.removeLayer(_mapZonesLayer);
+    _mapZonesLayer = null;
+  }
+  
+  if(!driversData || !driversData.length) return;
+
+  // تجميع السائقين في cells (0.05 degree ≈ 5km)
+  const CELL = 0.05;
+  const cells = {};
+  
+  driversData.forEach(d => {
+    if(!d.lat || !d.lng) return;
+    const cx = Math.floor(d.lat / CELL);
+    const cy = Math.floor(d.lng / CELL);
+    const key = `${cx}_${cy}`;
+    if(!cells[key]) {
+      cells[key] = { 
+        lat: cx * CELL + CELL/2, 
+        lng: cy * CELL + CELL/2, 
+        count: 0, 
+        drivers: [] 
+      };
+    }
+    cells[key].count++;
+    cells[key].drivers.push(d.name || d.driver_name || 'سائق');
+  });
+
+  const cellList = Object.values(cells).filter(c => c.count > 0);
+  if(!cellList.length) return;
+
+  const maxCount = Math.max(...cellList.map(c => c.count));
+  
+  // ألوان بناءً على الكثافة
+  function getColor(count) {
+    const ratio = count / maxCount;
+    if(ratio >= 0.8) return { fill: '#ef4444', label: 'كثافة عالية جداً' };
+    if(ratio >= 0.6) return { fill: '#f97316', label: 'كثافة عالية' };
+    if(ratio >= 0.4) return { fill: '#f59e0b', label: 'كثافة متوسطة' };
+    if(ratio >= 0.2) return { fill: '#22c55e', label: 'كثافة منخفضة' };
+    return { fill: '#3b82f6', label: 'فردي' };
+  }
+
+  const layers = [];
+  
+  cellList.forEach(cell => {
+    const { fill, label } = getColor(cell.count);
+    const halfSize = CELL / 2;
+    
+    const rect = L.rectangle(
+      [[cell.lat - halfSize, cell.lng - halfSize], 
+       [cell.lat + halfSize, cell.lng + halfSize]],
+      { 
+        color: fill,
+        fillColor: fill,
+        fillOpacity: 0.25,
+        weight: 1,
+        opacity: 0.6
+      }
+    );
+    
+    rect.bindTooltip(
+      `<div dir="rtl" style="font-family:Cairo,sans-serif;font-size:.82rem">
+        <strong>${label}</strong><br>
+        <span style="color:#6b7280">${cell.count} سائق</span>
+        ${cell.count <= 3 ? '<br>' + cell.drivers.join('، ') : ''}
+      </div>`,
+      { direction: 'top', sticky: true }
+    );
+    
+    layers.push(rect);
+  });
+
+  _mapZonesLayer = L.layerGroup(layers).addTo(window._leafletMap);
+}
+
+function toggleMapZones() {
+  const btn = document.getElementById('zonesToggleBtn');
+  if(_mapZonesLayer) {
+    window._leafletMap.removeLayer(_mapZonesLayer);
+    _mapZonesLayer = null;
+    if(btn) { btn.textContent = '🗺️ إظهار الزونات'; btn.classList.remove('btn-primary'); btn.classList.add('btn-outline'); }
+  } else {
+    // احصل على المواقع الحالية
+    const markers = window._currentDriversData || [];
+    showMapZones(markers);
+    if(btn) { btn.textContent = '🗺️ إخفاء الزونات'; btn.classList.remove('btn-outline'); btn.classList.add('btn-primary'); }
+  }
+}
+
 
 </script>
 </body>
