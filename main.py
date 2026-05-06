@@ -4243,7 +4243,9 @@ class VoiceNoteCreate(BaseModel):
     hours_ttl:      int   = 24   # يتمسح بعد 24 ساعة
 
 @app.post("/voice-notes")
-async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(require_superuser)):
+async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user)):
+    if cu["role"] not in ("superuser", "admin"):
+        raise HTTPException(403, "غير مصرح")
     # يجب أن يكون target_group صالح أو target_user_id محدد
     if body.target_user_id is None and body.target_group not in ("admins", "drivers"):
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
@@ -4352,7 +4354,9 @@ async def play_voice_note(note_id: int, cu: dict = Depends(get_user)):
     return {"play_count": new_count, "deleted": new_count >= row["max_plays"]}
 
 @app.delete("/voice-notes/{note_id}")
-async def delete_voice_note(note_id: int, cu: dict = Depends(require_superuser)):
+async def delete_voice_note(note_id: int, cu: dict = Depends(get_user)):
+    if cu["role"] not in ("superuser", "admin"):
+        raise HTTPException(403, "غير مصرح")
     with get_db() as conn:
         conn.cursor().execute("UPDATE voice_notes SET is_deleted=1 WHERE id=? AND sender_id=?",
                               (note_id, cu["user_id"]))
@@ -4369,7 +4373,9 @@ async def cleanup_expired_notes(cu: dict = Depends(require_superuser)):
 
 
 @app.get("/voice-notes/targets")
-async def get_voice_note_targets(cu: dict = Depends(require_superuser)):
+async def get_voice_note_targets(cu: dict = Depends(get_user)):
+    if cu["role"] not in ("superuser", "admin"):
+        raise HTTPException(403, "غير مصرح")
     """يرجع قائمة المجموعات المتاحة لإرسال الرسائل الصوتية إليها."""
     targets = [
         {"id": "admins",  "label": "المشرفون والإداريون"},
