@@ -4379,26 +4379,55 @@ async def get_voice_note_targets(cu: dict = Depends(require_superuser)):
 
 
 @app.get("/voice-notes/users-search")
-async def search_voice_note_users(q: str = Query(""), cu: dict = Depends(require_superuser)):
-    """بحث عن مستخدمين/سائقين لإرسال رسالة صوتية لشخص محدد."""
+async def search_voice_note_users(
+    q: str = Query(""),
+    cu: dict = Depends(get_user),
+):
+    """بحث عن مستخدمين/سائقين - متاح للسوبر والأدمن."""
+    if cu["role"] not in ("superuser", "admin"):
+        raise HTTPException(403, "غير مصرح")
     like = f"%{q}%"
+    eff_branch = _branch_filter(cu)
     with get_db() as conn:
         c = conn.cursor()
-        # الأدمنز والمشرفون
-        c.execute("""SELECT id, username as name, role
-                     FROM users
-                     WHERE role IN('admin','supervisor_workshop','supervisor_field','reporter','superuser')
-                       AND username LIKE ?
-                     LIMIT 30""", (like,))
-        admins = [{"id": r["id"], "name": r["name"], "role": r["role"], "type": "user"} for r in c.fetchall()]
-        # السائقون
-        c.execute("""SELECT d.user_id as id, d.name, 'driver' as role, 'driver' as type
-                     FROM drivers d
-                     WHERE d.status='active' AND d.user_id IS NOT NULL
-                       AND d.name LIKE ?
-                     LIMIT 30""", (like,))
-        drivers = [{"id": r["id"], "name": r["name"], "role": r["role"], "type": r["type"]} for r in c.fetchall()]
-    return {"users": admins + drivers}
+        # السائقون (يُبحث بالاسم الحقيقي)
+        drv_q = """
+            SELECT d.user_id AS id, d.name,
+                   'سائق' AS role, 'driver' AS type,
+                   COALESCE(u.avatar_url,'') AS avatar_url,
+                   d.branch
+            FROM drivers d
+            LEFT JOIN users u ON u.id = d.user_id
+            WHERE d.status='active' AND d.user_id IS NOT NULL
+              AND d.name LIKE ?
+        """
+        params = [like]
+        if eff_branch:
+            drv_q += " AND d.branch = ?"
+            params.append(eff_branch)
+        drv_q += " ORDER BY d.name LIMIT 40"
+        c.execute(drv_q, params)
+        drivers = [{"id": r["id"], "name": r["name"], "role": r["role"],
+                    "type": r["type"], "avatar": r["avatar_url"],
+                    "branch": r["branch"]} for r in c.fetchall()]
+
+        # الأدمنز والمشرفون (يُبحث بالـ username)
+        admins = []
+        if cu["role"] == "superuser":
+            adm_q = """
+                SELECT id, username AS name, role,
+                       COALESCE(avatar_url,'') AS avatar_url, branch
+                FROM users
+                WHERE role IN('admin','superuser')
+                  AND username LIKE ?
+                ORDER BY username LIMIT 20
+            """
+            c.execute(adm_q, (like,))
+            admins = [{"id": r["id"], "name": r["name"], "role": r["role"],
+                       "type": "admin", "avatar": r["avatar_url"],
+                       "branch": r["branch"]} for r in c.fetchall()]
+
+    return {"users": drivers + admins}
 
 
 # 24. ENTRY POINT
