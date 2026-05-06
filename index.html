@@ -1934,7 +1934,8 @@ async function renderDriversSection() {
     apiCall('/permissions').catch(()=>[]),
     loadCars().catch(()=>[])
   ]);
-  window._driversCSVData = drivers;
+  window.__driversAll     = drivers;
+  window._driversCSVData  = drivers;
   window._allPerms = perms;
   window._allCars  = cars;
   document.getElementById('pageContent').innerHTML = `
@@ -1994,8 +1995,13 @@ async function renderDriversSection() {
               <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
             </td>
           </tr>`;
+
+  window.__driversAll = drivers;
+  // ── Pagination ──
+  _initPagination('driversPagination', window.__driversAll||[], 15, 'drivers', renderDriversSection);
         }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
         </tbody></table>
+      <div id="driversPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>
       </div>
     </div>`;
   document.getElementById('driversList').addEventListener('click', async e=>{
@@ -2275,6 +2281,7 @@ async function renderCarsSection() {
     apiCall('/permissions').catch(()=>[]),
     loadDrivers().catch(()=>[])
   ]);
+  window.__carsAll    = cars;
   window._carsCache   = cars;
   window._carsCSVData = cars;
   window._allPerms    = perms;
@@ -2341,6 +2348,10 @@ async function renderCarsSection() {
             : cat==='آلات ومعدات'
             ? '<span class="badge badge-purple">⚙️ آلات ومعدات</span>'
             : `<span style="color:var(--muted);font-size:.78rem">${cat}</span>`;
+
+  window.__carsAll = cars;
+  // ── Pagination ──
+  _initPagination('carsPagination', window.__carsAll||[], 15, 'cars', renderCarsSection);
           return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
             <td>${c.id}</td>
             <td dir="ltr"><strong>${c.plate}</strong></td>
@@ -2687,7 +2698,8 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
         data-driver="${dName}"
         data-active="${!t.end_time?'1':'0'}"
         title="تعديل العداد">✏️ عداد</button>`:'—'}</td></tr>`;
-  }).join('')}</tbody></table>`;
+  }).join('')}</tbody></table>
+      <div id="carsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>`;
 }
 
 async function renderTripsSection() {
@@ -2834,9 +2846,16 @@ function filterTrips() {
     }
     return true;
   });
-  document.getElementById('tripsTable').innerHTML=buildTripsTable(f,window._driversData,window._carsData,window._garageLatest);
-  document.getElementById('tripCount').textContent=f.length;
+  // pagination
+  const _tPage = getPage('trips');
+  const _tSize = 15;
+  const _tPaged = paginateData(f, _tPage, _tSize);
+  document.getElementById('tripsTable').innerHTML = buildTripsTable(_tPaged, window._driversData, window._carsData, window._garageLatest);
+  buildPagination('tripsPagination', f.length, _tSize, _tPage, function(p){ setPage('trips',p); filterTrips(); });
+  const _tcEl = document.getElementById('tripCount'); if(_tcEl) _tcEl.textContent=f.length;
 }
+
+function resetTripsPage(){ setPage('trips',1); }
 
 function clearTripFilters(){
   ['ftDriverSearch','ftCarSearch','ftSearch'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -3038,6 +3057,10 @@ async function renderAdminWorkshops() {
       </div>
       <div class="table-wrap" id="wsTable">${buildWSTable(records)}</div>
     </div>`;
+
+  window.__workshAll = records;
+  // ── Pagination ──
+  _initPagination('workshopsPagination', window.__workshAll||[], 15, 'workshops', renderAdminWorkshops);
   window._wsRecords = records;
   if(!isReporter()) {
     const phBtn = document.getElementById('pricesBtnPlaceholder');
@@ -3084,7 +3107,8 @@ function buildWSTable(records) {
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
     </tr>`;
-  }).join('')}</tbody></table>`;
+  }).join('')}</tbody></table>
+      <div id="workshopsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>`;
 }
 
 function filterWS(){
@@ -3459,6 +3483,7 @@ function buildFuelDetailTable(rows) {
           </tfoot>
         </table>
       </div>
+      <div id="tripsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>
     </div>`;
 }
 
@@ -3540,30 +3565,55 @@ async function renderOperationalCard() {
       @media(max-width:768px){ .filter-grid { grid-template-columns:1fr 1fr } }
     
 
-/* ── FleetSync Pagination ── */
+/* ════════════════════════════════════════════════
+   REUSABLE PAGINATION COMPONENT
+   ════════════════════════════════════════════════ */
 .fs-pagination{
   display:flex;align-items:center;justify-content:space-between;
-  padding:.85rem 1.25rem;
-  border-top:1px solid var(--border);
-  background:var(--surface-2);
-  border-radius:0 0 var(--card-radius) var(--card-radius);
-  flex-wrap:wrap;gap:.5rem;
+  padding:.7rem 0;flex-wrap:wrap;gap:.5rem;
 }
-.fs-pagination-info{font-size:.8rem;color:var(--muted)}
-.fs-pagination-btns{display:flex;gap:.3rem;align-items:center}
+.fs-pagination-info{
+  font-size:.8rem;color:var(--muted);
+}
+.fs-pagination-info strong{color:var(--text-2);font-weight:600}
+.fs-pagination-btns{
+  display:flex;gap:3px;align-items:center;
+}
 .fs-page-btn{
-  min-width:34px;height:34px;padding:0 .5rem;
-  border:1.5px solid var(--border);border-radius:8px;
-  background:var(--surface);color:var(--text-2);
-  font-size:.82rem;font-weight:600;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transition:.15s;font-family:inherit;
+  min-width:32px;height:32px;padding:0 6px;
+  border:1px solid #e2e8f0;border-radius:8px;
+  background:#fff;color:var(--text-2);
+  font-size:.82rem;font-weight:500;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:all .13s ease;font-family:inherit;line-height:1;
 }
-.fs-page-btn:hover{border-color:var(--brand-teal);color:var(--brand-teal);background:rgba(6,182,212,.05)}
-.fs-page-btn.active{background:var(--brand-teal);border-color:var(--brand-teal);color:#fff}
-.fs-page-btn:disabled{opacity:.35;cursor:not-allowed}
-.fs-page-btn.dots{border:none;background:none;color:var(--muted);cursor:default}
-.fs-page-btn.dots:hover{border:none;background:none;color:var(--muted)}
+.fs-page-btn:hover:not(:disabled){
+  border-color:var(--brand-teal);
+  color:var(--brand-teal);
+  background:rgba(6,182,212,.04);
+}
+.fs-page-btn.active{
+  background:var(--brand-teal);
+  border-color:var(--brand-teal);
+  color:#fff;
+  font-weight:700;
+  box-shadow:0 2px 8px rgba(6,182,212,.25);
+}
+.fs-page-btn:disabled{opacity:.3;cursor:not-allowed}
+.fs-page-btn.fs-prev,.fs-page-btn.fs-next{color:var(--text-2)}
+.fs-page-btn.fs-prev:hover:not(:disabled),
+.fs-page-btn.fs-next:hover:not(:disabled){color:var(--brand-teal)}
+.fs-page-dots{
+  min-width:28px;height:32px;display:inline-flex;
+  align-items:center;justify-content:center;
+  font-size:.75rem;color:var(--muted);letter-spacing:1px;
+  cursor:default;
+}
+/* responsive: أخفي المعلومات على الموبايل الصغير */
+@media(max-width:400px){
+  .fs-pagination{justify-content:center}
+  .fs-pagination-info{display:none}
+}
 
 /* ── Card enhancements ── */
 .card{
@@ -4808,7 +4858,12 @@ async function renderEmergenciesSection() {
         </td>
       </tr>`).join('')}
       </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
-    </div>`;
+    </div>
+      <div id="emergPagination" style="padding:1rem;border-top:.5px solid #e2e8f0"></div>`;
+
+  window.__emergAll = reports;
+  // ── Pagination ──
+  _initPagination('emergPagination', window.__emergAll||[], 10, 'emergencies', renderEmergenciesSection);
 }
 
 
@@ -10302,50 +10357,131 @@ window.CS = { upgrade: function(){}, upgradeAll: function(){} };
 
 
 
-// ══════════════════════════════════════════════
-// FLEETSYNC PAGINATION HELPER
-// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// REUSABLE PAGINATION COMPONENT — يعمل مع أي جدول في النظام
+// ══════════════════════════════════════════════════════════
+//
+// الاستخدام:
+//   buildPagination('containerId', totalItems, pageSize, currentPage, onPageChange)
+//
+//   مثال:
+//   buildPagination('myPagDiv', data.length, 15, currentPage, 'changeMyPage');
+//   function changeMyPage(p){ currentPage=p; renderMyTable(); }
+// ══════════════════════════════════════════════════════════
+
+// ── Global pagination callbacks registry ──
+const _pgnCallbacks = {};
+
 function buildPagination(containerId, totalItems, pageSize, currentPage, onPageChange) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  
-  const totalPages = Math.ceil(totalItems / pageSize);
-  if (totalPages <= 1) { container.innerHTML = ''; return; }
-  
-  const start = (currentPage - 1) * pageSize + 1;
+
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalPages <= 1 && totalItems === 0) { container.innerHTML = ''; return; }
+
+  const start = Math.min((currentPage - 1) * pageSize + 1, totalItems);
   const end   = Math.min(currentPage * pageSize, totalItems);
-  
-  // بناء أرقام الصفحات
+
+  // سجّل الـ callback
+  _pgnCallbacks[containerId] = onPageChange;
+
+  // بناء أرقام الصفحات مع ...
   const pages = [];
   if (totalPages <= 7) {
     for (let i = 1; i <= totalPages; i++) pages.push(i);
   } else {
     pages.push(1);
     if (currentPage > 3) pages.push('...');
-    const s = Math.max(2, currentPage - 1);
-    const e = Math.min(totalPages - 1, currentPage + 1);
-    for (let i = s; i <= e; i++) pages.push(i);
+    const lo = Math.max(2, currentPage - 1);
+    const hi = Math.min(totalPages - 1, currentPage + 1);
+    for (let i = lo; i <= hi; i++) pages.push(i);
     if (currentPage < totalPages - 2) pages.push('...');
     pages.push(totalPages);
   }
-  
-  container.innerHTML = `
-    <div class="fs-pagination">
-      <div class="fs-pagination-info">عرض ${start} - ${end} من ${totalItems}</div>
-      <div class="fs-pagination-btns">
-        <button class="fs-page-btn" ${currentPage===1?'disabled':''} onclick="${onPageChange}(${currentPage-1})">‹</button>
-        ${pages.map(p => p==='...'
-          ? '<span class="fs-page-btn dots">…</span>'
-          : `<button class="fs-page-btn${p===currentPage?' active':''}" onclick="${onPageChange}(${p})">${p}</button>`
-        ).join('')}
-        <button class="fs-page-btn" ${currentPage===totalPages?'disabled':''} onclick="${onPageChange}(${currentPage+1})">›</button>
-      </div>
-    </div>`;
+
+  const btnClass = (p) => 'fs-page-btn' + (p === currentPage ? ' active' : '');
+  const call     = (p) => '_pgnGo("' + containerId + '",' + p + ')';
+
+  let btnsHtml = '';
+  pages.forEach(function(p) {
+    if (p === '...') {
+      btnsHtml += '<span class="fs-page-dots">···</span>';
+    } else {
+      btnsHtml += '<button class="' + btnClass(p) + '" onclick="' + call(p) + '" aria-label="صفحة ' + p + '">' + p + '</button>';
+    }
+  });
+
+  const prevDisabled = currentPage <= 1       ? ' disabled' : '';
+  const nextDisabled = currentPage >= totalPages ? ' disabled' : '';
+
+  container.innerHTML =
+    '<div class="fs-pagination">' +
+      '<div class="fs-pagination-info">عرض <strong>' + start + '–' + end + '</strong> من <strong>' + totalItems + '</strong></div>' +
+      '<div class="fs-pagination-btns">' +
+        '<button class="fs-page-btn fs-prev"' + prevDisabled + ' onclick="' + call(currentPage - 1) + '" aria-label="السابق">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>' +
+        '</button>' +
+        btnsHtml +
+        '<button class="fs-page-btn fs-next"' + nextDisabled + ' onclick="' + call(currentPage + 1) + '" aria-label="التالي">' +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>' +
+        '</button>' +
+      '</div>' +
+    '</div>';
 }
 
-// helper: paginate data
+function _pgnGo(containerId, page) {
+  const cb = _pgnCallbacks[containerId];
+  if (typeof cb === 'function') cb(page);
+}
+
+// ── helper: قص البيانات حسب الصفحة ──
 function paginateData(arr, page, size) {
-  return arr.slice((page-1)*size, page*size);
+  const p = Math.max(1, page);
+  return arr.slice((p - 1) * size, p * size);
+}
+
+// ── Page state manager لكل جدول ──
+const _pageState = {};
+function getPage(key)       { return _pageState[key] || 1; }
+function setPage(key, val)  { _pageState[key] = Math.max(1, val); }
+
+
+
+// ── Table Pagination Helper (Reusable) ──
+// يُستدعى بعد أي render function
+// data: مصفوفة البيانات الكاملة
+// bodyId: id الـ tbody
+// renderFn: function تأخذ array وتعمل innerHTML
+// pageKey: unique key لهذا الجدول
+// pageSize: عدد الصفوف
+
+function renderWithPagination(data, bodyId, renderFn, pageKey, pageSize, paginContainerId) {
+  const page  = getPage(pageKey);
+  const paged = paginateData(data, page, pageSize);
+  const tbody = document.getElementById(bodyId);
+  if (tbody) tbody.innerHTML = renderFn(paged);
+  if (paginContainerId) {
+    function _onPageChange(p) {
+      setPage(pageKey, p);
+      const tb = document.getElementById(bodyId);
+      if (tb) tb.innerHTML = renderFn(paginateData(data, p, pageSize));
+      buildPagination(paginContainerId, data.length, pageSize, p, _onPageChange);
+    }
+    buildPagination(paginContainerId, data.length, pageSize, page, _onPageChange);
+  }
+}
+
+
+
+// ══ Pagination Init Helper ══
+function _initPagination(paginId, allData, pageSize, pageKey, renderFn) {
+  const el = document.getElementById(paginId);
+  if (!el) return;
+  const pg = getPage(pageKey);
+  buildPagination(paginId, allData.length, pageSize, pg, function(p) {
+    setPage(pageKey, p);
+    renderFn();
+  });
 }
 
 
