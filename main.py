@@ -5390,18 +5390,18 @@ async def driver_kpi_report(
             trips_count = tr["cnt"] or 0
             km_total    = max(0.0, float(tr["km"] or 0))
 
-            # ── وقود — بيانات كل تفويلة على حدة (للمعادلة الصحيحة) ──
+            # ── وقود — بيانات كل تفويلة على حدة ──
             c.execute("""
-                SELECT quantity, odometer_reading, created_at,
-                       COALESCE(SUM(price),0) as cost
+                SELECT quantity, odometer_reading, created_at, price
                 FROM workshop_records
                 WHERE driver_id=? AND type LIKE 'fuel_%'
                   AND date(created_at) >= ? AND date(created_at) < ?
-                GROUP BY id
                 ORDER BY created_at ASC
             """, (did, month_start, month_end))
             fuel_rows = [dict(r) for r in c.fetchall()]
-            fuel_cost = sum(float(r.get("cost") or 0) for r in fuel_rows)
+            # إجمالي الوقود الفعلي للعرض (كل التفويلات)
+            fuel_liters_total = sum(float(r.get("quantity") or 0) for r in fuel_rows)
+            fuel_cost = sum(float(r.get("price") or 0) for r in fuel_rows)
 
             # معادلة الاستهلاك الصحيحة: بدون آخر تفويلة
             # المسافة = عداد آخر تفويلة − عداد أول تفويلة
@@ -5417,21 +5417,18 @@ async def driver_kpi_report(
                         for r in fuel_rows[:-1]
                     )
                     if dist_km > 0 and liters_ex_last > 0:
-                        fuel_liters = liters_ex_last        # للحساب فقط
-                        _fuel_dist  = dist_km               # نحتفظ بيها للـ score
+                        fuel_liters_calc = liters_ex_last   # للمعدل فقط
+                        _fuel_dist       = dist_km
                     else:
-                        fuel_liters = sum(float(r.get("quantity") or 0) for r in fuel_rows)
-                        _fuel_dist  = None
+                        fuel_liters_calc = fuel_liters_total
+                        _fuel_dist       = None
                 else:
-                    fuel_liters = sum(float(r.get("quantity") or 0) for r in fuel_rows)
-                    _fuel_dist  = None
-            elif len(fuel_rows) == 1:
-                # تفويلة واحدة — مش كافي نستبعد، نضع None للـ consumption
-                fuel_liters = 0.0   # مش هنحسب معدل
-                _fuel_dist  = None
+                    fuel_liters_calc = fuel_liters_total
+                    _fuel_dist       = None
             else:
-                fuel_liters = 0.0
-                _fuel_dist  = None
+                # صفر أو تفويلة واحدة — مش كافي نحسب معدل
+                fuel_liters_calc = 0.0
+                _fuel_dist       = None
 
             # ── زيوت (oil, filter) ──
             c.execute("""
@@ -5469,21 +5466,22 @@ async def driver_kpi_report(
             maint_count = int(wr["mcc"] or 0)
 
             raw_data.append({
-                "driver_id":   did,
-                "driver_name": d["name"],
-                "branch":      d["branch"] or "",
-                "trips":       trips_count,
-                "km":          km_total,
-                "fuel_liters": fuel_liters,    # بدون آخر تفويلة (للحساب)
-                "fuel_dist":   _fuel_dist,     # المسافة بين أول وآخر تفويلة
-                "fuel_cost":   fuel_cost,
-                "oil_liters":  oil_liters,
-                "emergencies": emg_count,
-                "open_req":    open_req,
-                "maint_cost":  maint_cost,
-                "maint_count": maint_count,
-                "first_trip":  tr["first_trip"],
-                "last_trip":   tr["last_trip"],
+                "driver_id":        did,
+                "driver_name":      d["name"],
+                "branch":           d["branch"] or "",
+                "trips":            trips_count,
+                "km":               km_total,
+                "fuel_liters":      fuel_liters_total,   # للعرض — كل التفويلات
+                "fuel_liters_calc": fuel_liters_calc,    # للمعدل — بدون آخر تفويلة
+                "fuel_dist":        _fuel_dist,
+                "fuel_cost":        fuel_cost,
+                "oil_liters":       oil_liters,
+                "emergencies":      emg_count,
+                "open_req":         open_req,
+                "maint_cost":       maint_cost,
+                "maint_count":      maint_count,
+                "first_trip":       tr["first_trip"],
+                "last_trip":        tr["last_trip"],
             })
 
         # ── متوسط الكيلومترات لكل السائقين (للمقارنة النسبية) ──
@@ -5495,7 +5493,7 @@ async def driver_kpi_report(
             scores = _calc_kpi_score(
                 trips=d["trips"],
                 km=d["km"],
-                fuel_liters=d["fuel_liters"],
+                fuel_liters=d["fuel_liters_calc"],   # بدون آخر تفويلة للمعدل
                 fuel_consumption=0,
                 emergencies=d["emergencies"],
                 open_requests=d["open_req"],
@@ -5512,7 +5510,7 @@ async def driver_kpi_report(
                 "month":         month,
                 "trips":         d["trips"],
                 "km":            round(d["km"], 1),
-                "fuel_liters":   round(d["fuel_liters"], 1),
+                "fuel_liters":   round(d["fuel_liters"], 1),      # للعرض
                 "fuel_cost":     round(d["fuel_cost"], 2),
                 "oil_liters":    round(d["oil_liters"], 2),
                 "consumption":   consumption,
