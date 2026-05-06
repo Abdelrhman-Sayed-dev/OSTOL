@@ -1298,9 +1298,11 @@ const API = (window.location.hostname === '127.0.0.1' || window.location.hostnam
   ? "http://127.0.0.1:8000"
   : "";
 let currentUser = null;
-const isReporter  = () => currentUser?.role === 'reporter';
+const isReporter     = () => currentUser?.role === 'reporter';
+const isAdmin        = () => currentUser?.role === 'admin';
+const isAdminOrSup   = () => ['admin','superuser'].includes(currentUser?.role);
 const isAdminLike    = () => ['admin','reporter','superuser','supervisor_workshop','supervisor_field'].includes(currentUser?.role);
-const isSuperuser       = () => currentUser?.role === 'superuser';
+const isSuperuser    = () => currentUser?.role === 'superuser';
 const isSupervisorWS   = () => currentUser?.role === 'supervisor_workshop';
 const isSupervisorField= () => currentUser?.role === 'supervisor_field';
 const isSupervisor     = () => isSupervisorWS() || isSupervisorField();
