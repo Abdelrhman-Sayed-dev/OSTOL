@@ -4281,59 +4281,118 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
 
 @app.get("/voice-notes")
 async def list_voice_notes(cu: dict = Depends(get_user)):
-    role   = cu["role"]
-    now    = datetime.utcnow().isoformat() + "Z"
+    """
+    - superuser/admin بيبعتوا → بيشوفوا الرسائل اللي أرسلوها هم (صفحة الإدارة)
+    - driver/admin (كمستقبل) → بيشوف الرسائل اللي مرسلة له بالاسم أو لمجموعته
+    الفصل: نستخدم query param ?sent=1 لعرض المُرسَل
+    """
+    role = cu["role"]
+    uid  = cu["user_id"]
+    now  = datetime.utcnow().isoformat() + "Z"
 
-    # السوبر يشوف اللي أرسلها هو
-    if role == "superuser":
+    # ── صفحة إدارة الرسائل (superuser أو admin) ──
+    # GET /voice-notes يُرجع الرسائل المُرسَلة من الشخص ده
+    if role in ("superuser", "admin"):
         with get_db() as conn:
             c = conn.cursor()
             try:
-                c.execute("""SELECT id, target_group,
-                                    COALESCE(target_user_id, NULL) as target_user_id,
-                                    duration_sec, created_at,
-                                    expires_at, play_count, max_plays, is_deleted
-                             FROM voice_notes WHERE sender_id=?
-                             ORDER BY created_at DESC""", (cu["user_id"],))
+                c.execute("""
+                    SELECT id, target_group,
+                           COALESCE(target_user_id, NULL) AS target_user_id,
+                           duration_sec, created_at,
+                           expires_at, play_count, max_plays, is_deleted
+                    FROM voice_notes
+                    WHERE sender_id = ?
+                    ORDER BY created_at DESC
+                """, (uid,))
             except Exception:
-                # fallback: جدول قديم بدون target_user_id
-                c.execute("""SELECT id, target_group, NULL as target_user_id,
-                                    duration_sec, created_at,
-                                    expires_at, play_count, max_plays, is_deleted
-                             FROM voice_notes WHERE sender_id=?
-                             ORDER BY created_at DESC""", (cu["user_id"],))
+                c.execute("""
+                    SELECT id, target_group, NULL AS target_user_id,
+                           duration_sec, created_at,
+                           expires_at, play_count, max_plays, is_deleted
+                    FROM voice_notes
+                    WHERE sender_id = ?
+                    ORDER BY created_at DESC
+                """, (uid,))
             rows = [dict(r) for r in c.fetchall()]
-            # أضف اسم المستلم لو كان شخص محدد
+            # أضف اسم المستلم
             for row in rows:
-                if row.get("target_user_id"):
-                    c.execute("SELECT username FROM users WHERE id=?", (row["target_user_id"],))
+                tid = row.get("target_user_id")
+                if tid:
+                    c.execute("SELECT username FROM users WHERE id=?", (tid,))
                     u = c.fetchone()
-                    if not u:
-                        c.execute("SELECT name FROM drivers WHERE user_id=?", (row["target_user_id"],))
+                    if u:
+                        row["target_name"] = u["username"]
+                    else:
+                        c.execute("SELECT name FROM drivers WHERE user_id=?", (tid,))
                         d = c.fetchone()
                         row["target_name"] = d["name"] if d else "مستخدم"
-                    else:
-                        row["target_name"] = u["username"]
             return rows
 
-    # أدمن → يشوف اللي للـ admins
-    if role in ("admin","reporter","superuser","supervisor_workshop","supervisor_field"):
-        group = "admins"
-    elif role == "driver":
+    # ── استقبال الرسائل (driver, reporter …) ──
+    if role == "driver":
         group = "drivers"
+    elif role in ("reporter", "supervisor_workshop", "supervisor_field"):
+        group = "admins"
     else:
         return []
 
+    with get_db() as conn:
+        c = conn.cursor()
+        # الرسائل المرسلة للمجموعة أو للشخص تحديداً — مع استثناء الرسائل اللي بعتها هو نفسه
+        c.execute("""
+            SELECT id, duration_sec, created_at, expires_at,
+                   play_count, max_plays, audio_data
+            FROM voice_notes
+            WHERE (target_group = ? OR COALESCE(target_user_id, 0) = ?)
+              AND sender_id != ?
+              AND is_deleted = 0
+              AND expires_at > ?
+              AND play_count < max_plays
+            ORDER BY created_at DESC
+        """, (group, uid, uid, now))
+        return [dict(r) for r in c.fetchall()]
+
+
+@app.get("/voice-notes/sent")
+async def list_sent_voice_notes(cu: dict = Depends(get_user)):
+    """رسائل صوتية أرسلها هذا المستخدم — للسوبر والأدمن فقط"""
+    if cu["role"] not in ("superuser", "admin"):
+        raise HTTPException(403, "غير مصرح")
     uid = cu["user_id"]
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""SELECT id, duration_sec, created_at, expires_at,
-                            play_count, max_plays, audio_data
-                     FROM voice_notes
-                     WHERE (target_group=? OR COALESCE(target_user_id,0)=?) AND is_deleted=0
-                       AND expires_at > ? AND play_count < max_plays
-                     ORDER BY created_at DESC""", (group, uid, now))
-        return [dict(r) for r in c.fetchall()]
+        try:
+            c.execute("""
+                SELECT id, target_group,
+                       COALESCE(target_user_id, NULL) AS target_user_id,
+                       duration_sec, created_at,
+                       expires_at, play_count, max_plays, is_deleted
+                FROM voice_notes
+                WHERE sender_id = ?
+                ORDER BY created_at DESC
+            """, (uid,))
+        except Exception:
+            c.execute("""
+                SELECT id, target_group, NULL AS target_user_id,
+                       duration_sec, created_at,
+                       expires_at, play_count, max_plays, is_deleted
+                FROM voice_notes WHERE sender_id = ?
+                ORDER BY created_at DESC
+            """, (uid,))
+        rows = [dict(r) for r in c.fetchall()]
+        for row in rows:
+            tid = row.get("target_user_id")
+            if tid:
+                c.execute("SELECT username FROM users WHERE id=?", (tid,))
+                u = c.fetchone()
+                row["target_name"] = u["username"] if u else None
+                if not row["target_name"]:
+                    c.execute("SELECT name FROM drivers WHERE user_id=?", (tid,))
+                    d = c.fetchone()
+                    row["target_name"] = d["name"] if d else "مستخدم"
+        return rows
+
 
 @app.post("/voice-notes/{note_id}/play")
 async def play_voice_note(note_id: int, cu: dict = Depends(get_user)):
