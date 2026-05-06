@@ -3506,8 +3506,8 @@ async function renderOperationalCard() {
 
   c.innerHTML = `
     <style>
-      @page          { size: A4 portrait;  margin: 8mm 10mm; }
-      @page landscape{ size: A4 landscape; margin: 6mm 7mm;  }
+      /* كل البطاقة landscape — عشان جداول الزيوت (15 عمود) تعدي */
+      @page { size: A4 landscape; margin: 6mm 8mm; }
 
       @media print {
         /* إخفاء UI */
@@ -3521,6 +3521,8 @@ async function renderOperationalCard() {
         .main-content                { margin:0!important; padding:0!important; background:#fff!important }
         .page-content                { padding:0!important }
         #opCardResult                { padding:0!important; margin:0!important }
+        #driversReport               { display:none!important }
+        #anomalyResult               { display:none!important }
 
         /* print header */
         .op-print-header             { display:block!important }
@@ -3528,8 +3530,8 @@ async function renderOperationalCard() {
         /* كارد عام */
         .card {
           box-shadow:none!important; border:1px solid #ddd!important;
-          border-radius:4px!important; page-break-inside:auto;
-          margin:0 0 4mm!important;
+          border-radius:0!important; page-break-inside:auto;
+          margin:0!important; padding:0!important;
         }
 
         /* فاصل صفحة */
@@ -3537,11 +3539,12 @@ async function renderOperationalCard() {
           display:block!important;
           page-break-before:always!important;
           break-before:always!important;
-          height:0!important; margin:0!important;
+          height:0!important; margin:0!important; border:none!important;
         }
 
-        /* الصفحة الثانية — landscape */
-        .op-page2 { page:landscape; border:none!important; }
+        /* الصفحة الثانية */
+        .op-page2 { border:none!important; }
+        .op-page2 > div { padding:4mm 0 0!important; }
 
         /* جدول الرحلات */
         .op-table                    { width:100%!important; border-collapse:collapse!important }
@@ -3551,36 +3554,52 @@ async function renderOperationalCard() {
         .op-km-badge                 { background:none!important; color:inherit!important;
                                        padding:0!important; border-radius:0!important; font-weight:700!important }
 
-        /* جداول الزيوت والكاوتش */
+        /* جداول الزيوت والكاوتش — 15 عمود */
         .op-page2-table {
           width:100%!important; border-collapse:collapse!important;
-          table-layout:fixed!important; font-size:6.5pt!important;
+          table-layout:fixed!important; font-size:6pt!important;
+          -webkit-print-color-adjust:exact!important;
+          print-color-adjust:exact!important;
         }
         .op-page2-table th {
-          font-size:5.8pt!important; padding:2px 2px!important;
+          font-size:5.5pt!important; padding:2px 1px!important;
           background:#1e3a5f!important; color:#fff!important;
-          border:1px solid #fff!important;
-          white-space:normal!important; word-break:break-word!important; line-height:1.3!important;
-          -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important;
+          border:1px solid #888!important;
+          white-space:normal!important; word-break:break-word!important;
+          line-height:1.2!important;
+          -webkit-print-color-adjust:exact!important;
+          print-color-adjust:exact!important;
         }
         .op-page2-table td {
-          font-size:6.5pt!important; padding:2px 2px!important;
+          font-size:6pt!important; padding:2px 1px!important;
           border:1px solid #bbb!important;
-          white-space:normal!important; word-break:break-word!important; line-height:1.4!important;
+          white-space:normal!important; word-break:break-word!important;
+          line-height:1.3!important; min-width:0!important;
         }
         .op-page2-table tbody tr:nth-child(even) td {
-          background:#f8fafc!important;
-          -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important;
+          background:#f0f4f8!important;
+          -webkit-print-color-adjust:exact!important;
+          print-color-adjust:exact!important;
         }
 
         /* السائقون */
-        .op-drivers-section { page-break-inside:avoid!important; break-inside:avoid!important; margin-bottom:4mm!important }
+        .op-drivers-section {
+          page-break-inside:avoid!important;
+          break-inside:avoid!important;
+          margin-bottom:3mm!important;
+        }
 
         /* التوقيعات */
-        .op-signatures-block { page-break-inside:avoid!important; break-inside:avoid!important }
+        .op-signatures-block {
+          page-break-inside:avoid!important;
+          break-inside:avoid!important;
+        }
 
-        /* anomaly rows بدون لون في الطباعة */
+        /* anomaly rows بدون لون */
         tr[style*="fef9c3"] td { background:#fff!important }
+
+        /* الـ summary cards في الصفحة الأولى */
+        .op-summary-cards { page-break-inside:avoid!important }
       }
 
       .op-print-header { display:none }
@@ -4684,9 +4703,9 @@ async function submitTripFix(tripId) {
 }
 
 async function downloadOpPDF() {
-  showNotification('جاري تجهيز PDF...','info',3000);
-  // Use browser print with PDF destination
-  window.print();
+  showNotification('جاري تجهيز الطباعة...','info',2000);
+  // نعطي الـ browser وقت يعرض الـ notification أولاً
+  setTimeout(() => window.print(), 300);
 }
 
 /* ── REQUESTS SECTION (Admin) ── */
@@ -9641,7 +9660,20 @@ function showKpiDetail(driverId) {
   if (!d) return;
 
   const meter = (label, score, detail) => {
-    if (score === null) return '';
+    // لو score=null — اعرض الصف بـ "بيانات غير كافية" بدل ما تخفيه
+    if (score === null || score === undefined) {
+      return `
+      <div style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
+          <span style="font-weight:700;font-size:.88rem">${label}</span>
+          <span style="color:#94a3b8;font-size:.82rem">بيانات غير كافية</span>
+        </div>
+        <div style="background:var(--border);border-radius:6px;height:10px;overflow:hidden">
+          <div style="width:0%;height:100%;background:#e2e8f0;border-radius:6px"></div>
+        </div>
+        ${detail ? `<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${detail}</div>` : ''}
+      </div>`;
+    }
     const color = score>=85?'#10b981':score>=70?'#3b82f6':score>=50?'#f97316':'#ef4444';
     return `
       <div style="margin-bottom:1rem">
@@ -9655,6 +9687,12 @@ function showKpiDetail(driverId) {
         ${detail ? `<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${detail}</div>` : ''}
       </div>`;
   };
+
+  // عرض الوقود الحقيقي (كل التفويلات) والمعدل المحسوب (بدون آخر تفويلة)
+  const fuelDisplay = d.fuel_liters > 0
+    ? d.fuel_liters + ' لتر' + (d.consumption ? ' | معدل: ' + d.consumption + ' ل/100كم' : ' (تفويلة واحدة — مش كافي لحساب المعدل)')
+    : null;
+  const fuelLabel  = '⛽ استهلاك الوقود — 40%' + (d.consumption ? ' (' + d.consumption + ' ل/100كم)' : '');
 
   openModal(`
     <div class="modal-header">
@@ -9676,8 +9714,8 @@ function showKpiDetail(driverId) {
       <div style="margin-bottom:1.5rem">
         ${meter('🗺️ عدد الرحلات — 10% ('+d.trips+' رحلة)', d.trips_score??null, 'كلما زادت الرحلات زادت النقاط')}
         ${meter('📍 الكيلومترات — 40% ('+d.km.toLocaleString('ar-EG')+' كم)', d.km_score, 'المتوسط: '+(d.avg_km_peers||0).toLocaleString('ar-EG')+' كم')}
-        ${meter('⛽ استهلاك الوقود — 40%'+(d.consumption?' ('+d.consumption+' ل/100كم)':''), d.fuel_score, d.fuel_liters>0?d.fuel_liters+' لتر وقود':null)}
-        ${meter('🛢️ استهلاك الزيوت — 5%'+(d.oil_per_1000?' ('+d.oil_per_1000+' ل/1000كم)':''), d.oil_score, d.oil_liters>0?d.oil_liters+' لتر زيت':null)}
+        ${meter(fuelLabel, d.fuel_score??null, fuelDisplay)}
+        ${meter('🛢️ استهلاك الزيوت — 5%'+(d.oil_per_1000?' ('+d.oil_per_1000+' ل/1000كم)':''), d.oil_score??null, d.oil_liters>0?d.oil_liters+' لتر زيت':null)}
         ${meter('🚨 الحوادث والطوارئ — 5% ('+d.emergencies+' حادثة)', d.emg_score, 'كلما قل عدد الحوادث زادت النقاط')}
       </div>
 
@@ -9685,7 +9723,7 @@ function showKpiDetail(driverId) {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
         ${[
           ['🗺️ الرحلات', d.trips+' رحلة'],
-          ['⛽ الوقود', d.fuel_liters>0?d.fuel_liters+' لتر':'—'],
+          ['⛽ الوقود', d.fuel_liters > 0 ? d.fuel_liters + ' لتر' : '—'],
           ['🔧 الورشة', d.maint_count+' سجل'],
           ['💰 تكلفة الورشة', d.maint_cost>0?d.maint_cost.toLocaleString('ar-EG')+' ج':'—'],
         ].map(([lbl,val])=>`
