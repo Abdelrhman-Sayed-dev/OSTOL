@@ -2898,41 +2898,13 @@ function filterTrips() {
     return true;
   });
 
-  // حفظ الداتا المفلترة وإعادة تعيين الصفحة لو تغيّر الفلتر
-  const prevLen = window._tripsFiltered?.length;
-  window._tripsFiltered = f;
-  if (prevLen !== f.length) setPage('trips', 1);
-
-  _renderTripsPage();
-  const _tcEl = document.getElementById('tripCount');
-  if(_tcEl) _tcEl.textContent = f.length;
+  const twrap = document.getElementById('tripsTableWrap');
+  if(twrap) twrap.innerHTML = buildTripsTable(f, window._driversData, window._carsData, window._garageLatest);
+  const tcEl = document.getElementById('tripCount');
+  if(tcEl) tcEl.textContent = f.length;
 }
 
-function _renderTripsPage() {
-  const f      = window._tripsFiltered || [];
-  const page   = getPage('trips');
-  const size   = 20;
-  const paged  = paginateData(f, page, size);
-  const twrap  = document.getElementById('tripsTableWrap');
-  if (!twrap) return;
-
-  // الجدول
-  twrap.innerHTML = buildTripsTable(paged, window._driversData, window._carsData, window._garageLatest);
-
-  // الـ pagination تحت الجدول مباشرة
-  const pgDiv = document.createElement('div');
-  pgDiv.id = 'tripsPgn';
-  twrap.appendChild(pgDiv);
-
-  buildPagination('tripsPgn', f.length, size, page, (p) => {
-    setPage('trips', p);
-    _renderTripsPage();
-    // scroll للأعلى عشان المستخدم يشوف أول صف
-    document.getElementById('tripsTableWrap')?.scrollIntoView({behavior:'smooth', block:'start'});
-  });
-}
-
-function resetTripsPage(){ setPage('trips',1); _renderTripsPage(); }
+function resetTripsPage(){ filterTrips(); }
 
 function clearTripFilters(){
   ['ftDriverSearch','ftCarSearch','ftSearch'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
