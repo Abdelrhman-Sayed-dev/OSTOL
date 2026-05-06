@@ -1970,46 +1970,43 @@ async function renderDriversSection() {
           <th>انتهاء رخصة السائق</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody id="driversBody">
-        </tr></thead><tbody id="driversBody">
-        ${(()=>{
-          if(!drivers.length) return '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>';
-          const _dPg    = getPage('drivers');
-          const _dPaged = paginateData(drivers, _dPg, 15);
-          return _dPaged.map(d=>{
-            const perm = window._allPerms ? window._allPerms.find(p=>p.driver_id===d.id) : null;
-            const car  = perm && window._allCars ? window._allCars.find(c=>c.id===perm.car_id) : null;
-            const carBadge = car
-              ? `<span class="badge badge-navy" dir="ltr">🚗 ${car.plate}</span>`
-              : '<span style="color:var(--muted);font-size:.78rem">—</span>';
-            return `<tr>
-              <td>${d.id}</td>
-              <td><strong>${d.name}</strong></td>
-              <td dir="ltr">${d.phone||'—'}</td>
-              <td><code>${d.fixed_number||'—'}</code></td>
-              <td>${carBadge}</td>
-              <td>${licBadge(d.driver_license_expiry, true)}</td>
-              <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
-              <td style="white-space:nowrap">
-                ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
-                  data-id="${d.id}" data-name="${d.name}" data-phone="${d.phone||''}"
-                  data-status="${d.status}" data-nid="${d.national_id||''}"
-                  data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
-                  data-clic="${d.vehicle_license_expiry||''}"
-                  data-username="${d.username||''}"
-                  data-fixed="${d.fixed_number||''}"
-                  data-branch="${d.branch||''}">✏️</button>
-                <button class="btn btn-outline btn-sm renew-license" data-id="${d.id}" data-name="${d.name}"
-                  title="تجديد رخصة">📋</button>
-                <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
-              </td>
-            </tr>`;
-          }).join('');
-        })()}
+        ${drivers.length ? drivers.map(d=>{
+          // find assigned car from permissions
+          const perm = window._allPerms ? window._allPerms.find(p=>p.driver_id===d.id) : null;
+          const car  = perm && window._allCars ? window._allCars.find(c=>c.id===perm.car_id) : null;
+          const carBadge = car
+            ? `<span class="badge badge-navy" dir="ltr">🚗 ${car.plate}</span>`
+            : '<span style="color:var(--muted);font-size:.78rem">—</span>';
+          return `<tr>
+            <td>${d.id}</td>
+            <td><strong>${d.name}</strong></td>
+            <td dir="ltr">${d.phone||'—'}</td>
+            <td><code>${d.fixed_number||'—'}</code></td>
+            <td>${carBadge}</td>
+            <td>${licBadge(d.driver_license_expiry, true)}</td>
+            <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
+            <td style="white-space:nowrap">
+              ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
+                data-id="${d.id}" data-name="${d.name}" data-phone="${d.phone||''}"
+                data-status="${d.status}" data-nid="${d.national_id||''}"
+                data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
+                data-clic="${d.vehicle_license_expiry||''}"
+                data-username="${d.username||''}"
+                data-fixed="${d.fixed_number||''}"
+                data-branch="${d.branch||''}">✏️</button>
+              <button class="btn btn-outline btn-sm renew-license" data-id="${d.id}" data-name="${d.name}"
+                title="تجديد رخصة">📋</button>
+              <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
+            </td>
+          </tr>`;
+
+  window.__driversAll = drivers;
+  // ── Pagination ──
+}).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
         </tbody></table>
-      <div id="driversPagination"></div>
+      
       </div>
     </div>`;
-  buildPagination('driversPagination', drivers.length, 15, getPage('drivers'), function(p){ setPage('drivers',p); renderDriversSection(); });
   document.getElementById('driversList').addEventListener('click', async e=>{
     if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username,b.dataset.fixed,b.dataset.branch); }
     if(e.target.closest('.renew-license')){ const b=e.target.closest('.renew-license'); openLicenseRenewalModal(+b.dataset.id, b.dataset.name); }
@@ -2345,34 +2342,32 @@ async function renderCarsSection() {
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead>
         <tbody id="carsBody">
-        ${(()=>{
-          const _cPg    = getPage('cars');
-          const _cPaged = paginateData(window.__carsAll||cars, _cPg, 15);
-          return _cPaged.map(c=>{
-            const eqParts = (c.equipment_type||'').split('|');
-            const cat = eqParts[0]||'—';
-            const sub = eqParts[1]||'—';
-            const catBadge = cat==='عربات'
-              ? '<span class="badge badge-blue">🚗 عربات</span>'
-              : cat==='آلات ومعدات'
-              ? '<span class="badge badge-purple">⚙️ آلات ومعدات</span>'
-              : `<span style="color:var(--muted);font-size:.78rem">${cat}</span>`;
-            return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
-              <td>${c.id}</td>
-              <td dir="ltr"><strong>${c.plate}</strong></td>
-              <td>${c.car_name||'—'}</td>
-              <td>${c.model}</td>
-              <td>${catBadge}</td>
-              <td style="font-size:.82rem">${sub}</td>
-              <td style="font-size:.82rem">${c.branch||'—'}</td>
-              <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
-              <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
-              <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
-            </tr>`;
-          }).join('');
-        })()}
+        ${cars.map(c=>{
+          const eqParts = (c.equipment_type||'').split('|');
+          const cat = eqParts[0]||'—';
+          const sub = eqParts[1]||'—';
+          const catBadge = cat==='عربات'
+            ? '<span class="badge badge-blue">🚗 عربات</span>'
+            : cat==='آلات ومعدات'
+            ? '<span class="badge badge-purple">⚙️ آلات ومعدات</span>'
+            : `<span style="color:var(--muted);font-size:.78rem">${cat}</span>`;
+
+  window.__carsAll = cars;
+  // ── Pagination ──
+return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
+            <td>${c.id}</td>
+            <td dir="ltr"><strong>${c.plate}</strong></td>
+            <td>${c.car_name||'—'}</td>
+            <td>${c.model}</td>
+            <td>${catBadge}</td>
+            <td style="font-size:.82rem">${sub}</td>
+            <td style="font-size:.82rem">${c.branch||'—'}</td>
+            <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
+            <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
+            <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
+          </tr>`;
+        }).join('')}
         </tbody></table>
-      <div id="carsPagination"></div>
       </div>
     </div>
     </div>
@@ -2426,7 +2421,6 @@ async function renderCarsSection() {
     });
   };
 
-  buildPagination('carsPagination', cars.length, 15, getPage('cars'), function(p){ setPage('cars',p); renderCarsSection(); });
   document.getElementById('carsList').addEventListener('click',async e=>{
     if(e.target.closest('.edit-car')){const cid=e.target.closest('.edit-car').dataset.id; const car=(window._carsCache||[]).find(c=>String(c.id)===String(cid))||{}; openAddCarModal(cid,car);}
     if(e.target.closest('.del-car')){const id=+e.target.closest('.del-car').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/cars/${id}`,'DELETE');showNotification('تم الحذف','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');}}
@@ -2707,7 +2701,7 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
         data-active="${!t.end_time?'1':'0'}"
         title="تعديل العداد">✏️ عداد</button>`:'—'}</td></tr>`;
   }).join('')}</tbody></table>
-  `;
+      `;
 }
 
 async function renderTripsSection() {
@@ -2768,7 +2762,7 @@ async function renderTripsSection() {
       </div>
 
       <div class="table-wrap" id="tripsTableWrap"></div>
-      <div id="tripsPagination"></div>
+      
     </div>`;
   // initial render with pagination
   filterTrips();
@@ -2863,10 +2857,6 @@ function filterTrips() {
   const _tPaged = paginateData(f, _tPage, _tSize);
   const twrap = document.getElementById('tripsTableWrap');
   if(twrap) twrap.innerHTML = buildTripsTable(_tPaged, window._driversData, window._carsData, window._garageLatest);
-  buildPagination('tripsPagination', f.length, _tSize, _tPage, function(p) {
-    setPage('trips', p);
-    filterTrips();
-  });
   const _tcEl = document.getElementById('tripCount'); if(_tcEl) _tcEl.textContent=f.length;
 }
 
@@ -3071,12 +3061,11 @@ async function renderAdminWorkshops() {
         <button class="srch-reset" onclick="document.getElementById('wsSearchText').value='';document.getElementById('filterCar').value='';document.getElementById('filterType').value='';document.getElementById('filterDate').value='';filterWS()">✕ مسح</button>
       </div>
       <div class="table-wrap" id="wsTable">${buildWSTable(records)}</div>
-      <div id="workshopsPagination"></div>
     </div>`;
 
   window.__workshAll = records;
-  window._wsRecords = records;
-  filterWS();
+  // ── Pagination ──
+window._wsRecords = records;
   if(!isReporter()) {
     const phBtn = document.getElementById('pricesBtnPlaceholder');
     if(phBtn) {
@@ -3122,7 +3111,8 @@ function buildWSTable(records) {
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
     </tr>`;
-  }).join('')}</tbody></table>`;
+  }).join('')}</tbody></table>
+      `;
 }
 
 function filterWS(){
@@ -3140,14 +3130,7 @@ function filterWS(){
     if(date && !r.created_at?.startsWith(date))       return false;
     return true;
   });
-  const _wsPg    = getPage('workshops');
-  const _wsPaged = paginateData(f, _wsPg, 15);
-  document.getElementById('wsTable').innerHTML = buildWSTable(_wsPaged);
-  buildPagination('workshopsPagination', f.length, 15, _wsPg, function(p){
-    setPage('workshops', p);
-    const _wsTb = document.getElementById('wsTable');
-    if(_wsTb) _wsTb.innerHTML = buildWSTable(paginateData(f, p, 15));
-  });
+  document.getElementById('wsTable').innerHTML = buildWSTable(f);
   const wsCnt=document.getElementById('wsCount');
   if(wsCnt) wsCnt.textContent=`${f.length} / ${(window._wsRecords||[]).length}`;
 }
@@ -4868,7 +4851,7 @@ async function renderEmergenciesSection() {
         <th>الموقع</th><th>ملاحظات</th><th>التسجيل الصوتي</th>
         <th>الحالة</th><th>الإجراء المتخذ</th><th>رسالة للسائق</th><th>بواسطة</th><th>وقت الإجراء</th><th>إجراء</th>
       </tr></thead><tbody id="emgBody">
-      ${paginateData(reports, getPage('emergencies'), 10).map(r=>`<tr class="report-row-${r.type}">
+      ${reports.map(r=>`<tr class="report-row-${r.type}">
         <td>${r.id}</td>
         <td>${r.type==='emergency'?'<span class="badge badge-emg">🚨 طارئ</span>':'<span class="badge badge-acc">🚗 حادث</span>'}</td>
         <td><strong>${r.driver_name||'—'}</strong></td>
@@ -4890,12 +4873,11 @@ async function renderEmergenciesSection() {
         </td>
       </tr>`).join('')}
       </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
-      <div id="emergPagination"></div>
-    </div>`;
+    </div>
+      `;
 
   window.__emergAll = reports;
   // ── Pagination ──
-  buildPagination('emergPagination', reports.length, 10, getPage('emergencies'), function(p){ setPage('emergencies',p); renderEmergenciesSection(); });
 }
 
 
@@ -9346,7 +9328,7 @@ async function renderDriverKpiSection() {
             <tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
           </tbody>
         </table>
-      <div id="kpiPag"></div>
+      
       </div>
     </div>
   `;
@@ -9476,7 +9458,6 @@ function renderKpiTable(rows) {
       </td>
     </tr>`;
   }).join('');
-  buildPagination('kpiPag', rows.length, 15, _kpiPg, function(p){ setPage('kpi',p); renderKpiTable(rows); });
 }
 
 function filterKpiTable(q) {
@@ -9648,7 +9629,7 @@ async function renderEquipmentSection() {
             <tr><td colspan="9" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
           </tbody>
         </table>
-      <div id="equipmentPag"></div>
+      
       </div>
     </div>
 
@@ -9825,7 +9806,6 @@ function renderEquipmentTable(rows) {
   const _eqPg    = getPage('equipment');
   const _eqPaged = paginateData(rows, _eqPg, 15);
   if(typeof _eqData !== 'undefined') {
-    buildPagination('equipmentPag', _eqData.length, 15, _eqPg, function(p){ setPage('equipment',p); filterEquipment(); });
   }
   tbody.innerHTML = _eqPaged.map((e,i) => {
     const st = statusMap[e.status] || {label:e.status, color:'#94a3b8'};
@@ -10086,7 +10066,7 @@ async function renderRentalEquipment() {
             <tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
           </tbody>
         </table>
-      <div id="rentalPagination"></div>
+      
       </div>
     </div>
 
@@ -10205,17 +10185,8 @@ function renderRentalTable(rows) {
   if(!tbody) return;
   if(!rows.length) {
     tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات — استورد ملف CSV أو أضف سجل</td></tr>`;
-    buildPagination('rentalPagination', 0, 15, 1, function(){});
-    return;
+return;
   }
-  // pagination
-  const _rPage  = getPage('rental');
-  const _rPaged = paginateData(rows, _rPage, 15);
-  buildPagination('rentalPagination', rows.length, 15, _rPage, function(p){
-    setPage('rental', p);
-    renderRentalTable(rows);
-  });
-  rows = _rPaged;
   tbody.innerHTML = rows.map((r,i) => {
     const util = parseFloat(r.utilization_pct||0);
     const utilColor = util>=70?'#10b981':util>=40?'#f97316':'#ef4444';
@@ -10419,7 +10390,7 @@ window.CS = { upgrade: function(){}, upgradeAll: function(){} };
 //   buildPagination('containerId', totalItems, pageSize, currentPage, onPageChange)
 //
 //   مثال:
-//   buildPagination('myPagDiv', data.length, 15, currentPage, 'changeMyPage');
+//
 //   function changeMyPage(p){ currentPage=p; renderMyTable(); }
 // ══════════════════════════════════════════════════════════
 
@@ -10520,23 +10491,15 @@ function renderWithPagination(data, bodyId, renderFn, pageKey, pageSize, paginCo
       setPage(pageKey, p);
       const tb = document.getElementById(bodyId);
       if (tb) tb.innerHTML = renderFn(paginateData(data, p, pageSize));
-      buildPagination(paginContainerId, data.length, pageSize, p, _onPageChange);
-    }
-    buildPagination(paginContainerId, data.length, pageSize, page, _onPageChange);
-  }
+}
+}
 }
 
 
 
 // ══ Pagination Init Helper ══
 function _initPagination(paginId, allData, pageSize, pageKey, renderFn) {
-  const el = document.getElementById(paginId);
-  if (!el) return;
-  const pg = getPage(pageKey);
-  buildPagination(paginId, allData.length, pageSize, pg, function(p) {
-    setPage(pageKey, p);
-    renderFn();
-  });
+  renderFn();
 }
 
 
@@ -10662,7 +10625,7 @@ async function deleteAvatar() {
 // ===================================================
 // SUPER FRAUD — كشف التلاعب
 // ===================================================
-var _fraudData = []; let _fraudPage = 1; const _fraudPageSize = 15;
+var _fraudData = [];
 
 async function renderSuperFraud() {
   const c = document.getElementById('pageContent');
@@ -10700,19 +10663,22 @@ async function renderSuperFraud() {
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
         <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
-          <span style="font-weight:700;font-size:.9rem">تصفية حسب النوع:</span>
-          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_dup" checked onchange="filterFraudTable()"> تفويلة مكررة
-          </label>
-          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_odo" checked onchange="filterFraudTable()"> عداد متناقص
-          </label>
-          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_open" checked onchange="filterFraudTable()"> رحلة مفتوحة
-          </label>
-          <label style="display:flex;align-items:center;gap:.35rem;cursor:pointer;font-size:.85rem">
-            <input type="checkbox" id="flt_fuel" checked onchange="filterFraudTable()"> وقود بتكلفة صفر
-          </label>
+          <span style="font-weight:700;font-size:.9rem">تصفية:</span>
+          <select id="flt_type" onchange="filterFraudTable()"
+            style="padding:.4rem .75rem;border:1.5px solid var(--border-2);border-radius:8px;background:var(--surface-2);font-family:inherit;font-size:.85rem;min-width:160px">
+            <option value="all">📋 كل الأنواع</option>
+            <option value="duplicate_fuel">⛽ تفويلة مكررة</option>
+            <option value="odometer_reverse">📉 عداد متناقص</option>
+            <option value="open_trip">🔓 رحلة مفتوحة</option>
+            <option value="zero_cost_fuel">🚫 وقود بتكلفة صفر</option>
+          </select>
+          <select id="flt_severity" onchange="filterFraudTable()"
+            style="padding:.4rem .75rem;border:1.5px solid var(--border-2);border-radius:8px;background:var(--surface-2);font-family:inherit;font-size:.85rem;min-width:140px">
+            <option value="all">🔵 كل الخطورة</option>
+            <option value="high">🔴 خطورة عالية</option>
+            <option value="medium">🟠 خطورة متوسطة</option>
+            <option value="low">🟡 خطورة منخفضة</option>
+          </select>
         </div>
       </div>
     </div>
@@ -10739,7 +10705,7 @@ async function renderSuperFraud() {
           </tbody>
         </table>
       </div>
-      <div id="fraudPagination"></div>
+      
     </div>
   `;
   await loadFraudData();
@@ -10776,30 +10742,28 @@ async function loadFraudData() {
 }
 
 function filterFraudTable() {
-  const showDup  = document.getElementById('flt_dup')?.checked  ?? true;
-  const showOdo  = document.getElementById('flt_odo')?.checked  ?? true;
-  const showOpen = document.getElementById('flt_open')?.checked ?? true;
-  const showFuel = document.getElementById('flt_fuel')?.checked ?? true;
-  const typeMap  = {
-    duplicate_fuel:   showDup,
-    odometer_reverse: showOdo,
-    open_trip:        showOpen,
-    zero_cost_fuel:   showFuel
-  };
-  renderFraudTable(_fraudData.filter(a => typeMap[a.type] !== false));
+  const typeVal = document.getElementById('flt_type')?.value || 'all';
+  const sevVal  = document.getElementById('flt_severity')?.value || 'all';
+  renderFraudTable(_fraudData.filter(a => {
+    if (typeVal !== 'all' && a.type !== typeVal) return false;
+    if (sevVal  !== 'all' && a.severity !== sevVal) return false;
+    return true;
+  }));
 }
 
 function renderFraudTable(rows) {
   const tbody = document.getElementById('fraudTableBody');
   if (!tbody) return;
+  const countEl = document.getElementById('fraudCount');
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--muted)">✅ لا توجد تنبيهات للفترة المحددة</td></tr>`;
+    if(countEl) countEl.textContent = '0 تنبيه';
     return;
   }
   const sevCfg = {
-    high:   { color:'#ef4444', bg:'#fef2f2', icon:'🔴', label:'عالية' },
-    medium: { color:'#f97316', bg:'#fff7ed', icon:'🟠', label:'متوسطة' },
-    low:    { color:'#eab308', bg:'#fefce8', icon:'🟡', label:'منخفضة' },
+    high:   { color:'#ef4444', icon:'🔴', label:'عالية' },
+    medium: { color:'#f97316', icon:'🟠', label:'متوسطة' },
+    low:    { color:'#eab308', icon:'🟡', label:'منخفضة' },
   };
   tbody.innerHTML = rows.map((a, i) => {
     const sv = sevCfg[a.severity] || sevCfg.low;
@@ -10815,38 +10779,13 @@ function renderFraudTable(rows) {
         <strong>${a.plate}</strong>
         ${a.model ? `<br><small style="color:var(--muted)">${a.model}</small>` : ''}
       </td>
-      <td style="font-size:.82rem;color:var(--muted)">${a.date||'&mdash;'}</td>
+      <td style="font-size:.82rem;color:var(--muted)">${a.date||'—'}</td>
       <td style="font-size:.82rem">${a.detail}</td>
     </tr>`;
   }).join('');
-
-  // pagination
-  const paginDiv = document.getElementById('fraudPagination');
-  if(paginDiv) buildPagination('fraudPagination', totalRows, _fraudPageSize, page, 'changeFraudPage');
-  const countEl = document.getElementById('fraudCount');
-  if(countEl) countEl.textContent = `${totalRows} تنبيه`;
+  if(countEl) countEl.textContent = `${rows.length} تنبيه`;
 }
 
-function changeFraudPage(p) {
-  _fraudPage = p;
-  const allAlerts = _fraudData.filter(a => {
-    const showDup  = document.getElementById('flt_dup')?.checked  ?? true;
-    const showOdo  = document.getElementById('flt_odo')?.checked  ?? true;
-    const showOpen = document.getElementById('flt_open')?.checked ?? true;
-    const showFuel = document.getElementById('flt_fuel')?.checked ?? true;
-    const dupTypes  = ['odometer_reverse','impossible_speed','car_overlap'];
-    const odoTypes  = ['high_distance','repeated_odometer'];
-    const openTypes = ['open_trip','driver_overlap'];
-    const fuelTypes = ['zero_cost_fuel','excess_fuel'];
-    if(dupTypes.includes(a.type)  && !showDup)  return false;
-    if(odoTypes.includes(a.type)  && !showOdo)  return false;
-    if(openTypes.includes(a.type) && !showOpen) return false;
-    if(fuelTypes.includes(a.type) && !showFuel) return false;
-    return true;
-  });
-  renderFraudTable(allAlerts);
-  document.getElementById('fraudTable')?.closest('.card')?.scrollIntoView({behavior:'smooth',block:'start'});
-}
 
 function exportFraudCSV() {
   if (!_fraudData.length) return showNotification('لا توجد بيانات', 'error');
