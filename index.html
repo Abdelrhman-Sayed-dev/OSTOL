@@ -2829,7 +2829,6 @@ function filterTrips() {
   const status = document.getElementById('ftStatus')?.value;
   const search = (document.getElementById('ftSearch')?.value||'').trim().toLowerCase();
 
-  // اجمع كل بيانات السائقين والمركبات في map للبحث السريع
   const drvMap = Object.fromEntries((window._driversData||[]).map(d=>[d.id, d.name]));
   const carMap = Object.fromEntries((window._carsData||[]).map(c=>[c.id, c.plate]));
 
@@ -2854,16 +2853,42 @@ function filterTrips() {
     }
     return true;
   });
-  // pagination
-  const _tPage = getPage('trips');
-  const _tSize = 15;
-  const _tPaged = paginateData(f, _tPage, _tSize);
-  const twrap = document.getElementById('tripsTableWrap');
-  if(twrap) twrap.innerHTML = buildTripsTable(_tPaged, window._driversData, window._carsData, window._garageLatest);
-  const _tcEl = document.getElementById('tripCount'); if(_tcEl) _tcEl.textContent=f.length;
+
+  // حفظ الداتا المفلترة وإعادة تعيين الصفحة لو تغيّر الفلتر
+  const prevLen = window._tripsFiltered?.length;
+  window._tripsFiltered = f;
+  if (prevLen !== f.length) setPage('trips', 1);
+
+  _renderTripsPage();
+  const _tcEl = document.getElementById('tripCount');
+  if(_tcEl) _tcEl.textContent = f.length;
 }
 
-function resetTripsPage(){ setPage('trips',1); }
+function _renderTripsPage() {
+  const f      = window._tripsFiltered || [];
+  const page   = getPage('trips');
+  const size   = 20;
+  const paged  = paginateData(f, page, size);
+  const twrap  = document.getElementById('tripsTableWrap');
+  if (!twrap) return;
+
+  // الجدول
+  twrap.innerHTML = buildTripsTable(paged, window._driversData, window._carsData, window._garageLatest);
+
+  // الـ pagination تحت الجدول مباشرة
+  const pgDiv = document.createElement('div');
+  pgDiv.id = 'tripsPgn';
+  twrap.appendChild(pgDiv);
+
+  buildPagination('tripsPgn', f.length, size, page, (p) => {
+    setPage('trips', p);
+    _renderTripsPage();
+    // scroll للأعلى عشان المستخدم يشوف أول صف
+    document.getElementById('tripsTableWrap')?.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+}
+
+function resetTripsPage(){ setPage('trips',1); _renderTripsPage(); }
 
 function clearTripFilters(){
   ['ftDriverSearch','ftCarSearch','ftSearch'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
