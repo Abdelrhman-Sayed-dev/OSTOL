@@ -3575,53 +3575,53 @@ async function renderOperationalCard() {
     
 
 /* ════════════════════════════════════════════════
-   REUSABLE PAGINATION COMPONENT
+   REUSABLE PAGINATION — كل الجداول
    ════════════════════════════════════════════════ */
 .fs-pagination{
   display:flex;align-items:center;justify-content:space-between;
-  padding:.7rem 0;flex-wrap:wrap;gap:.5rem;
+  padding:.75rem 1rem;flex-wrap:wrap;gap:.5rem;
+  background:#fafafa;border-top:.5px solid #e2e8f0;
+  border-radius:0 0 12px 12px;
 }
 .fs-pagination-info{
-  font-size:.8rem;color:var(--muted);
+  font-size:.78rem;color:#64748b;
 }
-.fs-pagination-info strong{color:var(--text-2);font-weight:600}
+.fs-pagination-info strong{
+  color:#334155;font-weight:700;
+}
 .fs-pagination-btns{
-  display:flex;gap:3px;align-items:center;
+  display:flex;gap:2px;align-items:center;
 }
 .fs-page-btn{
-  min-width:32px;height:32px;padding:0 6px;
-  border:1px solid #e2e8f0;border-radius:8px;
-  background:#fff;color:var(--text-2);
+  min-width:34px;height:34px;padding:0 8px;
+  border:.5px solid #e2e8f0;border-radius:8px;
+  background:#fff;color:#475569;
   font-size:.82rem;font-weight:500;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;
-  transition:all .13s ease;font-family:inherit;line-height:1;
+  transition:all .15s ease;font-family:inherit;line-height:1;
+  box-shadow:0 1px 2px rgba(0,0,0,.04);
 }
 .fs-page-btn:hover:not(:disabled){
-  border-color:var(--brand-teal);
-  color:var(--brand-teal);
-  background:rgba(6,182,212,.04);
+  border-color:#06B6D4;color:#06B6D4;
+  background:rgba(6,182,212,.05);
+  box-shadow:0 1px 4px rgba(6,182,212,.15);
 }
 .fs-page-btn.active{
-  background:var(--brand-teal);
-  border-color:var(--brand-teal);
-  color:#fff;
+  background:linear-gradient(135deg,#06B6D4,#0891b2);
+  border-color:#06B6D4;color:#fff;
   font-weight:700;
-  box-shadow:0 2px 8px rgba(6,182,212,.25);
+  box-shadow:0 2px 8px rgba(6,182,212,.3);
 }
-.fs-page-btn:disabled{opacity:.3;cursor:not-allowed}
-.fs-page-btn.fs-prev,.fs-page-btn.fs-next{color:var(--text-2)}
-.fs-page-btn.fs-prev:hover:not(:disabled),
-.fs-page-btn.fs-next:hover:not(:disabled){color:var(--brand-teal)}
+.fs-page-btn:disabled{opacity:.35;cursor:not-allowed;box-shadow:none}
 .fs-page-dots{
-  min-width:28px;height:32px;display:inline-flex;
+  min-width:28px;height:34px;display:inline-flex;
   align-items:center;justify-content:center;
-  font-size:.75rem;color:var(--muted);letter-spacing:1px;
-  cursor:default;
+  font-size:.78rem;color:#94a3b8;letter-spacing:1px;cursor:default;
 }
-/* responsive: أخفي المعلومات على الموبايل الصغير */
-@media(max-width:400px){
-  .fs-pagination{justify-content:center}
-  .fs-pagination-info{display:none}
+@media(max-width:480px){
+  .fs-pagination{justify-content:center;padding:.6rem}
+  .fs-pagination-info{font-size:.72rem}
+  .fs-page-btn{min-width:30px;height:30px;font-size:.78rem}
 }
 
 /* ── Card enhancements ── */
@@ -3639,6 +3639,14 @@ async function renderOperationalCard() {
   -webkit-overflow-scrolling:touch;
   scrollbar-width:thin;
   scrollbar-color:rgba(6,182,212,.3) transparent;
+}
+/* الـ card التي تحتوي جدول مع pagination */
+.card:has(.fs-pagination){
+  padding-bottom:0;
+  overflow:hidden;
+}
+.card:has(.fs-pagination) .table-wrap{
+  border-radius:0;
 }
 .table-wrap::-webkit-scrollbar{height:4px}
 .table-wrap::-webkit-scrollbar-track{background:transparent}
@@ -9323,6 +9331,7 @@ async function renderDriverKpiSection() {
             <tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
           </tbody>
         </table>
+      <div id="kpiPag"></div>
       </div>
     </div>
   `;
@@ -9384,7 +9393,10 @@ function renderKpiTable(rows) {
 
   const avgKm = _kpiData.length ? (_kpiData.reduce((s,d)=>s+(d.avg_km_peers||0),0)/_kpiData.length) : 0;
 
-  tbody.innerHTML = rows.map(d => {
+    // ── KPI Pagination ──
+  const _kpiPg    = getPage('kpi');
+  const _kpiPaged = paginateData(rows, _kpiPg, 15);
+  tbody.innerHTML = _kpiPaged.map(d => {
     const barColor = d.total_score>=85?'#10b981':d.total_score>=70?'#3b82f6':d.total_score>=50?'#f97316':'#ef4444';
     const scoreBar = `
       <div style="display:flex;align-items:center;gap:.5rem">
@@ -9449,6 +9461,7 @@ function renderKpiTable(rows) {
       </td>
     </tr>`;
   }).join('');
+  buildPagination('kpiPag', rows.length, 15, _kpiPg, function(p){ setPage('kpi',p); renderKpiTable(rows); });
 }
 
 function filterKpiTable(q) {
@@ -9620,6 +9633,7 @@ async function renderEquipmentSection() {
             <tr><td colspan="9" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
           </tbody>
         </table>
+      <div id="equipmentPag"></div>
       </div>
     </div>
 
@@ -9792,7 +9806,13 @@ function renderEquipmentTable(rows) {
     return;
   }
   const statusMap = {active:{label:'عاملة',color:'#10b981'}, inactive:{label:'عاطلة',color:'#ef4444'}, maintenance:{label:'صيانة',color:'#f97316'}};
-  tbody.innerHTML = rows.map((e,i) => {
+    // ── Equipment Pagination ──
+  const _eqPg    = getPage('equipment');
+  const _eqPaged = paginateData(rows, _eqPg, 15);
+  if(typeof _eqData !== 'undefined') {
+    buildPagination('equipmentPag', _eqData.length, 15, _eqPg, function(p){ setPage('equipment',p); filterEquipment(); });
+  }
+  tbody.innerHTML = _eqPaged.map((e,i) => {
     const st = statusMap[e.status] || {label:e.status, color:'#94a3b8'};
     const typeColor = e.equipment_type==='معدات تحريك تربة'?'#3b82f6':e.equipment_type==='معدات رفع'?'#8b5cf6':e.equipment_type==='معدات ثابتة'?'#f59e0b':'#6b7280';
     return `<tr>
@@ -10051,6 +10071,7 @@ async function renderRentalEquipment() {
             <tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
           </tbody>
         </table>
+      <div id="rentalPagination"></div>
       </div>
     </div>
 
@@ -10169,8 +10190,17 @@ function renderRentalTable(rows) {
   if(!tbody) return;
   if(!rows.length) {
     tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات — استورد ملف CSV أو أضف سجل</td></tr>`;
+    buildPagination('rentalPagination', 0, 15, 1, function(){});
     return;
   }
+  // pagination
+  const _rPage  = getPage('rental');
+  const _rPaged = paginateData(rows, _rPage, 15);
+  buildPagination('rentalPagination', rows.length, 15, _rPage, function(p){
+    setPage('rental', p);
+    renderRentalTable(rows);
+  });
+  rows = _rPaged;
   tbody.innerHTML = rows.map((r,i) => {
     const util = parseFloat(r.utilization_pct||0);
     const utilColor = util>=70?'#10b981':util>=40?'#f97316':'#ef4444';
@@ -10423,6 +10453,7 @@ function buildPagination(containerId, totalItems, pageSize, currentPage, onPageC
   const prevDisabled = currentPage <= 1       ? ' disabled' : '';
   const nextDisabled = currentPage >= totalPages ? ' disabled' : '';
 
+  container.className = 'pag-container';
   container.innerHTML =
     '<div class="fs-pagination">' +
       '<div class="fs-pagination-info">عرض <strong>' + start + '–' + end + '</strong> من <strong>' + totalItems + '</strong></div>' +
@@ -11345,7 +11376,7 @@ async function searchVoiceUsers(q) {
         dd.style.display = 'block';
         return;
       }
-      dd.innerHTML = users.map(u => {
+      dd.innerHTML = users.map((u, idx) => {
         const initials = (u.name||'?').slice(0,2).toUpperCase();
         const avatarHtml = u.avatar
           ? `<img src="${u.avatar}" width="32" height="32" style="border-radius:50%;object-fit:cover;flex-shrink:0">`
@@ -11354,16 +11385,27 @@ async function searchVoiceUsers(q) {
           ? '<span style="background:#f0fdf4;color:#16a34a;font-size:.7rem;padding:.15rem .5rem;border-radius:20px;font-weight:600">سائق</span>'
           : '<span style="background:#eff6ff;color:#2563eb;font-size:.7rem;padding:.15rem .5rem;border-radius:20px;font-weight:600">مشرف</span>';
         const branch = u.branch ? `<span style="color:#94a3b8;font-size:.72rem"> · ${u.branch}</span>` : '';
-        return `<div onclick="selectVnUser(${u.id},${JSON.stringify(u.name)},${JSON.stringify(u.avatar||'')},${JSON.stringify(u.role||'')})"
+        // نحفظ البيانات في global array ونستخدم index بدل JSON.stringify
+        window._vnSearchResults = window._vnSearchResults || [];
+        window._vnSearchResults[idx] = u;
+        return `<div data-vn-idx="${idx}"
           style="padding:.6rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:center;gap:.65rem;transition:background .12s"
           onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
           ${avatarHtml}
-          <div style="flex:1;min-width:0">
+          <div style="flex:1;min-width:0;pointer-events:none">
             <div style="font-weight:600;font-size:.85rem;color:#0f172a">${u.name}</div>
             <div style="display:flex;align-items:center;gap:.35rem;margin-top:.1rem">${badge}${branch}</div>
           </div>
         </div>`;
       }).join('');
+      // إضافة click listener بعد الـ render
+      dd.querySelectorAll('[data-vn-idx]').forEach(el => {
+        el.addEventListener('click', function() {
+          const i = +this.getAttribute('data-vn-idx');
+          const u = window._vnSearchResults[i];
+          if (u) selectVnUser(u.id, u.name, u.avatar||'', u.role||'');
+        });
+      });
       dd.style.display = 'block';
     } catch(e) {
       console.error('voice user search error:', e);
