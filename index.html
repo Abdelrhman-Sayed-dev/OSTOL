@@ -11230,7 +11230,9 @@ async function loadVoiceNotes() {
   const tbody = document.getElementById('vnTableBody');
   if (!tbody) return;
   try {
-    _voiceNotes = await apiCall('/voice-notes');
+    // السوبر/أدمن في صفحة الإدارة: يشوف الرسائل اللي بعتوها هم
+    const endpoint = (isSuperuser() || isAdmin()) ? '/voice-notes/sent' : '/voice-notes';
+    _voiceNotes = await apiCall(endpoint);
     if (!_voiceNotes.length) {
       tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد رسائل مرسلة حتى الآن</td></tr>`;
       return;
