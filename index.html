@@ -11104,21 +11104,30 @@ async function renderSuperVoice() {
             <input type="number" id="vnHours" class="form-control" value="24" min="1" max="168">
           </div>
         </div>
-        <!-- بحث شخص محدد -->
-        <div id="vnSpecificUser" style="display:none;margin-bottom:1rem;background:var(--surface-2);border-radius:10px;padding:1rem">
-          <label style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:.5rem;display:block">ابحث باسم الشخص</label>
+
+        <div id="vnSpecificUser" style="display:none;margin-bottom:1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:1rem">
+          <label style="font-size:.78rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.6rem;display:block">🔍 ابحث عن شخص محدد</label>
           <div style="position:relative">
-            <input type="text" id="vnUserSearch" placeholder="اكتب الاسم للبحث..." class="form-control"
+            <input type="text" id="vnUserSearch" placeholder="اكتب اسم السائق أو المشرف..."
               oninput="searchVoiceUsers(this.value)" autocomplete="off"
-              style="padding-right:2.5rem">
-            <span style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none">🔍</span>
+              style="width:100%;padding:.7rem 2.8rem .7rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.9rem;background:#fff;outline:none"
+              onfocus="this.style.borderColor='#06B6D4'" onblur="this.style.borderColor='#e2e8f0'">
+            <span style="position:absolute;right:.85rem;top:50%;transform:translateY(-50%);pointer-events:none">🔍</span>
           </div>
-          <div id="vnUserDropdown" style="display:none;background:white;border:1.5px solid var(--border-2);border-radius:10px;margin-top:.35rem;max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(15,23,42,.12);z-index:999;position:relative"></div>
-          <div id="vnSelectedUser" style="display:none;margin-top:.6rem;background:var(--primary-glow);border:1.5px solid var(--primary);border-radius:8px;padding:.5rem .85rem;align-items:center;gap:.5rem;font-size:.85rem;font-weight:700;color:var(--primary)">
-            <span>👤 المختار: </span><span id="vnSelectedName"></span>
-            <button onclick="clearVnUser()" style="background:none;border:none;cursor:pointer;color:var(--danger);margin-right:auto;font-size:.9rem">✕ تغيير</button>
+          <div id="vnUserDropdown" style="display:none;background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;margin-top:.4rem;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(15,23,42,.1);position:relative;z-index:99"></div>
+          <div id="vnSelectedUser" style="display:none;margin-top:.75rem;background:rgba(6,182,212,.05);border:1.5px solid rgba(6,182,212,.25);border-radius:10px;padding:.65rem 1rem;align-items:center;gap:.75rem">
+            <div id="vnSelAvatar" style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#06B6D4,#22C55E);display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden"></div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:.88rem;color:#0f172a" id="vnSelectedName"></div>
+              <div style="font-size:.75rem;color:#64748b" id="vnSelectedRole"></div>
+            </div>
+            <button onclick="clearVnUser()"
+              style="background:none;border:1px solid #fecaca;border-radius:8px;padding:.3rem .7rem;cursor:pointer;color:#ef4444;font-size:.78rem;font-weight:600;white-space:nowrap">
+              ✕ تغيير
+            </button>
           </div>
         </div>
+
         <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
           <button class="btn btn-primary" id="vnRecordBtn" onclick="toggleVoiceRecording()">🔴 ابدأ التسجيل</button>
           <div id="vnRecordStatus" style="font-size:.85rem;color:var(--muted)"></div>
@@ -11128,24 +11137,44 @@ async function renderSuperVoice() {
       </div>
     </div>
 
+    <div class="card" id="vnReassignCard" style="margin-bottom:1rem;display:none">
+      <div class="card-header">
+        <div class="card-title">🔄 إعادة تخصيص مركبة</div>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('vnReassignCard').style.display='none'">✕ إغلاق</button>
+      </div>
+      <div style="padding:1.25rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:1rem;align-items:flex-end">
+          <div class="form-group" style="margin:0">
+            <label>المركبة</label>
+            <select id="rnCar" class="form-control"><option value="">— اختر المركبة —</option></select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label>السائق الجديد</label>
+            <select id="rnDriver" class="form-control"><option value="">— اختر السائق —</option></select>
+          </div>
+          <button class="btn btn-primary" onclick="doReassign()">✅ تأكيد</button>
+        </div>
+        <div id="rnStatus" style="margin-top:.75rem;font-size:.85rem"></div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header">
         <div class="card-title">📋 الرسائل المرسلة</div>
-        <button class="btn btn-ghost btn-sm" onclick="loadVoiceNotes()">🔄 تحديث</button>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-outline btn-sm" onclick="showVnReassign()">🔄 إعادة تخصيص</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadVoiceNotes()">↺ تحديث</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th style="width:35px">#</th>
-              <th>المستلم</th>
-              <th style="text-align:center">المدة</th>
-              <th style="text-align:center">تشغيل / حد</th>
-              <th>تاريخ الإرسال</th>
-              <th>الصلاحية حتى</th>
-              <th style="text-align:center">إجراء</th>
-            </tr>
-          </thead>
+          <thead><tr>
+            <th>#</th><th>المستلم</th>
+            <th style="text-align:center">المدة</th>
+            <th style="text-align:center">تشغيل/حد</th>
+            <th>تاريخ الإرسال</th><th>الصلاحية حتى</th>
+            <th style="text-align:center">إجراء</th>
+          </tr></thead>
           <tbody id="vnTableBody">
             <tr><td colspan="7" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
           </tbody>
@@ -11154,6 +11183,7 @@ async function renderSuperVoice() {
     </div>
   `;
   await loadVoiceNotes();
+  _vnInitReassignLists();
 }
 
 async function loadVoiceNotes() {
@@ -11302,44 +11332,114 @@ async function searchVoiceUsers(q) {
       const users = data.users || [];
       if (!dd) return;
       if (!users.length) {
-        dd.innerHTML = '<div style="padding:.75rem 1rem;color:var(--muted);font-size:.85rem">لا نتائج</div>';
+        dd.innerHTML = '<div style="padding:.75rem 1rem;color:#94a3b8;font-size:.85rem;text-align:center">لا توجد نتائج</div>';
         dd.style.display = 'block';
         return;
       }
       dd.innerHTML = users.map(u => {
-        const icon = u.type === 'driver' ? '🚗' : '👑';
-        return `<div onclick="selectVnUser(${u.id},'${u.name.replace(/'/g,"'")}')"
-          style="padding:.6rem 1rem;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.5rem;transition:background .12s"
-          onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
-          <span>${icon}</span><span style="font-weight:600">${u.name}</span>
-          <span style="font-size:.75rem;color:var(--muted);margin-right:auto">${u.role}</span>
+        const initials = (u.name||'?').slice(0,2).toUpperCase();
+        const avatarHtml = u.avatar
+          ? `<img src="${u.avatar}" width="32" height="32" style="border-radius:50%;object-fit:cover;flex-shrink:0">`
+          : `<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#06B6D4,#22C55E);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;color:#fff;flex-shrink:0">${initials}</div>`;
+        const badge = u.type === 'driver'
+          ? '<span style="background:#f0fdf4;color:#16a34a;font-size:.7rem;padding:.15rem .5rem;border-radius:20px;font-weight:600">سائق</span>'
+          : '<span style="background:#eff6ff;color:#2563eb;font-size:.7rem;padding:.15rem .5rem;border-radius:20px;font-weight:600">مشرف</span>';
+        const branch = u.branch ? `<span style="color:#94a3b8;font-size:.72rem"> · ${u.branch}</span>` : '';
+        return `<div onclick="selectVnUser(${u.id},${JSON.stringify(u.name)},${JSON.stringify(u.avatar||'')},${JSON.stringify(u.role||'')})"
+          style="padding:.6rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:center;gap:.65rem;transition:background .12s"
+          onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+          ${avatarHtml}
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:.85rem;color:#0f172a">${u.name}</div>
+            <div style="display:flex;align-items:center;gap:.35rem;margin-top:.1rem">${badge}${branch}</div>
+          </div>
         </div>`;
       }).join('');
       dd.style.display = 'block';
     } catch(e) {
       console.error('voice user search error:', e);
     }
-  }, 300);
+  }, 280);
 }
 
-function selectVnUser(id, name) {
+function selectVnUser(id, name, avatar, role) {
   window._vnSelectedUserId = id;
   const dd   = document.getElementById('vnUserDropdown');
   const sel  = document.getElementById('vnSelectedUser');
   const sname= document.getElementById('vnSelectedName');
+  const srole= document.getElementById('vnSelectedRole');
+  const avEl = document.getElementById('vnSelAvatar');
   const inp  = document.getElementById('vnUserSearch');
-  if (dd)    dd.style.display = 'none';
-  if (inp)   inp.value = '';
+
+  if (dd)  dd.style.display = 'none';
+  if (inp) inp.value = '';
   if (sname) sname.textContent = name;
-  if (sel)   { sel.style.display = 'flex'; }
+  if (srole) srole.textContent = role || '';
+
+  if (avEl) {
+    if (avatar) {
+      avEl.innerHTML = `<img src="${avatar}" style="width:100%;height:100%;border-radius:50%;object-fit:cover">`;
+    } else {
+      avEl.innerHTML = (name||'?').slice(0,2).toUpperCase();
+      avEl.style.background = 'linear-gradient(135deg,#06B6D4,#22C55E)';
+    }
+  }
+  if (sel) sel.style.display = 'flex';
 }
 
 function clearVnUser() {
   window._vnSelectedUserId = null;
   const sel = document.getElementById('vnSelectedUser');
   const inp = document.getElementById('vnUserSearch');
+  const dd  = document.getElementById('vnUserDropdown');
   if (sel) sel.style.display = 'none';
   if (inp) inp.value = '';
+  if (dd)  dd.style.display = 'none';
+}
+
+// ── Reassign helpers ──
+async function _vnInitReassignLists() {
+  try {
+    const [cars, drivers] = await Promise.all([loadCars(), loadDrivers()]);
+    const carSel = document.getElementById('rnCar');
+    const drvSel = document.getElementById('rnDriver');
+    if (carSel) {
+      carSel.innerHTML = '<option value="">— اختر المركبة —</option>' +
+        cars.map(c => `<option value="${c.id}">${c.plate} · ${c.car_name||c.model}</option>`).join('');
+    }
+    if (drvSel) {
+      drvSel.innerHTML = '<option value="">— اختر السائق —</option>' +
+        drivers.filter(d=>d.status==='active').map(d =>
+          `<option value="${d.user_id||d.id}">${d.name}</option>`).join('');
+    }
+  } catch(e) { console.warn('reassign init:', e); }
+}
+
+function showVnReassign() {
+  const card = document.getElementById('vnReassignCard');
+  if (card) card.style.display = card.style.display === 'none' ? 'block' : 'none';
+}
+
+async function doReassign() {
+  const carId = document.getElementById('rnCar')?.value;
+  const drvId = document.getElementById('rnDriver')?.value;
+  const status = document.getElementById('rnStatus');
+  if (!carId || !drvId) { if(status) status.innerHTML='<span style="color:#ef4444">اختر المركبة والسائق</span>'; return; }
+  try {
+    if(status) status.innerHTML = '<span style="color:#64748b">⏳ جاري التخصيص...</span>';
+    // حذف الصلاحيات القديمة للمركبة ثم إضافة جديدة
+    const perms = await apiCall('/permissions');
+    const old   = perms.filter(p => String(p.car_id) === String(carId));
+    for (const p of old) {
+      await apiCall('/permissions/' + p.id, 'DELETE').catch(()=>{});
+    }
+    await apiCall('/permissions', 'POST', {car_id: +carId, driver_id: +drvId});
+    if(status) status.innerHTML = '<span style="color:#16a34a">✅ تم إعادة التخصيص بنجاح</span>';
+    showNotification('✅ تم إعادة تخصيص المركبة', 'success');
+    setTimeout(() => { if(status) status.innerHTML=''; }, 3000);
+  } catch(e) {
+    if(status) status.innerHTML = `<span style="color:#ef4444">❌ ${e.message}</span>`;
+  }
 }
 
 </script>
