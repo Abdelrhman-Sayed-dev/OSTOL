@@ -2005,7 +2005,7 @@ async function renderDriversSection() {
   _initPagination('driversPagination', window.__driversAll||[], 15, 'drivers', renderDriversSection);
         }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
         </tbody></table>
-      <div id="driversPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>
+      <div id="driversPagination"></div>
       </div>
     </div>`;
   document.getElementById('driversList').addEventListener('click', async e=>{
@@ -2703,7 +2703,7 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
         data-active="${!t.end_time?'1':'0'}"
         title="تعديل العداد">✏️ عداد</button>`:'—'}</td></tr>`;
   }).join('')}</tbody></table>
-      <div id="carsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>`;
+      <div id="carsPagination"></div>`;
 }
 
 async function renderTripsSection() {
@@ -2764,7 +2764,7 @@ async function renderTripsSection() {
       </div>
 
       <div class="table-wrap" id="tripsTableWrap"></div>
-      <div id="tripsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>
+      <div id="tripsPagination"></div>
     </div>`;
   // initial render with pagination
   filterTrips();
@@ -3119,7 +3119,7 @@ function buildWSTable(records) {
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
     </tr>`;
   }).join('')}</tbody></table>
-      <div id="workshopsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>`;
+      <div id="workshopsPagination"></div>`;
 }
 
 function filterWS(){
@@ -4881,7 +4881,7 @@ async function renderEmergenciesSection() {
       </tr>`).join('')}
       </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
     </div>
-      <div id="emergPagination" style="padding:1rem;border-top:.5px solid #e2e8f0"></div>`;
+      <div id="emergPagination"></div>`;
 
   window.__emergAll = reports;
   // ── Pagination ──
@@ -10458,7 +10458,7 @@ function buildPagination(containerId, totalItems, pageSize, currentPage, onPageC
   const prevDisabled = currentPage <= 1       ? ' disabled' : '';
   const nextDisabled = currentPage >= totalPages ? ' disabled' : '';
 
-  container.className = 'pag-container';
+  container.className = '';
   container.innerHTML =
     '<div class="fs-pagination">' +
       '<div class="fs-pagination-info">عرض <strong>' + start + '–' + end + '</strong> من <strong>' + totalItems + '</strong></div>' +
