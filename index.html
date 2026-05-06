@@ -3726,9 +3726,26 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
       </div>
       <div style="padding:1rem 1.2rem 1.4rem">
         <div class="filter-grid">
-          <div class="form-group" style="margin:0">
+        <div class="form-group" style="margin:0">
             <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">المركبة</label>
-            <select id="opCar" style="width:100%">${carOpts}</select>
+            <div style="position:relative" id="opCarWrap">
+              <input type="text" id="opCarSearch"
+                placeholder="🔍 ابحث بالرقم أو الموديل..."
+                autocomplete="off"
+                style="width:100%;padding:.45rem .75rem .45rem 2.2rem;border:1.5px solid var(--border);border-radius:10px;
+                       font-family:inherit;font-size:.84rem;background:#fff;cursor:pointer;box-sizing:border-box"
+                oninput="filterOpCarList()"
+                onfocus="showOpCarList()"
+              >
+              <span style="position:absolute;left:.65rem;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:.85rem;pointer-events:none">▾</span>
+              <input type="hidden" id="opCar" value="">
+              <div id="opCarDropdown"
+                style="display:none;position:absolute;top:calc(100% + 4px);right:0;left:0;
+                       background:#fff;border:1.5px solid var(--border);border-radius:10px;
+                       max-height:220px;overflow-y:auto;z-index:500;
+                       box-shadow:0 8px 24px rgba(15,23,42,.1)">
+              </div>
+            </div>
           </div>
           <div class="form-group" style="margin:0">
             <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">من تاريخ</label>
@@ -3789,6 +3806,72 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
   const now = new Date();
   document.getElementById('opFrom').value = `${now.getFullYear()}-01-01`;
   document.getElementById('opTo').value   = now.toISOString().slice(0,10);
+
+  // ── Searchable car dropdown ──
+  window._opCars = cars;  // store for filtering
+  _renderOpCarList(cars, '');
+
+  // Close dropdown on outside click
+  document.addEventListener('click', function _opCarOutside(e) {
+    const wrap = document.getElementById('opCarWrap');
+    if (wrap && !wrap.contains(e.target)) {
+      const dd = document.getElementById('opCarDropdown');
+      if (dd) dd.style.display = 'none';
+    }
+  });
+}
+
+function _renderOpCarList(cars, query) {
+  const dd = document.getElementById('opCarDropdown');
+  if (!dd) return;
+  const q = (query||'').trim().toLowerCase();
+  const filtered = cars.filter(c => {
+    const text = `${c.plate} ${c.model} ${c.car_name||''}`.toLowerCase();
+    return !q || text.includes(q);
+  });
+  // "كل المركبات" option always at top
+  const allItem = `<div data-val="" data-label="— كل المركبات —"
+    onclick="selectOpCar('', '— كل المركبات —')"
+    style="padding:.5rem .9rem;cursor:pointer;font-size:.83rem;color:#64748b;
+           border-bottom:1px solid #f1f5f9;transition:background .1s"
+    onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
+    — كل المركبات —
+  </div>`;
+  const items = filtered.map(c => {
+    const label = `${c.plate} — ${c.model}${c.car_name?' ('+c.car_name+')':''}`;
+    return `<div data-val="${c.id}" data-label="${label}"
+      onclick="selectOpCar('${c.id}', \`${label.replace(/`/g,"'")}\`)"
+      style="padding:.5rem .9rem;cursor:pointer;font-size:.83rem;border-bottom:1px solid #f8fafc;transition:background .1s"
+      onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
+      <strong style="color:#1e3a5f">${c.plate}</strong>
+      <span style="color:#64748b;margin-right:.4rem">${c.model}${c.car_name?' — '+c.car_name:''}</span>
+    </div>`;
+  });
+  if (!filtered.length) {
+    dd.innerHTML = allItem + `<div style="padding:.6rem .9rem;color:#94a3b8;font-size:.82rem">لا توجد نتائج</div>`;
+  } else {
+    dd.innerHTML = allItem + items.join('');
+  }
+}
+
+function showOpCarList() {
+  const dd = document.getElementById('opCarDropdown');
+  if (dd) dd.style.display = 'block';
+  filterOpCarList();
+}
+
+function filterOpCarList() {
+  const q = document.getElementById('opCarSearch')?.value || '';
+  const dd = document.getElementById('opCarDropdown');
+  if (dd) dd.style.display = 'block';
+  _renderOpCarList(window._opCars || [], q);
+}
+
+function selectOpCar(val, label) {
+  document.getElementById('opCar').value = val;
+  document.getElementById('opCarSearch').value = val ? label : '';
+  const dd = document.getElementById('opCarDropdown');
+  if (dd) dd.style.display = 'none';
 }
 
 async function generateOpCard() {
@@ -3824,6 +3907,12 @@ async function generateOpCard() {
     return;
   }
 
+  // لو summary وفيه صف واحد بـ trip_count=0 → مفيش بيانات
+  if(data.report_type === 'summary' && data.rows.length === 1 && (data.rows[0].trip_count||0) === 0) {
+    res_el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد رحلات مسجلة في هذه الفترة للمركبة المحددة</p></div>';
+    return;
+  }
+
   // Determine column labels from backend group_by field
   const gb = data.group_by || 'month';   // day | week | month | year
   const isDaily   = gb === 'day';
@@ -3832,14 +3921,19 @@ async function generateOpCard() {
   const isYearly  = gb === 'year';
 
   function periodLabel(p) {
+    if(!p) return '—';
+    // لو مش تاريخ (زي "إجمالي الفترة") → رجّعه كما هو
+    if(!/^\d{4}/.test(p)) return p;
     if(isDaily) {
       // p = "2026-04-20" → الأحد 20 أبريل
       const d = new Date(p + 'T00:00:00');
+      if(isNaN(d)) return p;
       return d.toLocaleDateString('ar-EG',{weekday:'long', day:'numeric', month:'long'});
     }
     if(isWeekly) {
       // p = "2026-04-14" (Monday) → 14 أبريل – 20 أبريل 2026
       const start = new Date(p + 'T00:00:00');
+      if(isNaN(start)) return p;
       const end   = new Date(start); end.setDate(end.getDate() + 6);
       const opts  = {day:'numeric', month:'long'};
       const optsY = {day:'numeric', month:'long', year:'numeric'};
@@ -3847,7 +3941,9 @@ async function generateOpCard() {
     }
     if(isMonthly) {
       // p = "2026-04" → أبريل 2026
-      const [y,m] = p.split('-');
+      const parts = p.split('-');
+      if(parts.length < 2) return p;
+      const [y,m] = parts;
       return new Date(+y,+m-1,1).toLocaleDateString('ar-EG',{month:'long', year:'numeric'});
     }
     if(isYearly) return `عام ${p}`;
