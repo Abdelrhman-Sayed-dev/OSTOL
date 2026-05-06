@@ -2727,6 +2727,8 @@ function buildTripsTable(trips, drivers, cars, garageLatest) {
         '<td style="text-align:center">' + (t.start_odometer != null ? t.start_odometer : '—') + '</td>' +
         '<td style="text-align:center">' + (t.end_odometer   != null ? t.end_odometer   : '—') + '</td>' +
         '<td style="text-align:center"><span style="background:#dbeafe;color:#1d4ed8;border-radius:20px;padding:.1rem .5rem;font-size:.78rem;font-weight:700">' + km + '</span></td>' +
+        '<td>' + formatLocation(t.start_location) + '</td>' +
+        '<td>' + formatLocation(t.end_location)   + '</td>' +
         '<td style="text-align:center">' + statusBadge + '</td>' +
         '<td style="text-align:center">' + editBtn + '</td>' +
       '</tr>';
@@ -2743,6 +2745,8 @@ function buildTripsTable(trips, drivers, cars, garageLatest) {
         '<th style="text-align:center">عداد البداية</th>' +
         '<th style="text-align:center">عداد النهاية</th>' +
         '<th style="text-align:center">المسافة</th>' +
+        '<th>موقع البداية</th>' +
+        '<th>موقع النهاية</th>' +
         '<th style="text-align:center">الحالة</th>' +
         '<th style="text-align:center">تعديل</th>' +
       '</tr></thead>' +
