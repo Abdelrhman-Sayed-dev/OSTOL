@@ -1525,7 +1525,9 @@ function buildAdminNav() {
     base.push({id:'driver-photos',      icon:'📷', label:'صور السائقين'});
   }
   if(currentUser && currentUser.role === 'admin') {
-    base.push({id:'super-voice', icon:'🎙️', label:'رسائل صوتية'});
+    base.push({id:'super-voice',    icon:'🎙️', label:'رسائل صوتية'});
+    base.push({id:'super-reassign', icon:'🔄', label:'إعادة تخصيص'});
+    base.push({id:'driver-photos',  icon:'📷', label:'صور السائقين'});
   }
   return base;
 }
@@ -2759,8 +2761,11 @@ async function renderTripsSection() {
         <button class="btn btn-ghost btn-sm" onclick="clearTripFilters()">✕ مسح</button>
       </div>
 
-      <div class="table-wrap" id="tripsTable">${buildTripsTable(trips,drivers,cars,garageLatest)}</div>
+      <div class="table-wrap" id="tripsTableWrap"></div>
+      <div id="tripsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>
     </div>`;
+  // initial render with pagination
+  filterTrips();
 }
 
 /* ── Combobox helpers ── */
@@ -2850,8 +2855,12 @@ function filterTrips() {
   const _tPage = getPage('trips');
   const _tSize = 15;
   const _tPaged = paginateData(f, _tPage, _tSize);
-  document.getElementById('tripsTable').innerHTML = buildTripsTable(_tPaged, window._driversData, window._carsData, window._garageLatest);
-  buildPagination('tripsPagination', f.length, _tSize, _tPage, function(p){ setPage('trips',p); filterTrips(); });
+  const twrap = document.getElementById('tripsTableWrap');
+  if(twrap) twrap.innerHTML = buildTripsTable(_tPaged, window._driversData, window._carsData, window._garageLatest);
+  buildPagination('tripsPagination', f.length, _tSize, _tPage, function(p) {
+    setPage('trips', p);
+    filterTrips();
+  });
   const _tcEl = document.getElementById('tripCount'); if(_tcEl) _tcEl.textContent=f.length;
 }
 
@@ -3483,7 +3492,7 @@ function buildFuelDetailTable(rows) {
           </tfoot>
         </table>
       </div>
-      <div id="tripsPagination" style="padding:0 1rem;border-top:.5px solid #e2e8f0"></div>
+      
     </div>`;
 }
 
@@ -6268,7 +6277,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list','driver-photos'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
