@@ -2697,32 +2697,33 @@ function buildTripsTable(trips, drivers, cars, garageLatest) {
   const carMap = Object.fromEntries((cars||[]).map(c => [c.id, c.plate]));
   const canEdit = !isReporter();
 
-  // ── Desktop table ──
-  let tableRows = '';
+  let rows = '';
   trips.forEach(function(t) {
     const dName    = drvMap[t.driver_id] || '—';
     const cPlate   = carMap[t.car_id]   || '—';
-    const garage   = t.garage_location  || '';
     const isActive = !t.end_time;
+    const startT   = t.start_time ? (isSuperuser() ? fmtDT(t.start_time) : fmtDate(t.start_time)) : '—';
+    const endT     = t.end_time   ? (isSuperuser() ? fmtDT(t.end_time)   : fmtDate(t.end_time))   : '—';
+    const km       = (t.start_odometer != null && t.end_odometer != null)
+      ? Math.max(0, t.end_odometer - t.start_odometer).toFixed(0) + ' كم' : '—';
     const statusBadge = isActive
       ? '<span class="badge badge-blue">● جارية</span>'
       : '<span class="badge badge-green">✓ منتهية</span>';
     const editBtn = canEdit
-      ? '<button class="btn btn-ghost btn-sm edit-odo" data-id="' + t.id + '" data-start="' + (t.start_odometer||'') + '" data-end="' + (t.end_odometer||'') + '" data-driver="' + dName.replace(/"/g,'') + '" data-active="' + (isActive?'1':'0') + '" title="تعديل العداد">✏️</button>'
+      ? '<button class="btn btn-ghost btn-sm edit-odo" data-id="' + t.id +
+        '" data-start="' + (t.start_odometer||'') +
+        '" data-end="'   + (t.end_odometer||'')   +
+        '" data-driver="' + dName.replace(/"/g,'') +
+        '" data-active="' + (isActive?'1':'0') + '">✏️</button>'
       : '';
-    const startT = t.start_time ? (isSuperuser() ? fmtDT(t.start_time) : fmtDate(t.start_time)) : '—';
-    const endT   = t.end_time   ? (isSuperuser() ? fmtDT(t.end_time)   : fmtDate(t.end_time))   : '—';
-    const km     = (t.start_odometer != null && t.end_odometer != null)
-      ? Math.max(0, t.end_odometer - t.start_odometer).toFixed(0) + ' كم'
-      : '—';
 
-    tableRows +=
+    rows +=
       '<tr>' +
         '<td style="color:var(--muted);font-size:.75rem">' + t.id + '</td>' +
         '<td><strong>' + dName + '</strong></td>' +
         '<td dir="ltr" style="font-weight:700;color:#1e3a5f">' + cPlate + '</td>' +
-        '<td style="font-size:.8rem">' + startT + '</td>' +
-        '<td style="font-size:.8rem">' + endT + '</td>' +
+        '<td style="font-size:.8rem;white-space:nowrap">' + startT + '</td>' +
+        '<td style="font-size:.8rem;white-space:nowrap">' + endT + '</td>' +
         '<td style="text-align:center">' + (t.start_odometer != null ? t.start_odometer : '—') + '</td>' +
         '<td style="text-align:center">' + (t.end_odometer   != null ? t.end_odometer   : '—') + '</td>' +
         '<td style="text-align:center"><span style="background:#dbeafe;color:#1d4ed8;border-radius:20px;padding:.1rem .5rem;font-size:.78rem;font-weight:700">' + km + '</span></td>' +
@@ -2731,8 +2732,8 @@ function buildTripsTable(trips, drivers, cars, garageLatest) {
       '</tr>';
   });
 
-  const desktopTable =
-    '<table class="trips-desktop-table">' +
+  return (
+    '<table>' +
       '<thead><tr>' +
         '<th>#</th>' +
         '<th>السائق</th>' +
@@ -2745,50 +2746,8 @@ function buildTripsTable(trips, drivers, cars, garageLatest) {
         '<th style="text-align:center">الحالة</th>' +
         '<th style="text-align:center">تعديل</th>' +
       '</tr></thead>' +
-      '<tbody>' + tableRows + '</tbody>' +
-    '</table>';
-
-  // ── Mobile cards ──
-  let mobileCards = '';
-  trips.forEach(function(t) {
-    const dName    = drvMap[t.driver_id] || '—';
-    const cPlate   = carMap[t.car_id]   || '—';
-    const isActive = !t.end_time;
-    const startT   = t.start_time ? fmtDT(t.start_time) : '—';
-    const endT     = t.end_time   ? fmtDT(t.end_time)   : '—';
-    const km       = (t.start_odometer != null && t.end_odometer != null)
-      ? Math.max(0, t.end_odometer - t.start_odometer).toFixed(0) + ' كم'
-      : '—';
-    const statusColor = isActive ? '#3b82f6' : '#10b981';
-    const statusText  = isActive ? '● جارية' : '✓ منتهية';
-    const editBtn = canEdit
-      ? '<button class="btn btn-ghost btn-sm edit-odo" style="font-size:.75rem;padding:.3rem .6rem" data-id="' + t.id + '" data-start="' + (t.start_odometer||'') + '" data-end="' + (t.end_odometer||'') + '" data-driver="' + dName.replace(/"/g,'') + '" data-active="' + (isActive?'1':'0') + '">✏️ عداد</button>'
-      : '';
-
-    mobileCards +=
-      '<div style="border:1px solid var(--border);border-radius:12px;padding:.75rem;margin-bottom:.5rem;background:#fff;position:relative">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem">' +
-          '<div>' +
-            '<div style="font-weight:800;font-size:.9rem">' + dName + '</div>' +
-            '<div style="font-size:.75rem;color:var(--muted);margin-top:1px">رحلة #' + t.id + '</div>' +
-          '</div>' +
-          '<span style="background:' + statusColor + '22;color:' + statusColor + ';border-radius:20px;padding:.15rem .55rem;font-size:.72rem;font-weight:700">' + statusText + '</span>' +
-        '</div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem;font-size:.8rem">' +
-          '<div><span style="color:var(--muted)">المركبة: </span><strong dir="ltr">' + cPlate + '</strong></div>' +
-          '<div><span style="color:var(--muted)">المسافة: </span><strong style="color:#2563eb">' + km + '</strong></div>' +
-          '<div><span style="color:var(--muted)">بداية: </span>' + startT + '</div>' +
-          '<div><span style="color:var(--muted)">نهاية: </span>' + endT + '</div>' +
-          '<div><span style="color:var(--muted)">عداد بداية: </span>' + (t.start_odometer != null ? t.start_odometer : '—') + '</div>' +
-          '<div><span style="color:var(--muted)">عداد نهاية: </span>' + (t.end_odometer != null ? t.end_odometer : '—') + '</div>' +
-        '</div>' +
-        (editBtn ? '<div style="margin-top:.5rem;text-align:left">' + editBtn + '</div>' : '') +
-      '</div>';
-  });
-
-  return (
-    '<div class="trips-desktop">' + desktopTable + '</div>' +
-    '<div class="trips-mobile" style="padding:.5rem .75rem">' + mobileCards + '</div>'
+      '<tbody>' + rows + '</tbody>' +
+    '</table>'
   );
 }
 
