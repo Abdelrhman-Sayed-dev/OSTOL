@@ -5189,6 +5189,7 @@ def _calc_kpi_score(
     emergencies: int, open_requests: int,
     target_km: float = 3000.0,
     oil_liters: float = 0.0, avg_km_all_drivers: float = 0.0,
+    fuel_dist: Optional[float] = None,   # المسافة بين أول وآخر تفويلة (بدون آخر تفويلة)
 ) -> dict:
     """
     حساب نقاط KPI لسائق واحد بالأوزان الجديدة:
@@ -5233,8 +5234,11 @@ def _calc_kpi_score(
         km_score = 0.0
 
     # ── 3. استهلاك الوقود (40%) ──
-    if km > 50 and fuel_liters > 0:
-        consumption = (fuel_liters / km) * 100  # لتر / 100كم
+    # المسافة المستخدمة: fuel_dist (بين أول وآخر تفويلة) إذا متاحة،
+    # وإلا km الكلية. الوقود بدون آخر تفويلة.
+    effective_dist = fuel_dist if (fuel_dist and fuel_dist > 50) else km
+    if effective_dist > 50 and fuel_liters > 0:
+        consumption = (fuel_liters / effective_dist) * 100  # لتر / 100كم
         if consumption <= 20:
             fuel_score = 100.0
         elif consumption <= 25:
@@ -5323,7 +5327,7 @@ def _calc_kpi_score(
         "fuel_score":   fuel_score,
         "oil_score":    oil_score,
         "emg_score":    emg_score,
-        "consumption":  round((fuel_liters / km) * 100, 1) if km > 50 and fuel_liters > 0 else None,
+        "consumption":  round((fuel_liters / effective_dist) * 100, 1) if (effective_dist > 50 and fuel_liters > 0) else None,
         "oil_per_1000": round((oil_liters / km) * 1000, 2) if km > 0 and oil_liters > 0 else None,
     }
 
@@ -5386,17 +5390,48 @@ async def driver_kpi_report(
             trips_count = tr["cnt"] or 0
             km_total    = max(0.0, float(tr["km"] or 0))
 
-            # ── وقود ──
+            # ── وقود — بيانات كل تفويلة على حدة (للمعادلة الصحيحة) ──
             c.execute("""
-                SELECT COALESCE(SUM(quantity),0) as liters,
-                       COALESCE(SUM(price),0)    as cost
+                SELECT quantity, odometer_reading, created_at,
+                       COALESCE(SUM(price),0) as cost
                 FROM workshop_records
                 WHERE driver_id=? AND type LIKE 'fuel_%'
                   AND date(created_at) >= ? AND date(created_at) < ?
+                GROUP BY id
+                ORDER BY created_at ASC
             """, (did, month_start, month_end))
-            fr = dict(c.fetchone())
-            fuel_liters = float(fr["liters"] or 0)
-            fuel_cost   = float(fr["cost"]   or 0)
+            fuel_rows = [dict(r) for r in c.fetchall()]
+            fuel_cost = sum(float(r.get("cost") or 0) for r in fuel_rows)
+
+            # معادلة الاستهلاك الصحيحة: بدون آخر تفويلة
+            # المسافة = عداد آخر تفويلة − عداد أول تفويلة
+            # الوقود  = مجموع الكميات بدون آخر تفويلة
+            if len(fuel_rows) >= 2:
+                rows_with_odo = [r for r in fuel_rows if r.get("odometer_reading")]
+                if len(rows_with_odo) >= 2:
+                    first_odo = float(rows_with_odo[0]["odometer_reading"])
+                    last_odo  = float(rows_with_odo[-1]["odometer_reading"])
+                    dist_km   = last_odo - first_odo
+                    liters_ex_last = sum(
+                        float(r.get("quantity") or 0)
+                        for r in fuel_rows[:-1]
+                    )
+                    if dist_km > 0 and liters_ex_last > 0:
+                        fuel_liters = liters_ex_last        # للحساب فقط
+                        _fuel_dist  = dist_km               # نحتفظ بيها للـ score
+                    else:
+                        fuel_liters = sum(float(r.get("quantity") or 0) for r in fuel_rows)
+                        _fuel_dist  = None
+                else:
+                    fuel_liters = sum(float(r.get("quantity") or 0) for r in fuel_rows)
+                    _fuel_dist  = None
+            elif len(fuel_rows) == 1:
+                # تفويلة واحدة — مش كافي نستبعد، نضع None للـ consumption
+                fuel_liters = 0.0   # مش هنحسب معدل
+                _fuel_dist  = None
+            else:
+                fuel_liters = 0.0
+                _fuel_dist  = None
 
             # ── زيوت (oil, filter) ──
             c.execute("""
@@ -5439,7 +5474,8 @@ async def driver_kpi_report(
                 "branch":      d["branch"] or "",
                 "trips":       trips_count,
                 "km":          km_total,
-                "fuel_liters": fuel_liters,
+                "fuel_liters": fuel_liters,    # بدون آخر تفويلة (للحساب)
+                "fuel_dist":   _fuel_dist,     # المسافة بين أول وآخر تفويلة
                 "fuel_cost":   fuel_cost,
                 "oil_liters":  oil_liters,
                 "emergencies": emg_count,
@@ -5465,6 +5501,7 @@ async def driver_kpi_report(
                 open_requests=d["open_req"],
                 oil_liters=d["oil_liters"],
                 avg_km_all_drivers=avg_km,
+                fuel_dist=d.get("fuel_dist"),
             )
             consumption = scores.pop("consumption", None)
 
