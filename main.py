@@ -168,6 +168,8 @@ def migrate_db():
             year           TEXT    DEFAULT '',
             chassis        TEXT    DEFAULT '',
             engine_number  TEXT    DEFAULT '',
+            serial_no      TEXT    DEFAULT '',
+            capacity       TEXT    DEFAULT '',
             equipment_type TEXT    DEFAULT 'معدات تحريك تربة',
             license_expiry TEXT    DEFAULT '',
             notes          TEXT    DEFAULT '',
@@ -179,6 +181,8 @@ def migrate_db():
             ("brand",           "TEXT DEFAULT ''"),
             ("equipment_type",  "TEXT DEFAULT 'معدات تحريك تربة'"),
             ("license_expiry",  "TEXT DEFAULT ''"),
+            ("serial_no",       "TEXT DEFAULT ''"),
+            ("capacity",        "TEXT DEFAULT ''"),
             ("notes",           "TEXT DEFAULT ''"),
             ("created_at",      "TEXT DEFAULT ''"),
         ]
@@ -859,8 +863,8 @@ class DriverResp(BaseModel):
     branch: Optional[str] = None; fixed_number: Optional[str] = None
 
 EQUIPMENT_TYPES = {
-    "معدات نقل", "معدات رفع", "معدات تحريك تربة",
-    "معدات ثابتة", "وسائل انتقال", "معدات إنتاجية",
+    "معدات تحريك تربة", "معدات رفع", "معدات ثابتة", "معدات نقل ثقيل",
+    "معدات نقل", "وسائل انتقال", "معدات إنتاجية",
     "معدات مساعدة", "معدات وآلات ورش", "أخرى"
 }
 
@@ -5807,7 +5811,18 @@ async def rental_import_template(cu: dict = Depends(require_admin)):
 # EQUIPMENT — معدات (جدول منفصل - بدون لوحة، الكود هو المعرف)
 # ══════════════════════════════════════════════════════════════════
 
-EQUIPMENT_TYPES = ["معدات تحريك تربة", "معدات رفع", "معدات ثابتة", "معدات نقل ثقيل"]
+EQUIPMENT_TYPES = [
+    "معدات تحريك تربة",
+    "معدات رفع",
+    "معدات ثابتة",
+    "معدات نقل ثقيل",
+    "معدات نقل",
+    "وسائل انتقال",
+    "معدات إنتاجية",
+    "معدات مساعدة",
+    "معدات وآلات ورش",
+    "أخرى",
+]
 
 def _validate_equipment_row(row: dict, idx: int, admin_branch: Optional[str]) -> dict:
     """التحقق من صف معدة واحد من ملف CSV"""
@@ -5833,13 +5848,15 @@ def _validate_equipment_row(row: dict, idx: int, admin_branch: Optional[str]) ->
         "equipment_name": name,
         "brand":          str(row.get("brand") or row.get("الماركة") or "").strip(),
         "model":          str(row.get("model") or row.get("الموديل") or "").strip(),
-        "year":           str(row.get("year") or row.get("سنة الصنع") or "").strip(),
+        "year":           str(row.get("year") or row.get("سنة الصنع") or row.get("Y.O.M") or "").strip(),
         "chassis":        str(row.get("chassis") or row.get("رقم الشاسيه") or "").strip(),
         "engine_number":  str(row.get("engine_number") or row.get("رقم المحرك") or "").strip(),
+        "serial_no":      str(row.get("serial_no") or row.get("الرقم التسلسلي") or row.get("SERIAL NO.") or "").strip(),
+        "capacity":       str(row.get("capacity") or row.get("الطاقة") or row.get("CAPACITY") or "").strip(),
         "equipment_type": eq_type,
         "branch":         branch,
         "sector":         str(row.get("sector") or row.get("القطاع") or "").strip(),
-        "project":        str(row.get("project") or row.get("المشروع") or "").strip(),
+        "project":        str(row.get("project") or row.get("المشروع") or row.get("ARABIC LOCATION") or "").strip(),
         "license_expiry": _normalize_date(row.get("license_expiry") or row.get("انتهاء الرخصة") or ""),
         "status":         status,
         "notes":          str(row.get("notes") or row.get("ملاحظات") or "").strip(),
@@ -6018,17 +6035,23 @@ async def equipment_import_confirm(
                     conn.execute("""
                         INSERT INTO equipment
                         (car_code,equipment_name,brand,model,year,chassis,engine_number,
-                         equipment_type,branch,sector,project,license_expiry,status,notes)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         serial_no,capacity,equipment_type,branch,sector,project,
+                         license_expiry,status,notes)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(car_code) DO UPDATE SET
                             equipment_name=excluded.equipment_name,
                             brand=excluded.brand, model=excluded.model,
                             year=excluded.year, chassis=excluded.chassis,
+                            engine_number=excluded.engine_number,
+                            serial_no=excluded.serial_no,
+                            capacity=excluded.capacity,
                             equipment_type=excluded.equipment_type,
                             branch=excluded.branch, sector=excluded.sector,
-                            project=excluded.project, status=excluded.status
+                            project=excluded.project, status=excluded.status,
+                            notes=excluded.notes
                     """, (row["car_code"], row["equipment_name"], row["brand"],
                           row["model"], row["year"], row["chassis"], row["engine_number"],
+                          row["serial_no"], row["capacity"],
                           row["equipment_type"], row["branch"], row["sector"],
                           row["project"], row["license_expiry"], row["status"], row["notes"]))
                     updated += 1
@@ -6036,10 +6059,12 @@ async def equipment_import_confirm(
                     conn.execute("""
                         INSERT OR IGNORE INTO equipment
                         (car_code,equipment_name,brand,model,year,chassis,engine_number,
-                         equipment_type,branch,sector,project,license_expiry,status,notes)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         serial_no,capacity,equipment_type,branch,sector,project,
+                         license_expiry,status,notes)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (row["car_code"], row["equipment_name"], row["brand"],
                           row["model"], row["year"], row["chassis"], row["engine_number"],
+                          row["serial_no"], row["capacity"],
                           row["equipment_type"], row["branch"], row["sector"],
                           row["project"], row["license_expiry"], row["status"], row["notes"]))
                     inserted += 1
