@@ -1970,44 +1970,46 @@ async function renderDriversSection() {
           <th>انتهاء رخصة السائق</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody id="driversBody">
-        ${drivers.length ? drivers.map(d=>{
-          // find assigned car from permissions
-          const perm = window._allPerms ? window._allPerms.find(p=>p.driver_id===d.id) : null;
-          const car  = perm && window._allCars ? window._allCars.find(c=>c.id===perm.car_id) : null;
-          const carBadge = car
-            ? `<span class="badge badge-navy" dir="ltr">🚗 ${car.plate}</span>`
-            : '<span style="color:var(--muted);font-size:.78rem">—</span>';
-          return `<tr>
-            <td>${d.id}</td>
-            <td><strong>${d.name}</strong></td>
-            <td dir="ltr">${d.phone||'—'}</td>
-            <td><code>${d.fixed_number||'—'}</code></td>
-            <td>${carBadge}</td>
-            <td>${licBadge(d.driver_license_expiry, true)}</td>
-            <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
-            <td style="white-space:nowrap">
-              ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
-                data-id="${d.id}" data-name="${d.name}" data-phone="${d.phone||''}"
-                data-status="${d.status}" data-nid="${d.national_id||''}"
-                data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
-                data-clic="${d.vehicle_license_expiry||''}"
-                data-username="${d.username||''}"
-                data-fixed="${d.fixed_number||''}"
-                data-branch="${d.branch||''}">✏️</button>
-              <button class="btn btn-outline btn-sm renew-license" data-id="${d.id}" data-name="${d.name}"
-                title="تجديد رخصة">📋</button>
-              <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
-            </td>
-          </tr>`;
-
-  window.__driversAll = drivers;
-  // ── Pagination ──
-  _initPagination('driversPagination', window.__driversAll||[], 15, 'drivers', renderDriversSection);
-        }).join('') : '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>'}
+        </tr></thead><tbody id="driversBody">
+        ${(()=>{
+          if(!drivers.length) return '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد سائقون</td></tr>';
+          const _dPg    = getPage('drivers');
+          const _dPaged = paginateData(drivers, _dPg, 15);
+          return _dPaged.map(d=>{
+            const perm = window._allPerms ? window._allPerms.find(p=>p.driver_id===d.id) : null;
+            const car  = perm && window._allCars ? window._allCars.find(c=>c.id===perm.car_id) : null;
+            const carBadge = car
+              ? `<span class="badge badge-navy" dir="ltr">🚗 ${car.plate}</span>`
+              : '<span style="color:var(--muted);font-size:.78rem">—</span>';
+            return `<tr>
+              <td>${d.id}</td>
+              <td><strong>${d.name}</strong></td>
+              <td dir="ltr">${d.phone||'—'}</td>
+              <td><code>${d.fixed_number||'—'}</code></td>
+              <td>${carBadge}</td>
+              <td>${licBadge(d.driver_license_expiry, true)}</td>
+              <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
+              <td style="white-space:nowrap">
+                ${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-driver"
+                  data-id="${d.id}" data-name="${d.name}" data-phone="${d.phone||''}"
+                  data-status="${d.status}" data-nid="${d.national_id||''}"
+                  data-birth="${d.birth_date||''}" data-dlic="${d.driver_license_expiry||''}"
+                  data-clic="${d.vehicle_license_expiry||''}"
+                  data-username="${d.username||''}"
+                  data-fixed="${d.fixed_number||''}"
+                  data-branch="${d.branch||''}">✏️</button>
+                <button class="btn btn-outline btn-sm renew-license" data-id="${d.id}" data-name="${d.name}"
+                  title="تجديد رخصة">📋</button>
+                <button class="btn btn-danger btn-sm del-driver" data-id="${d.id}">🗑️</button>` : '—'}
+              </td>
+            </tr>`;
+          }).join('');
+        })()}
         </tbody></table>
       <div id="driversPagination"></div>
       </div>
     </div>`;
+  buildPagination('driversPagination', drivers.length, 15, getPage('drivers'), function(p){ setPage('drivers',p); renderDriversSection(); });
   document.getElementById('driversList').addEventListener('click', async e=>{
     if(e.target.closest('.edit-driver')){ const b=e.target.closest('.edit-driver'); openEditDriverModal(b.dataset.id,b.dataset.name,b.dataset.phone,b.dataset.status,b.dataset.nid,b.dataset.birth,b.dataset.dlic,b.dataset.clic,b.dataset.username,b.dataset.fixed,b.dataset.branch); }
     if(e.target.closest('.renew-license')){ const b=e.target.closest('.renew-license'); openLicenseRenewalModal(+b.dataset.id, b.dataset.name); }
@@ -2343,33 +2345,34 @@ async function renderCarsSection() {
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead>
         <tbody id="carsBody">
-        ${cars.map(c=>{
-          const eqParts = (c.equipment_type||'').split('|');
-          const cat = eqParts[0]||'—';
-          const sub = eqParts[1]||'—';
-          const catBadge = cat==='عربات'
-            ? '<span class="badge badge-blue">🚗 عربات</span>'
-            : cat==='آلات ومعدات'
-            ? '<span class="badge badge-purple">⚙️ آلات ومعدات</span>'
-            : `<span style="color:var(--muted);font-size:.78rem">${cat}</span>`;
-
-  window.__carsAll = cars;
-  // ── Pagination ──
-  _initPagination('carsPagination', window.__carsAll||[], 15, 'cars', renderCarsSection);
-          return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
-            <td>${c.id}</td>
-            <td dir="ltr"><strong>${c.plate}</strong></td>
-            <td>${c.car_name||'—'}</td>
-            <td>${c.model}</td>
-            <td>${catBadge}</td>
-            <td style="font-size:.82rem">${sub}</td>
-            <td style="font-size:.82rem">${c.branch||'—'}</td>
-            <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
-            <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
-            <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
-          </tr>`;
-        }).join('')}
+        ${(()=>{
+          const _cPg    = getPage('cars');
+          const _cPaged = paginateData(window.__carsAll||cars, _cPg, 15);
+          return _cPaged.map(c=>{
+            const eqParts = (c.equipment_type||'').split('|');
+            const cat = eqParts[0]||'—';
+            const sub = eqParts[1]||'—';
+            const catBadge = cat==='عربات'
+              ? '<span class="badge badge-blue">🚗 عربات</span>'
+              : cat==='آلات ومعدات'
+              ? '<span class="badge badge-purple">⚙️ آلات ومعدات</span>'
+              : `<span style="color:var(--muted);font-size:.78rem">${cat}</span>`;
+            return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
+              <td>${c.id}</td>
+              <td dir="ltr"><strong>${c.plate}</strong></td>
+              <td>${c.car_name||'—'}</td>
+              <td>${c.model}</td>
+              <td>${catBadge}</td>
+              <td style="font-size:.82rem">${sub}</td>
+              <td style="font-size:.82rem">${c.branch||'—'}</td>
+              <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
+              <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
+              <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
+            </tr>`;
+          }).join('');
+        })()}
         </tbody></table>
+      <div id="carsPagination"></div>
       </div>
     </div>
     </div>
@@ -2423,6 +2426,7 @@ async function renderCarsSection() {
     });
   };
 
+  buildPagination('carsPagination', cars.length, 15, getPage('cars'), function(p){ setPage('cars',p); renderCarsSection(); });
   document.getElementById('carsList').addEventListener('click',async e=>{
     if(e.target.closest('.edit-car')){const cid=e.target.closest('.edit-car').dataset.id; const car=(window._carsCache||[]).find(c=>String(c.id)===String(cid))||{}; openAddCarModal(cid,car);}
     if(e.target.closest('.del-car')){const id=+e.target.closest('.del-car').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/cars/${id}`,'DELETE');showNotification('تم الحذف','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');}}
@@ -2703,7 +2707,7 @@ function buildTripsTable(trips,drivers,cars,garageLatest=[]) {
         data-active="${!t.end_time?'1':'0'}"
         title="تعديل العداد">✏️ عداد</button>`:'—'}</td></tr>`;
   }).join('')}</tbody></table>
-      <div id="carsPagination"></div>`;
+  `;
 }
 
 async function renderTripsSection() {
@@ -3067,12 +3071,12 @@ async function renderAdminWorkshops() {
         <button class="srch-reset" onclick="document.getElementById('wsSearchText').value='';document.getElementById('filterCar').value='';document.getElementById('filterType').value='';document.getElementById('filterDate').value='';filterWS()">✕ مسح</button>
       </div>
       <div class="table-wrap" id="wsTable">${buildWSTable(records)}</div>
+      <div id="workshopsPagination"></div>
     </div>`;
 
   window.__workshAll = records;
-  // ── Pagination ──
-  _initPagination('workshopsPagination', window.__workshAll||[], 15, 'workshops', renderAdminWorkshops);
   window._wsRecords = records;
+  filterWS();
   if(!isReporter()) {
     const phBtn = document.getElementById('pricesBtnPlaceholder');
     if(phBtn) {
@@ -3118,8 +3122,7 @@ function buildWSTable(records) {
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
     </tr>`;
-  }).join('')}</tbody></table>
-      <div id="workshopsPagination"></div>`;
+  }).join('')}</tbody></table>`;
 }
 
 function filterWS(){
@@ -3137,7 +3140,14 @@ function filterWS(){
     if(date && !r.created_at?.startsWith(date))       return false;
     return true;
   });
-  document.getElementById('wsTable').innerHTML = buildWSTable(f);
+  const _wsPg    = getPage('workshops');
+  const _wsPaged = paginateData(f, _wsPg, 15);
+  document.getElementById('wsTable').innerHTML = buildWSTable(_wsPaged);
+  buildPagination('workshopsPagination', f.length, 15, _wsPg, function(p){
+    setPage('workshops', p);
+    const _wsTb = document.getElementById('wsTable');
+    if(_wsTb) _wsTb.innerHTML = buildWSTable(paginateData(f, p, 15));
+  });
   const wsCnt=document.getElementById('wsCount');
   if(wsCnt) wsCnt.textContent=`${f.length} / ${(window._wsRecords||[]).length}`;
 }
@@ -4858,7 +4868,7 @@ async function renderEmergenciesSection() {
         <th>الموقع</th><th>ملاحظات</th><th>التسجيل الصوتي</th>
         <th>الحالة</th><th>الإجراء المتخذ</th><th>رسالة للسائق</th><th>بواسطة</th><th>وقت الإجراء</th><th>إجراء</th>
       </tr></thead><tbody id="emgBody">
-      ${reports.map(r=>`<tr class="report-row-${r.type}">
+      ${paginateData(reports, getPage('emergencies'), 10).map(r=>`<tr class="report-row-${r.type}">
         <td>${r.id}</td>
         <td>${r.type==='emergency'?'<span class="badge badge-emg">🚨 طارئ</span>':'<span class="badge badge-acc">🚗 حادث</span>'}</td>
         <td><strong>${r.driver_name||'—'}</strong></td>
@@ -4880,12 +4890,12 @@ async function renderEmergenciesSection() {
         </td>
       </tr>`).join('')}
       </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
-    </div>
-      <div id="emergPagination"></div>`;
+      <div id="emergPagination"></div>
+    </div>`;
 
   window.__emergAll = reports;
   // ── Pagination ──
-  _initPagination('emergPagination', window.__emergAll||[], 10, 'emergencies', renderEmergenciesSection);
+  buildPagination('emergPagination', reports.length, 10, getPage('emergencies'), function(p){ setPage('emergencies',p); renderEmergenciesSection(); });
 }
 
 
