@@ -4115,50 +4115,94 @@ async def get_last_odometer(car_id: int, cu: dict = Depends(get_user)):
 # 32. FRAUD DETECTION — كشف التلاعب
 # ══════════════════════════════════════════════════════
 @app.get("/reports/fraud-detection")
-async def fraud_detection(cu: dict = Depends(require_superuser)):
-    """تحليل شامل لكشف التلاعب المحتمل في البيانات."""
+async def fraud_detection(
+    date_from: Optional[str] = None,
+    date_to:   Optional[str] = None,
+    cu: dict = Depends(require_superuser)
+):
+    """تحليل شامل لكشف التلاعب المحتمل في البيانات — يدعم تصفية بالتاريخ."""
+
+    # ── بناء شرط التاريخ للرحلات ──
+    trip_date_conds = []
+    trip_date_params: list = []
+    if date_from:
+        trip_date_conds.append("date(t.start_time) >= ?")
+        trip_date_params.append(date_from)
+    if date_to:
+        trip_date_conds.append("date(t.start_time) <= ?")
+        trip_date_params.append(date_to)
+    trip_date_sql = (" AND " + " AND ".join(trip_date_conds)) if trip_date_conds else ""
+
+    # ── بناء شرط التاريخ لسجلات الورشة ──
+    ws_date_conds = []
+    ws_date_params: list = []
+    if date_from:
+        ws_date_conds.append("date(w.created_at) >= ?")
+        ws_date_params.append(date_from)
+    if date_to:
+        ws_date_conds.append("date(w.created_at) <= ?")
+        ws_date_params.append(date_to)
+    ws_date_sql = (" AND " + " AND ".join(ws_date_conds)) if ws_date_conds else ""
+
+    # ── شرط تاريخ لطلبات السائقين (بدون JOIN رحلات) ──
+    req_date_conds = []
+    req_date_params: list = []
+    if date_from:
+        req_date_conds.append("date(dr.created_at) >= ?")
+        req_date_params.append(date_from)
+    if date_to:
+        req_date_conds.append("date(dr.created_at) <= ?")
+        req_date_params.append(date_to)
+    req_date_sql = (" AND " + " AND ".join(req_date_conds)) if req_date_conds else ""
+
     with get_db() as conn:
         c = conn.cursor()
 
         # 1. عداد النهاية أقل من عداد البداية (تلاعب صريح)
-        c.execute("""SELECT t.id, t.start_odometer, t.end_odometer,
+        c.execute(f"""SELECT t.id, t.start_odometer, t.end_odometer,
                             t.start_time, t.end_time,
                             d.name driver_name, d.fixed_number,
-                            ca.plate
+                            ca.plate, ca.model
                      FROM trips t
                      JOIN drivers d ON d.id=t.driver_id
                      JOIN cars ca ON ca.id=t.car_id
                      WHERE t.end_odometer IS NOT NULL
                        AND t.start_odometer IS NOT NULL
-                       AND t.end_odometer < t.start_odometer""")
+                       AND t.end_odometer < t.start_odometer
+                       {trip_date_sql}""", trip_date_params)
         odometer_reversed = [dict(r) for r in c.fetchall()]
 
         # 2. رحلات بمسافة مشبوهة (أكثر من 500 كم في رحلة واحدة)
-        c.execute("""SELECT t.id, t.start_odometer, t.end_odometer,
+        c.execute(f"""SELECT t.id, t.start_odometer, t.end_odometer,
                             (t.end_odometer - t.start_odometer) AS distance,
                             t.start_time, t.end_time,
-                            d.name driver_name, d.fixed_number, ca.plate
+                            d.name driver_name, d.fixed_number,
+                            ca.plate, ca.model
                      FROM trips t
                      JOIN drivers d ON d.id=t.driver_id
                      JOIN cars ca ON ca.id=t.car_id
                      WHERE t.end_odometer IS NOT NULL AND t.start_odometer IS NOT NULL
                        AND (t.end_odometer - t.start_odometer) > 500
-                     ORDER BY distance DESC""")
+                       {trip_date_sql}
+                     ORDER BY distance DESC""", trip_date_params)
         high_distance = [dict(r) for r in c.fetchall()]
 
         # 3. رحلتان متداخلتان لنفس السائق
-        c.execute("""SELECT a.id id1, b.id id2,
+        c.execute(f"""SELECT a.id id1, b.id id2,
                             a.start_time, a.end_time,
                             b.start_time start2, b.end_time end2,
-                            d.name driver_name, d.fixed_number
+                            d.name driver_name, d.fixed_number,
+                            '' AS plate, '' AS model
                      FROM trips a JOIN trips b ON a.driver_id=b.driver_id AND a.id<b.id
                      JOIN drivers d ON d.id=a.driver_id
                      WHERE a.end_time IS NOT NULL AND b.end_time IS NOT NULL
-                       AND a.start_time < b.end_time AND a.end_time > b.start_time""")
+                       AND a.start_time < b.end_time AND a.end_time > b.start_time
+                       {trip_date_sql.replace('t.start_time', 'a.start_time')}""",
+                  trip_date_params)
         overlapping = [dict(r) for r in c.fetchall()]
 
         # 4. رحلتان متداخلتان لنفس المركبة (مع سائقين مختلفين)
-        c.execute("""SELECT a.id id1, b.id id2, ca.plate,
+        c.execute(f"""SELECT a.id id1, b.id id2, ca.plate, ca.model,
                             da.name driver1, db.name driver2,
                             a.start_time, a.end_time,
                             b.start_time start2, b.end_time end2
@@ -4168,14 +4212,16 @@ async def fraud_detection(cu: dict = Depends(require_superuser)):
                      JOIN drivers db ON db.id=b.driver_id
                      WHERE a.end_time IS NOT NULL AND b.end_time IS NOT NULL
                        AND a.start_time < b.end_time AND a.end_time > b.start_time
-                       AND a.driver_id != b.driver_id""")
+                       AND a.driver_id != b.driver_id
+                       {trip_date_sql.replace('t.start_time', 'a.start_time')}""",
+                  trip_date_params)
         car_overlap = [dict(r) for r in c.fetchall()]
 
         # 5. رحلة وقتها قصير جداً (<3 دقائق) لكن مسافة كبيرة (>10 كم)
-        c.execute("""SELECT t.id,
+        c.execute(f"""SELECT t.id,
                             (julianday(t.end_time)-julianday(t.start_time))*1440 AS minutes,
                             (t.end_odometer - t.start_odometer) AS distance,
-                            d.name driver_name, ca.plate,
+                            d.name driver_name, ca.plate, ca.model,
                             t.start_time, t.end_time
                      FROM trips t
                      JOIN drivers d ON d.id=t.driver_id
@@ -4183,44 +4229,135 @@ async def fraud_detection(cu: dict = Depends(require_superuser)):
                      WHERE t.end_time IS NOT NULL AND t.end_odometer IS NOT NULL
                        AND t.start_odometer IS NOT NULL
                        AND (julianday(t.end_time)-julianday(t.start_time))*1440 < 3
-                       AND (t.end_odometer - t.start_odometer) > 10""")
+                       AND (t.end_odometer - t.start_odometer) > 10
+                       {trip_date_sql}""", trip_date_params)
         impossible_speed = [dict(r) for r in c.fetchall()]
 
-        # 6. وقود كثير في فترة قصيرة (أكثر من 200 لتر في يوم واحد لنفس المركبة)
-        c.execute("""SELECT vehicle_id, DATE(created_at) AS day,
-                            SUM(quantity) AS total_liters, COUNT(*) AS refills,
-                            ca.plate
+        # 6. وقود كثير في يوم واحد (>200 لتر)
+        c.execute(f"""SELECT w.vehicle_id, DATE(w.created_at) AS day,
+                            SUM(w.quantity) AS total_liters, COUNT(*) AS refills,
+                            ca.plate, ca.model
                      FROM workshop_records w
                      JOIN cars ca ON ca.id=w.vehicle_id
-                     WHERE type LIKE 'fuel_%' AND quantity IS NOT NULL
-                     GROUP BY vehicle_id, day
+                     WHERE w.type LIKE 'fuel_%' AND w.quantity IS NOT NULL
+                       {ws_date_sql}
+                     GROUP BY w.vehicle_id, day
                      HAVING total_liters > 200
-                     ORDER BY total_liters DESC""")
+                     ORDER BY total_liters DESC""", ws_date_params)
         excess_fuel = [dict(r) for r in c.fetchall()]
 
-        # 7. سائق عدّل طلب عداد أكثر من 3 مرات في أسبوع
-        c.execute("""SELECT driver_id, COUNT(*) AS requests,
+        # 7. سائق عدّل طلب عداد أكثر من 3 مرات في الفترة
+        req_week_cond = "AND dr.created_at >= datetime('now','-7 days')" if not req_date_conds else ""
+        c.execute(f"""SELECT dr.driver_id, COUNT(*) AS requests,
                             d.name driver_name, d.fixed_number,
-                            MIN(created_at) AS first_req
-                     FROM driver_requests
-                     JOIN drivers d ON d.id=driver_requests.driver_id
-                     WHERE type='odometer_change'
-                       AND created_at >= datetime('now','-7 days')
-                     GROUP BY driver_id HAVING requests > 3
-                     ORDER BY requests DESC""")
+                            MIN(dr.created_at) AS first_req
+                     FROM driver_requests dr
+                     JOIN drivers d ON d.id=dr.driver_id
+                     WHERE dr.type='odometer_change'
+                       {req_week_cond}
+                       {req_date_sql}
+                     GROUP BY dr.driver_id HAVING requests > 3
+                     ORDER BY requests DESC""", req_date_params)
         repeated_odometer = [dict(r) for r in c.fetchall()]
 
-    total_alerts = (len(odometer_reversed) + len(overlapping) + len(car_overlap) +
-                    len(impossible_speed) + len(excess_fuel) + len(repeated_odometer))
-    high_risk   = len(odometer_reversed) + len(impossible_speed) + len(car_overlap)
+    # ── بناء قائمة موحدة من التنبيهات (alerts) للـ frontend ──
+    alerts: list = []
+
+    for r in odometer_reversed:
+        alerts.append({
+            "type":     "odometer_reverse",
+            "severity": "high",
+            "label":    "عداد متناقص",
+            "plate":    r.get("plate", "—"),
+            "model":    r.get("model", ""),
+            "date":     (r.get("start_time") or "")[:10],
+            "detail":   f"عداد بداية {r['start_odometer']} → نهاية {r['end_odometer']} | السائق: {r['driver_name']}",
+        })
+
+    for r in impossible_speed:
+        alerts.append({
+            "type":     "impossible_speed",
+            "severity": "high",
+            "label":    "سرعة مستحيلة",
+            "plate":    r.get("plate", "—"),
+            "model":    r.get("model", ""),
+            "date":     (r.get("start_time") or "")[:10],
+            "detail":   f"{round(r['distance'],1)} كم في {round(r['minutes'],1)} دقيقة | السائق: {r['driver_name']}",
+        })
+
+    for r in car_overlap:
+        alerts.append({
+            "type":     "car_overlap",
+            "severity": "high",
+            "label":    "مركبة بسائقين متزامنين",
+            "plate":    r.get("plate", "—"),
+            "model":    r.get("model", ""),
+            "date":     (r.get("start_time") or "")[:10],
+            "detail":   f"{r['driver1']} و {r['driver2']} في نفس الوقت",
+        })
+
+    for r in overlapping:
+        alerts.append({
+            "type":     "driver_overlap",
+            "severity": "medium",
+            "label":    "رحلتان متداخلتان لسائق",
+            "plate":    "—",
+            "model":    "",
+            "date":     (r.get("start_time") or "")[:10],
+            "detail":   f"السائق: {r['driver_name']} | رحلة {r['id1']} ورحلة {r['id2']}",
+        })
+
+    for r in excess_fuel:
+        alerts.append({
+            "type":     "duplicate_fuel",
+            "severity": "medium",
+            "label":    "وقود زائد في يوم",
+            "plate":    r.get("plate", "—"),
+            "model":    r.get("model", ""),
+            "date":     r.get("day", ""),
+            "detail":   f"{round(r['total_liters'],1)} لتر في {r['refills']} عمليات تزويد",
+        })
+
+    for r in high_distance:
+        alerts.append({
+            "type":     "high_distance",
+            "severity": "low",
+            "label":    "مسافة مرتفعة",
+            "plate":    r.get("plate", "—"),
+            "model":    r.get("model", ""),
+            "date":     (r.get("start_time") or "")[:10],
+            "detail":   f"{round(r['distance'],1)} كم في رحلة واحدة | السائق: {r['driver_name']}",
+        })
+
+    for r in repeated_odometer:
+        alerts.append({
+            "type":     "repeated_odometer",
+            "severity": "low",
+            "label":    "طلبات تعديل عداد متكررة",
+            "plate":    "—",
+            "model":    "",
+            "date":     (r.get("first_req") or "")[:10],
+            "detail":   f"السائق: {r['driver_name']} | {r['requests']} طلبات",
+        })
+
+    high_count   = sum(1 for a in alerts if a["severity"] == "high")
+    medium_count = sum(1 for a in alerts if a["severity"] == "medium")
+    low_count    = sum(1 for a in alerts if a["severity"] == "low")
 
     return {
         "summary": {
-            "total_alerts": total_alerts,
-            "high_risk":    high_risk,
-            "medium_risk":  len(overlapping) + len(excess_fuel),
-            "low_risk":     len(repeated_odometer) + len(high_distance),
+            "total":  len(alerts),
+            "high":   high_count,
+            "medium": medium_count,
+            "low":    low_count,
+            # backward compat keys
+            "total_alerts": len(alerts),
+            "high_risk":    high_count,
+            "medium_risk":  medium_count,
+            "low_risk":     low_count,
         },
+        "alerts": alerts,
+        # raw lists kept for backward compat
         "odometer_reversed":  odometer_reversed,
         "high_distance":      high_distance,
         "overlapping_driver": overlapping,
