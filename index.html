@@ -1862,32 +1862,85 @@ async function renderOverview() {
   const _overviewEl = document.createElement('div');
   _overviewEl.innerHTML = `
     <div class="stats-row" style="margin-bottom:1.2rem">
-      <div class="stat-card"><div class="stat-icon">🚙</div><div class="stat-value">${cars.filter(c=>c.status!=='inactive').length}</div><div class="stat-label">مركبات نشطة</div></div>
-      <div class="stat-card"><div class="stat-icon">🗺️</div><div class="stat-value" style="color:#10b981">${active}</div><div class="stat-label">رحلة جارية</div></div>
-      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value">${completed}</div><div class="stat-label">رحلة مكتملة</div></div>
-
-      <div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value" style="color:#3b82f6">${Math.round(fuelCost).toLocaleString('ar-EG')}</div><div class="stat-label">تكلفة الوقود (جنيه)</div></div>
-      <div class="stat-card"><div class="stat-icon">🚨</div><div class="stat-value" style="color:${unread>0?'#dc2626':'var(--primary)'}">${unread}</div><div class="stat-label">بلاغ غير مقروء</div></div>
+      <div class="stat-card" style="border-radius:14px;cursor:pointer" onclick="switchSection('cars')">
+        <div class="stat-icon" style="font-size:1.6rem">🚙</div>
+        <div class="stat-value" style="font-size:2rem">${cars.filter(c=>c.status==='available').length}</div>
+        <div class="stat-label">مركبات متاحة</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">من ${cars.length} إجمالي</div>
+      </div>
+      <div class="stat-card" style="border-radius:14px;cursor:pointer" onclick="switchSection('trips')">
+        <div class="stat-icon" style="font-size:1.6rem">🗺️</div>
+        <div class="stat-value" style="font-size:2rem;color:#10b981">${active}</div>
+        <div class="stat-label">رحلة جارية</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">${completed} مكتملة</div>
+      </div>
+      <div class="stat-card" style="border-radius:14px;cursor:pointer" onclick="switchSection('drivers')">
+        <div class="stat-icon" style="font-size:1.6rem">👨‍✈️</div>
+        <div class="stat-value" style="font-size:2rem">${drivers.filter(d=>d.status==='active').length}</div>
+        <div class="stat-label">سائق نشط</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">من ${drivers.length} إجمالي</div>
+      </div>
+      <div class="stat-card" style="border-radius:14px">
+        <div class="stat-icon" style="font-size:1.6rem">⛽</div>
+        <div class="stat-value" style="font-size:1.6rem;color:#3b82f6">${Math.round(fuelCost).toLocaleString('ar-EG')}</div>
+        <div class="stat-label">تكلفة الوقود (ج)</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">إجمالي مسجّل</div>
+      </div>
+      <div class="stat-card" style="border-radius:14px;cursor:pointer" onclick="switchSection('emergency')" style="${unread>0?'border:1.5px solid #ef4444':''}">
+        <div class="stat-icon" style="font-size:1.6rem">🚨</div>
+        <div class="stat-value" style="font-size:2rem;color:${unread>0?'#dc2626':'var(--primary)'}">${unread}</div>
+        <div class="stat-label">بلاغ غير مقروء</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:.2rem">${emgs.length} إجمالي البلاغات</div>
+      </div>
     </div>
+    <!-- Charts row 1: trips timeline full width + drivers -->
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1rem">
-      <div class="card"><div class="card-header"><div class="card-title">📈 الرحلات عبر الزمن (آخر 7 أيام)</div></div>
-        <div style="padding:1rem;height:220px"><canvas id="chartTripsTime"></canvas></div></div>
-      <div class="card"><div class="card-header"><div class="card-title">🍩 حسب الحالة</div></div>
-        <div style="padding:.5rem;height:220px;display:flex;align-items:center;justify-content:center"><canvas id="chartTripStatus"></canvas></div></div>
+      <div class="card" style="border-radius:14px">
+        <div class="card-header" style="padding:.75rem 1.25rem">
+          <div class="card-title" style="font-size:.88rem;color:var(--muted);font-weight:600;letter-spacing:.03em">📈 رحلات آخر ٧ أيام</div>
+        </div>
+        <div style="padding:.5rem 1rem 1rem;height:210px"><canvas id="chartTripsTime"></canvas></div>
+      </div>
+      <div class="card" style="border-radius:14px">
+        <div class="card-header" style="padding:.75rem 1.25rem">
+          <div class="card-title" style="font-size:.88rem;color:var(--muted);font-weight:600;letter-spacing:.03em">👨‍✈️ أنشط السائقين</div>
+        </div>
+        <div style="padding:.5rem 1rem 1rem;height:210px"><canvas id="chartTopDrivers"></canvas></div>
+      </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
-      <div class="card"><div class="card-header"><div class="card-title">👨‍✈️ أعلى السائقين في عدد الرحلات</div></div>
-        <div style="padding:1rem;height:230px"><canvas id="chartTopDrivers"></canvas></div></div>
-      <div class="card"><div class="card-header"><div class="card-title">⛽ تكلفة الوقود (آخر 7 أيام)</div></div>
-        <div style="padding:1rem;height:230px"><canvas id="chartFuelCost"></canvas></div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
-      <div class="card"><div class="card-header"><div class="card-title">🚙 المسافة (كم) حسب المركبة (أعلى 5)</div></div>
-        <div style="padding:1rem;height:230px"><canvas id="chartCarsKm"></canvas></div></div>
-      <div class="card"><div class="card-header"><div class="card-title">🕐 آخر الرحلات</div></div>
-        <div class="table-wrap" style="max-height:270px;overflow-y:auto">
-          <table><thead><tr><th>#</th><th>السائق</th><th>المركبة</th><th>الوقت</th><th>الحالة</th></tr></thead>
-          <tbody>${latestRows}</tbody></table></div></div>
+
+    <!-- Charts row 2: fuel + cars km + latest trips -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="card" style="border-radius:14px">
+        <div class="card-header" style="padding:.75rem 1.25rem">
+          <div class="card-title" style="font-size:.88rem;color:var(--muted);font-weight:600;letter-spacing:.03em">⛽ تكلفة الوقود (آخر ٧ أيام)</div>
+        </div>
+        <div style="padding:.5rem 1rem 1rem;height:200px"><canvas id="chartFuelCost"></canvas></div>
+      </div>
+      <div class="card" style="border-radius:14px">
+        <div class="card-header" style="padding:.75rem 1.25rem">
+          <div class="card-title" style="font-size:.88rem;color:var(--muted);font-weight:600;letter-spacing:.03em">🚙 أعلى مركبات (كم)</div>
+        </div>
+        <div style="padding:.5rem 1rem 1rem;height:200px"><canvas id="chartCarsKm"></canvas></div>
+      </div>
+      <div class="card" style="border-radius:14px">
+        <div class="card-header" style="padding:.75rem 1.25rem;display:flex;align-items:center;justify-content:space-between">
+          <div class="card-title" style="font-size:.88rem;color:var(--muted);font-weight:600;letter-spacing:.03em">🕐 آخر الرحلات</div>
+        </div>
+        <div class="table-wrap" style="max-height:220px;overflow-y:auto">
+          <table style="font-size:.82rem">
+            <thead><tr><th>السائق</th><th>المركبة</th><th>الحالة</th></tr></thead>
+            <tbody>${trips.slice(0,8).map(t=>{
+              const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
+              const cPlate=cars.find(c=>c.id===t.car_id)?.plate||'—';
+              const badge=!t.end_time
+                ?'<span class="badge badge-blue" style="font-size:.68rem">● جارية</span>'
+                :'<span class="badge badge-green" style="font-size:.68rem">✓ منتهية</span>';
+              return `<tr><td style="font-weight:600">${dName}</td><td dir="ltr"><strong>${cPlate}</strong></td><td>${badge}</td></tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>
     </div>
   ${maintAlerts.length > 0 ? `
     <div class="card" style="border:2px solid #f97316;margin-top:1rem">
@@ -1923,15 +1976,6 @@ async function renderOverview() {
       borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.12)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#3b82f6'}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true,ticks:{stepSize:1}}}}
-  });
-
-  new Chart(document.getElementById('chartTripStatus'), {
-    type:'doughnut',
-    data:{labels:['✅ مكتملة','🔵 جارية','🅿️ في الجراج'],
-      datasets:[{data:[completed,active,garageCount],
-        backgroundColor:['#10b981','#3b82f6','#f59e0b'],borderWidth:2,borderColor:isDark?'#1e293b':'#fff'}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom',labels:{padding:10,font:{size:11}}}}}
   });
 
   new Chart(document.getElementById('chartTopDrivers'), {
