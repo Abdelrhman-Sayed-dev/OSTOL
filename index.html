@@ -10414,10 +10414,12 @@ async function renderRentalEquipment() {
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
         <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
-          <div class="form-group" style="margin:0;min-width:140px">
+          <div class="form-group" style="margin:0;min-width:180px">
             <label>الشهر</label>
-            <input type="month" id="rentalMonth" value="${defaultMonth}"
-              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+            <select id="rentalMonth" onchange="onRentalMonthChange()"
+              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+              <option value="">كل الشهور</option>
+            </select>
           </div>
           <div class="form-group" style="margin:0;min-width:150px">
             <label>الفرع</label>
@@ -10430,7 +10432,6 @@ async function renderRentalEquipment() {
               style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
           </div>
           <button class="btn btn-primary btn-sm" onclick="loadRentalData()">🔍 عرض</button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('rentalMonth').value='';loadRentalData()" title="عرض كل الشهور">📋 كل الشهور</button>
           <button class="btn btn-outline btn-sm" onclick="exportRentalCSV()">📥 تصدير</button>
         </div>
       </div>
@@ -10552,7 +10553,8 @@ async function renderRentalEquipment() {
 }
 
 async function loadRentalData() {
-  const monthInput = document.getElementById('rentalMonth')?.value || '';
+  const monthSel = document.getElementById('rentalMonth');
+  const selectedMonth = monthSel?.value || '';
   const branch = document.getElementById('rentalBranch')?.value?.trim() || '';
   const source = document.getElementById('rentalSource')?.value?.trim() || '';
   const tbody   = document.getElementById('rentalTableBody');
@@ -10560,34 +10562,41 @@ async function loadRentalData() {
 
   if(tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
   try {
-    // نجيب كل البيانات بدون فلتر شهر من السيرفر، ثم نفلتر محلياً
+    // جيب كل البيانات بدون فلتر شهر من السيرفر
     let url = `/rental-equipment`;
     const params = [];
     if(branch) params.push(`branch=${encodeURIComponent(branch)}`);
     if(source) params.push(`source=${encodeURIComponent(source)}`);
     if(params.length) url += '?' + params.join('&');
     const data = await apiCall(url);
-    let all = data.records || [];
+    const all = data.records || [];
 
-    // فلترة الشهر محلياً — مرونة في المطابقة
-    if(monthInput) {
-      const mNorm = monthInput.slice(0,7); // 2026-05
-      all = all.filter(r => {
-        const m = (r.month||'').trim();
-        return m === mNorm || m.startsWith(mNorm) || _normalizeMonth(m) === mNorm;
-      });
+    // بناء قائمة الشهور المتاحة فعلياً في الداتا
+    const monthsSet = new Set(all.map(r => (r.month||'').trim()).filter(Boolean));
+    const sortedMonths = [...monthsSet].sort().reverse();
+    if(monthSel) {
+      const prevVal = monthSel.value;
+      monthSel.innerHTML = '<option value="">كل الشهور</option>' +
+        sortedMonths.map(m => `<option value="${m}" ${m===prevVal?'selected':''}>${m}</option>`).join('');
+      // لو ما كانش في شهر محدد وفيه شهور، اختار الأحدث تلقائياً
+      if(!prevVal && sortedMonths.length) monthSel.value = sortedMonths[0];
     }
-    _rentalData = all;
+
+    // فلترة محلية بالشهر المختار
+    const currentMonth = monthSel?.value || '';
+    _rentalData = currentMonth
+      ? all.filter(r => (r.month||'').trim() === currentMonth)
+      : all;
 
     const fmt = v => parseFloat(v||0).toLocaleString('ar-EG');
     const totalCost = _rentalData.reduce((s,r)=>s+parseFloat(r.monthly_rate||0),0);
     const totalFuel = _rentalData.reduce((s,r)=>s+parseFloat(r.fuel_liters||0),0);
     const totalDays = _rentalData.reduce((s,r)=>s+parseFloat(r.work_days||0),0);
     if(summary) summary.innerHTML = [
-      {label:'إجمالي المعدات',    value: _rentalData.length,              icon:'🔑', color:'var(--primary)'},
-      {label:'إجمالي القيمة',     value: fmt(totalCost)+' ج',              icon:'💰', color:'#ef4444'},
-      {label:'إجمالي السولار',    value: fmt(totalFuel)+' ل',              icon:'⛽', color:'#f97316'},
-      {label:'إجمالي أيام العمل', value: fmt(totalDays),                   icon:'📅', color:'#3b82f6'},
+      {label:'إجمالي المعدات',    value: _rentalData.length,     icon:'🔑', color:'var(--primary)'},
+      {label:'إجمالي القيمة',     value: fmt(totalCost)+' ج',    icon:'💰', color:'#ef4444'},
+      {label:'إجمالي السولار',    value: fmt(totalFuel)+' ل',    icon:'⛽', color:'#f97316'},
+      {label:'إجمالي أيام العمل', value: fmt(totalDays),          icon:'📅', color:'#3b82f6'},
     ].map(s=>`
       <div class="card" style="text-align:center;padding:1rem">
         <div style="font-size:1.4rem">${s.icon}</div>
@@ -10595,14 +10604,21 @@ async function loadRentalData() {
         <div style="font-weight:800;color:${s.color}">${s.value}</div>
       </div>`).join('');
 
-    renderRentalTable(_rentalData);
-    if(!_rentalData.length && all.length === 0 && (data.records||[]).length > 0) {
-      if(tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;color:#f97316;padding:2rem">⚠️ لا توجد بيانات للشهر المحدد — جرّب اختيار شهر مختلف أو امسح الفلتر</td></tr>`;
+    if(!_rentalData.length && all.length) {
+      if(tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;color:#f97316;padding:2rem">⚠️ لا توجد بيانات للشهر المحدد — جرّب شهراً آخر</td></tr>`;
+    } else {
+      renderRentalTable(_rentalData);
     }
   } catch(e) {
     if(tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
   }
 }
+
+// عند تغيير الشهر من الـ dropdown — فلترة فورية بدون re-fetch
+function onRentalMonthChange() {
+  loadRentalData();
+}
+
 
 // تطبيع الشهر من أشكال مختلفة إلى YYYY-MM
 function _normalizeMonth(m) {
