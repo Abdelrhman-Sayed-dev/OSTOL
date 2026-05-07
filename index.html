@@ -1934,15 +1934,6 @@ async function renderOverview() {
 
   <div class="xdb">
 
-    <!-- ── شريط الحالة العامة ── -->
-    <div class="xdb-status ${criticalCount>0?'crit':warningTotal>0?'warn':'ok'}">
-      ${criticalCount>0
-        ?`⚠️ يوجد ${criticalCount} تنبيه حرج يحتاج تدخل فوري`
-        :warningTotal>0
-          ?`🟡 يوجد ${warningTotal} تنبيه يحتاج متابعة`
-          :`✅ الأسطول بحالة جيدة — لا توجد تنبيهات حرجة`}
-      <span style="margin-right:auto;opacity:.6">${new Date().toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'})}</span>
-    </div>
 
     <!-- ── الأرقام الكبيرة ── -->
     <div class="xdb-nums">
