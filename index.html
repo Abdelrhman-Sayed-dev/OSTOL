@@ -10430,6 +10430,7 @@ async function renderRentalEquipment() {
               style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
           </div>
           <button class="btn btn-primary btn-sm" onclick="loadRentalData()">🔍 عرض</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('rentalMonth').value='';loadRentalData()" title="عرض كل الشهور">📋 كل الشهور</button>
           <button class="btn btn-outline btn-sm" onclick="exportRentalCSV()">📥 تصدير</button>
         </div>
       </div>
@@ -10551,7 +10552,7 @@ async function renderRentalEquipment() {
 }
 
 async function loadRentalData() {
-  const month  = document.getElementById('rentalMonth')?.value  || '';
+  const monthInput = document.getElementById('rentalMonth')?.value || '';
   const branch = document.getElementById('rentalBranch')?.value?.trim() || '';
   const source = document.getElementById('rentalSource')?.value?.trim() || '';
   const tbody   = document.getElementById('rentalTableBody');
@@ -10559,18 +10560,34 @@ async function loadRentalData() {
 
   if(tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
   try {
-    let url = `/rental-equipment?month=${month}`;
-    if(branch) url += `&branch=${encodeURIComponent(branch)}`;
-    if(source) url += `&source=${encodeURIComponent(source)}`;
+    // نجيب كل البيانات بدون فلتر شهر من السيرفر، ثم نفلتر محلياً
+    let url = `/rental-equipment`;
+    const params = [];
+    if(branch) params.push(`branch=${encodeURIComponent(branch)}`);
+    if(source) params.push(`source=${encodeURIComponent(source)}`);
+    if(params.length) url += '?' + params.join('&');
     const data = await apiCall(url);
-    _rentalData = data.records || [];
+    let all = data.records || [];
+
+    // فلترة الشهر محلياً — مرونة في المطابقة
+    if(monthInput) {
+      const mNorm = monthInput.slice(0,7); // 2026-05
+      all = all.filter(r => {
+        const m = (r.month||'').trim();
+        return m === mNorm || m.startsWith(mNorm) || _normalizeMonth(m) === mNorm;
+      });
+    }
+    _rentalData = all;
 
     const fmt = v => parseFloat(v||0).toLocaleString('ar-EG');
+    const totalCost = _rentalData.reduce((s,r)=>s+parseFloat(r.monthly_rate||0),0);
+    const totalFuel = _rentalData.reduce((s,r)=>s+parseFloat(r.fuel_liters||0),0);
+    const totalDays = _rentalData.reduce((s,r)=>s+parseFloat(r.work_days||0),0);
     if(summary) summary.innerHTML = [
       {label:'إجمالي المعدات',    value: _rentalData.length,              icon:'🔑', color:'var(--primary)'},
-      {label:'إجمالي القيمة',     value: fmt(data.total_monthly_cost)+' ج', icon:'💰', color:'#ef4444'},
-      {label:'إجمالي السولار',    value: fmt(data.total_fuel_liters)+' ل',  icon:'⛽', color:'#f97316'},
-      {label:'إجمالي أيام العمل', value: fmt(data.total_work_days),          icon:'📅', color:'#3b82f6'},
+      {label:'إجمالي القيمة',     value: fmt(totalCost)+' ج',              icon:'💰', color:'#ef4444'},
+      {label:'إجمالي السولار',    value: fmt(totalFuel)+' ل',              icon:'⛽', color:'#f97316'},
+      {label:'إجمالي أيام العمل', value: fmt(totalDays),                   icon:'📅', color:'#3b82f6'},
     ].map(s=>`
       <div class="card" style="text-align:center;padding:1rem">
         <div style="font-size:1.4rem">${s.icon}</div>
@@ -10579,9 +10596,35 @@ async function loadRentalData() {
       </div>`).join('');
 
     renderRentalTable(_rentalData);
+    if(!_rentalData.length && all.length === 0 && (data.records||[]).length > 0) {
+      if(tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;color:#f97316;padding:2rem">⚠️ لا توجد بيانات للشهر المحدد — جرّب اختيار شهر مختلف أو امسح الفلتر</td></tr>`;
+    }
   } catch(e) {
     if(tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
   }
+}
+
+// تطبيع الشهر من أشكال مختلفة إلى YYYY-MM
+function _normalizeMonth(m) {
+  if(!m) return '';
+  m = m.trim();
+  // Already YYYY-MM
+  if(/^\d{4}-\d{2}$/.test(m)) return m;
+  // MM/YYYY or MM-YYYY
+  const mmyyyy = m.match(/^(\d{1,2})[\/\-](\d{4})$/);
+  if(mmyyyy) return `${mmyyyy[2]}-${mmyyyy[1].padStart(2,'0')}`;
+  // YYYY/MM
+  const yyyymm = m.match(/^(\d{4})[\/\-](\d{1,2})$/);
+  if(yyyymm) return `${yyyymm[1]}-${yyyymm[2].padStart(2,'0')}`;
+  // Arabic month names → number
+  const arMonths = {'يناير':'01','فبراير':'02','مارس':'03','أبريل':'04','مايو':'05','يونيو':'06','يوليو':'07','أغسطس':'08','سبتمبر':'09','أكتوبر':'10','نوفمبر':'11','ديسمبر':'12'};
+  for(const [name, num] of Object.entries(arMonths)) {
+    const ar = m.match(new RegExp(name + '[\\s/\\-]*(\\d{4})'));
+    if(ar) return `${ar[1]}-${num}`;
+    const ar2 = m.match(new RegExp('(\\d{4})[\\s/\\-]*' + name));
+    if(ar2) return `${ar2[1]}-${num}`;
+  }
+  return m.slice(0,7);
 }
 
 function renderRentalTable(rows) {
