@@ -9106,7 +9106,7 @@ async function renderMaintenanceSection() {
       <div style="font-size:.88rem;color:var(--muted)">تتبع مواعيد الصيانة الدورية لكل مركبة تلقائياً</div>
       ${!isReporter()?`
         <div style="display:flex;gap:.6rem">
-          <button class="btn btn-outline btn-sm" onclick="openMaintenanceImportModal()">📥 استيراد CSV</button>
+          ${isSuperuser() ? `<button class="btn btn-outline btn-sm" onclick="openMaintenanceImportModal()">📥 استيراد CSV</button>` : ''}
           <button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>
         </div>
       `:''}
@@ -9627,8 +9627,8 @@ async function renderDriverKpiSection() {
     </div>
 
     <!-- فلاتر -->
-    <div class="card" style="margin-bottom:1rem">
-      <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+    <div class="card" style="margin-bottom:1rem;margin-top:.5rem;border-radius:12px">
+      <div class="card-header" style="border-bottom:none;padding:.75rem 1rem">
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
           <div class="form-group" style="margin:0;min-width:140px">
             <label>الشهر</label>
@@ -9936,7 +9936,7 @@ async function renderEquipmentSection() {
     <div class="page-header">
       <div class="page-title">⚙️ المعدات</div>
       <div style="display:flex;gap:.5rem">
-        <button class="btn btn-outline btn-sm" onclick="showEquipmentImport()">📥 استيراد CSV</button>
+        ${isSuperuser() ? `<button class="btn btn-outline btn-sm" onclick="showEquipmentImport()">📥 استيراد CSV</button>` : ''}
         <button class="btn btn-primary btn-sm" onclick="showEquipmentForm()">+ إضافة معدة</button>
       </div>
     </div>
@@ -9944,9 +9944,19 @@ async function renderEquipmentSection() {
     <!-- فلاتر -->
     <div class="card" style="margin-bottom:1rem">
       <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
-          <div class="form-group" style="margin:0;min-width:300px;flex:1">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:center">
+          <div class="form-group" style="margin:0;min-width:240px;flex:2">
             <input type="text" id="eqSearch" placeholder="🔍 ابحث باسم المعدة أو الكود..."
+              oninput="filterEquipment()"
+              style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          </div>
+          <div class="form-group" style="margin:0;min-width:160px">
+            <input type="text" id="eqBranchFilter" placeholder="🏢 الفرع..."
+              oninput="filterEquipment()"
+              style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          </div>
+          <div class="form-group" style="margin:0;min-width:160px">
+            <input type="text" id="eqProjectFilter" placeholder="📋 المشروع..."
               oninput="filterEquipment()"
               style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
           </div>
@@ -10175,13 +10185,17 @@ async function loadEquipmentData() {
 }
 
 function filterEquipment() {
-  const q = (document.getElementById('eqSearch')?.value||'').trim().toLowerCase();
-  const t = document.getElementById('eqTypeFilter')?.value||'';
-  const s = document.getElementById('eqStatusFilter')?.value||'';
+  const q  = (document.getElementById('eqSearch')?.value||'').trim().toLowerCase();
+  const t  = document.getElementById('eqTypeFilter')?.value||'';
+  const s  = document.getElementById('eqStatusFilter')?.value||'';
+  const br = (document.getElementById('eqBranchFilter')?.value||'').trim().toLowerCase();
+  const pr = (document.getElementById('eqProjectFilter')?.value||'').trim().toLowerCase();
   const filtered = _eqData.filter(e =>
-    (!q || e.equipment_name.toLowerCase().includes(q) || (e.car_code||'').toLowerCase().includes(q) || (e.brand||'').toLowerCase().includes(q)) &&
-    (!t || e.equipment_type === t) &&
-    (!s || e.status === s)
+    (!q  || e.equipment_name.toLowerCase().includes(q) || (e.car_code||'').toLowerCase().includes(q) || (e.brand||'').toLowerCase().includes(q)) &&
+    (!t  || e.equipment_type === t) &&
+    (!s  || e.status === s) &&
+    (!br || (e.branch||'').toLowerCase().includes(br)) &&
+    (!pr || (e.project||'').toLowerCase().includes(pr))
   );
   setPage('equipment', 1);
   renderEquipmentTable(filtered);
