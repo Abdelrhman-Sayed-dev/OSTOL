@@ -10404,8 +10404,12 @@ async function renderRentalEquipment() {
   el.innerHTML = `
     <div class="page-header">
       <div class="page-title">🔑 المعدات المستأجرة</div>
-      <div style="display:flex;gap:.5rem">
-        ${isSuperuser() ? `<button class="btn btn-outline btn-sm" onclick="showRentalImport()">📥 استيراد CSV</button>` : ''}
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        ${isSuperuser() ? `
+        <button class="btn btn-danger btn-sm" onclick="clearRentalMonth()" title="حذف كل بيانات الشهر المختار">
+          🗑️ حذف بيانات شهر
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="showRentalImport()">📥 استيراد CSV</button>` : ''}
         <button class="btn btn-primary btn-sm" onclick="showRentalForm()">+ إضافة سجل</button>
       </div>
     </div>
@@ -10526,7 +10530,7 @@ async function renderRentalEquipment() {
               style="padding:.5rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
           </div>
           <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" id="rentalReplaceMonth"> استبدال بيانات الشهر
+            <input type="checkbox" id="rentalReplaceMonth" checked> استبدال بيانات الشهر (يمنع التكرار)
           </label>
           <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
             <input type="checkbox" id="rentalSkipErrors"> تخطي الأخطاء
@@ -10617,6 +10621,20 @@ async function loadRentalData() {
 // عند تغيير الشهر من الـ dropdown — فلترة فورية بدون re-fetch
 function onRentalMonthChange() {
   loadRentalData();
+}
+
+async function clearRentalMonth() {
+  const monthSel = document.getElementById('rentalMonth');
+  const month = monthSel?.value || '';
+  if(!month) { showNotification('⚠️ اختر شهراً محدداً أولاً', 'warning'); return; }
+  if(!confirm(`⚠️ هتحذف كل بيانات شهر "${month}" — هذا الإجراء لا يمكن التراجع عنه!\n\nمتأكد؟`)) return;
+  try {
+    await apiCall(`/rental-equipment/month/${encodeURIComponent(month)}`, 'DELETE');
+    showNotification(`✅ تم حذف بيانات شهر ${month}`, 'success');
+    await loadRentalData();
+  } catch(e) {
+    showNotification('❌ ' + e.message, 'error');
+  }
 }
 
 
