@@ -10405,7 +10405,7 @@ async function renderRentalEquipment() {
     <div class="page-header">
       <div class="page-title">🔑 المعدات المستأجرة</div>
       <div style="display:flex;gap:.5rem">
-        <button class="btn btn-outline btn-sm" onclick="showRentalImport()">📥 استيراد CSV</button>
+        ${isSuperuser() ? `<button class="btn btn-outline btn-sm" onclick="showRentalImport()">📥 استيراد CSV</button>` : ''}
         <button class="btn btn-primary btn-sm" onclick="showRentalForm()">+ إضافة سجل</button>
       </div>
     </div>
