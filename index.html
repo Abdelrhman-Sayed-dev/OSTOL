@@ -1381,16 +1381,21 @@ function fmtNum(n) {
 /** حالة المركبة badge */
 function _carStatusBadge(status) {
   const map = {
-    available:      {label:'● متاحة',       cls:'badge-green'},
-    maintenance:    {label:'🔧 صيانة',       cls:'badge-yellow'},
-    minor_fault:    {label:'⚠️ عطل بسيط',    cls:'badge-warning'},
-    major_fault:    {label:'🔴 عطل جسيم',    cls:'badge-red'},
-    scrap:          {label:'🗑️ تحت التكهين', cls:'badge-gray'},
-    scrapped:       {label:'⛔ مكهنة',        cls:'badge-gray'},
-    sale_committee: {label:'📋 لجنة بيع',    cls:'badge-purple'},
-    sold:           {label:'✅ تم البيع',     cls:'badge-blue'},
+    available:      {label:'● متاحة',        cls:'badge-green'},
+    maintenance:    {label:'🔧 صيانة',        cls:'badge-yellow'},
+    minor_fault:    {label:'⚠️ عطل بسيط',     cls:'badge-warning'},
+    major_fault:    {label:'🔴 عطل جسيم',     cls:'badge-red'},
+    // legacy values from old DB
+    breakdown:      {label:'🔴 عطل جسيم',     cls:'badge-red'},
+    major_breakdown:{label:'🔴 عطل جسيم',     cls:'badge-red'},
+    minor_breakdown:{label:'⚠️ عطل بسيط',     cls:'badge-warning'},
+    tire_issue:     {label:'🔧 مشكلة إطار',   cls:'badge-yellow'},
+    scrap:          {label:'🗑️ تحت التكهين',  cls:'badge-gray'},
+    scrapped:       {label:'⛔ مكهنة',         cls:'badge-gray'},
+    sale_committee: {label:'📋 لجنة بيع',     cls:'badge-purple'},
+    sold:           {label:'✅ تم البيع',      cls:'badge-blue'},
   };
-  const s = map[status] || {label: status||'—', cls:'badge-gray'};
+  const s = map[status] || {label: status ? status.replace(/_/g,' ') : '—', cls:'badge-gray'};
   return `<span class="badge ${s.cls}" style="font-size:.72rem">${s.label}</span>`;
 }
 
@@ -2420,7 +2425,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
           <div class="card-title">⚠️ مركبات بدون سائق مخصص (${unassignedCars.length})</div>
         </div>
         ${unassignedCars.length ? `<div class="table-wrap">
-          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>الفرع</th><th>الحالة</th></tr></thead>
+          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>الفرع</th><th>الحالة</th>${!isReporter()?'<th>تعديل</th>':''}</tr></thead>
           <tbody>${unassignedCars.map(c=>`<tr>
             <td>${c.id}</td>
             <td dir="ltr"><strong>${c.plate}</strong></td>
@@ -2428,6 +2433,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
             <td>${c.model||'—'}</td>
             <td>${c.branch||'—'}</td>
             <td>${_carStatusBadge(c.status)}</td>
+            ${!isReporter()?`<td><button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button></td>`:''}
           </tr>`).join('')}</tbody></table>
         </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل المركبات مخصصة لسائقين</p></div>'}
       </div>
@@ -2459,7 +2465,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
           <div class="card-title">📋 مركبات بدون مشروع محدد (${noProjectCars.length})</div>
         </div>
         ${noProjectCars.length ? `<div class="table-wrap">
-          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>الفرع</th><th>الحالة</th></tr></thead>
+          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>الفرع</th><th>الحالة</th>${!isReporter()?'<th>تعديل</th>':''}</tr></thead>
           <tbody>${noProjectCars.map(c=>`<tr>
             <td>${c.id}</td>
             <td dir="ltr"><strong>${c.plate}</strong></td>
@@ -2467,6 +2473,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
             <td>${c.model||'—'}</td>
             <td>${c.branch||'—'}</td>
             <td>${_carStatusBadge(c.status)}</td>
+            ${!isReporter()?`<td><button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button></td>`:''}
           </tr>`).join('')}</tbody></table>
         </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل المركبات لديها مشروع محدد</p></div>'}
       </div>
@@ -2479,7 +2486,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
           <div class="card-title">🏢 مركبات بدون فرع محدد (${noBranchCars.length})</div>
         </div>
         ${noBranchCars.length ? `<div class="table-wrap">
-          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>المشروع</th><th>الحالة</th></tr></thead>
+          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>المشروع</th><th>الحالة</th>${!isReporter()?'<th>تعديل</th>':''}</tr></thead>
           <tbody>${noBranchCars.map(c=>`<tr>
             <td>${c.id}</td>
             <td dir="ltr"><strong>${c.plate}</strong></td>
@@ -2487,6 +2494,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
             <td>${c.model||'—'}</td>
             <td>${c.project||'—'}</td>
             <td>${_carStatusBadge(c.status)}</td>
+            ${!isReporter()?`<td><button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button></td>`:''}
           </tr>`).join('')}</tbody></table>
         </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل المركبات لديها فرع محدد</p></div>'}
       </div>
@@ -2503,7 +2511,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
     });
   };
 
-  document.getElementById('carsList').addEventListener('click',async e=>{
+  document.getElementById('pageContent').addEventListener('click',async e=>{
     if(e.target.closest('.edit-car')){const cid=e.target.closest('.edit-car').dataset.id; const car=(window._carsCache||[]).find(c=>String(c.id)===String(cid))||{}; openAddCarModal(cid,car);}
     if(e.target.closest('.del-car')){const id=+e.target.closest('.del-car').dataset.id;if(!confirm('حذف؟'))return;try{await apiCall(`/cars/${id}`,'DELETE');showNotification('تم الحذف','success');await renderCarsSection();}catch(e){showNotification(e.message,'error');}}
   });
