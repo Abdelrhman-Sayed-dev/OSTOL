@@ -10074,23 +10074,17 @@ function renderEquipmentTable(rows) {
   const tbody = document.getElementById('eqTableBody');
   if(!tbody) return;
   const pgEl = document.getElementById('eqPagination');
+  if(pgEl) pgEl.innerHTML = '';
   if(!rows.length) {
     tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد معدات</td></tr>`;
-    if(pgEl) pgEl.innerHTML='';
     return;
   }
   const statusMap = {active:{label:'عاملة',color:'#10b981'}, inactive:{label:'عاطلة',color:'#ef4444'}, maintenance:{label:'صيانة',color:'#f97316'}};
-  const PAGE_SIZE = 15;
-
-  function renderPage(pg) {
-    setPage('equipment', pg);
-    const paged = paginateData(rows, pg, PAGE_SIZE);
-    const startIdx = (pg - 1) * PAGE_SIZE;
-    tbody.innerHTML = paged.map((e,i) => {
-      const st = statusMap[e.status] || {label:e.status, color:'#94a3b8'};
-      const typeColor = e.equipment_type==='معدات تحريك تربة'?'#3b82f6':e.equipment_type==='معدات رفع'?'#8b5cf6':e.equipment_type==='معدات ثابتة'?'#f59e0b':'#6b7280';
-      return `<tr>
-      <td style="text-align:center;color:var(--muted)">${startIdx+i+1}</td>
+  tbody.innerHTML = rows.map((e,i) => {
+    const st = statusMap[e.status] || {label:e.status, color:'#94a3b8'};
+    const typeColor = e.equipment_type==='معدات تحريك تربة'?'#3b82f6':e.equipment_type==='معدات رفع'?'#8b5cf6':e.equipment_type==='معدات ثابتة'?'#f59e0b':'#6b7280';
+    return `<tr>
+      <td style="text-align:center;color:var(--muted)">${i+1}</td>
       <td><code style="background:var(--surface-2);padding:.15rem .4rem;border-radius:4px;font-size:.82rem">${e.car_code}</code></td>
       <td><strong>${e.equipment_name}</strong>${e.chassis?`<br><small style="color:var(--muted)">شاسيه: ${e.chassis}</small>`:''}</td>
       <td style="font-size:.85rem">${[e.brand,e.model].filter(Boolean).join(' / ')||'—'}</td>
@@ -10103,11 +10097,7 @@ function renderEquipmentTable(rows) {
         <button class="btn btn-ghost btn-sm" onclick="deleteEquipment(${e.id},'${e.equipment_name}')" title="حذف" style="color:#ef4444">🗑️</button>
       </td>
     </tr>`;
-    }).join('');
-    buildPagination('eqPagination', rows.length, PAGE_SIZE, pg, renderPage);
-  }
-
-  renderPage(getPage('equipment'));
+  }).join('');
 }
 
 function showEquipmentForm(id=null) {
