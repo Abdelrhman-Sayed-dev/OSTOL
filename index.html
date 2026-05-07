@@ -1934,6 +1934,15 @@ async function renderOverview() {
 
   <div class="xdb">
 
+    <!-- ── شريط الحالة العامة ── -->
+    <div class="xdb-status ${criticalCount>0?'crit':warningTotal>0?'warn':'ok'}">
+      ${criticalCount>0
+        ?`⚠️ يوجد ${criticalCount} تنبيه حرج يحتاج تدخل فوري`
+        :warningTotal>0
+          ?`🟡 يوجد ${warningTotal} تنبيه يحتاج متابعة`
+          :`✅ الأسطول بحالة جيدة — لا توجد تنبيهات حرجة`}
+      <span style="margin-right:auto;opacity:.6">${new Date().toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'})}</span>
+    </div>
 
     <!-- ── الأرقام الكبيرة ── -->
     <div class="xdb-nums">
@@ -2011,7 +2020,27 @@ async function renderOverview() {
           <span>تنبيهات تحتاج تدخل</span>
           <span class="xdb-panel-link" onclick="switchSection('maintenance')">تفاصيل ←</span>
         </div>
-        ${overdueCount>0?`<div class="xdb-al" onclick="switchSection('maintenance')"><div class="xdb-al-dot" style="background:#ef4444"></div><div class="xdb-al-txt">صيانة متأخرة</div><div class="xdb-al-cnt" style="background:#fef2f2;color:#ef4444">${overdueCount}</div></div>`:''}
+        ${overdueCount>0?`
+        <div class="xdb-al" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          <div class="xdb-al-dot" style="background:#ef4444"></div>
+          <div class="xdb-al-txt">صيانة متأخرة</div>
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <div class="xdb-al-cnt" style="background:#fef2f2;color:#ef4444">${overdueCount}</div>
+            <span style="font-size:.65rem;color:var(--muted)">▼</span>
+          </div>
+        </div>
+        <div style="display:none;background:var(--surface-2);border-radius:8px;margin-bottom:.3rem;padding:.4rem .6rem">
+          ${maintAlerts.filter(r=>r.alert_status==='overdue').slice(0,5).map(r=>{
+            const remKm=r.next_due_km&&r.current_km?Math.abs(Math.round(r.next_due_km-r.current_km)):null;
+            return `<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--border);font-size:.75rem">
+              <span dir="ltr" style="font-weight:800;min-width:70px">${r.car_plate}</span>
+              <span style="flex:1;color:var(--muted)">${r.maintenance_type}</span>
+              <span style="font-weight:700;color:#ef4444">${remKm?remKm.toLocaleString('ar-EG')+' كم':'—'}</span>
+            </div>`;
+          }).join('')}
+          <div onclick="switchSection('maintenance')" style="text-align:center;padding:.3rem;color:var(--primary);font-size:.72rem;font-weight:600;cursor:pointer;margin-top:.2rem">عرض الكل ←</div>
+        </div>
+        `:''}
         ${warningCount>0?`<div class="xdb-al" onclick="switchSection('maintenance')"><div class="xdb-al-dot" style="background:#f97316"></div><div class="xdb-al-txt">صيانة تقترب</div><div class="xdb-al-cnt" style="background:#fff7ed;color:#f97316">${warningCount}</div></div>`:''}
         ${unread>0?`<div class="xdb-al" onclick="switchSection('emergency')"><div class="xdb-al-dot" style="background:#dc2626"></div><div class="xdb-al-txt">بلاغات غير مقروءة</div><div class="xdb-al-cnt" style="background:#fef2f2;color:#dc2626">${unread}</div></div>`:''}
         ${expiredLic>0?`<div class="xdb-al" onclick="switchSection('drivers')"><div class="xdb-al-dot" style="background:#7c3aed"></div><div class="xdb-al-txt">رخصة قيادة منتهية</div><div class="xdb-al-cnt" style="background:#f5f3ff;color:#7c3aed">${expiredLic}</div></div>`:''}
@@ -2042,34 +2071,6 @@ async function renderOverview() {
     </div>
 
 
-    <!-- ── نهاية الداشبورد ── -->
-    ${maintAlerts.filter(r=>r.alert_status==='overdue').length>0?`
-    <div class="xdb-panel" style="border-color:#fecaca">
-      <div class="xdb-panel-title">
-        <span style="color:#dc2626">🔴 صيانة متأخرة (${overdueCount})</span>
-        <span class="xdb-panel-link" onclick="switchSection('maintenance')">عرض الكل ←</span>
-      </div>
-      <table class="xdb-maint" style="width:100%;border-collapse:collapse">
-        <thead><tr style="border-bottom:1.5px solid var(--border)">
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">اللوحة</th>
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">نوع الصيانة</th>
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">الفرع</th>
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">التأخير</th>
-        </tr></thead>
-        <tbody>
-        ${maintAlerts.filter(r=>r.alert_status==='overdue').slice(0,5).map(r=>{
-          const remKm = r.next_due_km&&r.current_km?Math.abs(Math.round(r.next_due_km-r.current_km)):null;
-          return `<tr style="border-bottom:1px solid var(--border)">
-            <td dir="ltr" style="font-weight:800;padding:.45rem .6rem">${r.car_plate}</td>
-            <td style="padding:.45rem .6rem">${r.maintenance_type}</td>
-            <td style="padding:.45rem .6rem;font-size:.75rem;color:var(--muted)">${r.car_branch||'—'}</td>
-            <td style="padding:.45rem .6rem;font-weight:700;color:#ef4444">${remKm?`${remKm.toLocaleString('ar-EG')} كم`:'—'}</td>
-          </tr>`;
-        }).join('')}
-        </tbody>
-      </table>
-    </div>`:''
-    }
 
   </div>
   `;
