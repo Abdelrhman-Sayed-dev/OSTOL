@@ -1988,6 +1988,29 @@ async function renderOverview() {
       </div>
     </div>
 
+    <!-- ── Charts ── -->
+    <div class="xdb-charts">
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>رحلات آخر 7 أيام</span></div>
+        <div style="height:160px"><canvas id="chartTripsTime"></canvas></div>
+      </div>
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>تكلفة الوقود آخر 7 أيام (ج)</span></div>
+        <div style="height:160px"><canvas id="chartFuelCost"></canvas></div>
+      </div>
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>أنشط السائقين</span></div>
+        <div style="height:160px"><canvas id="chartTopDrivers"></canvas></div>
+      </div>
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>أعلى مركبات (كم)</span></div>
+        <div style="height:160px"><canvas id="chartCarsKm"></canvas></div>
+      </div>
+    </div>
+
+        <!-- ── Charts ── -->
+    
+
     <!-- ── تنبيهات + رحلات جارية ── -->
     <div class="xdb-grid">
 
@@ -2027,27 +2050,8 @@ async function renderOverview() {
       </div>
     </div>
 
-    <!-- ── Charts ── -->
-    <div class="xdb-charts">
-      <div class="xdb-panel" style="padding:.75rem 1rem">
-        <div class="xdb-panel-title"><span>رحلات آخر 7 أيام</span></div>
-        <div style="height:160px"><canvas id="chartTripsTime"></canvas></div>
-      </div>
-      <div class="xdb-panel" style="padding:.75rem 1rem">
-        <div class="xdb-panel-title"><span>تكلفة الوقود آخر 7 أيام (ج)</span></div>
-        <div style="height:160px"><canvas id="chartFuelCost"></canvas></div>
-      </div>
-      <div class="xdb-panel" style="padding:.75rem 1rem">
-        <div class="xdb-panel-title"><span>أنشط السائقين</span></div>
-        <div style="height:160px"><canvas id="chartTopDrivers"></canvas></div>
-      </div>
-      <div class="xdb-panel" style="padding:.75rem 1rem">
-        <div class="xdb-panel-title"><span>أعلى مركبات (كم)</span></div>
-        <div style="height:160px"><canvas id="chartCarsKm"></canvas></div>
-      </div>
-    </div>
 
-    <!-- ── صيانة متأخرة ── -->
+    <!-- ── نهاية الداشبورد ── -->
     ${maintAlerts.filter(r=>r.alert_status==='overdue').length>0?`
     <div class="xdb-panel" style="border-color:#fecaca">
       <div class="xdb-panel-title">
