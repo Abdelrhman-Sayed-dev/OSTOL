@@ -2040,38 +2040,6 @@ async function renderOverview() {
       </div>
     </div>
 
-
-    <!-- ── نهاية الداشبورد ── -->
-    ${maintAlerts.filter(r=>r.alert_status==='overdue').length>0?`
-    <div class="xdb-panel" style="border-color:#fecaca">
-      <div class="xdb-panel-title">
-        <span style="color:#dc2626">🔴 صيانة متأخرة (${overdueCount})</span>
-        <span class="xdb-panel-link" onclick="switchSection('maintenance')">عرض الكل ←</span>
-      </div>
-      <table class="xdb-maint" style="width:100%;border-collapse:collapse">
-        <thead><tr style="border-bottom:1.5px solid var(--border)">
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">اللوحة</th>
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">نوع الصيانة</th>
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">الفرع</th>
-          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">التأخير</th>
-        </tr></thead>
-        <tbody>
-        ${maintAlerts.filter(r=>r.alert_status==='overdue').slice(0,5).map(r=>{
-          const remKm = r.next_due_km&&r.current_km?Math.abs(Math.round(r.next_due_km-r.current_km)):null;
-          return `<tr style="border-bottom:1px solid var(--border)">
-            <td dir="ltr" style="font-weight:800;padding:.45rem .6rem">${r.car_plate}</td>
-            <td style="padding:.45rem .6rem">${r.maintenance_type}</td>
-            <td style="padding:.45rem .6rem;font-size:.75rem;color:var(--muted)">${r.car_branch||'—'}</td>
-            <td style="padding:.45rem .6rem;font-weight:700;color:#ef4444">${remKm?`${remKm.toLocaleString('ar-EG')} كم`:'—'}</td>
-          </tr>`;
-        }).join('')}
-        </tbody>
-      </table>
-    </div>`:''
-    }
-
-  </div>
-  `;
   _overviewWrap.appendChild(_overviewEl);
 
   const isDark = document.documentElement.getAttribute('data-theme')==='dark';
