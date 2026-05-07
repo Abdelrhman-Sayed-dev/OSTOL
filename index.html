@@ -1874,13 +1874,44 @@ async function renderOverview() {
   const todayTrips = trips.filter(t=>(t.start_time||'').startsWith(todayStr));
   const totalKmAll = trips.filter(t=>t.end_time&&parseFloat(t.end_odometer)>parseFloat(t.start_odometer)).reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
   const avgKm = completed>0 ? (totalKmAll/completed) : 0;
-  const d30 = new Date(); d30.setDate(d30.getDate()-30);
-  const recentFuel = records.filter(r=>r.type?.startsWith('fuel_')&&new Date(r.created_at)>=d30);
-  const recentCost = recentFuel.reduce((s,r)=>s+(parseFloat(r.price)||0),0);
-  // تكلفة الصيانة آخر 30 يوم (ورشة — كل أنواع الصيانة عدا الوقود)
-  const recentMaint = records.filter(r=>!r.type?.startsWith('fuel_') && new Date(r.created_at)>=d30);
-  const maintCost30 = recentMaint.reduce((s,r)=>s+(parseFloat(r.price)||0),0);
+  // تكاليف شهرية — آخر 6 شهور
+  function getMonthKey(dateStr) {
+    if(!dateStr) return null;
+    const d = new Date(dateStr);
+    if(isNaN(d)) return null;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  function monthLabel(key) {
+    if(!key) return '';
+    const [y,m] = key.split('-');
+    return new Date(+y,+m-1,1).toLocaleDateString('ar-EG',{month:'long',year:'numeric'});
+  }
+  // آخر 6 شهور
+  const now6 = new Date();
+  const months6 = Array.from({length:6},(_,i)=>{
+    const d=new Date(now6.getFullYear(),now6.getMonth()-i,1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  });
 
+  // تكلفة الوقود per month
+  const fuelByMonth = {};
+  records.filter(r=>r.type?.startsWith('fuel_')).forEach(r=>{
+    const k=getMonthKey(r.created_at); if(!k) return;
+    fuelByMonth[k]=(fuelByMonth[k]||0)+(parseFloat(r.price)||0);
+  });
+  // تكلفة الصيانة والورشة per month (عدا الوقود)
+  const maintByMonth = {};
+  records.filter(r=>r.type && !r.type.startsWith('fuel_')).forEach(r=>{
+    const k=getMonthKey(r.created_at); if(!k) return;
+    maintByMonth[k]=(maintByMonth[k]||0)+(parseFloat(r.price)||0);
+  });
+
+  const currentMonth = months6[0];
+  const prevMonth    = months6[1];
+  const recentCost   = fuelByMonth[currentMonth]||0;
+  const recentMaint  = records.filter(r=>r.type&&!r.type.startsWith('fuel_')&&getMonthKey(r.created_at)===currentMonth);
+  const maintCost30  = maintByMonth[currentMonth]||0;
+  const d30 = new Date(); d30.setDate(d30.getDate()-30); // kept for compat
   const overdueCount = maintAlerts.filter(r=>r.alert_status==='overdue').length;
   const warningCount = maintAlerts.filter(r=>r.alert_status==='warning').length;
   const today2 = new Date(); today2.setHours(0,0,0,0);
@@ -1943,15 +1974,7 @@ async function renderOverview() {
 
   <div class="xdb">
 
-    <!-- ── شريط الحالة العامة ── -->
-    <div class="xdb-status ${criticalCount>0?'crit':warningTotal>0?'warn':'ok'}">
-      ${criticalCount>0
-        ?`⚠️ يوجد ${criticalCount} تنبيه حرج يحتاج تدخل فوري`
-        :warningTotal>0
-          ?`🟡 يوجد ${warningTotal} تنبيه يحتاج متابعة`
-          :`✅ الأسطول بحالة جيدة — لا توجد تنبيهات حرجة`}
-      <span style="margin-right:auto;opacity:.6">${new Date().toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'})}</span>
-    </div>
+
 
     <!-- ── الأرقام الكبيرة ── -->
     <div class="xdb-nums">
@@ -1981,21 +2004,7 @@ async function renderOverview() {
       </div>
     </div>
 
-    <!-- ── صحة الأسطول شريط ── -->
-    <div class="xdb-panel xdb-health" style="margin-bottom:.9rem">
-      <div class="xdb-panel-title">
-        <span>صحة الأسطول</span>
-        <span style="font-size:.9rem;font-weight:800;color:${healthPct>=80?'#10b981':healthPct>=60?'#f59e0b':'#ef4444'}">${healthPct}%</span>
-      </div>
-      <div class="xdb-health-track">
-        <div class="xdb-health-fill" style="width:${healthPct}%;background:${healthPct>=80?'#10b981':healthPct>=60?'#f59e0b':'#ef4444'}"></div>
-      </div>
-      <div class="xdb-health-labels">
-        <span>متاحة ${availableCars}</span>
-        <span>صيانة ${maintenanceCars}</span>
-        <span>إجمالي ${cars.length}</span>
-      </div>
-    </div>
+
 
     <!-- ── Charts ── -->
     <div class="xdb-charts">
