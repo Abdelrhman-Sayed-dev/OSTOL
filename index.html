@@ -1837,6 +1837,8 @@ async function renderOverview() {
     const dt=new Date(d+'T00:00:00');
     return dt.toLocaleDateString('ar-EG',{weekday:'short',day:'numeric',month:'numeric'});
   });
+  const driverTripMap = {};
+  trips.forEach(t=>{ const d=drivers.find(dr=>dr.id===t.driver_id); if(d){driverTripMap[d.name]=(driverTripMap[d.name]||0)+1;} });
   const topDrivers = Object.entries(driverTripMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const carKmMap = {};
   trips.filter(t=>t.end_time&&t.end_odometer>t.start_odometer).forEach(t=>{ const c=cars.find(ca=>ca.id===t.car_id); if(c){carKmMap[c.plate]=(carKmMap[c.plate]||0)+(t.end_odometer-t.start_odometer);} });
