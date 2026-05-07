@@ -5849,10 +5849,10 @@ def _validate_equipment_row(row: dict, idx: int, admin_branch: Optional[str]) ->
         "brand":          str(row.get("brand") or row.get("الماركة") or "").strip(),
         "model":          str(row.get("model") or row.get("الموديل") or "").strip(),
         "year":           str(row.get("year") or row.get("سنة الصنع") or row.get("Y.O.M") or "").strip(),
-        "chassis":        str(row.get("chassis") or row.get("رقم الشاسيه") or "").strip(),
+        "chassis":        str(row.get("chassis") or row.get("رقم الشاسيه") or row.get("الشاسيه") or "").strip(),
         "engine_number":  str(row.get("engine_number") or row.get("رقم المحرك") or "").strip(),
         "serial_no":      str(row.get("serial_no") or row.get("الرقم التسلسلي") or row.get("SERIAL NO.") or "").strip(),
-        "capacity":       str(row.get("capacity") or row.get("الطاقة") or row.get("CAPACITY") or "").strip(),
+        "capacity":       str(row.get("capacity") or row.get("الطاقة") or row.get("النوع") or row.get("CAPACITY") or "").strip(),
         "equipment_type": eq_type,
         "branch":         branch,
         "sector":         str(row.get("sector") or row.get("القطاع") or "").strip(),
@@ -6081,17 +6081,24 @@ async def equipment_import_confirm(
 
 @app.get("/equipment/import/template")
 async def equipment_import_template(cu: dict = Depends(require_admin)):
-    """تحميل قالب CSV للمعدات"""
+    """تحميل قالب CSV للمعدات — بنفس ترتيب أعمدة ملف Excel الأصلي"""
     from fastapi.responses import Response
-    cols = ["car_code","equipment_name","brand","model","year","chassis",
-            "engine_number","equipment_type","branch","sector","project","status","notes"]
+    # الترتيب مطابق للصورة: الكود | اسم المعدة | الماركة | الموديل | السنة | الشاسيه | النوع | الفرع | القطاع | المشروع | الحالة | ملاحظات | نوع التصنيف
+    cols = [
+        "الكود", "اسم المعدة", "الماركة", "الموديل", "السنة",
+        "الشاسيه", "النوع", "الفرع", "القطاع", "المشروع",
+        "الحالة", "ملاحظات", "نوع التصنيف"
+    ]
     samples = [
-        ["12/5/347","اسكيد لودر","CATERPILLAR","246C","2015","CH123456","",
-         "معدات تحريك تربة","إدارة صيانة القصور","قطاع القاهرة الكبرى","","active",""],
-        ["12/5/926","مان لفت","MANITOU","180 ATJ","2018","","",
-         "معدات رفع","حلوان","قطاع القاهرة الكبرى","","active",""],
-        ["27/2/2333","مولد كهرباء 50 ك","FG WILSON","P50","2016","","",
-         "معدات ثابتة","مدينة نصر","قطاع القاهرة الكبرى","","active",""],
+        ["927-14-14", "رافع افراد هيدروليكى", "JLG", "1350SIP", "2020",
+         "271272", "42 M", "إدارة صيانة القصور", "قطاع القاهرة الكبرى", "",
+         "active", "", "معدات رفع"],
+        ["942-14-14", "رافع افراد هيدروليكى", "GENIE", "Z80/60", "2021",
+         "Z80H-7768", "24 M", "مشروع مونو", "قطاع القاهرة الكبرى", "",
+         "active", "", "معدات رفع"],
+        ["925-14-14", "رافع افراد هيدروليكى", "JLG", "1350SIP", "2020",
+         "271490", "42 M", "فرع حلوان", "قطاع القاهرة الكبرى", "",
+         "active", "", "معدات رفع"],
     ]
     buf = io.StringIO()
     writer = csv.writer(buf)
