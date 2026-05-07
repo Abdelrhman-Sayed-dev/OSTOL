@@ -9094,6 +9094,46 @@ async function renderMaintenanceSection() {
     </div>`;
   }
 
+  // بناء قوائم الفلاتر من البيانات الفعلية
+  const allTypes   = [...new Set(records.map(r=>r.maintenance_type).filter(Boolean))].sort();
+  const allBranches = [...new Set(records.map(r=>r.car_branch).filter(Boolean))].sort();
+  const typeOpts   = allTypes.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const branchOpts = allBranches.map(b=>`<option value="${b}">${b}</option>`).join('');
+
+  // حفظ السجلات كلها للفلترة المحلية
+  window._maintRecords = records;
+
+  function applyMaintenanceFilter() {
+    const q      = (document.getElementById('maintSearch')?.value||'').trim().toLowerCase();
+    const fType  = document.getElementById('maintTypeFilter')?.value||'';
+    const fBranch= document.getElementById('maintBranchFilter')?.value||'';
+    const fStatus= document.getElementById('maintStatusFilter')?.value||'';
+
+    const all = window._maintRecords || [];
+    const filtered = all.filter(r =>
+      (!q      || r.car_plate.toLowerCase().includes(q) || r.car_model.toLowerCase().includes(q) || (r.car_branch||'').toLowerCase().includes(q)) &&
+      (!fType  || r.maintenance_type === fType) &&
+      (!fBranch|| r.car_branch === fBranch) &&
+      (!fStatus|| r.alert_status === fStatus)
+    );
+
+    const fOverdue  = filtered.filter(r=>r.alert_status==='overdue');
+    const fWarning  = filtered.filter(r=>r.alert_status==='warning');
+    const fOk       = filtered.filter(r=>r.alert_status==='ok');
+
+    const groups = document.getElementById('maintGroups');
+    if(groups) groups.innerHTML =
+      buildGroup('🔴 صيانة متأخرة', fOverdue, '#ef4444') +
+      buildGroup('🟠 تقترب مواعيد الصيانة', fWarning, '#f97316') +
+      buildGroup('✅ صيانة سليمة', fOk, '#10b981') +
+      (filtered.length===0 ? '<div class="empty-state"><div class="empty-icon">🔍</div><p>لا توجد نتائج مطابقة</p></div>' : '');
+
+    // تحديث الكاونتر
+    const el = document.getElementById('maintFilterCount');
+    if(el) el.textContent = filtered.length < all.length ? `(${filtered.length} من ${all.length})` : '';
+  }
+  window._applyMaintenanceFilter = applyMaintenanceFilter;
+
   c.innerHTML = `
     <div class="stats-row" style="margin-bottom:1rem">
       <div class="stat-card"><div class="stat-icon" style="color:#ef4444">🔴</div><div class="stat-value" style="color:#ef4444">${overdue.length}</div><div class="stat-label">متأخرة</div></div>
@@ -9102,19 +9142,55 @@ async function renderMaintenanceSection() {
       <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${records.length}</div><div class="stat-label">إجمالي السجلات</div></div>
       <div class="stat-card"><div class="stat-icon" style="color:#f97316">🛻</div><div class="stat-value" style="color:#f97316">${cars.filter(c=>c.status==='maintenance').length}</div><div class="stat-label">سيارات في الصيانة</div></div>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <div style="font-size:.88rem;color:var(--muted)">تتبع مواعيد الصيانة الدورية لكل مركبة تلقائياً</div>
-      ${!isReporter()?`
-        <div style="display:flex;gap:.6rem">
-          ${isSuperuser() ? `<button class="btn btn-outline btn-sm" onclick="openMaintenanceImportModal()">📥 استيراد CSV</button>` : ''}
-          <button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>
+
+    <!-- شريط الفلاتر -->
+    <div class="card" style="margin-bottom:1rem;border-radius:12px">
+      <div class="card-header" style="border-bottom:none;padding:.75rem 1rem">
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;width:100%">
+          <input id="maintSearch" type="text" placeholder="🔍 لوحة أو موديل أو فرع..."
+            oninput="window._applyMaintenanceFilter()"
+            style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:200px;flex:1">
+          <select id="maintTypeFilter" onchange="window._applyMaintenanceFilter()"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:140px">
+            <option value="">كل الأنواع 🔧</option>
+            ${typeOpts}
+          </select>
+          <select id="maintBranchFilter" onchange="window._applyMaintenanceFilter()"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:160px">
+            <option value="">كل الفروع 🏢</option>
+            ${branchOpts}
+          </select>
+          <select id="maintStatusFilter" onchange="window._applyMaintenanceFilter()"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:130px">
+            <option value="">كل الحالات</option>
+            <option value="overdue">🔴 متأخرة</option>
+            <option value="warning">🟠 قريبة</option>
+            <option value="ok">✅ سليمة</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="
+            document.getElementById('maintSearch').value='';
+            document.getElementById('maintTypeFilter').value='';
+            document.getElementById('maintBranchFilter').value='';
+            document.getElementById('maintStatusFilter').value='';
+            window._applyMaintenanceFilter()
+          ">✕ مسح</button>
+          <span id="maintFilterCount" style="color:var(--muted);font-size:.8rem"></span>
+          <div style="flex:1"></div>
+          ${!isReporter()?`
+          <div style="display:flex;gap:.5rem">
+            ${isSuperuser() ? `<button class="btn btn-outline btn-sm" onclick="openMaintenanceImportModal()">📥 استيراد CSV</button>` : ''}
+            <button class="btn btn-primary btn-sm" onclick="openAddMaintenanceModal()">➕ إضافة جدول صيانة</button>
+          </div>`:''}
         </div>
-      `:''}
+      </div>
     </div>
-    ${buildGroup('🔴 صيانة متأخرة', overdue, '#ef4444')}
-    ${buildGroup('🟠 تقترب مواعيد الصيانة', warning, '#f97316')}
-    ${buildGroup('✅ صيانة سليمة', ok, '#10b981')}
-    ${records.length===0?'<div class="empty-state"><div class="empty-icon">🔧</div><p>لا توجد جداول صيانة بعد — أضف أول جدول</p></div>':''}
+
+    <div id="maintGroups">
+      ${buildGroup('🔴 صيانة متأخرة', overdue, '#ef4444')}
+      ${buildGroup('🟠 تقترب مواعيد الصيانة', warning, '#f97316')}
+      ${buildGroup('✅ صيانة سليمة', ok, '#10b981')}
+      ${records.length===0?'<div class="empty-state"><div class="empty-icon">🔧</div><p>لا توجد جداول صيانة بعد — أضف أول جدول</p></div>':''}
+    </div>
   `;
 }
 
