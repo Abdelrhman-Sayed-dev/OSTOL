@@ -1378,6 +1378,22 @@ function fmtNum(n) {
   return n != null ? (+n).toLocaleString('ar-EG', { maximumFractionDigits: 1 }) : '—';
 }
 
+/** حالة المركبة badge */
+function _carStatusBadge(status) {
+  const map = {
+    available:      {label:'● متاحة',       cls:'badge-green'},
+    maintenance:    {label:'🔧 صيانة',       cls:'badge-yellow'},
+    minor_fault:    {label:'⚠️ عطل بسيط',    cls:'badge-warning'},
+    major_fault:    {label:'🔴 عطل جسيم',    cls:'badge-red'},
+    scrap:          {label:'🗑️ تحت التكهين', cls:'badge-gray'},
+    scrapped:       {label:'⛔ مكهنة',        cls:'badge-gray'},
+    sale_committee: {label:'📋 لجنة بيع',    cls:'badge-purple'},
+    sold:           {label:'✅ تم البيع',     cls:'badge-blue'},
+  };
+  const s = map[status] || {label: status||'—', cls:'badge-gray'};
+  return `<span class="badge ${s.cls}" style="font-size:.72rem">${s.label}</span>`;
+}
+
 /** Return a colored license-expiry badge. showGreen adds a green ✓ badge for valid dates. */
 function licBadge(dt, showGreen = false) {
   if (!dt) return '—';
@@ -1966,7 +1982,7 @@ async function renderDriversSection() {
       <div class="srch-bar">
         <input data-tsearch placeholder="🔍 بحث بالاسم أو الهاتف أو الرقم الثابت..."
           oninput="liveSearch(this,'driversBody',[1,2,3])">
-        <select onchange="liveFilter(this,'driversBody',5)">
+        <select onchange="liveFilter(this,'driversBody',6)">
           <option value="">كل الحالات</option>
           <option value="نشط">● نشط</option>
           <option value="غير نشط">● غير نشط</option>
@@ -1978,6 +1994,7 @@ async function renderDriversSection() {
         <table><thead><tr>
           <th>#</th><th>الاسم</th><th>الهاتف</th><th>الرقم الثابت</th>
           <th>السيارة المخصصة</th>
+          <th>الفرع</th>
           <th>انتهاء رخصة السائق</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead><tbody id="driversBody">
@@ -1994,6 +2011,7 @@ async function renderDriversSection() {
             <td dir="ltr">${d.phone||'—'}</td>
             <td><code>${d.fixed_number||'—'}</code></td>
             <td>${carBadge}</td>
+            <td>${d.branch ? `<span class="badge badge-blue" style="font-size:.72rem">${d.branch}</span>` : '<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
             <td>${licBadge(d.driver_license_expiry, true)}</td>
             <td><span class="badge ${d.status==='active'?'badge-green':'badge-red'}">${d.status==='active'?'● نشط':'● غير نشط'}</span></td>
             <td style="white-space:nowrap">
@@ -2308,12 +2326,18 @@ async function renderCarsSection() {
   const assignedDriverIds = new Set(perms.map(p=>p.driver_id));
   const noCarDrivers = drivers.filter(d=>d.status==='active' && !assignedDriverIds.has(d.id));
 
+  // Cars without project or branch
+  const noProjectCars = cars.filter(c=>!c.project || c.project.trim()==='');
+  const noBranchCars  = cars.filter(c=>!c.branch  || c.branch.trim()==='');
+
   document.getElementById('pageContent').innerHTML = `
     <!-- Tabs -->
     <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">
-      <button id="carsTabBtn_all" class="btn btn-primary btn-sm" onclick="switchCarsTab('all')">🚗 كل المركبات (${cars.length})</button>
+      <button id="carsTabBtn_all"       class="btn btn-primary btn-sm" onclick="switchCarsTab('all')">🚗 كل المركبات (${cars.length})</button>
       <button id="carsTabBtn_unassigned" class="btn btn-ghost btn-sm" onclick="switchCarsTab('unassigned')">⚠️ غير مخصصة (${unassignedCars.length})</button>
       <button id="carsTabBtn_nodrivers" class="btn btn-ghost btn-sm" onclick="switchCarsTab('nodrivers')">👤 سائقون بلا سيارة (${noCarDrivers.length})</button>
+      <button id="carsTabBtn_noproject" class="btn btn-ghost btn-sm" onclick="switchCarsTab('noproject')">📋 بدون مشروع (${noProjectCars.length})</button>
+      <button id="carsTabBtn_nobranch"  class="btn btn-ghost btn-sm" onclick="switchCarsTab('nobranch')">🏢 بدون فرع (${noBranchCars.length})</button>
     </div>
 
     <!-- Tab: all cars -->
@@ -2342,6 +2366,12 @@ async function renderCarsSection() {
           <option value="">كل الحالات</option>
           <option value="available">● متاحة</option>
           <option value="maintenance">🔧 صيانة</option>
+          <option value="minor_fault">⚠️ عطل بسيط</option>
+          <option value="major_fault">🔴 عطل جسيم</option>
+          <option value="scrap">🗑️ تحت التكهين</option>
+          <option value="scrapped">⛔ مكهنة</option>
+          <option value="sale_committee">📋 لجنة بيع</option>
+          <option value="sold">✅ تم البيع</option>
         </select>
         <span class="srch-count" id="carsCount">${cars.length}</span>
         <button class="srch-reset" onclick="resetCarsFilter()">✕ مسح</button>
@@ -2373,7 +2403,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
             <td>${catBadge}</td>
             <td style="font-size:.82rem">${sub}</td>
             <td style="font-size:.82rem">${c.branch||'—'}</td>
-            <td><span class="badge ${c.status==='available'?'badge-green':'badge-yellow'}">${c.status==='available'?'● متاحة':'🔧 صيانة'}</span></td>
+            <td>${_carStatusBadge(c.status)}</td>
             <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
             <button class="btn btn-danger btn-sm del-car" data-id="${c.id}">🗑️</button>` : '—'}</td>
           </tr>`;
@@ -2397,7 +2427,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
             <td>${c.car_name||'—'}</td>
             <td>${c.model||'—'}</td>
             <td>${c.branch||'—'}</td>
-            <td><span class="badge ${c.status==='available'?'badge-green':'badge-warning'}">${c.status==='available'?'متاحة':'صيانة'}</span></td>
+            <td>${_carStatusBadge(c.status)}</td>
           </tr>`).join('')}</tbody></table>
         </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل المركبات مخصصة لسائقين</p></div>'}
       </div>
@@ -2420,11 +2450,52 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
           </tr>`).join('')}</tbody></table>
         </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل السائقين النشطين لديهم سيارات</p></div>'}
       </div>
+    </div>
+
+    <!-- Tab: no project -->
+    <div id="carsTabPane_noproject" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📋 مركبات بدون مشروع محدد (${noProjectCars.length})</div>
+        </div>
+        ${noProjectCars.length ? `<div class="table-wrap">
+          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>الفرع</th><th>الحالة</th></tr></thead>
+          <tbody>${noProjectCars.map(c=>`<tr>
+            <td>${c.id}</td>
+            <td dir="ltr"><strong>${c.plate}</strong></td>
+            <td>${c.car_name||'—'}</td>
+            <td>${c.model||'—'}</td>
+            <td>${c.branch||'—'}</td>
+            <td>${_carStatusBadge(c.status)}</td>
+          </tr>`).join('')}</tbody></table>
+        </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل المركبات لديها مشروع محدد</p></div>'}
+      </div>
+    </div>
+
+    <!-- Tab: no branch -->
+    <div id="carsTabPane_nobranch" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🏢 مركبات بدون فرع محدد (${noBranchCars.length})</div>
+        </div>
+        ${noBranchCars.length ? `<div class="table-wrap">
+          <table><thead><tr><th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th><th>المشروع</th><th>الحالة</th></tr></thead>
+          <tbody>${noBranchCars.map(c=>`<tr>
+            <td>${c.id}</td>
+            <td dir="ltr"><strong>${c.plate}</strong></td>
+            <td>${c.car_name||'—'}</td>
+            <td>${c.model||'—'}</td>
+            <td>${c.project||'—'}</td>
+            <td>${_carStatusBadge(c.status)}</td>
+          </tr>`).join('')}</tbody></table>
+        </div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>كل المركبات لديها فرع محدد</p></div>'}
+      </div>
     </div>`;
+
 
   // Tab switching function
   window.switchCarsTab = function(tab) {
-    ['all','unassigned','nodrivers'].forEach(t=>{
+    ['all','unassigned','nodrivers','noproject','nobranch'].forEach(t=>{
       const pane = document.getElementById('carsTabPane_'+t);
       const btn  = document.getElementById('carsTabBtn_'+t);
       if(pane) pane.style.display = t===tab ? 'block' : 'none';
@@ -2592,8 +2663,14 @@ function openAddCarModal(editId='', editCar={}) {
       <div class="form-group" style="margin-bottom:0">
         <label>الحالة</label>
         <select id="mCarStatus">
-          <option value="available" ${(editCar.status||'available')==='available'?'selected':''}>● متاحة</option>
-          <option value="maintenance" ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
+          <option value="available"      ${(editCar.status||'available')==='available'?'selected':''}>● متاحة</option>
+          <option value="maintenance"    ${editCar.status==='maintenance'?'selected':''}>🔧 صيانة</option>
+          <option value="minor_fault"    ${editCar.status==='minor_fault'?'selected':''}>⚠️ عطل بسيط</option>
+          <option value="major_fault"    ${editCar.status==='major_fault'?'selected':''}>🔴 عطل جسيم</option>
+          <option value="scrap"          ${editCar.status==='scrap'?'selected':''}>🗑️ تحت التكهين</option>
+          <option value="scrapped"       ${editCar.status==='scrapped'?'selected':''}>⛔ مكهنة</option>
+          <option value="sale_committee" ${editCar.status==='sale_committee'?'selected':''}>📋 لجنة بيع</option>
+          <option value="sold"           ${editCar.status==='sold'?'selected':''}>✅ تم البيع</option>
         </select>
       </div>
     </div>
@@ -2644,7 +2721,16 @@ function openEditCarModal(id,plate,model,status) {
     <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات المركبة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="mEditCarPlate" value="${plate}"></div>
     <div class="form-group"><label>الموديل <span class="req">*</span></label><input id="mEditCarModel" value="${model}"></div>
-    <div class="form-group"><label>الحالة</label><select id="mEditCarStatus"><option value="available" ${status==='available'?'selected':''}>متاحة</option><option value="maintenance" ${status!=='available'?'selected':''}>صيانة</option></select></div>
+    <div class="form-group"><label>الحالة</label><select id="mEditCarStatus">
+          <option value="available"      ${status==='available'?'selected':''}>● متاحة</option>
+          <option value="maintenance"    ${status==='maintenance'?'selected':''}>🔧 صيانة</option>
+          <option value="minor_fault"    ${status==='minor_fault'?'selected':''}>⚠️ عطل بسيط</option>
+          <option value="major_fault"    ${status==='major_fault'?'selected':''}>🔴 عطل جسيم</option>
+          <option value="scrap"          ${status==='scrap'?'selected':''}>🗑️ تحت التكهين</option>
+          <option value="scrapped"       ${status==='scrapped'?'selected':''}>⛔ مكهنة</option>
+          <option value="sale_committee" ${status==='sale_committee'?'selected':''}>📋 لجنة بيع</option>
+          <option value="sold"           ${status==='sold'?'selected':''}>✅ تم البيع</option>
+        </select></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mEditCarSave">💾 حفظ</button>
@@ -8918,12 +9004,16 @@ async function renderMaintenanceSection() {
   const c = document.getElementById('pageContent');
   c.innerHTML='<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
 
-  const [records, cars] = await Promise.all([
+  const [records, cars, drivers, perms] = await Promise.all([
     apiCall('/maintenance/schedule').catch(()=>[]),
-    loadCars()
+    loadCars(),
+    loadDrivers().catch(()=>[]),
+    apiCall('/permissions').catch(()=>[])
   ]);
   // تحديث الكاش دايماً
   window._carsCache = cars;
+  window._allDriversCache = drivers;
+  window._allPermsCache = perms;
 
   window._maintenanceAlertCount = records.filter(r=>r.alert_status!=='ok').length;
 
@@ -8931,18 +9021,35 @@ async function renderMaintenanceSection() {
   const warning = records.filter(r=>r.alert_status==='warning');
   const ok      = records.filter(r=>r.alert_status==='ok');
 
+  // بناء map سائق من الكاش
+  const driversMap = {};
+  (window._allDriversCache || []).forEach(d => { driversMap[d.id] = d; });
+  const permsArr = window._allPermsCache || [];
+
+  function getDriverForCar(carId) {
+    const perm = permsArr.find(p => p.car_id === carId);
+    return perm ? (driversMap[perm.driver_id] || null) : null;
+  }
+
   function buildRow(r) {
     const ac = ALERT_COLORS[r.alert_status] || ALERT_COLORS.ok;
-    const nextKmDisplay = r.next_due_km ? Math.round(r.next_due_km).toLocaleString('ar-EG')+' كم' : '—';
-    const curKmDisplay  = r.current_km  ? Math.round(r.current_km).toLocaleString('ar-EG')+' كم'  : '—';
-    const remKm = (r.next_due_km && r.current_km)
-      ? Math.round(r.next_due_km - r.current_km) : null;
+    const curKmDisplay = r.current_km ? Math.round(r.current_km).toLocaleString('ar-EG')+' كم' : '—';
+    const remKm = (r.next_due_km && r.current_km) ? Math.round(r.next_due_km - r.current_km) : null;
     const remDisplay = remKm !== null
       ? (remKm > 0 ? `${remKm.toLocaleString('ar-EG')} كم متبقي` : `${Math.abs(remKm).toLocaleString('ar-EG')} كم تأخير`)
       : '—';
+    const driver = getDriverForCar(r.car_id);
+    const driverCell = driver
+      ? `<strong style="font-size:.84rem">${driver.name}</strong>${driver.phone ? `<br><small style="color:var(--muted)">${driver.phone}</small>` : ''}`
+      : '<span style="color:var(--muted);font-size:.78rem">—</span>';
+    const branchCell = r.car_branch
+      ? `<span class="badge badge-blue" style="font-size:.72rem">${r.car_branch}</span>`
+      : '<span style="color:var(--muted);font-size:.78rem">—</span>';
     return `<tr>
       <td dir="ltr"><strong>${r.car_plate}</strong></td>
       <td style="font-size:.82rem">${r.car_model}</td>
+      <td>${driverCell}</td>
+      <td>${branchCell}</td>
       <td>${r.maintenance_type}</td>
       <td>${r.interval_km ? Math.round(r.interval_km).toLocaleString('ar-EG')+' كم' : '—'}${r.interval_days ? ' / '+r.interval_days+' يوم' : ''}</td>
       <td>${r.last_done_km ? Math.round(r.last_done_km).toLocaleString('ar-EG')+' كم' : '—'}</td>
@@ -8968,7 +9075,8 @@ async function renderMaintenanceSection() {
       </div>
       <div class="table-wrap">
         <table><thead><tr>
-          <th>اللوحة</th><th>الموديل</th><th>نوع الصيانة</th><th>الفاصل الزمني</th>
+          <th>اللوحة</th><th>الموديل</th><th>السائق</th><th>الفرع</th>
+          <th>نوع الصيانة</th><th>الفاصل الزمني</th>
           <th>آخر صيانة (كم)</th><th>العداد الحالي</th><th>المتبقي</th>
           <th>الموعد القادم</th><th>الحالة</th><th>إجراء</th>
         </tr></thead><tbody>
@@ -8984,6 +9092,7 @@ async function renderMaintenanceSection() {
       <div class="stat-card"><div class="stat-icon" style="color:#f97316">🟠</div><div class="stat-value" style="color:#f97316">${warning.length}</div><div class="stat-label">قريبة</div></div>
       <div class="stat-card"><div class="stat-icon" style="color:#10b981">✅</div><div class="stat-value" style="color:#10b981">${ok.length}</div><div class="stat-label">سليمة</div></div>
       <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${records.length}</div><div class="stat-label">إجمالي السجلات</div></div>
+      <div class="stat-card"><div class="stat-icon" style="color:#f97316">🛻</div><div class="stat-value" style="color:#f97316">${cars.filter(c=>c.status==='maintenance').length}</div><div class="stat-label">سيارات في الصيانة</div></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
       <div style="font-size:.88rem;color:var(--muted)">تتبع مواعيد الصيانة الدورية لكل مركبة تلقائياً</div>
