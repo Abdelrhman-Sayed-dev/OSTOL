@@ -1859,218 +1859,222 @@ async function renderOverview() {
   if(!isSuperuser()) _overviewWrap.innerHTML='';
   const _overviewEl = document.createElement('div');
 
-  // ── حسابات مشتركة ──
+  // ── حسابات ──
   const availableCars   = cars.filter(c=>c.status==='available').length;
-  const maintenanceCars = cars.filter(c=>['maintenance','minor_fault','major_fault','scrap','scrapped'].includes(c.status)).length;
+  const maintenanceCars = cars.filter(c=>['maintenance','minor_fault','major_fault','scrap','scrapped','breakdown','major_breakdown','minor_breakdown'].includes(c.status)).length;
   const activeDrivers   = drivers.filter(d=>d.status==='active').length;
   const todayStr = new Date().toISOString().split('T')[0];
   const todayTrips = trips.filter(t=>(t.start_time||'').startsWith(todayStr));
-  const totalKmAll = trips
-    .filter(t=>t.end_time && parseFloat(t.end_odometer)>parseFloat(t.start_odometer))
-    .reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
+  const totalKmAll = trips.filter(t=>t.end_time&&parseFloat(t.end_odometer)>parseFloat(t.start_odometer)).reduce((s,t)=>s+(parseFloat(t.end_odometer)-parseFloat(t.start_odometer)),0);
   const avgKm = completed>0 ? (totalKmAll/completed) : 0;
-  // أعلى سائق
-  const driverTripMap={};
-  trips.forEach(t=>{const d=drivers.find(dr=>dr.id===t.driver_id);if(d)driverTripMap[d.name]=(driverTripMap[d.name]||0)+1;});
-  const topDriver = Object.entries(driverTripMap).sort((a,b)=>b[1]-a[1])[0];
-  // تكاليف آخر 30 يوم
   const d30 = new Date(); d30.setDate(d30.getDate()-30);
-  const recentFuel = records.filter(r=>r.type?.startsWith('fuel_') && new Date(r.created_at)>=d30);
+  const recentFuel = records.filter(r=>r.type?.startsWith('fuel_')&&new Date(r.created_at)>=d30);
   const recentCost = recentFuel.reduce((s,r)=>s+(parseFloat(r.price)||0),0);
-  // صيانة
   const overdueCount = maintAlerts.filter(r=>r.alert_status==='overdue').length;
   const warningCount = maintAlerts.filter(r=>r.alert_status==='warning').length;
-  // رخص منتهية / قريبة الانتهاء
   const today2 = new Date(); today2.setHours(0,0,0,0);
   const in30 = new Date(today2); in30.setDate(in30.getDate()+30);
-  const expiredLic  = drivers.filter(d=>d.driver_license_expiry && new Date(d.driver_license_expiry)<today2).length;
-  const nearLic     = drivers.filter(d=>d.driver_license_expiry && new Date(d.driver_license_expiry)>=today2 && new Date(d.driver_license_expiry)<=in30).length;
+  const expiredLic = drivers.filter(d=>d.driver_license_expiry&&new Date(d.driver_license_expiry)<today2).length;
+  const nearLic    = drivers.filter(d=>d.driver_license_expiry&&new Date(d.driver_license_expiry)>=today2&&new Date(d.driver_license_expiry)<=in30).length;
+
+  // إجمالي التنبيهات الحرجة
+  const criticalCount = overdueCount + unread + expiredLic;
+  const warningTotal  = warningCount + nearLic + maintenanceCars;
+  const healthPct = cars.length>0 ? Math.round((availableCars/cars.length)*100) : 100;
 
   _overviewEl.innerHTML = `
   <style>
-    .db-section-title{font-size:.72rem;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.6rem;display:flex;align-items:center;gap:.4rem}
-    .db-kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem;margin-bottom:1.25rem}
-    .db-kpi{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem;cursor:pointer;transition:all .15s;position:relative;overflow:hidden}
-    .db-kpi:hover{border-color:var(--primary);transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.08)}
-    .db-kpi-label{font-size:.72rem;color:var(--muted);font-weight:600;margin-bottom:.4rem}
-    .db-kpi-value{font-size:1.75rem;font-weight:800;line-height:1;margin-bottom:.2rem}
-    .db-kpi-sub{font-size:.7rem;color:var(--muted)}
-    .db-kpi-accent{position:absolute;top:0;right:0;width:4px;height:100%;border-radius:0 14px 14px 0}
-    .db-alert-row{display:flex;align-items:center;gap:.7rem;padding:.65rem .9rem;border-radius:10px;margin-bottom:.4rem;cursor:pointer;transition:background .12s}
-    .db-alert-row:hover{background:var(--surface-2)}
-    .db-alert-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
-    .db-alert-text{flex:1;font-size:.83rem;font-weight:600}
-    .db-alert-badge{font-size:.7rem;background:var(--surface-2);padding:.15rem .55rem;border-radius:20px;font-weight:700}
-    .db-two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
-    .db-three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem}
-    .db-card{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem}
-    .db-card-title{font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:.75rem;letter-spacing:.04em}
-    .db-live-item{display:flex;align-items:center;gap:.6rem;padding:.5rem 0;border-bottom:1px solid var(--border)}
-    .db-live-item:last-child{border-bottom:none}
-    .db-live-plate{font-size:.78rem;font-weight:700;font-family:monospace;background:var(--surface-2);padding:.1rem .4rem;border-radius:6px}
-    .db-live-name{font-size:.8rem;font-weight:600;flex:1}
-    .db-live-badge{font-size:.65rem;padding:.15rem .5rem;border-radius:20px;font-weight:700;white-space:nowrap}
-    .db-progress-row{display:flex;align-items:center;gap:.6rem;margin-bottom:.55rem}
-    .db-progress-label{font-size:.78rem;font-weight:600;min-width:90px;text-align:right}
-    .db-progress-bar-wrap{flex:1;height:7px;background:var(--surface-2);border-radius:20px;overflow:hidden}
-    .db-progress-fill{height:100%;border-radius:20px;transition:width .4s}
-    .db-progress-val{font-size:.72rem;color:var(--muted);min-width:32px;text-align:left}
-    @media(max-width:768px){.db-two-col,.db-three-col{grid-template-columns:1fr}.db-kpi-grid{grid-template-columns:repeat(2,1fr)}}
+    .xdb{font-family:inherit;direction:rtl}
+    /* ─── Status bar top ─── */
+    .xdb-status{display:flex;align-items:center;gap:.5rem;padding:.55rem 1rem;border-radius:12px;margin-bottom:1.1rem;font-size:.78rem;font-weight:700}
+    .xdb-status.ok{background:#f0fdf4;border:1.5px solid #bbf7d0;color:#15803d}
+    .xdb-status.warn{background:#fffbeb;border:1.5px solid #fde68a;color:#92400e}
+    .xdb-status.crit{background:#fef2f2;border:1.5px solid #fecaca;color:#991b1b}
+    /* ─── Big numbers row ─── */
+    .xdb-nums{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+    @media(max-width:700px){.xdb-nums{grid-template-columns:repeat(2,1fr)}}
+    .xdb-num{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem;cursor:pointer;transition:border-color .15s,transform .15s;position:relative;overflow:hidden}
+    .xdb-num:hover{border-color:var(--primary);transform:translateY(-2px)}
+    .xdb-num-bar{position:absolute;bottom:0;right:0;left:0;height:3px;border-radius:0 0 14px 14px}
+    .xdb-num-label{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.05em;margin-bottom:.5rem;text-transform:uppercase}
+    .xdb-num-val{font-size:2.2rem;font-weight:900;line-height:1;letter-spacing:-.03em}
+    .xdb-num-sub{font-size:.7rem;color:var(--muted);margin-top:.3rem}
+    /* ─── Main grid ─── */
+    .xdb-grid{display:grid;grid-template-columns:1fr 1.6fr;gap:.9rem;margin-bottom:.9rem}
+    @media(max-width:860px){.xdb-grid{grid-template-columns:1fr}}
+    .xdb-panel{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem}
+    .xdb-panel-title{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:.8rem;display:flex;align-items:center;justify-content:space-between}
+    .xdb-panel-link{font-size:.7rem;color:var(--primary);cursor:pointer;font-weight:600;letter-spacing:0}
+    /* ─── Alert items ─── */
+    .xdb-al{display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;border-radius:9px;cursor:pointer;transition:background .12s;margin-bottom:.3rem}
+    .xdb-al:hover{background:var(--surface-2)}
+    .xdb-al:last-child{margin-bottom:0}
+    .xdb-al-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+    .xdb-al-txt{flex:1;font-size:.82rem;font-weight:600}
+    .xdb-al-cnt{font-size:.72rem;font-weight:800;padding:.1rem .55rem;border-radius:20px}
+    /* ─── Fleet health bar ─── */
+    .xdb-health{margin-bottom:.9rem}
+    .xdb-health-track{height:10px;background:var(--surface-2);border-radius:20px;overflow:hidden;margin:.4rem 0}
+    .xdb-health-fill{height:100%;border-radius:20px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+    .xdb-health-labels{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted)}
+    /* ─── Live trips ─── */
+    .xdb-trip{display:flex;align-items:center;gap:.6rem;padding:.45rem 0;border-bottom:1px solid var(--border)}
+    .xdb-trip:last-child{border:none}
+    .xdb-trip-plate{font-size:.75rem;font-weight:800;font-family:monospace;background:var(--surface-2);padding:.1rem .45rem;border-radius:6px;letter-spacing:.04em}
+    .xdb-trip-name{font-size:.8rem;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .xdb-trip-dur{font-size:.68rem;font-weight:700;color:#3b82f6;white-space:nowrap}
+    /* ─── Charts ─── */
+    .xdb-charts{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
+    @media(max-width:700px){.xdb-charts{grid-template-columns:1fr}}
+    /* ─── Maintenance table ─── */
+    .xdb-maint td,.xdb-maint th{font-size:.78rem;padding:.45rem .6rem}
   </style>
 
-  <!-- ══ ROW 1: KPI Cards ══ -->
-  <div class="db-section-title">📊 لمحة سريعة</div>
-  <div class="db-kpi-grid">
-    <div class="db-kpi" onclick="switchSection('cars')">
-      <div class="db-kpi-accent" style="background:#10b981"></div>
-      <div class="db-kpi-label">مركبات متاحة</div>
-      <div class="db-kpi-value" style="color:#10b981">${availableCars}</div>
-      <div class="db-kpi-sub">${maintenanceCars} في الصيانة · ${cars.length} إجمالي</div>
-    </div>
-    <div class="db-kpi" onclick="switchSection('trips')">
-      <div class="db-kpi-accent" style="background:#3b82f6"></div>
-      <div class="db-kpi-label">رحلة جارية الآن</div>
-      <div class="db-kpi-value" style="color:#3b82f6">${active}</div>
-      <div class="db-kpi-sub">${todayTrips.length} بدأت اليوم · ${completed} مكتملة</div>
-    </div>
-    <div class="db-kpi" onclick="switchSection('drivers')">
-      <div class="db-kpi-accent" style="background:#8b5cf6"></div>
-      <div class="db-kpi-label">سائقون نشطون</div>
-      <div class="db-kpi-value" style="color:#8b5cf6">${activeDrivers}</div>
-      <div class="db-kpi-sub">${topDriver?`أنشط: ${topDriver[0]} (${topDriver[1]} رحلة)`:''}</div>
-    </div>
-    <div class="db-kpi">
-      <div class="db-kpi-accent" style="background:#f59e0b"></div>
-      <div class="db-kpi-label">متوسط الرحلة</div>
-      <div class="db-kpi-value" style="color:#f59e0b;font-size:1.4rem">${Math.round(avgKm).toLocaleString('ar-EG')}</div>
-      <div class="db-kpi-sub">كم · ${Math.round(totalKmAll).toLocaleString('ar-EG')} إجمالي</div>
-    </div>
-    <div class="db-kpi">
-      <div class="db-kpi-accent" style="background:#ef4444"></div>
-      <div class="db-kpi-label">تكلفة الوقود (30 يوم)</div>
-      <div class="db-kpi-value" style="color:#ef4444;font-size:1.3rem">${Math.round(recentCost).toLocaleString('ar-EG')}</div>
-      <div class="db-kpi-sub">جنيه · ${recentFuel.length} عملية تزود</div>
-    </div>
-    <div class="db-kpi" onclick="switchSection('emergency')">
-      <div class="db-kpi-accent" style="background:${unread>0?'#dc2626':'#94a3b8'}"></div>
-      <div class="db-kpi-label">بلاغات غير مقروءة</div>
-      <div class="db-kpi-value" style="color:${unread>0?'#dc2626':'var(--text)'}">${unread}</div>
-      <div class="db-kpi-sub">${emgs.length} إجمالي البلاغات</div>
-    </div>
-  </div>
+  <div class="xdb">
 
-  <!-- ══ ROW 2: Alerts + Live Trips ══ -->
-  <div class="db-two-col">
-
-    <!-- تنبيهات مجمّعة -->
-    <div class="db-card">
-      <div class="db-card-title">⚡ تنبيهات تحتاج تدخل</div>
-      ${overdueCount>0?`
-      <div class="db-alert-row" onclick="switchSection('maintenance')">
-        <div class="db-alert-dot" style="background:#ef4444"></div>
-        <div class="db-alert-text">صيانة متأخرة</div>
-        <div class="db-alert-badge" style="color:#ef4444">${overdueCount} مركبة</div>
-      </div>`:''}
-      ${warningCount>0?`
-      <div class="db-alert-row" onclick="switchSection('maintenance')">
-        <div class="db-alert-dot" style="background:#f97316"></div>
-        <div class="db-alert-text">صيانة تقترب مواعيدها</div>
-        <div class="db-alert-badge" style="color:#f97316">${warningCount} مركبة</div>
-      </div>`:''}
-      ${unread>0?`
-      <div class="db-alert-row" onclick="switchSection('emergency')">
-        <div class="db-alert-dot" style="background:#dc2626"></div>
-        <div class="db-alert-text">بلاغات طوارئ غير مقروءة</div>
-        <div class="db-alert-badge" style="color:#dc2626">${unread} بلاغ</div>
-      </div>`:''}
-      ${expiredLic>0?`
-      <div class="db-alert-row" onclick="switchSection('drivers')">
-        <div class="db-alert-dot" style="background:#7c3aed"></div>
-        <div class="db-alert-text">رخصة قيادة منتهية</div>
-        <div class="db-alert-badge" style="color:#7c3aed">${expiredLic} سائق</div>
-      </div>`:''}
-      ${nearLic>0?`
-      <div class="db-alert-row" onclick="switchSection('drivers')">
-        <div class="db-alert-dot" style="background:#0891b2"></div>
-        <div class="db-alert-text">رخصة تنتهي خلال 30 يوم</div>
-        <div class="db-alert-badge" style="color:#0891b2">${nearLic} سائق</div>
-      </div>`:''}
-      ${maintenanceCars>0?`
-      <div class="db-alert-row" onclick="switchSection('cars')">
-        <div class="db-alert-dot" style="background:#f59e0b"></div>
-        <div class="db-alert-text">مركبات في الصيانة أو معطلة</div>
-        <div class="db-alert-badge" style="color:#f59e0b">${maintenanceCars} مركبة</div>
-      </div>`:''}
-      ${overdueCount===0&&warningCount===0&&unread===0&&expiredLic===0&&nearLic===0&&maintenanceCars===0?
-        `<div style="text-align:center;padding:1.5rem;color:var(--muted)">
-          <div style="font-size:2rem">✅</div>
-          <div style="font-size:.82rem;margin-top:.4rem">لا توجد تنبيهات</div>
-        </div>`:''}
+    <!-- ── شريط الحالة العامة ── -->
+    <div class="xdb-status ${criticalCount>0?'crit':warningTotal>0?'warn':'ok'}">
+      ${criticalCount>0
+        ?`⚠️ يوجد ${criticalCount} تنبيه حرج يحتاج تدخل فوري`
+        :warningTotal>0
+          ?`🟡 يوجد ${warningTotal} تنبيه يحتاج متابعة`
+          :`✅ الأسطول بحالة جيدة — لا توجد تنبيهات حرجة`}
+      <span style="margin-right:auto;opacity:.6">${new Date().toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'})}</span>
     </div>
 
-    <!-- رحلات جارية الآن -->
-    <div class="db-card">
-      <div class="db-card-title" style="display:flex;justify-content:space-between">
-        <span>🗺️ رحلات جارية الآن (${active})</span>
-        <span onclick="switchSection('trips')" style="cursor:pointer;color:var(--primary);font-size:.72rem;font-weight:600">عرض الكل ←</span>
+    <!-- ── الأرقام الكبيرة ── -->
+    <div class="xdb-nums">
+      <div class="xdb-num" onclick="switchSection('cars')">
+        <div class="xdb-num-bar" style="background:#10b981"></div>
+        <div class="xdb-num-label">متاحة الآن</div>
+        <div class="xdb-num-val" style="color:#10b981">${availableCars}</div>
+        <div class="xdb-num-sub">من ${cars.length} مركبة · ${maintenanceCars} في صيانة</div>
       </div>
-      ${trips.filter(t=>!t.end_time).slice(0,6).map(t=>{
-        const d=drivers.find(dr=>dr.id===t.driver_id);
-        const c=cars.find(ca=>ca.id===t.car_id);
-        const startedAgo = t.start_time ? Math.round((Date.now()-new Date(t.start_time))/60000) : null;
-        return `<div class="db-live-item">
-          <div class="db-live-plate" dir="ltr">${c?.plate||'—'}</div>
-          <div class="db-live-name">${d?.name||'—'}</div>
-          <div class="db-live-badge" style="background:#dbeafe;color:#1d4ed8">
-            ${startedAgo!==null?`${startedAgo<60?startedAgo+' د':Math.round(startedAgo/60)+' س'}`:''}
-          </div>
-        </div>`;
-      }).join('')}
-      ${active===0?`<div style="text-align:center;padding:1.5rem;color:var(--muted)"><div style="font-size:2rem">🏁</div><div style="font-size:.82rem;margin-top:.4rem">لا توجد رحلات جارية</div></div>`:''}
+      <div class="xdb-num" onclick="switchSection('trips')">
+        <div class="xdb-num-bar" style="background:#3b82f6"></div>
+        <div class="xdb-num-label">رحلة جارية</div>
+        <div class="xdb-num-val" style="color:#3b82f6">${active}</div>
+        <div class="xdb-num-sub">${todayTrips.length} اليوم · ${completed} مكتملة</div>
+      </div>
+      <div class="xdb-num" onclick="switchSection('drivers')">
+        <div class="xdb-num-bar" style="background:#8b5cf6"></div>
+        <div class="xdb-num-label">سائق نشط</div>
+        <div class="xdb-num-val" style="color:#8b5cf6">${activeDrivers}</div>
+        <div class="xdb-num-sub">${topDrivers[0]?`أعلى: ${topDrivers[0][0].split(' ')[0]} (${topDrivers[0][1]} رحلة)`:''}</div>
+      </div>
+      <div class="xdb-num">
+        <div class="xdb-num-bar" style="background:#f59e0b"></div>
+        <div class="xdb-num-label">تكلفة وقود (30 يوم)</div>
+        <div class="xdb-num-val" style="color:#f59e0b;font-size:1.5rem">${Math.round(recentCost).toLocaleString('ar-EG')}</div>
+        <div class="xdb-num-sub">جنيه · ${recentFuel.length} عملية تزود</div>
+      </div>
     </div>
-  </div>
 
-  <!-- ══ ROW 3: Charts ══ -->
-  <div class="db-two-col">
-    <div class="db-card" style="padding:.75rem 1rem">
-      <div class="db-card-title">📈 رحلات آخر 7 أيام</div>
-      <div style="height:180px"><canvas id="chartTripsTime"></canvas></div>
+    <!-- ── صحة الأسطول شريط ── -->
+    <div class="xdb-panel xdb-health" style="margin-bottom:.9rem">
+      <div class="xdb-panel-title">
+        <span>صحة الأسطول</span>
+        <span style="font-size:.9rem;font-weight:800;color:${healthPct>=80?'#10b981':healthPct>=60?'#f59e0b':'#ef4444'}">${healthPct}%</span>
+      </div>
+      <div class="xdb-health-track">
+        <div class="xdb-health-fill" style="width:${healthPct}%;background:${healthPct>=80?'#10b981':healthPct>=60?'#f59e0b':'#ef4444'}"></div>
+      </div>
+      <div class="xdb-health-labels">
+        <span>متاحة ${availableCars}</span>
+        <span>صيانة ${maintenanceCars}</span>
+        <span>إجمالي ${cars.length}</span>
+      </div>
     </div>
-    <div class="db-card" style="padding:.75rem 1rem">
-      <div class="db-card-title">⛽ تكلفة الوقود آخر 7 أيام (ج)</div>
-      <div style="height:180px"><canvas id="chartFuelCost"></canvas></div>
-    </div>
-  </div>
-  <div class="db-two-col">
-    <div class="db-card" style="padding:.75rem 1rem">
-      <div class="db-card-title">👨‍✈️ أنشط السائقين (رحلات)</div>
-      <div style="height:180px"><canvas id="chartTopDrivers"></canvas></div>
-    </div>
-    <div class="db-card" style="padding:.75rem 1rem">
-      <div class="db-card-title">🚙 أعلى مركبات (كم مقطوع)</div>
-      <div style="height:180px"><canvas id="chartCarsKm"></canvas></div>
-    </div>
-  </div>
 
-  <!-- ══ صيانة تحتاج انتباه ══ -->
-  ${maintAlerts.length > 0 ? `
-  <div class="db-card" style="border:1.5px solid #f97316;margin-top:.25rem">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
-      <div class="db-card-title" style="margin-bottom:0;color:#c2410c">🔧 صيانة تحتاج انتباه (${maintAlerts.length})</div>
-      <button class="btn btn-ghost btn-sm" onclick="switchSection('maintenance')">عرض الكل ←</button>
+    <!-- ── تنبيهات + رحلات جارية ── -->
+    <div class="xdb-grid">
+
+      <!-- تنبيهات -->
+      <div class="xdb-panel">
+        <div class="xdb-panel-title">
+          <span>تنبيهات تحتاج تدخل</span>
+          <span class="xdb-panel-link" onclick="switchSection('maintenance')">تفاصيل ←</span>
+        </div>
+        ${overdueCount>0?`<div class="xdb-al" onclick="switchSection('maintenance')"><div class="xdb-al-dot" style="background:#ef4444"></div><div class="xdb-al-txt">صيانة متأخرة</div><div class="xdb-al-cnt" style="background:#fef2f2;color:#ef4444">${overdueCount}</div></div>`:''}
+        ${warningCount>0?`<div class="xdb-al" onclick="switchSection('maintenance')"><div class="xdb-al-dot" style="background:#f97316"></div><div class="xdb-al-txt">صيانة تقترب</div><div class="xdb-al-cnt" style="background:#fff7ed;color:#f97316">${warningCount}</div></div>`:''}
+        ${unread>0?`<div class="xdb-al" onclick="switchSection('emergency')"><div class="xdb-al-dot" style="background:#dc2626"></div><div class="xdb-al-txt">بلاغات غير مقروءة</div><div class="xdb-al-cnt" style="background:#fef2f2;color:#dc2626">${unread}</div></div>`:''}
+        ${expiredLic>0?`<div class="xdb-al" onclick="switchSection('drivers')"><div class="xdb-al-dot" style="background:#7c3aed"></div><div class="xdb-al-txt">رخصة قيادة منتهية</div><div class="xdb-al-cnt" style="background:#f5f3ff;color:#7c3aed">${expiredLic}</div></div>`:''}
+        ${nearLic>0?`<div class="xdb-al" onclick="switchSection('drivers')"><div class="xdb-al-dot" style="background:#0891b2"></div><div class="xdb-al-txt">رخصة تنتهي خلال 30 يوم</div><div class="xdb-al-cnt" style="background:#ecfeff;color:#0891b2">${nearLic}</div></div>`:''}
+        ${maintenanceCars>0?`<div class="xdb-al" onclick="switchSection('cars')"><div class="xdb-al-dot" style="background:#f59e0b"></div><div class="xdb-al-txt">مركبات في صيانة / عطل</div><div class="xdb-al-cnt" style="background:#fffbeb;color:#f59e0b">${maintenanceCars}</div></div>`:''}
+        ${criticalCount===0&&warningTotal===0?`<div style="text-align:center;padding:1.2rem;color:var(--muted)"><div style="font-size:1.8rem">✅</div><div style="font-size:.8rem;margin-top:.3rem;font-weight:600">لا توجد تنبيهات</div></div>`:''}
+      </div>
+
+      <!-- رحلات جارية -->
+      <div class="xdb-panel">
+        <div class="xdb-panel-title">
+          <span>رحلات جارية (${active})</span>
+          <span class="xdb-panel-link" onclick="switchSection('trips')">الكل ←</span>
+        </div>
+        ${trips.filter(t=>!t.end_time).slice(0,7).map(t=>{
+          const d=drivers.find(dr=>dr.id===t.driver_id);
+          const c=cars.find(ca=>ca.id===t.car_id);
+          const mins=t.start_time?Math.round((Date.now()-new Date(t.start_time))/60000):null;
+          const dur=mins===null?'':mins<60?`${mins} د`:`${Math.floor(mins/60)}س ${mins%60}د`;
+          return `<div class="xdb-trip">
+            <div class="xdb-trip-plate" dir="ltr">${c?.plate||'—'}</div>
+            <div class="xdb-trip-name">${d?.name||'—'}</div>
+            <div class="xdb-trip-dur">${dur}</div>
+          </div>`;
+        }).join('')}
+        ${active===0?`<div style="text-align:center;padding:1.2rem;color:var(--muted)"><div style="font-size:1.8rem">🏁</div><div style="font-size:.8rem;margin-top:.3rem;font-weight:600">لا توجد رحلات جارية</div></div>`:''}
+      </div>
     </div>
-    <div class="table-wrap">
-      <table style="font-size:.82rem"><thead><tr><th>اللوحة</th><th>نوع الصيانة</th><th>الفرع</th><th>الحالة</th><th>الموعد القادم</th></tr></thead><tbody>
-      ${maintAlerts.slice(0,5).map(r=>{
-        const ac=r.alert_status==='overdue'?{c:'#ef4444',l:'🔴 متأخرة'}:{c:'#f97316',l:'🟠 قريبة'};
-        return `<tr><td dir="ltr"><strong>${r.car_plate}</strong></td><td>${r.maintenance_type}</td>
-          <td style="font-size:.75rem">${r.car_branch||'—'}</td>
-          <td><span style="color:${ac.c};font-weight:700">${ac.l}</span></td>
-          <td style="font-size:.78rem;color:var(--muted)">${r.next_due_date||'—'}</td></tr>`;
-      }).join('')}
-      </tbody></table>
+
+    <!-- ── Charts ── -->
+    <div class="xdb-charts">
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>رحلات آخر 7 أيام</span></div>
+        <div style="height:160px"><canvas id="chartTripsTime"></canvas></div>
+      </div>
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>تكلفة الوقود آخر 7 أيام (ج)</span></div>
+        <div style="height:160px"><canvas id="chartFuelCost"></canvas></div>
+      </div>
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>أنشط السائقين</span></div>
+        <div style="height:160px"><canvas id="chartTopDrivers"></canvas></div>
+      </div>
+      <div class="xdb-panel" style="padding:.75rem 1rem">
+        <div class="xdb-panel-title"><span>أعلى مركبات (كم)</span></div>
+        <div style="height:160px"><canvas id="chartCarsKm"></canvas></div>
+      </div>
     </div>
-  </div>` : ''}
+
+    <!-- ── صيانة متأخرة ── -->
+    ${maintAlerts.filter(r=>r.alert_status==='overdue').length>0?`
+    <div class="xdb-panel" style="border-color:#fecaca">
+      <div class="xdb-panel-title">
+        <span style="color:#dc2626">🔴 صيانة متأخرة (${overdueCount})</span>
+        <span class="xdb-panel-link" onclick="switchSection('maintenance')">عرض الكل ←</span>
+      </div>
+      <table class="xdb-maint" style="width:100%;border-collapse:collapse">
+        <thead><tr style="border-bottom:1.5px solid var(--border)">
+          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">اللوحة</th>
+          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">نوع الصيانة</th>
+          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">الفرع</th>
+          <th style="text-align:right;padding:.35rem .6rem;font-size:.7rem;color:var(--muted)">التأخير</th>
+        </tr></thead>
+        <tbody>
+        ${maintAlerts.filter(r=>r.alert_status==='overdue').slice(0,5).map(r=>{
+          const remKm = r.next_due_km&&r.current_km?Math.abs(Math.round(r.next_due_km-r.current_km)):null;
+          return `<tr style="border-bottom:1px solid var(--border)">
+            <td dir="ltr" style="font-weight:800;padding:.45rem .6rem">${r.car_plate}</td>
+            <td style="padding:.45rem .6rem">${r.maintenance_type}</td>
+            <td style="padding:.45rem .6rem;font-size:.75rem;color:var(--muted)">${r.car_branch||'—'}</td>
+            <td style="padding:.45rem .6rem;font-weight:700;color:#ef4444">${remKm?`${remKm.toLocaleString('ar-EG')} كم`:'—'}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>`:''
+    }
+
+  </div>
   `;
   _overviewWrap.appendChild(_overviewEl);
 
