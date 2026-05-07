@@ -1225,26 +1225,31 @@ body.driver-mode { background:#f5f5f5; }
 /* ── Universal Search Bar ── */
 .srch-bar {
   display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;
-  padding:.65rem 1rem; border-bottom:1px solid var(--border);
+  padding:.7rem 1.1rem; border-bottom:1px solid var(--border);
   background:var(--surface-2);
 }
 .srch-bar input, .srch-bar select {
-  padding:.42rem .75rem; border:1.5px solid var(--border);
-  border-radius:9px; font-family:inherit; font-size:.85rem;
-  background:var(--bg); color:var(--text); transition:border-color .15s;
+  padding:.44rem .8rem; border:1.5px solid var(--border);
+  border-radius:10px; font-family:inherit; font-size:.84rem;
+  background:var(--bg); color:var(--text); transition:border-color .15s, box-shadow .15s;
 }
 .srch-bar input:focus, .srch-bar select:focus {
-  outline:none; border-color:var(--primary);
+  outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(var(--primary-rgb),.1);
 }
-.srch-bar input { flex:1; min-width:160px; }
-.srch-bar select { min-width:130px; }
+.srch-bar input { flex:1; min-width:180px; }
+.srch-bar select { min-width:130px; cursor:pointer; }
 .srch-bar .srch-count {
-  font-size:.78rem; color:var(--muted); white-space:nowrap; margin-right:auto;
+  font-size:.75rem; color:var(--muted); white-space:nowrap; margin-right:auto;
+  background:var(--surface); padding:.25rem .6rem; border-radius:20px;
+  border:1px solid var(--border);
 }
 .srch-bar .srch-reset {
-  font-size:.78rem; color:var(--primary); cursor:pointer;
-  background:none; border:none; padding:.3rem .5rem;
+  font-size:.78rem; color:var(--muted); cursor:pointer;
+  background:var(--surface); border:1.5px solid var(--border);
+  border-radius:9px; padding:.38rem .75rem;
+  transition:all .15s;
 }
+.srch-bar .srch-reset:hover { color:var(--primary); border-color:var(--primary); }
 tr.row-hidden { display:none; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -1872,6 +1877,10 @@ async function renderOverview() {
   const d30 = new Date(); d30.setDate(d30.getDate()-30);
   const recentFuel = records.filter(r=>r.type?.startsWith('fuel_')&&new Date(r.created_at)>=d30);
   const recentCost = recentFuel.reduce((s,r)=>s+(parseFloat(r.price)||0),0);
+  // تكلفة الصيانة آخر 30 يوم (ورشة — كل أنواع الصيانة عدا الوقود)
+  const recentMaint = records.filter(r=>!r.type?.startsWith('fuel_') && new Date(r.created_at)>=d30);
+  const maintCost30 = recentMaint.reduce((s,r)=>s+(parseFloat(r.price)||0),0);
+
   const overdueCount = maintAlerts.filter(r=>r.alert_status==='overdue').length;
   const warningCount = maintAlerts.filter(r=>r.alert_status==='warning').length;
   const today2 = new Date(); today2.setHours(0,0,0,0);
@@ -1933,6 +1942,16 @@ async function renderOverview() {
   </style>
 
   <div class="xdb">
+
+    <!-- ── شريط الحالة العامة ── -->
+    <div class="xdb-status ${criticalCount>0?'crit':warningTotal>0?'warn':'ok'}">
+      ${criticalCount>0
+        ?`⚠️ يوجد ${criticalCount} تنبيه حرج يحتاج تدخل فوري`
+        :warningTotal>0
+          ?`🟡 يوجد ${warningTotal} تنبيه يحتاج متابعة`
+          :`✅ الأسطول بحالة جيدة — لا توجد تنبيهات حرجة`}
+      <span style="margin-right:auto;opacity:.6">${new Date().toLocaleDateString('ar-EG',{weekday:'long',day:'numeric',month:'long'})}</span>
+    </div>
 
     <!-- ── الأرقام الكبيرة ── -->
     <div class="xdb-nums">
@@ -2133,7 +2152,11 @@ async function renderDriversSection() {
       <div class="srch-bar">
         <input data-tsearch placeholder="🔍 بحث بالاسم أو الهاتف أو الرقم الثابت..."
           oninput="liveSearch(this,'driversBody',[1,2,3])">
-        <select onchange="liveFilter(this,'driversBody',6)">
+        <select onchange="liveFilter(this,'driversBody',5)">
+          <option value="">كل الفروع</option>
+          ${[...new Set(drivers.map(d=>d.branch).filter(Boolean))].sort().map(b=>`<option value="${b}">${b}</option>`).join('')}
+        </select>
+        <select onchange="liveFilter(this,'driversBody',7)">
           <option value="">كل الحالات</option>
           <option value="نشط">● نشط</option>
           <option value="غير نشط">● غير نشط</option>
