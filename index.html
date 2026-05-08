@@ -11473,6 +11473,7 @@ async function loadFraudData() {
       {label:'خطورة عالية',      value: s.high||0,   icon:'🔴', color:'#ef4444'},
       {label:'خطورة متوسطة',     value: s.medium||0, icon:'🟠', color:'#f97316'},
       {label:'خطورة منخفضة',     value: s.low||0,    icon:'🟡', color:'#eab308'},
+      {label:'رحلات مفتوحة',     value: (data.open_trips||[]).length, icon:'🔓', color:'#3b82f6'},
     ].map(x=>`
       <div class="card" style="text-align:center;padding:1rem">
         <div style="font-size:1.5rem">${x.icon}</div>
