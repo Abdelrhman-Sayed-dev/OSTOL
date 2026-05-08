@@ -408,6 +408,54 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
   text-transform:uppercase;letter-spacing:1.2px;
   padding:.5rem .5rem .25rem;margin-top:.3rem;
 }
+/* ── NAV GROUPS ── */
+.nav-group { margin-bottom:.2rem; }
+.nav-group-header {
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.45rem .65rem .3rem;cursor:pointer;
+  user-select:none;border-radius:8px;transition:.12s;
+}
+.nav-group-header:hover { background:rgba(0,0,0,.04); }
+.nav-group-label {
+  font-size:.57rem;font-weight:800;color:#94a3b8;
+  text-transform:uppercase;letter-spacing:1.1px;
+  display:flex;align-items:center;gap:.35rem;
+}
+.nav-group-label .ng-icon { font-size:.8rem; }
+.nav-group-arrow {
+  font-size:.55rem;color:#cbd5e1;transition:transform .2s;
+  flex-shrink:0;
+}
+.nav-group.collapsed .nav-group-arrow { transform:rotate(-90deg); }
+.nav-group.collapsed .nav-group-items { display:none; }
+.nav-group-items { padding-bottom:.15rem; }
+/* ── FAVORITES ── */
+.nav-fav-toggle {
+  position:absolute;left:.5rem;top:50%;transform:translateY(-50%);
+  font-size:.72rem;opacity:0;cursor:pointer;padding:.2rem;
+  color:#cbd5e1;transition:opacity .12s,color .12s;line-height:1;
+  background:none;border:none;z-index:2;
+}
+.nav-item:hover .nav-fav-toggle { opacity:1; }
+.nav-fav-toggle.fav-active { opacity:1;color:#f59e0b; }
+.nav-item { padding-left:1.8rem; }
+/* ── NAV SEARCH ── */
+.nav-search-wrap {
+  padding:.55rem .6rem .35rem;
+}
+.nav-search {
+  width:100%;padding:.38rem .75rem .38rem 2rem;
+  border:1.5px solid #e2e8f0;border-radius:9px;
+  font-family:inherit;font-size:.78rem;color:#0f172a;
+  background:#f1f5f9;outline:none;direction:rtl;
+  transition:border-color .15s,background .15s;
+}
+.nav-search:focus { border-color:#2563eb;background:#fff; }
+.nav-search-icon {
+  position:absolute;left:.95rem;top:50%;transform:translateY(-50%);
+  font-size:.72rem;color:#94a3b8;pointer-events:none;
+}
+.nav-search-wrapper { position:relative; }
 .nav-item{
   display:flex;align-items:center;gap:.7rem;
   padding:.52rem .8rem;border-radius:10px;cursor:pointer;
@@ -1532,21 +1580,96 @@ function buildSupervisorNav() {
   return buildAdminNav();
 }
 
+// ══════════════════════════════════════════════
+// NAV GROUPS SYSTEM — مجموعات التنقل
+// ══════════════════════════════════════════════
+
+// تعريف المجموعات
+const NAV_GROUP_DEFS = [
+  { id:'favorites',   icon:'⭐', label:'المفضلة',             color:'#f59e0b' },
+  { id:'daily',       icon:'🚛', label:'العمليات اليومية',    color:'#2563eb' },
+  { id:'maintenance', icon:'🛠️', label:'الصيانة والدعم الفني',color:'#10b981' },
+  { id:'monitoring',  icon:'🚨', label:'المتابعة والرقابة',   color:'#ef4444' },
+  { id:'management',  icon:'🧠', label:'الإدارة واتخاذ القرار',color:'#8b5cf6'},
+  { id:'data',        icon:'📂', label:'البيانات والسجلات',   color:'#64748b' },
+];
+
+// تصنيف كل عنصر إلى مجموعته
+const NAV_ITEM_GROUPS = {
+  'overview':           'daily',
+  'trips':              'daily',
+  'map':                'daily',
+  'requests':           'daily',
+  'emergencies':        'monitoring',
+  'super-licenses':     'monitoring',
+  'super-fraud':        'monitoring',
+  'workshops':          'maintenance',
+  'maintenance':        'maintenance',
+  'rental-equipment':   'maintenance',
+  'equipment-list':     'maintenance',
+  'drivers':            'management',
+  'cars':               'management',
+  'permissions':        'management',
+  'super-reassign':     'management',
+  'super-admins':       'management',
+  'super-reporters':    'management',
+  'super-voice':        'management',
+  'super-decisions':    'management',
+  'driver-photos':      'data',
+  'op-card':            'data',
+  'monthly-report':     'data',
+  'driver-kpi':         'data',
+  'import-data':        'data',
+  'super-logs':         'data',
+};
+
+// حفظ وقراءة المفضلة لكل مستخدم
+function _favKey() { return 'nav_fav_' + (currentUser?.id || 'u'); }
+function _colKey() { return 'nav_col_' + (currentUser?.id || 'u'); }
+
+function getFavorites() {
+  try { return JSON.parse(localStorage.getItem(_favKey()) || '[]'); } catch { return []; }
+}
+function saveFavorites(arr) { localStorage.setItem(_favKey(), JSON.stringify(arr)); }
+function toggleFavorite(id, e) {
+  if(e) e.stopPropagation();
+  const favs = getFavorites();
+  const idx = favs.indexOf(id);
+  if(idx === -1) favs.push(id);
+  else favs.splice(idx, 1);
+  saveFavorites(favs);
+  const items = isSupervisor() ? buildSupervisorNav()
+              : isAdminLike()  ? buildAdminNav()
+              : buildDriverNav();
+  renderNav(items);
+}
+
+function getCollapsedGroups() {
+  try { return JSON.parse(localStorage.getItem(_colKey()) || '[]'); } catch { return []; }
+}
+function toggleGroupCollapse(gid) {
+  const col = getCollapsedGroups();
+  const idx = col.indexOf(gid);
+  if(idx === -1) col.push(gid);
+  else col.splice(idx, 1);
+  localStorage.setItem(_colKey(), JSON.stringify(col));
+  renderNav(isSupervisor() ? buildSupervisorNav() : isAdminLike() ? buildAdminNav() : buildDriverNav());
+}
+
 function buildAdminNav() {
-  // ترتيب حسب الأولوية: العمليات الحرجة أولاً، ثم الإدارة، ثم التقارير
   const base = [
-    {id:'overview',   icon:'📊', label:'نظرة عامة'},        // 1. لوحة القيادة
-    {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'}, // 2. حرج - سلامة
-    {id:'trips',      icon:'🗺️', label:'الرحلات'},           // 3. العملية الأساسية
-    {id:'map',        icon:'📍', label:'خريطة الأسطول'},     // 4. متابعة لحظية
-    {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},          // 5. إدارة السائقين
-    {id:'cars',       icon:'🚙', label:'المركبات'},           // 6. إدارة المركبات
-    {id:'requests',   icon:'📋', label:'طلبات السائقين'},    // 7. طلبات معلقة
-    {id:'workshops',  icon:'🛠️', label:'الورش'},              // 8. الصيانة والوقود
-    {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'}, // 9. التقارير
+    {id:'overview',   icon:'📊', label:'نظرة عامة'},
+    {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
+    {id:'trips',      icon:'🗺️', label:'الرحلات'},
+    {id:'map',        icon:'📍', label:'خريطة الأسطول'},
+    {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},
+    {id:'cars',       icon:'🚙', label:'المركبات'},
+    {id:'requests',   icon:'📋', label:'طلبات السائقين'},
+    {id:'workshops',  icon:'🛠️', label:'الورش'},
+    {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'},
     {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
-    {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
+    {id:'monthly-report',icon:'📅', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
     {id:'rental-equipment', icon:'🔑', label:'المعدات المستأجرة'},
     {id:'equipment-list',   icon:'⚙️', label:'المعدات'},
@@ -1570,6 +1693,7 @@ function buildAdminNav() {
   }
   return base;
 }
+
 function buildDriverNav() {
   return [
     {id:'driver-trip',     icon:'🚗', label:'تسجيل رحلة'},
@@ -1578,16 +1702,117 @@ function buildDriverNav() {
   ];
 }
 
+function _navBadge(id) {
+  if(id==='emergencies' && lastUnreadCount>0) return `<span class="nav-badge">${lastUnreadCount}</span>`;
+  if(id==='requests'    && window._pendingRequestsCount>0) return `<span class="nav-badge">${window._pendingRequestsCount}</span>`;
+  if(id==='super-decisions' && window._pendingSuperCount>0) return `<span class="nav-badge">${window._pendingSuperCount}</span>`;
+  if(id==='maintenance' && window._maintenanceAlertCount>0) return `<span class="nav-badge" style="background:#ef4444">${window._maintenanceAlertCount}</span>`;
+  if(id==='super-licenses' && window._licenseAlertsCount>0) return `<span class="nav-badge" style="background:#f97316">${window._licenseAlertsCount}</span>`;
+  return '';
+}
+
+function _navItemHtml(item, favs) {
+  const isFav = favs.includes(item.id);
+  return `<button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
+    <span class="nav-icon">${item.icon}</span> ${item.label}
+    ${_navBadge(item.id)}
+    <button class="nav-fav-toggle ${isFav?'fav-active':''}" onclick="toggleFavorite('${item.id}',event)" title="${isFav?'إزالة من المفضلة':'إضافة للمفضلة'}">${isFav?'★':'☆'}</button>
+  </button>`;
+}
+
 function renderNav(items) {
-  document.getElementById('sidebarNav').innerHTML = items.map(item=>`
-    <button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
-      <span class="nav-icon">${item.icon}</span> ${item.label}
-      ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
-      ${item.id==='requests' && window._pendingRequestsCount>0 ? `<span class="nav-badge">${window._pendingRequestsCount}</span>` : ''}
-      ${item.id==='super-decisions' && window._pendingSuperCount>0 ? `<span class="nav-badge">${window._pendingSuperCount}</span>` : ''}
-      ${item.id==='maintenance' && window._maintenanceAlertCount>0 ? `<span class="nav-badge" style="background:#ef4444">${window._maintenanceAlertCount}</span>` : ''}
-      ${item.id==='super-licenses' && window._licenseAlertsCount>0 ? `<span class="nav-badge" style="background:#f97316">${window._licenseAlertsCount}</span>` : ''}
-    </button>`).join('');
+  // للسائق: قائمة بسيطة بدون مجموعات
+  if(!isAdminLike() && !isSupervisor()) {
+    document.getElementById('sidebarNav').innerHTML = items.map(item=>
+      `<button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
+        <span class="nav-icon">${item.icon}</span> ${item.label}
+        ${_navBadge(item.id)}
+       </button>`
+    ).join('');
+    return;
+  }
+
+  const favs = getFavorites();
+  const collapsed = getCollapsedGroups();
+  const itemMap = {};
+  items.forEach(it => itemMap[it.id] = it);
+
+  // ابني مجموعات
+  const groups = {};
+  NAV_GROUP_DEFS.forEach(g => { groups[g.id] = []; });
+
+  // المفضلة أولاً
+  favs.forEach(fid => { if(itemMap[fid]) groups['favorites'].push(itemMap[fid]); });
+
+  // باقي العناصر حسب المجموعة
+  items.forEach(item => {
+    const gid = NAV_ITEM_GROUPS[item.id] || 'data';
+    if(groups[gid]) groups[gid].push(item);
+  });
+
+  let html = '';
+
+  // خانة بحث
+  html += `<div class="nav-search-wrap">
+    <div class="nav-search-wrapper">
+      <input class="nav-search" id="navSearchInput" type="text" placeholder="بحث في القائمة..." oninput="filterNavSearch(this.value)">
+      <span class="nav-search-icon">🔍</span>
+    </div>
+  </div>`;
+
+  NAV_GROUP_DEFS.forEach(gDef => {
+    const gItems = groups[gDef.id];
+    if(!gItems || gItems.length === 0) return;
+
+    const isCollapsed = collapsed.includes(gDef.id);
+    const hasActive = gItems.some(it=>it.id===currentSection);
+    const actualCollapsed = isCollapsed && !hasActive;
+
+    html += `<div class="nav-group ${actualCollapsed?'collapsed':''}" id="ng-${gDef.id}">
+      <div class="nav-group-header" onclick="toggleGroupCollapse('${gDef.id}')">
+        <span class="nav-group-label">
+          <span class="ng-icon">${gDef.icon}</span>
+          ${gDef.label}
+          <span style="color:#cbd5e1;font-size:.65rem;font-weight:500;margin-right:.2rem">${gItems.length}</span>
+        </span>
+        <span class="nav-group-arrow">▾</span>
+      </div>
+      <div class="nav-group-items">
+        ${gItems.map(item => _navItemHtml(item, favs)).join('')}
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('sidebarNav').innerHTML = html;
+}
+
+function filterNavSearch(q) {
+  const val = q.trim().toLowerCase();
+  // إظهار/إخفاء الأيتمز
+  document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => {
+    if(!val) { btn.style.display=''; return; }
+    const text = btn.textContent.toLowerCase();
+    btn.style.display = text.includes(val) ? '' : 'none';
+  });
+  // إظهار المجموعات التي بها نتائج
+  document.querySelectorAll('#sidebarNav .nav-group').forEach(g => {
+    if(!val) { g.classList.remove('collapsed'); g.querySelector('.nav-group-items').style.display=''; return; }
+    const visible = [...g.querySelectorAll('.nav-item')].some(b=>b.style.display!=='none');
+    g.style.display = visible ? '' : 'none';
+    if(visible) {
+      g.classList.remove('collapsed');
+      g.querySelector('.nav-group-items').style.display = '';
+    }
+  });
+  // إعادة الوضع لو البحث فاضي
+  if(!val) {
+    const collapsed = getCollapsedGroups();
+    document.querySelectorAll('#sidebarNav .nav-group').forEach(g => {
+      g.style.display = '';
+      const gid = g.id.replace('ng-','');
+      if(collapsed.includes(gid)) g.classList.add('collapsed');
+    });
+  }
 }
 
 function switchSection(id) {
@@ -1596,6 +1821,9 @@ function switchSection(id) {
               : isAdminLike()  ? buildAdminNav()
               : buildDriverNav();
   renderNav(items);
+  // أغلق البحث بعد الانتقال
+  const inp = document.getElementById('navSearchInput');
+  if(inp) { inp.value=''; filterNavSearch(''); }
   const item = items.find(i=>i.id===id);
   document.getElementById('topbarTitle').textContent = item?.label||'';
   renderSection(id);
