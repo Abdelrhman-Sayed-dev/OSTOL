@@ -1928,12 +1928,6 @@ async function renderOverview() {
   _overviewEl.innerHTML = `
   <style>
     .xdb{font-family:inherit;direction:rtl}
-    /* ─── Status bar top ─── */
-    .xdb-status{display:flex;align-items:center;gap:.5rem;padding:.55rem 1rem;border-radius:12px;margin-bottom:1.1rem;font-size:.78rem;font-weight:700}
-    .xdb-status.ok{background:#f0fdf4;border:1.5px solid #bbf7d0;color:#15803d}
-    .xdb-status.warn{background:#fffbeb;border:1.5px solid #fde68a;color:#92400e}
-    .xdb-status.crit{background:#fef2f2;border:1.5px solid #fecaca;color:#991b1b}
-    /* ─── Big numbers row ─── */
     .xdb-nums{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
     @media(max-width:700px){.xdb-nums{grid-template-columns:repeat(2,1fr)}}
     .xdb-num{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem;cursor:pointer;transition:border-color .15s,transform .15s;position:relative;overflow:hidden}
@@ -1942,48 +1936,35 @@ async function renderOverview() {
     .xdb-num-label{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.05em;margin-bottom:.5rem;text-transform:uppercase}
     .xdb-num-val{font-size:2.2rem;font-weight:900;line-height:1;letter-spacing:-.03em}
     .xdb-num-sub{font-size:.7rem;color:var(--muted);margin-top:.3rem}
-    /* ─── Main grid ─── */
     .xdb-grid{display:grid;grid-template-columns:1fr 1.6fr;gap:.9rem;margin-bottom:.9rem}
-    @media(max-width:860px){.xdb-grid{grid-template-columns:1fr}}
+    @media(max-width:860px){.xdb-grid,.xdb-two,.xdb-charts-grid{grid-template-columns:1fr}}
     .xdb-panel{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem}
     .xdb-panel-title{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:.8rem;display:flex;align-items:center;justify-content:space-between}
     .xdb-panel-link{font-size:.7rem;color:var(--primary);cursor:pointer;font-weight:600;letter-spacing:0}
-    /* ─── Alert items ─── */
     .xdb-al{display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;border-radius:9px;cursor:pointer;transition:background .12s;margin-bottom:.3rem}
     .xdb-al:hover{background:var(--surface-2)}
     .xdb-al:last-child{margin-bottom:0}
     .xdb-al-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
     .xdb-al-txt{flex:1;font-size:.82rem;font-weight:600}
     .xdb-al-cnt{font-size:.72rem;font-weight:800;padding:.1rem .55rem;border-radius:20px}
-    /* ─── Fleet health bar ─── */
-    .xdb-health{margin-bottom:.9rem}
-    .xdb-health-track{height:10px;background:var(--surface-2);border-radius:20px;overflow:hidden;margin:.4rem 0}
-    .xdb-health-fill{height:100%;border-radius:20px;transition:width .6s cubic-bezier(.4,0,.2,1)}
-    .xdb-health-labels{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted)}
-    /* ─── Live trips ─── */
     .xdb-trip{display:flex;align-items:center;gap:.6rem;padding:.45rem 0;border-bottom:1px solid var(--border)}
     .xdb-trip:last-child{border:none}
     .xdb-trip-plate{font-size:.75rem;font-weight:800;font-family:monospace;background:var(--surface-2);padding:.1rem .45rem;border-radius:6px;letter-spacing:.04em}
     .xdb-trip-name{font-size:.8rem;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .xdb-trip-dur{font-size:.68rem;font-weight:700;color:#3b82f6;white-space:nowrap}
-    /* ─── Charts ─── */
-    .xdb-charts{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
-    @media(max-width:700px){.xdb-charts{grid-template-columns:1fr}}
-    /* ─── Maintenance table ─── */
-    .xdb-maint td,.xdb-maint th{font-size:.78rem;padding:.45rem .6rem}
+    .xdb-two{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
+    .xdb-charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
   </style>
 
   <div class="xdb">
 
-
-
-    <!-- ── الأرقام الكبيرة ── -->
+    <!-- ══ 1. أرقام KPI ══ -->
     <div class="xdb-nums">
       <div class="xdb-num" onclick="switchSection('cars')">
         <div class="xdb-num-bar" style="background:#10b981"></div>
         <div class="xdb-num-label">متاحة الآن</div>
         <div class="xdb-num-val" style="color:#10b981">${availableCars}</div>
-        <div class="xdb-num-sub">من ${cars.length} مركبة · ${maintenanceCars} في صيانة</div>
+        <div class="xdb-num-sub">${maintenanceCars} صيانة · ${cars.length} إجمالي</div>
       </div>
       <div class="xdb-num" onclick="switchSection('trips')">
         <div class="xdb-num-bar" style="background:#3b82f6"></div>
@@ -1995,14 +1976,60 @@ async function renderOverview() {
         <div class="xdb-num-bar" style="background:#8b5cf6"></div>
         <div class="xdb-num-label">سائق نشط</div>
         <div class="xdb-num-val" style="color:#8b5cf6">${activeDrivers}</div>
-        <div class="xdb-num-sub">${topDrivers[0]?`أعلى: ${topDrivers[0][0].split(' ')[0]} (${topDrivers[0][1]} رحلة)`:''}</div>
+        <div class="xdb-num-sub">${topDrivers[0]?`أنشط: ${topDrivers[0][0].split(' ')[0]} (${topDrivers[0][1]})`:'&nbsp;'}</div>
       </div>
-      
+      <div class="xdb-num" onclick="switchSection('emergency')">
+        <div class="xdb-num-bar" style="background:${unread>0?'#dc2626':'#94a3b8'}"></div>
+        <div class="xdb-num-label">بلاغات غير مقروءة</div>
+        <div class="xdb-num-val" style="color:${unread>0?'#dc2626':'var(--text)'}">${unread}</div>
+        <div class="xdb-num-sub">${emgs.length} إجمالي</div>
+      </div>
+    </div>
 
+    <!-- ══ 2. تكاليف شهرية ══ -->
+    <div class="xdb-two">
+      <div class="xdb-panel" style="padding:.85rem 1.1rem">
+        <div class="xdb-panel-title">
+          <span>⛽ تكلفة الوقود بالشهر</span>
+          <span class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+          ${months6.map((m,i)=>{
+            const cost=fuelByMonth[m]||0;
+            const prev=fuelByMonth[months6[i+1]]||0;
+            const trend=i===0&&prev>0?(cost>prev?'▲':'▼'):'';
+            const tc=cost>prev?'#ef4444':'#10b981';
+            return `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:.35rem .4rem;color:var(--muted);font-size:.75rem">${monthLabel(m)}</td>
+              <td style="padding:.35rem .4rem;font-weight:${i===0?'800':'500'};color:${i===0?'#f59e0b':'var(--text)'}">${Math.round(cost).toLocaleString('ar-EG')} ج</td>
+              <td style="padding:.35rem .4rem;color:${tc};font-size:.7rem;font-weight:700">${trend}</td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </div>
+      <div class="xdb-panel" style="padding:.85rem 1.1rem">
+        <div class="xdb-panel-title">
+          <span>🔧 تكلفة الصيانة بالشهر</span>
+          <span class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+          ${months6.map((m,i)=>{
+            const cost=maintByMonth[m]||0;
+            const prev=maintByMonth[months6[i+1]]||0;
+            const trend=i===0&&prev>0?(cost>prev?'▲':'▼'):'';
+            const tc=cost>prev?'#ef4444':'#10b981';
+            return `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:.35rem .4rem;color:var(--muted);font-size:.75rem">${monthLabel(m)}</td>
+              <td style="padding:.35rem .4rem;font-weight:${i===0?'800':'500'};color:${i===0?'#ef4444':'var(--text)'}">${Math.round(cost).toLocaleString('ar-EG')} ج</td>
+              <td style="padding:.35rem .4rem;color:${tc};font-size:.7rem;font-weight:700">${trend}</td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </div>
+    </div>
 
-
-    <!-- ── Charts ── -->
-    <div class="xdb-charts">
+    <!-- ══ 3. Charts ══ -->
+    <div class="xdb-charts-grid">
       <div class="xdb-panel" style="padding:.75rem 1rem">
         <div class="xdb-panel-title"><span>رحلات آخر 7 أيام</span></div>
         <div style="height:160px"><canvas id="chartTripsTime"></canvas></div>
@@ -2021,13 +2048,8 @@ async function renderOverview() {
       </div>
     </div>
 
-        <!-- ── Charts ── -->
-    
-
-    <!-- ── تنبيهات + رحلات جارية ── -->
+    <!-- ══ 4. تنبيهات + رحلات جارية ══ -->
     <div class="xdb-grid">
-
-      <!-- تنبيهات -->
       <div class="xdb-panel">
         <div class="xdb-panel-title">
           <span>تنبيهات تحتاج تدخل</span>
@@ -2052,8 +2074,7 @@ async function renderOverview() {
             </div>`;
           }).join('')}
           <div onclick="switchSection('maintenance')" style="text-align:center;padding:.3rem;color:var(--primary);font-size:.72rem;font-weight:600;cursor:pointer;margin-top:.2rem">عرض الكل ←</div>
-        </div>
-        `:''}
+        </div>`:''}
         ${warningCount>0?`<div class="xdb-al" onclick="switchSection('maintenance')"><div class="xdb-al-dot" style="background:#f97316"></div><div class="xdb-al-txt">صيانة تقترب</div><div class="xdb-al-cnt" style="background:#fff7ed;color:#f97316">${warningCount}</div></div>`:''}
         ${unread>0?`<div class="xdb-al" onclick="switchSection('emergency')"><div class="xdb-al-dot" style="background:#dc2626"></div><div class="xdb-al-txt">بلاغات غير مقروءة</div><div class="xdb-al-cnt" style="background:#fef2f2;color:#dc2626">${unread}</div></div>`:''}
         ${expiredLic>0?`<div class="xdb-al" onclick="switchSection('drivers')"><div class="xdb-al-dot" style="background:#7c3aed"></div><div class="xdb-al-txt">رخصة قيادة منتهية</div><div class="xdb-al-cnt" style="background:#f5f3ff;color:#7c3aed">${expiredLic}</div></div>`:''}
@@ -2062,7 +2083,6 @@ async function renderOverview() {
         ${criticalCount===0&&warningTotal===0?`<div style="text-align:center;padding:1.2rem;color:var(--muted)"><div style="font-size:1.8rem">✅</div><div style="font-size:.8rem;margin-top:.3rem;font-weight:600">لا توجد تنبيهات</div></div>`:''}
       </div>
 
-      <!-- رحلات جارية -->
       <div class="xdb-panel">
         <div class="xdb-panel-title">
           <span>رحلات جارية (${active})</span>
@@ -2082,8 +2102,6 @@ async function renderOverview() {
         ${active===0?`<div style="text-align:center;padding:1.2rem;color:var(--muted)"><div style="font-size:1.8rem">🏁</div><div style="font-size:.8rem;margin-top:.3rem;font-weight:600">لا توجد رحلات جارية</div></div>`:''}
       </div>
     </div>
-
-
 
   </div>
   `;
