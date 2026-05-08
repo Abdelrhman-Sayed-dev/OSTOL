@@ -2012,7 +2012,6 @@ async function renderOverview() {
       <div class="xdb-panel" style="padding:.85rem 1.1rem">
         <div class="xdb-panel-title">
           <span>⛽ تكلفة الوقود بالشهر</span>
-          <button class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</button>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:.82rem">
           ${months6.map((m,i)=>{
@@ -2031,7 +2030,6 @@ async function renderOverview() {
       <div class="xdb-panel" style="padding:.85rem 1.1rem">
         <div class="xdb-panel-title">
           <span>🔧 تكلفة الصيانة بالشهر</span>
-          <button class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</button>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:.82rem">
           ${months6.map((m,i)=>{
@@ -2054,7 +2052,6 @@ async function renderOverview() {
       <div class="xdb-panel">
         <div class="xdb-panel-title">
           <span>تنبيهات تحتاج تدخل</span>
-          <button class="xdb-panel-link" onclick="switchSection('maintenance')">تفاصيل ←</button>
         </div>
         ${overdueCount>0?`
         <div class="xdb-al" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
