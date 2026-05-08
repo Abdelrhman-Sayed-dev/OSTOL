@@ -1907,6 +1907,7 @@ async function renderOverview() {
   });
 
   const currentMonth = months6[0];
+  const recentFuel   = records.filter(r=>r.type?.startsWith('fuel_')&&getMonthKey(r.created_at)===currentMonth);
   const prevMonth    = months6[1];
   const recentCost   = fuelByMonth[currentMonth]||0;
   const recentMaint  = records.filter(r=>r.type&&!r.type.startsWith('fuel_')&&getMonthKey(r.created_at)===currentMonth);
@@ -1996,13 +1997,7 @@ async function renderOverview() {
         <div class="xdb-num-val" style="color:#8b5cf6">${activeDrivers}</div>
         <div class="xdb-num-sub">${topDrivers[0]?`أعلى: ${topDrivers[0][0].split(' ')[0]} (${topDrivers[0][1]} رحلة)`:''}</div>
       </div>
-      <div class="xdb-num">
-        <div class="xdb-num-bar" style="background:#f59e0b"></div>
-        <div class="xdb-num-label">تكلفة وقود (30 يوم)</div>
-        <div class="xdb-num-val" style="color:#f59e0b;font-size:1.5rem">${Math.round(recentCost).toLocaleString('ar-EG')}</div>
-        <div class="xdb-num-sub">جنيه · ${recentFuel.length} عملية تزود</div>
-      </div>
-    </div>
+      
 
 
 
