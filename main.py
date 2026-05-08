@@ -1916,18 +1916,31 @@ async def update_location(body: dict, cu: dict = Depends(get_user)):
 async def get_live_locations(cu: dict = Depends(require_admin_or_reporter)):
     """الأدمن يجيب آخر مواقع كل السائقين النشطين (آخر 2 دقيقة)."""
     stale_cutoff = (datetime.utcnow() - timedelta(seconds=30)).isoformat() + "Z"
+    branch = _branch_filter(cu)
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""SELECT ll.driver_id, ll.car_id, ll.lat, ll.lng,
-                            ll.accuracy, ll.heading, ll.speed,
-                            ll.updated_at, ll.trip_id,
-                            d.name as driver_name,
-                            c.plate as car_plate, c.model as car_model
-                     FROM live_locations ll
-                     LEFT JOIN drivers d ON d.id = ll.driver_id
-                     LEFT JOIN cars    c ON c.id = ll.car_id
-                     WHERE ll.updated_at >= ?
-                     ORDER BY ll.updated_at DESC""", (stale_cutoff,))
+        if branch:
+            c.execute("""SELECT ll.driver_id, ll.car_id, ll.lat, ll.lng,
+                                ll.accuracy, ll.heading, ll.speed,
+                                ll.updated_at, ll.trip_id,
+                                d.name as driver_name,
+                                c.plate as car_plate, c.model as car_model
+                         FROM live_locations ll
+                         LEFT JOIN drivers d ON d.id = ll.driver_id
+                         LEFT JOIN cars    c ON c.id = ll.car_id
+                         WHERE ll.updated_at >= ? AND d.branch = ?
+                         ORDER BY ll.updated_at DESC""", (stale_cutoff, branch))
+        else:
+            c.execute("""SELECT ll.driver_id, ll.car_id, ll.lat, ll.lng,
+                                ll.accuracy, ll.heading, ll.speed,
+                                ll.updated_at, ll.trip_id,
+                                d.name as driver_name,
+                                c.plate as car_plate, c.model as car_model
+                         FROM live_locations ll
+                         LEFT JOIN drivers d ON d.id = ll.driver_id
+                         LEFT JOIN cars    c ON c.id = ll.car_id
+                         WHERE ll.updated_at >= ?
+                         ORDER BY ll.updated_at DESC""", (stale_cutoff,))
         return [dict(r) for r in c.fetchall()]
 
 
@@ -2504,11 +2517,14 @@ async def get_garage_records(cu: dict = Depends(get_user)):
 
 @app.get("/garage/latest")
 async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
+    branch = _branch_filter(cu)
     with get_db() as conn:
         c = conn.cursor()
-        # Group by car_id to always return the latest garage record PER CAR
-        # (not per driver, so that the map pin reflects the actual current parking spot)
-        c.execute("""SELECT g.*,d.name as driver_name,c.plate as car_plate
+        branch_join = "LEFT JOIN cars c ON g.car_id=c.id" if not branch else "INNER JOIN cars c ON g.car_id=c.id AND c.branch=?"
+        branch_params_car = (branch,) if branch else ()
+        branch_params_nocar = ()
+
+        c.execute(f"""SELECT g.*,d.name as driver_name,c.plate as car_plate
                      FROM garage_records g
                      INNER JOIN(SELECT car_id, MAX(id) as max_id
                                 FROM garage_records
@@ -2516,20 +2532,22 @@ async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
                                 GROUP BY car_id) latest
                        ON g.id=latest.max_id
                      LEFT JOIN drivers d ON g.driver_id=d.id
-                     LEFT JOIN cars c ON g.car_id=c.id
-                     ORDER BY g.recorded_at DESC""")
+                     {branch_join}
+                     {"WHERE c.id IS NOT NULL" if branch else ""}
+                     ORDER BY g.recorded_at DESC""", branch_params_car)
         rows = [dict(r) for r in c.fetchall()]
-        # Also include records without car_id grouped by driver (fallback)
-        c.execute("""SELECT g.*,d.name as driver_name,NULL as car_plate
-                     FROM garage_records g
-                     INNER JOIN(SELECT driver_id, MAX(id) as max_id
-                                FROM garage_records
-                                WHERE car_id IS NULL
-                                GROUP BY driver_id) latest
-                       ON g.id=latest.max_id
-                     LEFT JOIN drivers d ON g.driver_id=d.id
-                     ORDER BY g.recorded_at DESC""")
-        rows += [dict(r) for r in c.fetchall()]
+
+        if not branch:
+            c.execute("""SELECT g.*,d.name as driver_name,NULL as car_plate
+                         FROM garage_records g
+                         INNER JOIN(SELECT driver_id, MAX(id) as max_id
+                                    FROM garage_records
+                                    WHERE car_id IS NULL
+                                    GROUP BY driver_id) latest
+                           ON g.id=latest.max_id
+                         LEFT JOIN drivers d ON g.driver_id=d.id
+                         ORDER BY g.recorded_at DESC""")
+            rows += [dict(r) for r in c.fetchall()]
         return rows
 
 # ══════════════════════════════════════════════════════
@@ -4264,6 +4282,21 @@ async def fraud_detection(
                      ORDER BY requests DESC""", req_date_params)
         repeated_odometer = [dict(r) for r in c.fetchall()]
 
+        # 8. رحلات مفتوحة (بدون end_time) منذ أكثر من 3 ساعات
+        c.execute(f"""SELECT t.id, t.start_time, t.start_odometer,
+                            d.name driver_name, d.fixed_number,
+                            ca.plate, ca.model,
+                            ROUND((julianday('now') - julianday(t.start_time)) * 24, 1) AS hours_open
+                     FROM trips t
+                     JOIN drivers d ON d.id=t.driver_id
+                     JOIN cars ca ON ca.id=t.car_id
+                     WHERE t.end_time IS NULL
+                       AND t.start_time IS NOT NULL
+                       AND (julianday('now') - julianday(t.start_time)) * 24 > 3
+                       {trip_date_sql}
+                     ORDER BY hours_open DESC""", trip_date_params)
+        open_trips = [dict(r) for r in c.fetchall()]
+
     # ── بناء قائمة موحدة من التنبيهات (alerts) للـ frontend ──
     alerts: list = []
 
@@ -4344,6 +4377,19 @@ async def fraud_detection(
             "detail":   f"السائق: {r['driver_name']} | {r['requests']} طلبات",
         })
 
+    for r in open_trips:
+        hours = r.get("hours_open", 0)
+        severity = "high" if hours > 24 else "medium" if hours > 8 else "low"
+        alerts.append({
+            "type":     "open_trip",
+            "severity": severity,
+            "label":    "رحلة مفتوحة",
+            "plate":    r.get("plate", "—"),
+            "model":    r.get("model", ""),
+            "date":     (r.get("start_time") or "")[:10],
+            "detail":   f"السائق: {r['driver_name']} | مفتوحة منذ {hours} ساعة | بدأت {(r.get('start_time') or '')[:16]}",
+        })
+
     high_count   = sum(1 for a in alerts if a["severity"] == "high")
     medium_count = sum(1 for a in alerts if a["severity"] == "medium")
     low_count    = sum(1 for a in alerts if a["severity"] == "low")
@@ -4369,6 +4415,7 @@ async def fraud_detection(
         "impossible_speed":   impossible_speed,
         "excess_fuel":        excess_fuel,
         "repeated_odometer":  repeated_odometer,
+        "open_trips":         open_trips,
     }
 
 
