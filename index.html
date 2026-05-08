@@ -1940,7 +1940,8 @@ async function renderOverview() {
     @media(max-width:860px){.xdb-grid,.xdb-two,.xdb-charts-grid{grid-template-columns:1fr}}
     .xdb-panel{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem}
     .xdb-panel-title{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.07em;text-transform:uppercase;margin-bottom:.8rem;display:flex;align-items:center;justify-content:space-between}
-    .xdb-panel-link{font-size:.7rem;color:var(--primary);cursor:pointer;font-weight:600;letter-spacing:0}
+    .xdb-panel-link{font-size:.72rem;color:var(--primary);cursor:pointer;font-weight:700;letter-spacing:0;padding:.2rem .5rem;border-radius:6px;border:1px solid var(--primary);transition:background .12s}
+    .xdb-panel-link:hover{background:var(--primary);color:#fff}
     .xdb-al{display:flex;align-items:center;gap:.65rem;padding:.55rem .65rem;border-radius:9px;cursor:pointer;transition:background .12s;margin-bottom:.3rem}
     .xdb-al:hover{background:var(--surface-2)}
     .xdb-al:last-child{margin-bottom:0}
@@ -1949,7 +1950,7 @@ async function renderOverview() {
     .xdb-al-cnt{font-size:.72rem;font-weight:800;padding:.1rem .55rem;border-radius:20px}
     .xdb-trip{display:flex;align-items:center;gap:.6rem;padding:.45rem 0;border-bottom:1px solid var(--border)}
     .xdb-trip:last-child{border:none}
-    .xdb-trip-plate{font-size:.75rem;font-weight:800;font-family:monospace;background:var(--surface-2);padding:.1rem .45rem;border-radius:6px;letter-spacing:.04em}
+    .xdb-trip-plate{font-size:.75rem;font-weight:800;font-family:monospace;background:var(--surface-2);padding:.1rem .45rem;border-radius:6px}
     .xdb-trip-name{font-size:.8rem;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .xdb-trip-dur{font-size:.68rem;font-weight:700;color:#3b82f6;white-space:nowrap}
     .xdb-two{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
@@ -1958,7 +1959,7 @@ async function renderOverview() {
 
   <div class="xdb">
 
-    <!-- ══ 1. أرقام KPI ══ -->
+    <!-- ══ 1. KPI Cards ══ -->
     <div class="xdb-nums">
       <div class="xdb-num" onclick="switchSection('cars')">
         <div class="xdb-num-bar" style="background:#10b981"></div>
@@ -1986,49 +1987,7 @@ async function renderOverview() {
       </div>
     </div>
 
-    <!-- ══ 2. تكاليف شهرية ══ -->
-    <div class="xdb-two">
-      <div class="xdb-panel" style="padding:.85rem 1.1rem">
-        <div class="xdb-panel-title">
-          <span>⛽ تكلفة الوقود بالشهر</span>
-          <span class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:.82rem">
-          ${months6.map((m,i)=>{
-            const cost=fuelByMonth[m]||0;
-            const prev=fuelByMonth[months6[i+1]]||0;
-            const trend=i===0&&prev>0?(cost>prev?'▲':'▼'):'';
-            const tc=cost>prev?'#ef4444':'#10b981';
-            return `<tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:.35rem .4rem;color:var(--muted);font-size:.75rem">${monthLabel(m)}</td>
-              <td style="padding:.35rem .4rem;font-weight:${i===0?'800':'500'};color:${i===0?'#f59e0b':'var(--text)'}">${Math.round(cost).toLocaleString('ar-EG')} ج</td>
-              <td style="padding:.35rem .4rem;color:${tc};font-size:.7rem;font-weight:700">${trend}</td>
-            </tr>`;
-          }).join('')}
-        </table>
-      </div>
-      <div class="xdb-panel" style="padding:.85rem 1.1rem">
-        <div class="xdb-panel-title">
-          <span>🔧 تكلفة الصيانة بالشهر</span>
-          <span class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:.82rem">
-          ${months6.map((m,i)=>{
-            const cost=maintByMonth[m]||0;
-            const prev=maintByMonth[months6[i+1]]||0;
-            const trend=i===0&&prev>0?(cost>prev?'▲':'▼'):'';
-            const tc=cost>prev?'#ef4444':'#10b981';
-            return `<tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:.35rem .4rem;color:var(--muted);font-size:.75rem">${monthLabel(m)}</td>
-              <td style="padding:.35rem .4rem;font-weight:${i===0?'800':'500'};color:${i===0?'#ef4444':'var(--text)'}">${Math.round(cost).toLocaleString('ar-EG')} ج</td>
-              <td style="padding:.35rem .4rem;color:${tc};font-size:.7rem;font-weight:700">${trend}</td>
-            </tr>`;
-          }).join('')}
-        </table>
-      </div>
-    </div>
-
-    <!-- ══ 3. Charts ══ -->
+    <!-- ══ 2. Charts ══ -->
     <div class="xdb-charts-grid">
       <div class="xdb-panel" style="padding:.75rem 1rem">
         <div class="xdb-panel-title"><span>رحلات آخر 7 أيام</span></div>
@@ -2048,12 +2007,54 @@ async function renderOverview() {
       </div>
     </div>
 
+    <!-- ══ 3. تكاليف شهرية ══ -->
+    <div class="xdb-two">
+      <div class="xdb-panel" style="padding:.85rem 1.1rem">
+        <div class="xdb-panel-title">
+          <span>⛽ تكلفة الوقود بالشهر</span>
+          <button class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+          ${months6.map((m,i)=>{
+            const cost=fuelByMonth[m]||0;
+            const prev=fuelByMonth[months6[i+1]]||0;
+            const trend=i===0&&prev>0?(cost>prev?'▲':'▼'):'';
+            const tc=cost>prev?'#ef4444':'#10b981';
+            return `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:.38rem .4rem;color:var(--muted);font-size:.75rem">${monthLabel(m)}</td>
+              <td style="padding:.38rem .4rem;font-weight:${i===0?'800':'500'};color:${i===0?'#f59e0b':'var(--text)'};text-align:left">${Math.round(cost).toLocaleString('ar-EG')} ج</td>
+              <td style="padding:.38rem .4rem;color:${tc};font-size:.72rem;font-weight:700;width:20px">${trend}</td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </div>
+      <div class="xdb-panel" style="padding:.85rem 1.1rem">
+        <div class="xdb-panel-title">
+          <span>🔧 تكلفة الصيانة بالشهر</span>
+          <button class="xdb-panel-link" onclick="switchSection('workshop')">تفاصيل ←</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+          ${months6.map((m,i)=>{
+            const cost=maintByMonth[m]||0;
+            const prev=maintByMonth[months6[i+1]]||0;
+            const trend=i===0&&prev>0?(cost>prev?'▲':'▼'):'';
+            const tc=cost>prev?'#ef4444':'#10b981';
+            return `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:.38rem .4rem;color:var(--muted);font-size:.75rem">${monthLabel(m)}</td>
+              <td style="padding:.38rem .4rem;font-weight:${i===0?'800':'500'};color:${i===0?'#ef4444':'var(--text)'};text-align:left">${Math.round(cost).toLocaleString('ar-EG')} ج</td>
+              <td style="padding:.38rem .4rem;color:${tc};font-size:.72rem;font-weight:700;width:20px">${trend}</td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </div>
+    </div>
+
     <!-- ══ 4. تنبيهات + رحلات جارية ══ -->
     <div class="xdb-grid">
       <div class="xdb-panel">
         <div class="xdb-panel-title">
           <span>تنبيهات تحتاج تدخل</span>
-          <span class="xdb-panel-link" onclick="switchSection('maintenance')">تفاصيل ←</span>
+          <button class="xdb-panel-link" onclick="switchSection('maintenance')">تفاصيل ←</button>
         </div>
         ${overdueCount>0?`
         <div class="xdb-al" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
@@ -2086,7 +2087,7 @@ async function renderOverview() {
       <div class="xdb-panel">
         <div class="xdb-panel-title">
           <span>رحلات جارية (${active})</span>
-          <span class="xdb-panel-link" onclick="switchSection('trips')">الكل ←</span>
+          <button class="xdb-panel-link" onclick="switchSection('trips')">الكل ←</button>
         </div>
         ${trips.filter(t=>!t.end_time).slice(0,7).map(t=>{
           const d=drivers.find(dr=>dr.id===t.driver_id);
