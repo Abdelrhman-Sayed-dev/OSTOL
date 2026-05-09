@@ -1218,7 +1218,7 @@ body.driver-mode { background:#f5f5f5; }
 /* Responsive */
 @media(min-width:700px){
   .dp-wrap { box-shadow:0 0 40px rgba(0,0,0,.08); }
-  .dp-quick { grid-template-columns:repeat(4,1fr); }
+    <div class="ws-summary-grid">
 }
 
 
@@ -3376,7 +3376,7 @@ async function renderAdminWorkshops() {
 
   document.getElementById('pageContent').innerHTML=`
     <!-- ── 4 كروت إجماليات ── -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1rem;margin-bottom:1.5rem">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem">
       <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
           <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي الزيوت</span>
@@ -3412,7 +3412,7 @@ async function renderAdminWorkshops() {
     </div>
 
     <!-- ── بانل أسعار الوقود والصيانة بالتابز ── -->
-    <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);overflow:hidden;margin-bottom:1.5rem">
+    <div class="ws-prices-panel">
       <!-- هيدر البانل -->
       <div style="padding:1.25rem 1.5rem 0;border-bottom:1px solid #e2e8f0">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
@@ -3422,7 +3422,7 @@ async function renderAdminWorkshops() {
           </h3>
         </div>
         <!-- التابز -->
-        <div style="display:flex;gap:.15rem">
+        <div class="ws-tabs-row">
           <button id="wsTab_fuel"  onclick="switchWsTab('fuel',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#059669;font-family:inherit;border-radius:8px 8px 0 0">⛽ الوقود<span style="position:absolute;bottom:0;left:0;right:0;height:2px;background:#10b981;border-radius:2px 2px 0 0"></span></button>
           <button id="wsTab_oils"  onclick="switchWsTab('oils',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#64748b;font-family:inherit;border-radius:8px 8px 0 0">🛢️ الزيوت</button>
           <button id="wsTab_main"  onclick="switchWsTab('main',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#64748b;font-family:inherit;border-radius:8px 8px 0 0">🔧 الصيانة</button>
@@ -3434,7 +3434,7 @@ async function renderAdminWorkshops() {
         <!-- زرار تعديل الأسعار -->
         <div id="pricesBtnPlaceholder" style="margin-bottom:1.25rem"></div>
         <!-- جدول الوقود -->
-        <div id="wsTabPanel_fuel">
+        <div id="wsTabPanel_fuel" class="ws-table-wrap">
           <table style="width:100%;border-collapse:collapse;font-size:.88rem">
             <thead><tr style="border-bottom:1.5px solid #e2e8f0">
               <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع الوقود</th>
@@ -3445,7 +3445,7 @@ async function renderAdminWorkshops() {
           </table>
         </div>
         <!-- جدول الزيوت -->
-        <div id="wsTabPanel_oils" style="display:none">
+        <div id="wsTabPanel_oils" class="ws-table-wrap" style="display:none">
           <table style="width:100%;border-collapse:collapse;font-size:.88rem">
             <thead><tr style="border-bottom:1.5px solid #e2e8f0">
               <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع الزيت</th>
@@ -3456,7 +3456,7 @@ async function renderAdminWorkshops() {
           </table>
         </div>
         <!-- جدول الصيانة -->
-        <div id="wsTabPanel_main" style="display:none">
+        <div id="wsTabPanel_main" class="ws-table-wrap" style="display:none">
           <table style="width:100%;border-collapse:collapse;font-size:.88rem">
             <thead><tr style="border-bottom:1.5px solid #e2e8f0">
               <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع الصيانة</th>
@@ -3467,7 +3467,7 @@ async function renderAdminWorkshops() {
           </table>
         </div>
         <!-- جدول قطع الغيار -->
-        <div id="wsTabPanel_parts" style="display:none">
+        <div id="wsTabPanel_parts" class="ws-table-wrap" style="display:none">
           <table style="width:100%;border-collapse:collapse;font-size:.88rem">
             <thead><tr style="border-bottom:1.5px solid #e2e8f0">
               <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع القطعة</th>
@@ -4294,6 +4294,15 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
 .btn-danger:hover{background:#dc2626}
 .btn-sm{padding:.35rem .75rem;font-size:.78rem;border-radius:8px}
 
+.ws-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+@media(max-width:900px){.ws-summary-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.ws-summary-grid{grid-template-columns:1fr 1fr}}
+.ws-tabs-row{display:flex;gap:.15rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:0}
+.ws-tabs-row::-webkit-scrollbar{display:none}
+.ws-tabs-row button{white-space:nowrap;flex-shrink:0}
+.ws-prices-panel{background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);overflow:hidden;margin-bottom:1.5rem}
+.ws-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.ws-table-wrap table{min-width:340px;width:100%}
 </style>
 
     <div class="card no-print">
