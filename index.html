@@ -3342,39 +3342,159 @@ async function renderAdminWorkshops() {
   const total = totalRaw.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
+  // حساب الإجماليات حسب الفئة
+  const fuelTotal        = records.filter(r=>r.type&&r.type.startsWith('fuel_')).reduce((s,r)=>s+(r.price||0),0);
+  const oilTotal         = records.filter(r=>r.type&&(r.type==='oil'||r.type.startsWith('oil_'))).reduce((s,r)=>s+(r.price||0),0);
+  const maintenanceTotal = records.filter(r=>r.type&&['filter','belt','other'].includes(r.type)).reduce((s,r)=>s+(r.price||0),0);
+  const partsTotal       = records.filter(r=>r.type&&['tire','battery'].includes(r.type)).reduce((s,r)=>s+(r.price||0),0);
+  const fmt = v => v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // بناء صفوف جدول الأسعار لكل تاب
+  const fuelRows = FUEL_TYPES.map(f=>`<tr style="border-bottom:1px solid #f1f5f9">
+    <td style="padding:.9rem .5rem .9rem 0"><span style="display:flex;align-items:center;gap:.5rem"><span style="color:#ef4444;font-size:1rem">⛽</span><strong style="color:#0f172a">${f.label}</strong></span></td>
+    <td style="text-align:center;padding:.9rem"><span style="color:#059669;font-weight:800;font-size:1rem">${currentPrices[f.key]||0}</span> <small style="color:#94a3b8;font-size:.72rem">جنيه</small></td>
+    <td style="color:#64748b;text-align:left;padding:.9rem 0 .9rem .5rem">لتر</td>
+  </tr>`).join('');
+
+  const oilRows = OIL_SUBTYPES.map(o=>`<tr style="border-bottom:1px solid #f1f5f9">
+    <td style="padding:.9rem .5rem .9rem 0"><span style="display:flex;align-items:center;gap:.5rem"><span style="font-size:1rem">${o.icon}</span><strong style="color:#0f172a">${o.label}</strong></span></td>
+    <td style="text-align:center;padding:.9rem"><span style="color:#059669;font-weight:800;font-size:1rem">${currentPrices[o.key]||0}</span> <small style="color:#94a3b8;font-size:.72rem">جنيه</small></td>
+    <td style="color:#64748b;text-align:left;padding:.9rem 0 .9rem .5rem">${o.unit}</td>
+  </tr>`).join('');
+
+  const mainRows = [{key:'filter',icon:'🔧',label:'فلتر',unit:'قطعة'},{key:'belt',icon:'🔩',label:'سيور',unit:'قطعة'},{key:'other',icon:'🔨',label:'أخرى',unit:'—'}].map(m=>`<tr style="border-bottom:1px solid #f1f5f9">
+    <td style="padding:.9rem .5rem .9rem 0"><span style="display:flex;align-items:center;gap:.5rem"><span style="font-size:1rem">${m.icon}</span><strong style="color:#0f172a">${m.label}</strong></span></td>
+    <td style="text-align:center;padding:.9rem"><span style="color:#059669;font-weight:800;font-size:1rem">${currentPrices[m.key]||0}</span> <small style="color:#94a3b8;font-size:.72rem">جنيه</small></td>
+    <td style="color:#64748b;text-align:left;padding:.9rem 0 .9rem .5rem">${m.unit}</td>
+  </tr>`).join('');
+
+  const partsRows = [{key:'tire',icon:'⭕',label:'كوتش',unit:'قطعة'},{key:'battery',icon:'🔋',label:'بطارية',unit:'قطعة'}].map(p=>`<tr style="border-bottom:1px solid #f1f5f9">
+    <td style="padding:.9rem .5rem .9rem 0"><span style="display:flex;align-items:center;gap:.5rem"><span style="font-size:1rem">${p.icon}</span><strong style="color:#0f172a">${p.label}</strong></span></td>
+    <td style="text-align:center;padding:.9rem"><span style="color:#059669;font-weight:800;font-size:1rem">${currentPrices[p.key]||0}</span> <small style="color:#94a3b8;font-size:.72rem">جنيه</small></td>
+    <td style="color:#64748b;text-align:left;padding:.9rem 0 .9rem .5rem">${p.unit}</td>
+  </tr>`).join('');
+
   document.getElementById('pageContent').innerHTML=`
-    <div style="display:flex;gap:.85rem;margin-bottom:1.4rem;align-items:stretch;flex-wrap:wrap">
-      <div class="stats-row" style="flex:1;margin-bottom:0;grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
-        ${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}
-        ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}
+    <!-- ── 4 كروت إجماليات ── -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1rem;margin-bottom:1.5rem">
+      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
+          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي الزيوت</span>
+          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">🛢️</div>
+        </div>
+        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${fmt(oilTotal)}</div>
+        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">جنيه</div>
       </div>
-      <div class="stat-card ws-total-card" style="border:2px solid #10b981;background:linear-gradient(135deg,#f0fdf9,#dcfce7);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.4rem;min-width:170px;flex-shrink:0">
-        <div style="font-size:2rem;margin-bottom:.3rem">💰</div>
-        <div style="font-size:2rem;font-weight:900;color:#065f46;line-height:1">${total}</div>
-        <div style="font-size:.85rem;font-weight:700;color:#059669;margin-top:.4rem">إجمالي التكاليف (جنيه)</div>
+      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
+          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي الصيانة</span>
+          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">🔧</div>
+        </div>
+        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${fmt(maintenanceTotal+partsTotal)}</div>
+        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">جنيه</div>
+      </div>
+      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
+          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي الوقود</span>
+          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">⛽</div>
+        </div>
+        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${fmt(fuelTotal)}</div>
+        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">جنيه</div>
+      </div>
+      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
+          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي التكاليف (جنيه)</span>
+          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">💰</div>
+        </div>
+        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${total}</div>
+        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">الإجمالي الكلي لكل البنود</div>
       </div>
     </div>
-    <div class="card" style="border:2px solid #10b981;background:#f0fdf9;margin-bottom:1.2rem">
-      <div class="card-header">
-        <div class="card-title" style="color:#065f46">💰 أسعار الوقود والصيانة</div>
-        <div id="pricesBtnPlaceholder"></div>
+
+    <!-- ── بانل أسعار الوقود والصيانة بالتابز ── -->
+    <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);overflow:hidden;margin-bottom:1.5rem">
+      <!-- هيدر البانل -->
+      <div style="padding:1.25rem 1.5rem 0;border-bottom:1px solid #e2e8f0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+          <h3 style="font-size:1.05rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:.5rem;margin:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            أسعار الوقود والصيانة
+          </h3>
+        </div>
+        <!-- التابز -->
+        <div style="display:flex;gap:.15rem">
+          <button id="wsTab_fuel"  onclick="switchWsTab('fuel',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#059669;font-family:inherit;border-radius:8px 8px 0 0">⛽ الوقود<span style="position:absolute;bottom:0;left:0;right:0;height:2px;background:#10b981;border-radius:2px 2px 0 0"></span></button>
+          <button id="wsTab_oils"  onclick="switchWsTab('oils',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#64748b;font-family:inherit;border-radius:8px 8px 0 0">🛢️ الزيوت</button>
+          <button id="wsTab_main"  onclick="switchWsTab('main',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#64748b;font-family:inherit;border-radius:8px 8px 0 0">🔧 الصيانة</button>
+          <button id="wsTab_parts" onclick="switchWsTab('parts',this)" style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#64748b;font-family:inherit;border-radius:8px 8px 0 0">📦 قطع الغيار</button>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;padding:.4rem 0">
-        ${FUEL_TYPES.map(f=>`
-          <div style="background:#fff7ed;border-radius:10px;padding:.6rem 1rem;border:1px solid #fde68a;display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:.8rem;font-weight:700;color:#b45309">⛽ ${f.label}</span>
-            <span style="font-size:.88rem;font-weight:800;color:#92400e">${(currentPrices[f.key]||0)} <small style="font-size:.68rem">ج/لتر</small></span>
-          </div>`).join('')}
-        ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`
-          <div style="background:white;border-radius:10px;padding:.6rem 1rem;border:1px solid #d1fae5;display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:.8rem;font-weight:700;color:#065f46">${v.icon} ${v.label}</span>
-            <span style="font-size:.88rem;font-weight:800;color:#047857">${(currentPrices[k]||0)} <small style="font-size:.68rem">جنيه</small></span>
-          </div>`).join('')}
+      <!-- بودي البانل -->
+      <div style="padding:1.25rem 1.5rem">
+        <!-- زرار تعديل الأسعار -->
+        <div id="pricesBtnPlaceholder" style="margin-bottom:1.25rem"></div>
+        <!-- جدول الوقود -->
+        <div id="wsTabPanel_fuel">
+          <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+            <thead><tr style="border-bottom:1.5px solid #e2e8f0">
+              <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع الوقود</th>
+              <th style="text-align:center;color:#64748b;font-weight:600;padding:.6rem">السعر</th>
+              <th style="text-align:left;color:#64748b;font-weight:600;padding:.6rem 0 .6rem .5rem">الوحدة</th>
+            </tr></thead>
+            <tbody>${fuelRows}</tbody>
+          </table>
+        </div>
+        <!-- جدول الزيوت -->
+        <div id="wsTabPanel_oils" style="display:none">
+          <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+            <thead><tr style="border-bottom:1.5px solid #e2e8f0">
+              <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع الزيت</th>
+              <th style="text-align:center;color:#64748b;font-weight:600;padding:.6rem">السعر</th>
+              <th style="text-align:left;color:#64748b;font-weight:600;padding:.6rem 0 .6rem .5rem">الوحدة</th>
+            </tr></thead>
+            <tbody>${oilRows}</tbody>
+          </table>
+        </div>
+        <!-- جدول الصيانة -->
+        <div id="wsTabPanel_main" style="display:none">
+          <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+            <thead><tr style="border-bottom:1.5px solid #e2e8f0">
+              <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع الصيانة</th>
+              <th style="text-align:center;color:#64748b;font-weight:600;padding:.6rem">السعر</th>
+              <th style="text-align:left;color:#64748b;font-weight:600;padding:.6rem 0 .6rem .5rem">الوحدة</th>
+            </tr></thead>
+            <tbody>${mainRows}</tbody>
+          </table>
+        </div>
+        <!-- جدول قطع الغيار -->
+        <div id="wsTabPanel_parts" style="display:none">
+          <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+            <thead><tr style="border-bottom:1.5px solid #e2e8f0">
+              <th style="text-align:right;color:#64748b;font-weight:600;padding:.6rem .5rem .6rem 0">نوع القطعة</th>
+              <th style="text-align:center;color:#64748b;font-weight:600;padding:.6rem">السعر</th>
+              <th style="text-align:left;color:#64748b;font-weight:600;padding:.6rem 0 .6rem .5rem">الوحدة</th>
+            </tr></thead>
+            <tbody>${partsRows}</tbody>
+          </table>
+        </div>
+        <!-- زرار عرض المزيد -->
+        <div style="display:flex;justify-content:center;margin-top:1.25rem">
+          <button onclick="document.getElementById('wsTable').scrollIntoView({behavior:'smooth'})" style="display:flex;align-items:center;gap:.45rem;background:#f0fdf4;color:#059669;border:none;padding:.6rem 1.35rem;border-radius:12px;font-size:.85rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .18s" onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            عرض المزيد من التفاصيل
+          </button>
+        </div>
       </div>
-      <div style="font-size:.78rem;color:var(--muted);margin-top:.4rem">
-        ⚠️ السائق لا يرى المبلغ — فقط "السعر محدد من قبل الإدارة" • القيمة 0 = بدون سعر
+      <!-- فوتر تنبيه -->
+      <div style="padding:.7rem 1.5rem;background:#fffbeb;border-top:1px solid #fde68a">
+        <p style="font-size:.75rem;color:#b45309;display:flex;align-items:center;gap:.4rem;margin:0">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          الأسعار محددة من قبل الإدارة • القيمة 0 = بدون سعر
+        </p>
       </div>
     </div>
+
+    <!-- ── جدول سجلات الورش ── -->
     <div class="card">
       <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
       <div style="padding:.6rem .9rem .4rem;border-bottom:1px solid var(--border)">
@@ -3416,18 +3536,39 @@ async function renderAdminWorkshops() {
     </div>`;
 
   window.__workshAll = records;
-  // ── Pagination ──
-window._wsRecords = records;
+  window._wsRecords = records;
   if(!isReporter()) {
     const phBtn = document.getElementById('pricesBtnPlaceholder');
     if(phBtn) {
       const btn = document.createElement('button');
-      btn.className = 'btn btn-success btn-sm';
-      btn.textContent = '⚙️ تعديل الأسعار';
+      btn.style.cssText = 'display:flex;align-items:center;gap:.4rem;border:1.5px solid #10b981;color:#059669;background:#fff;padding:.45rem 1rem;border-radius:8px;font-size:.84rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .18s';
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> تعديل الأسعار';
+      btn.onmouseover = () => btn.style.background = '#f0fdf4';
+      btn.onmouseout  = () => btn.style.background = '#fff';
       btn.onclick = () => openPricesPopup(window._currentWsPrices);
       phBtn.replaceWith(btn);
     }
   }
+}
+
+function switchWsTab(tabId, clickedBtn) {
+  const panels = ['fuel','oils','main','parts'];
+  panels.forEach(id => {
+    const panel = document.getElementById('wsTabPanel_' + id);
+    const btn   = document.getElementById('wsTab_' + id);
+    if (!panel || !btn) return;
+    const isActive = id === tabId;
+    panel.style.display = isActive ? 'block' : 'none';
+    btn.style.color = isActive ? '#059669' : '#64748b';
+    const indicator = btn.querySelector('span');
+    if (isActive && !indicator) {
+      const sp = document.createElement('span');
+      sp.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:2px;background:#10b981;border-radius:2px 2px 0 0';
+      btn.appendChild(sp);
+    } else if (!isActive && indicator) {
+      indicator.remove();
+    }
+  });
 }
 
 function buildWSTable(records) {
