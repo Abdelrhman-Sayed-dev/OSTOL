@@ -3422,7 +3422,7 @@ async function renderAdminWorkshops() {
           </h3>
         </div>
         <!-- التابز -->
-        <div class="ws-tabs-row">
+        <div class="ws-tabs-row" style="justify-content:center">
           <button id="wsTab_fuel"  onclick="switchWsTab('fuel',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#059669;font-family:inherit;border-radius:8px 8px 0 0">⛽ الوقود<span style="position:absolute;bottom:0;left:0;right:0;height:2px;background:#10b981;border-radius:2px 2px 0 0"></span></button>
           <button id="wsTab_oils"  onclick="switchWsTab('oils',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#64748b;font-family:inherit;border-radius:8px 8px 0 0">🛢️ الزيوت</button>
           <button id="wsTab_main"  onclick="switchWsTab('main',this)"  style="position:relative;padding:.6rem 1rem;font-size:.84rem;font-weight:700;border:none;background:none;cursor:pointer;color:#64748b;font-family:inherit;border-radius:8px 8px 0 0">🔧 الصيانة</button>
@@ -3432,7 +3432,7 @@ async function renderAdminWorkshops() {
       <!-- بودي البانل -->
       <div style="padding:1.25rem 1.5rem">
         <!-- زرار تعديل الأسعار -->
-        <div id="pricesBtnPlaceholder" style="margin-bottom:1.25rem"></div>
+        <div id="pricesBtnPlaceholder" style="margin-bottom:1rem;display:flex;justify-content:flex-end"></div>
         <!-- جدول الوقود -->
         <div id="wsTabPanel_fuel" class="ws-table-wrap">
           <table style="width:100%;border-collapse:collapse;font-size:.88rem">
@@ -4294,7 +4294,7 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
 .btn-danger:hover{background:#dc2626}
 .btn-sm{padding:.35rem .75rem;font-size:.78rem;border-radius:8px}
 
-.ws-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.ws-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin-bottom:1rem}
 @media(max-width:900px){.ws-summary-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:480px){.ws-summary-grid{grid-template-columns:1fr 1fr}}
 .ws-tabs-row{display:flex;gap:.15rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:0}
