@@ -3343,10 +3343,12 @@ async function renderAdminWorkshops() {
   // Build unique car list from records that have a vehicle_plate
   const usedPlates = [...new Set(records.filter(r=>r.vehicle_plate).map(r=>r.vehicle_plate))];
   document.getElementById('pageContent').innerHTML=`
-    <div class="stats-row" style="margin-bottom:1.4rem">
-      ${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}
-      ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}
-      <div class="stat-card ws-total-card" style="border:2px solid #10b981;background:linear-gradient(135deg,#f0fdf9,#dcfce7);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.4rem">
+    <div style="display:flex;gap:.85rem;margin-bottom:1.4rem;align-items:stretch;flex-wrap:wrap">
+      <div class="stats-row" style="flex:1;margin-bottom:0;grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
+        ${FUEL_TYPES.map(f=>`<div class="stat-card"><div class="stat-icon">⛽</div><div class="stat-value">${records.filter(r=>r.type===f.key).length}</div><div class="stat-label">${f.label}</div></div>`).join('')}
+        ${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<div class="stat-card"><div class="stat-icon">${v.icon}</div><div class="stat-value">${records.filter(r=>r.type===k).length}</div><div class="stat-label">${v.label}</div></div>`).join('')}
+      </div>
+      <div class="stat-card ws-total-card" style="border:2px solid #10b981;background:linear-gradient(135deg,#f0fdf9,#dcfce7);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.4rem;min-width:170px;flex-shrink:0">
         <div style="font-size:2rem;margin-bottom:.3rem">💰</div>
         <div style="font-size:2rem;font-weight:900;color:#065f46;line-height:1">${total}</div>
         <div style="font-size:.85rem;font-weight:700;color:#059669;margin-top:.4rem">إجمالي التكاليف (جنيه)</div>
