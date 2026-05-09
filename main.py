@@ -2241,7 +2241,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 "tire_action":rec.tire_action or "","vehicle_plate":vp,"location":rec.location or ""}
 
 @app.get("/workshops")
-async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None):
+async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None, month: Optional[str] = None):
     q = """SELECT w.*,d.name as driver_name,c.plate as vehicle_plate
            FROM workshop_records w
            LEFT JOIN drivers d ON w.driver_id=d.id
@@ -2250,14 +2250,22 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
         c = conn.cursor()
         branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
+            conditions = []
+            params = []
             if branch:
-                c.execute(q + " WHERE d.branch=? ORDER BY w.id DESC LIMIT 500", (branch,))
-            else:
-                c.execute(q + " ORDER BY w.id DESC LIMIT 500")
+                conditions.append("d.branch=?")
+                params.append(branch)
+            if month:
+                conditions.append("w.created_at LIKE ?")
+                params.append(month + "%")
+            where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+            c.execute(q + where + " ORDER BY w.id DESC LIMIT 500", params)
         else:
             did = cu.get("driver_id")
             if not did: return []
-            c.execute(q + " WHERE w.driver_id=? ORDER BY w.id DESC LIMIT 200", (did,))
+            month_cond = " AND w.created_at LIKE ?" if month else ""
+            month_params = [month + "%"] if month else []
+            c.execute(q + " WHERE w.driver_id=?" + month_cond + " ORDER BY w.id DESC LIMIT 200", [did] + month_params)
         rows = []
         for r in c.fetchall():
             d = dict(r)
