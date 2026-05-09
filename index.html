@@ -3375,7 +3375,7 @@ async function renderAdminWorkshops() {
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
-      <div class="srch-bar" style="gap:.45rem">
+      <div class="srch-bar">
         <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الملاحظات..."
           oninput="filterWS()" id="wsSearchText" style="flex:1.5">
         <select id="filterCar" onchange="filterWS()">
@@ -3439,7 +3439,19 @@ function buildWSTable(records) {
       <td style="font-size:.82rem">${r.item_spec||'—'}</td>
       <td style="font-size:.82rem">${r.doc_number||'—'}</td>
       <td style="font-size:.82rem">${r.supply_source||'—'}</td>
-      <td style="font-size:.82rem">${r.location||'—'}</td>
+      <td style="font-size:.82rem">${(()=>{
+        const loc = r.location||'';
+        if(!loc) return '—';
+        const coordMatch = loc.match(/^(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
+        if(coordMatch){
+          const [,lat,lng] = coordMatch;
+          return `<a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener"
+            style="color:#3b82f6;text-decoration:none;font-size:.78rem" title="فتح في خرائط جوجل">
+            📍 ${parseFloat(lat).toFixed(4)},${parseFloat(lng).toFixed(4)}
+          </a>`;
+        }
+        return loc;
+      })()}</td>
       <td style="font-size:.82rem">${r.receiver_name||'—'}</td>
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
@@ -4737,15 +4749,20 @@ function renderPage2(p2) {
     const oils = p2.oils || [];
     const EMPTY_OILS = 8;
     const rows = [];
+    let totalCost = 0;
     oils.forEach(o => {
       const qtyCells = ['&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;'];
       const col = OIL_COL[o.oil_col] ?? 5;
       if(o.quantity) qtyCells[col] = o.quantity;
-      const costVal = o.price ? parseFloat(o.price).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2}) : '&nbsp;';
+      const priceNum = parseFloat(o.price) || 0;
+      totalCost += priceNum;
+      const costVal = priceNum > 0
+        ? priceNum.toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2})
+        : '&nbsp;';
       rows.push(`<tr>
         <td>${o.date||'&nbsp;'}</td>
         ${qtyCells.map(c=>`<td>${c}</td>`).join('')}
-        <td style="background:#fef9e7;font-weight:700;color:#92400e">${costVal}</td>
+        <td style="background:#fef9e7;font-weight:700;color:#92400e;text-align:center">${costVal}</td>
         <td>${o.doc_number||'&nbsp;'}</td>
         <td>&nbsp;</td>
         <td>${o.supply_source||'&nbsp;'}</td>
@@ -4757,6 +4774,15 @@ function renderPage2(p2) {
       </tr>`);
     });
     while(rows.length < EMPTY_OILS) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(16) + '</tr>');
+    // صف الإجمالي
+    const totalFmt = totalCost > 0
+      ? totalCost.toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2})
+      : '—';
+    rows.push(`<tr style="background:#f0fdf9;font-weight:800;border-top:2px solid #1e3a5f">
+      <td colspan="7" style="text-align:left;padding-right:.5rem;color:#065f46">الإجمالي</td>
+      <td style="background:#d1fae5;color:#065f46;text-align:center;font-size:1rem">${totalFmt}</td>
+      <td colspan="8">&nbsp;</td>
+    </tr>`);
     oilsTbody.innerHTML = rows.join('');
   }
 
