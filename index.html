@@ -3387,9 +3387,10 @@ async function renderAdminWorkshops() {
           <optgroup label="⛽ الوقود">${FUEL_TYPES.map(f=>`<option value="${f.key}">⛽ ${f.label}</option>`).join('')}</optgroup>
           <optgroup label="🛠️ الصيانة">${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</optgroup>
         </select>
+        <input type="month" id="filterMonth" onchange="reloadWorkshopsByMonth()" style="min-width:140px;padding:.38rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem" title="فلتر بالشهر">
         <input type="date" id="filterDate" onchange="filterWS()" style="min-width:130px">
         <span class="srch-count" id="wsCount"></span>
-        <button class="srch-reset" onclick="document.getElementById('wsSearchText').value='';document.getElementById('filterCar').value='';document.getElementById('filterType').value='';document.getElementById('filterDate').value='';filterWS()">✕ مسح</button>
+        <button class="srch-reset" onclick="document.getElementById('wsSearchText').value='';document.getElementById('filterCar').value='';document.getElementById('filterType').value='';document.getElementById('filterDate').value='';document.getElementById('filterMonth').value='';reloadWorkshopsByMonth()">✕ مسح</button>
       </div>
       <div class="table-wrap" id="wsTable">${buildWSTable(records)}</div>
     </div>`;
@@ -3415,7 +3416,7 @@ function buildWSTable(records) {
     <th>#</th><th>السائق</th><th>النوع</th><th>التفاصيل</th><th>المركبة</th>
     <th>العداد</th><th>ساعات المحرك</th><th>الكمية</th><th>الإجمالي</th>
     <th>اسم الصنف</th><th>المقاس</th><th>رقم المستند</th><th>جهة الصرف</th>
-    <th>المتسلم</th><th>ملاحظات</th><th>التاريخ</th>
+    <th>الموقع</th><th>المتسلم</th><th>ملاحظات</th><th>التاريخ</th>
   </tr></thead><tbody>
   ${records.map(r=>{
     const wt=WT[r.type]||{icon:'🔨',label:r.type};
@@ -3438,12 +3439,29 @@ function buildWSTable(records) {
       <td style="font-size:.82rem">${r.item_spec||'—'}</td>
       <td style="font-size:.82rem">${r.doc_number||'—'}</td>
       <td style="font-size:.82rem">${r.supply_source||'—'}</td>
+      <td style="font-size:.82rem">${r.location||'—'}</td>
       <td style="font-size:.82rem">${r.receiver_name||'—'}</td>
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
     </tr>`;
   }).join('')}</tbody></table>
       `;
+}
+
+async function reloadWorkshopsByMonth() {
+  const month = document.getElementById('filterMonth')?.value || '';
+  const wsTableWrap = document.getElementById('wsTable');
+  if (wsTableWrap) wsTableWrap.innerHTML = '<div style="padding:1rem;text-align:center">⏳ جاري التحميل...</div>';
+  try {
+    let url = '/workshops' + branchQ();
+    if (month) url += (url.includes('?') ? '&' : '?') + 'month=' + encodeURIComponent(month);
+    const records = await apiCall(url).catch(()=>[]);
+    window._wsRecords = records;
+    window.__workshAll = records;
+    filterWS();
+  } catch(e) {
+    if (wsTableWrap) wsTableWrap.innerHTML = `<div style="color:#ef4444;padding:1rem">❌ ${e.message}</div>`;
+  }
 }
 
 function filterWS(){
@@ -3453,7 +3471,7 @@ function filterWS(){
   const txt  = (document.getElementById('wsSearchText')?.value||'').trim().toLowerCase();
   let f = (window._wsRecords||[]).filter(r=>{
     if(txt){
-      const hay = [r.driver_name||'',r.vehicle_plate||'',r.notes||'',r.description||''].join(' ').toLowerCase();
+      const hay = [r.driver_name||'',r.vehicle_plate||'',r.notes||'',r.description||'',r.location||''].join(' ').toLowerCase();
       if(!hay.includes(txt)) return false;
     }
     if(car  && String(r.vehicle_id) !== car)          return false;
@@ -4601,6 +4619,7 @@ async function generateOpCard() {
               <tr>
                 <th rowspan="2" style="width:50px">التاريخ</th>
                 <th colspan="6" style="text-align:center;border-bottom:1px solid #e2e8f0">الكمية المتصرفة</th>
+                <th rowspan="2" style="text-align:center;background:#fef3c7;color:#92400e">التكلفة (جنيه)</th>
                 <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">مستند الصرف</th>
                 <th rowspan="2" style="text-align:center">جهة الصرف</th>
                 <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">المسافة</th>
@@ -4623,14 +4642,14 @@ async function generateOpCard() {
               </tr>
             </thead>
             <tbody>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
-              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
+              <tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>
             </tbody>
           </table>
         </div>
@@ -4711,8 +4730,8 @@ function renderPage2(p2) {
   // col map for oils: motor/gear/brake/hydraulic/grease/other
   const OIL_COL = {motor:0, gear:1, brake:2, hydraulic:3, grease:4, other:5};
 
-  // ── جدول الزيوت (15 أعمدة) ──
-  // التاريخ | محرك | تروس | فرامل | هيدروليك | شحم | أخرى | رقم مستند | تاريخ مستند | جهة الصرف | عداد(كم) | ساعات محرك | الاسم | عدد التشغيل | التوقيع
+  // ── جدول الزيوت (16 أعمدة) ──
+  // التاريخ | محرك | تروس | فرامل | هيدروليك | شحم | أخرى | التكلفة | رقم مستند | تاريخ مستند | جهة الصرف | عداد(كم) | ساعات محرك | الاسم | عدد التشغيل | التوقيع
   const oilsTbody = document.querySelector('#oilsTable tbody');
   if (oilsTbody) {
     const oils = p2.oils || [];
@@ -4722,9 +4741,11 @@ function renderPage2(p2) {
       const qtyCells = ['&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;'];
       const col = OIL_COL[o.oil_col] ?? 5;
       if(o.quantity) qtyCells[col] = o.quantity;
+      const costVal = o.price ? parseFloat(o.price).toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2}) : '&nbsp;';
       rows.push(`<tr>
         <td>${o.date||'&nbsp;'}</td>
         ${qtyCells.map(c=>`<td>${c}</td>`).join('')}
+        <td style="background:#fef9e7;font-weight:700;color:#92400e">${costVal}</td>
         <td>${o.doc_number||'&nbsp;'}</td>
         <td>&nbsp;</td>
         <td>${o.supply_source||'&nbsp;'}</td>
@@ -4735,7 +4756,7 @@ function renderPage2(p2) {
         <td>&nbsp;</td>
       </tr>`);
     });
-    while(rows.length < EMPTY_OILS) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(15) + '</tr>');
+    while(rows.length < EMPTY_OILS) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(16) + '</tr>');
     oilsTbody.innerHTML = rows.join('');
   }
 
@@ -11656,8 +11677,11 @@ async function renderMonthlyReport() {
           </div>
           <div class="form-group" style="margin:0;min-width:170px">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.25rem">الفرع</label>
-            <input type="text" id="mrBranch" placeholder="الكل"
-              style="padding:.42rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;width:100%">
+            <select id="mrBranch"
+              style="padding:.42rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.82rem;background:#fff;width:100%">
+              <option value="">— الكل —</option>
+              ${BRANCHES.map(b=>`<option value="${b}">${b}</option>`).join('')}
+            </select>
           </div>
           <div class="form-group" style="margin:0">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.25rem">عرض</label>
