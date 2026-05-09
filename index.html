@@ -3375,22 +3375,40 @@ async function renderAdminWorkshops() {
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
-      <div class="srch-bar">
-        <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الملاحظات..."
-          oninput="filterWS()" id="wsSearchText" style="flex:1.5">
-        <select id="filterCar" onchange="filterWS()">
-          <option value="">🚗 كل المركبات</option>
-          ${cars.map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('')}
-        </select>
-        <select id="filterType" onchange="filterWS()">
-          <option value="">📋 كل الأنواع</option>
-          <optgroup label="⛽ الوقود">${FUEL_TYPES.map(f=>`<option value="${f.key}">⛽ ${f.label}</option>`).join('')}</optgroup>
-          <optgroup label="🛠️ الصيانة">${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</optgroup>
-        </select>
-        <input type="month" id="filterMonth" onchange="reloadWorkshopsByMonth()" style="min-width:140px;padding:.38rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem" title="فلتر بالشهر">
-        <input type="date" id="filterDate" onchange="filterWS()" style="min-width:130px">
-        <span class="srch-count" id="wsCount"></span>
-        <button class="srch-reset" onclick="document.getElementById('wsSearchText').value='';document.getElementById('filterCar').value='';document.getElementById('filterType').value='';document.getElementById('filterDate').value='';document.getElementById('filterMonth').value='';reloadWorkshopsByMonth()">✕ مسح</button>
+      <div style="padding:.6rem .9rem .4rem;border-bottom:1px solid var(--border)">
+        <!-- الصف الأول: بحث + مركبة + نوع -->
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.45rem;align-items:center">
+          <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الموقع..."
+            oninput="filterWS()" id="wsSearchText"
+            style="flex:2;min-width:180px;padding:.4rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem">
+          <select id="filterCar" onchange="filterWS()"
+            style="flex:1;min-width:150px;padding:.4rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.83rem;background:#fff">
+            <option value="">🚗 كل المركبات</option>
+            ${cars.map(c=>`<option value="${c.id}">${c.plate} — ${c.model}</option>`).join('')}
+          </select>
+          <select id="filterType" onchange="filterWS()"
+            style="flex:1;min-width:140px;padding:.4rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.83rem;background:#fff">
+            <option value="">📋 كل الأنواع</option>
+            <optgroup label="⛽ الوقود">${FUEL_TYPES.map(f=>`<option value="${f.key}">⛽ ${f.label}</option>`).join('')}</optgroup>
+            <optgroup label="🛠️ الصيانة">${Object.entries(WT).filter(([k])=>!k.startsWith('fuel_')).map(([k,v])=>`<option value="${k}">${v.icon} ${v.label}</option>`).join('')}</optgroup>
+          </select>
+        </div>
+        <!-- الصف الثاني: شهر + يوم + عداد + مسح -->
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;align-items:center;gap:.3rem">
+            <label style="font-size:.76rem;font-weight:700;color:#475569;white-space:nowrap">📅 الشهر</label>
+            <input type="month" id="filterMonth" onchange="reloadWorkshopsByMonth()"
+              style="padding:.38rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.83rem">
+          </div>
+          <div style="display:flex;align-items:center;gap:.3rem">
+            <label style="font-size:.76rem;font-weight:700;color:#475569;white-space:nowrap">📆 يوم محدد</label>
+            <input type="date" id="filterDate" onchange="filterWS()"
+              style="padding:.38rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.83rem">
+          </div>
+          <span id="wsCount" style="font-size:.78rem;color:var(--muted);margin-right:auto"></span>
+          <button onclick="document.getElementById('wsSearchText').value='';document.getElementById('filterCar').value='';document.getElementById('filterType').value='';document.getElementById('filterDate').value='';document.getElementById('filterMonth').value='';reloadWorkshopsByMonth()"
+            style="padding:.35rem .8rem;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-family:inherit;font-size:.8rem;cursor:pointer;color:#64748b">✕ مسح الكل</button>
+        </div>
       </div>
       <div class="table-wrap" id="wsTable">${buildWSTable(records)}</div>
     </div>`;
