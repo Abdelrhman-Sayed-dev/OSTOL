@@ -1382,7 +1382,16 @@ async function apiCall(endpoint, method='GET', body=null) {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${API}${endpoint}`, opts);
   if (res.status === 401) { clearAuth(); showNotification('انتهت الجلسة','error'); setTimeout(()=>location.reload(),1500); throw new Error('Unauthorized'); }
-  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || `خطأ ${res.status}`); }
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({}));
+    let msg = e.detail;
+    if (typeof msg === 'object' && msg !== null) {
+      if (Array.isArray(msg)) msg = msg.map(m=>m.msg||JSON.stringify(m)).join(' | ');
+      else if (msg.message) msg = msg.message;
+      else msg = JSON.stringify(msg);
+    }
+    throw new Error(msg || `خطأ ${res.status}`);
+  }
   if (method === 'DELETE') return {success:true};
   return res.json();
 }
@@ -9503,7 +9512,13 @@ function showLogin() {
       document.getElementById('loginOverlay').remove();
       initUI();
       showNotification(`مرحباً ${currentUser.username} 👋`,'success');
-    }catch(e){ showNotification(e.message||'بيانات خاطئة','error'); btn.disabled=false; btn.textContent='تسجيل الدخول'; }
+    }catch(e){
+      const errMsg = (e.message && !e.message.includes('[object')) ? e.message : 'اسم المستخدم أو كلمة المرور غير صحيحة';
+      const errEl = document.getElementById('loginError');
+      if(errEl){ errEl.textContent=errMsg; errEl.style.display='block'; }
+      else showNotification(errMsg,'error');
+      btn.disabled=false; btn.textContent='تسجيل الدخول';
+    }
   };
   document.getElementById('doLoginBtn').onclick=doLogin;
   document.getElementById('luPw').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
@@ -11805,13 +11820,14 @@ async function renderEquipmentOperators() {
       <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;padding:.5rem 0">
         <div class="form-group" style="margin:0;min-width:180px">
           <label>بحث</label>
-          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..."
+          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..." autocomplete="off"
             style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
         </div>
         <div class="form-group" style="margin:0;min-width:150px">
           <label>الفرع</label>
-          <input type="text" id="opBranch" placeholder="الكل"
-            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          <select id="opBranch" class="form-control" autocomplete="off" style="font-family:inherit">
+            <option value="">كل الفروع</option>
+          </select>
         </div>
         <div class="form-group" style="margin:0">
           <label>الحالة</label>
@@ -11826,7 +11842,7 @@ async function renderEquipmentOperators() {
     </div>
 
     <!-- إحصائيات -->
-    <div id="opStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem"></div>
+    <div id="opStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.25rem"></div>
 
     <!-- جدول -->
     <div class="card table-card">
@@ -11890,7 +11906,17 @@ async function renderEquipmentOperators() {
     
     </div>
   `;
-  await loadOperators();
+  // ملء الفروع في الـ select
+  try {
+    const bd = await apiCall('/reports/branches');
+    const bsel = document.getElementById('opBranch');
+    if(bsel && bd.branches){
+      const cur = bsel.value;
+      while(bsel.options.length > 1) bsel.remove(1);
+      bd.branches.forEach(b=>{ const o=document.createElement('option'); o.value=b; o.textContent=b; if(b===cur) o.selected=true; bsel.appendChild(o); });
+    }
+  } catch(e){}
+    await loadOperators();
 }
 
 async function loadOperators(){
@@ -13583,30 +13609,52 @@ async function renderOperatorSinglePage() {
 
 <!-- Modal تعيين معدة لمشغل -->
 <div id="assignEquipModal" class="modal-overlay" style="display:none">
-  <div class="modal" style="max-width:520px">
-    <div class="modal-header">
-      <div class="modal-title">🔗 تعيين معدة للمشغل</div>
-      <button class="modal-close" onclick="document.getElementById('assignEquipModal').style.display='none'">✕</button>
+  <div class="modal" style="max-width:500px;border-radius:16px;overflow:hidden">
+    <div class="modal-header" style="padding:1.25rem 1.5rem;border-bottom:1px solid #f1f5f9">
+      <div class="modal-title" style="font-size:1rem;font-weight:800;color:#1e3a5f">🔗 تعيين معدة للمشغل</div>
+      <button class="modal-close" onclick="document.getElementById('assignEquipModal').style.display='none'"
+        style="width:32px;height:32px;border-radius:8px;background:#f1f5f9;border:none;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">✕</button>
     </div>
-    <div class="modal-body" style="padding:1.25rem">
-      <div id="assignOpName" style="font-size:.9rem;color:#64748b;margin-bottom:1rem;padding:.5rem .75rem;background:#f8fafc;border-radius:8px"></div>
-      <div class="form-group">
-        <label>اختر المعدة</label>
-        <select id="assignEquipId" class="form-control">
-          <option value="">-- اختر معدة --</option>
-        </select>
+    <div class="modal-body" style="padding:1.5rem;padding-bottom:.75rem">
+      <!-- معلومات المشغل -->
+      <div id="assignOpName" style="font-size:.88rem;color:#475569;margin-bottom:1.25rem;padding:.6rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-weight:500"></div>
+
+      <!-- فيلد بحث واختيار موحد -->
+      <div class="form-group" style="margin-bottom:.5rem">
+        <label style="font-size:.8rem;font-weight:700;color:#374151;margin-bottom:.4rem;display:block">المعدة</label>
+        <div style="position:relative">
+          <input type="text" id="assignEquipSearch"
+            placeholder="ابحث باسم المعدة أو الكود..."
+            autocomplete="off" spellcheck="false"
+            oninput="filterAssignEquip(this.value)"
+            onfocus="document.getElementById('assignEquipListWrap').style.display='block';filterAssignEquip(this.value)"
+            style="width:100%;padding:.75rem 2.8rem .75rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.9rem;background:#fff;outline:none;box-sizing:border-box;transition:.2s"
+            onfocusin="this.style.borderColor='#1e3a5f';this.style.boxShadow='0 0 0 3px rgba(30,58,95,.1)'"
+            onfocusout="setTimeout(()=>{const w=document.getElementById('assignEquipListWrap');if(w)w.style.display='none'},200);this.style.borderColor='#e2e8f0';this.style.boxShadow='none'">
+          <span style="position:absolute;left:.85rem;top:50%;transform:translateY(-50%);pointer-events:none;font-size:1rem">🔍</span>
+        </div>
       </div>
-      <div class="form-group">
-        <label>أو ابحث بالكود / الاسم</label>
-        <input type="text" id="assignEquipSearch" class="form-control" placeholder="كود المعدة أو اسمها..."
-          oninput="filterAssignEquip(this.value)">
+
+      <!-- قائمة نتائج البحث -->
+      <div id="assignEquipListWrap" style="display:none;margin-bottom:.75rem">
+        <div id="assignEquipList"
+          style="max-height:230px;overflow-y:auto;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.1)">
+        </div>
       </div>
-      <div id="assignEquipList" style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;margin-top:.5rem"></div>
-      <div id="assignCurrentEq" style="margin-top:1rem;font-size:.85rem;color:#64748b"></div>
+
+      <!-- المعدة المختارة -->
+      <div id="assignSelectedEq" style="display:none;padding:.65rem 1rem;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;font-size:.88rem;color:#166534;font-weight:600;margin-bottom:.75rem">
+        <span id="assignSelectedEqName"></span>
+      </div>
+
+      <!-- المعدة الحالية -->
+      <div id="assignCurrentEq" style="font-size:.82rem;color:#64748b"></div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="document.getElementById('assignEquipModal').style.display='none'">إلغاء</button>
-      <button class="btn btn-primary" onclick="confirmAssignEquipment()">🔗 تعيين</button>
+    <div class="modal-footer" style="padding:1rem 1.5rem;border-top:1px solid #f1f5f9;display:flex;justify-content:flex-end;gap:.75rem">
+      <button class="btn btn-ghost" onclick="document.getElementById('assignEquipModal').style.display='none'"
+        style="padding:.55rem 1.25rem">إلغاء</button>
+      <button class="btn btn-primary" onclick="confirmAssignEquipment()"
+        style="padding:.55rem 1.5rem;font-weight:700">🔗 تعيين المعدة</button>
     </div>
   </div>
 </div>
@@ -13619,73 +13667,100 @@ let _selectedEquipForAssign = null;
 async function openAssignEquipment(opId, opName) {
   _assignOpId = opId;
   _selectedEquipForAssign = null;
-  document.getElementById('assignOpName').innerHTML = `<strong>المشغل:</strong> ${opName}`;
-  document.getElementById('assignEquipModal').style.display = 'flex';
-  document.getElementById('assignEquipSearch').value = '';
-  document.getElementById('assignEquipList').innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8">جاري التحميل...</div>';
 
+  // reset UI
+  document.getElementById('assignOpName').innerHTML = `<strong>👷 المشغل:</strong> ${opName}`;
+  document.getElementById('assignEquipSearch').value = '';
+  document.getElementById('assignEquipListWrap').style.display = 'none';
+  document.getElementById('assignEquipList').innerHTML = '';
+  document.getElementById('assignSelectedEq').style.display = 'none';
+  document.getElementById('assignSelectedEqName').textContent = '';
+  document.getElementById('assignCurrentEq').innerHTML = '';
+  document.getElementById('assignEquipModal').style.display = 'flex';
+
+  // جلب المعدة الحالية للمشغل
   try {
-    // جلب آخر وردية للمشغل لمعرفة المعدة الحالية
     const activeData = await apiCall(`/operators/${opId}/active-shift`).catch(()=>null);
     const curEl = document.getElementById('assignCurrentEq');
     if (activeData && activeData.equipment_name) {
-      curEl.innerHTML = `<span style="background:#f0fdf4;color:#16a34a;padding:.3rem .7rem;border-radius:8px">📌 المعدة الحالية: <strong>${activeData.equipment_name}</strong></span>`;
+      curEl.innerHTML = `📌 <strong>المعدة الحالية:</strong> ${activeData.equipment_name} <span style="font-family:monospace;color:#94a3b8">(${activeData.equipment_id||''})</span>`;
     } else {
       curEl.innerHTML = '<span style="color:#94a3b8">لا توجد معدة مخصصة حالياً</span>';
     }
+  } catch(e){}
 
-    // جلب قائمة المعدات
-    const eqData = await apiCall('/equipment?status=active');
+  // جلب كل المعدات وتخزينها
+  try {
+    const eqData = await apiCall('/equipment');
     _allEquipForAssign = eqData.equipment || [];
+    // عرض الكل ابتداءً
     renderAssignEquipList(_allEquipForAssign);
   } catch(e) {
-    document.getElementById('assignEquipList').innerHTML = `<div style="padding:1rem;color:#ef4444">${e.message}</div>`;
+    document.getElementById('assignEquipList').innerHTML = `<div style="padding:1rem;color:#ef4444">فشل تحميل المعدات: ${e.message}</div>`;
   }
 }
 
 function renderAssignEquipList(items) {
   const el = document.getElementById('assignEquipList');
   if (!items.length) {
-    el.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8">لا توجد معدات</div>';
+    el.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.85rem">لا توجد نتائج مطابقة</div>';
     return;
   }
-  el.innerHTML = items.slice(0,30).map(eq => `
+  el.innerHTML = items.slice(0, 40).map(eq => `
     <div data-eq-id="${eq.id}" data-eq-code="${eq.car_code}" data-eq-name="${eq.equipment_name}"
-      style="padding:.65rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:center;gap:.75rem;transition:background .12s"
-      onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''"
-      onclick="selectEquipForAssign(this)">
-      <div style="flex:1">
-        <div style="font-size:.88rem;font-weight:600;color:#1e3a5f">${eq.equipment_name}</div>
-        <div style="font-size:.75rem;color:#94a3b8;font-family:monospace">${eq.car_code} · ${eq.equipment_type||''} · ${eq.branch||''}</div>
+      style="padding:.65rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:flex-start;gap:.75rem;transition:background .1s"
+      onmousedown="event.preventDefault();selectEquipForAssign(this)">
+      <div style="width:8px;height:8px;border-radius:50%;background:${eq.status==='active'?'#10b981':'#ef4444'};margin-top:.4rem;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.88rem;font-weight:600;color:#1e3a5f;line-height:1.3">${eq.equipment_name}</div>
+        <div style="font-size:.75rem;color:#94a3b8;margin-top:.1rem">
+          <span style="font-family:monospace;background:#f1f5f9;padding:.05rem .35rem;border-radius:4px">${eq.car_code}</span>
+          · ${eq.equipment_type||''}
+          ${eq.branch ? '· ' + eq.branch : ''}
+        </div>
       </div>
     </div>
   `).join('');
 }
 
 function filterAssignEquip(q) {
-  const filtered = _allEquipForAssign.filter(eq =>
-    (eq.equipment_name||'').includes(q) || (eq.car_code||'').includes(q)
-  );
+  document.getElementById('assignEquipListWrap').style.display = 'block';
+  const filtered = q.trim()
+    ? _allEquipForAssign.filter(eq =>
+        (eq.equipment_name||'').includes(q) ||
+        (eq.car_code||'').includes(q) ||
+        (eq.brand||'').includes(q))
+    : _allEquipForAssign;
   renderAssignEquipList(filtered);
 }
 
 function selectEquipForAssign(el) {
-  document.querySelectorAll('#assignEquipList [data-eq-id]').forEach(r => r.style.background = '');
-  el.style.background = '#eff6ff';
   _selectedEquipForAssign = {
-    id: el.dataset.eqId,
+    id:   el.dataset.eqId,
     code: el.dataset.eqCode,
     name: el.dataset.eqName
   };
+  // تحديث الـ input بالقيمة المختارة
+  document.getElementById('assignEquipSearch').value = el.dataset.eqName + ' (' + el.dataset.eqCode + ')';
+  // إظهار المختار
+  const sel = document.getElementById('assignSelectedEq');
+  document.getElementById('assignSelectedEqName').innerHTML = `✅ تم اختيار: <strong>${el.dataset.eqName}</strong> <span style="font-family:monospace;font-size:.8rem;color:#166534">(${el.dataset.eqCode})</span>`;
+  sel.style.display = 'block';
+  // إغلاق القائمة
+  document.getElementById('assignEquipListWrap').style.display = 'none';
 }
 
 async function confirmAssignEquipment() {
   if (!_selectedEquipForAssign) {
-    showNotification('اختر معدة أولاً', 'error'); return;
+    showNotification('اختر معدة أولاً من القائمة', 'error'); return;
   }
   if (!_assignOpId) return;
+
+  // جلب اسم المشغل من الـ UI
+  const opNameEl = document.getElementById('assignOpName');
+  const opName = opNameEl ? opNameEl.textContent.replace('👷 المشغل:', '').trim() : '';
+
   try {
-    // بدء وردية جديدة مع المعدة المختارة
     const body = {
       operator_id:    parseInt(_assignOpId),
       equipment_id:   _selectedEquipForAssign.code,
@@ -13706,5 +13781,6 @@ async function confirmAssignEquipment() {
   }
 }
 </script>
+
 
 </body>
