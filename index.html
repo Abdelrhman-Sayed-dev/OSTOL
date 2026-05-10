@@ -12042,6 +12042,7 @@ async function loadOperators(){
     if(pagEl) pagEl.innerHTML = `<span>${_operatorsData.length} مشغلين</span><span>من ${_operatorsData.length} مشغل</span>`;
 
   } catch(e) {
+    console.error('loadOperators error:', e);
     if(tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#ef4444;padding:3rem">❌ ${e.message}</td></tr>`;
   }
 }
@@ -12050,6 +12051,81 @@ async function deleteOperator(id){
   if(!confirm('حذف هذا المشغل؟')) return;
   const res = await apiCall(`/operators/${id}`,'DELETE');
   if(res){ showNotification('✅ تم الحذف','success'); await loadOperators(); }
+}
+
+// ── navigateTo: alias for switchSection ──
+function navigateTo(section) {
+  switchSection(section);
+}
+
+// ── Operator Form Functions ──
+async function openOpForm(id=null){
+  _opEditId = id;
+  // مسح الحقول أولاً
+  ['opName','opFixed','opPhone','opNatId','opBranchF','opSector',
+   'opLicType','opUsername','opPassword'].forEach(fid=>{
+    const el=document.getElementById(fid); if(el) el.value='';
+  });
+  document.getElementById('opFormTitle').textContent = id ? '✏️ تعديل مشغل' : '➕ إضافة مشغل';
+
+  let op = null;
+  if(id) {
+    try {
+      const data = await apiCall('/operators?status=');
+      op = (data.operators||[]).find(o=>o.id===id);
+    } catch(e){}
+  }
+
+  if(op) {
+    document.getElementById('opName').value    = op.name||'';
+    document.getElementById('opFixed').value   = op.fixed_number||'';
+    document.getElementById('opPhone').value   = op.phone||'';
+    document.getElementById('opNatId').value   = op.national_id||'';
+    document.getElementById('opBranchF').value = op.branch||'';
+    document.getElementById('opSector').value  = op.sector||'';
+    document.getElementById('opLicType').value = op.license_type||'';
+    document.getElementById('opLicExp').value  = op.license_expiry||'';
+    document.getElementById('opStatusF').value = op.status||'active';
+    document.getElementById('opNotes').value   = op.notes||'';
+  }
+
+  document.getElementById('opFormModal').style.display='flex';
+  // ضمان إضافي: مسح autofill بعد 150ms
+  setTimeout(()=>{
+    const pw=document.getElementById('opPassword'); if(pw && !id) pw.value='';
+    const un=document.getElementById('opUsername'); if(un && !id) un.value='';
+  }, 150);
+}
+
+function closeOpForm(){
+  document.getElementById('opFormModal').style.display='none';
+}
+
+async function saveOperator(){
+  const body = {
+    name:          document.getElementById('opName').value.trim(),
+    fixed_number:  document.getElementById('opFixed').value.trim(),
+    phone:         document.getElementById('opPhone').value.trim(),
+    national_id:   document.getElementById('opNatId').value.trim(),
+    birth_date:    document.getElementById('opBirth')?.value||'',
+    branch:        document.getElementById('opBranchF').value.trim(),
+    sector:        document.getElementById('opSector').value.trim(),
+    license_type:  document.getElementById('opLicType').value.trim(),
+    license_expiry:document.getElementById('opLicExp')?.value||'',
+    status:        document.getElementById('opStatusF').value,
+    notes:         document.getElementById('opNotes').value.trim(),
+  };
+  const username = document.getElementById('opUsername').value.trim();
+  const password = document.getElementById('opPassword').value.trim();
+  if(username) body.username = username;
+  if(password) body.password = password;
+  if(!body.name){ showNotification('الاسم مطلوب','error'); return; }
+  const method = _opEditId ? 'PUT' : 'POST';
+  const url    = _opEditId ? `/operators/${_opEditId}` : '/operators';
+  try {
+    const res = await apiCall(url, method, body);
+    if(res){ showNotification('✅ تم الحفظ','success'); closeOpForm(); await loadOperators(); }
+  } catch(e) { showNotification(e.message,'error'); }
 }
 
 // ── Shift functions ──
@@ -13631,6 +13707,55 @@ async function renderOperatorSinglePage() {
 
 </script>
 
+
+
+<!-- ══ Modal فورم المشغل ══ -->
+<div id="opFormModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:640px;position:relative">
+    <!-- honeypot -->
+    <div style="position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none" aria-hidden="true">
+      <input type="text" name="username" tabindex="-1">
+      <input type="password" name="password" tabindex="-1">
+    </div>
+    <div class="modal-header">
+      <div class="modal-title" id="opFormTitle">➕ إضافة مشغل</div>
+      <button class="modal-close" onclick="closeOpForm()">✕</button>
+    </div>
+    <div style="padding:1.25rem 1.5rem;display:grid;grid-template-columns:1fr 1fr;gap:.85rem;max-height:70vh;overflow-y:auto">
+      <div class="form-group" style="margin:0"><label>الاسم <span class="req">*</span></label><input id="opName" class="form-control" placeholder="اسم المشغل" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>الرقم الثابت</label><input id="opFixed" class="form-control" placeholder="رقم المشغل" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>الهاتف</label><input id="opPhone" class="form-control" type="tel" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>الرقم القومي</label><input id="opNatId" class="form-control" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>تاريخ الميلاد</label><input id="opBirth" class="form-control" type="date" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>الفرع</label><input id="opBranchF" class="form-control" placeholder="حلوان / القاهرة ..." autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>القطاع</label><input id="opSector" class="form-control" placeholder="قطاع القاهرة الكبرى" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>نوع رخصة التشغيل</label><input id="opLicType" class="form-control" placeholder="رخصة تشغيل ثقيل" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>انتهاء الرخصة</label><input id="opLicExp" class="form-control" type="date" autocomplete="off"></div>
+      <div class="form-group" style="margin:0"><label>الحالة</label>
+        <select id="opStatusF" class="form-control">
+          <option value="active">نشط</option>
+          <option value="inactive">غير نشط</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1">
+        <label>🔑 اسم المستخدم <span style="font-weight:400;color:#94a3b8;font-size:.78rem">(اختياري — لتسجيل الدخول)</span></label>
+        <input id="opUsername" class="form-control" placeholder="اتركه فارغاً إن لم تحتج لتسجيل دخول" autocomplete="off" name="op-uname-x7q2">
+      </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1">
+        <label>🔒 كلمة المرور <span style="font-weight:400;color:#94a3b8;font-size:.78rem">(اختياري — للتسجيل فقط)</span></label>
+        <input id="opPassword" class="form-control" type="password" placeholder="أدخل كلمة مرور للمشغل..." autocomplete="new-password" name="op-pass-x7q2">
+      </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1">
+        <label>ملاحظات</label>
+        <textarea id="opNotes" class="form-control" rows="2" autocomplete="off"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer" style="padding:1rem 1.5rem;border-top:1px solid #f1f5f9">
+      <button class="btn btn-outline" onclick="closeOpForm()">إلغاء</button>
+      <button class="btn btn-primary" onclick="saveOperator()">💾 حفظ</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal تعيين معدة لمشغل -->
 <div id="assignEquipModal" class="modal-overlay" style="display:none">
