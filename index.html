@@ -12,6 +12,10 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Cairo:wght@300;400;600;700;900&family=DM+Sans:wght@300;400;500;600;700&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;font-family:'Cairo',system-ui,sans-serif}
+html{font-size:16px}
+@media(max-width:900px){html{font-size:15px}}
+@media(max-width:600px){html{font-size:14px}}
+@media(max-width:400px){html{font-size:13px}}
 @keyframes livePulse {
   0%,100% { box-shadow:0 3px 12px rgba(16,185,129,.35),0 0 0 0 rgba(16,185,129,.4); }
   50%      { box-shadow:0 3px 12px rgba(16,185,129,.35),0 0 0 8px rgba(16,185,129,0); }
@@ -489,7 +493,7 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 .stat-card:hover{box-shadow:var(--shadow-md);transform:translateY(-2px)}
 .stat-card:hover::before{opacity:1}
 .stat-icon{font-size:1.25rem;margin-bottom:.5rem;display:block}
-.stat-value{font-size:1.65rem;font-weight:900;color:var(--primary);line-height:1;letter-spacing:-.5px}
+.stat-value{font-size:1.65rem;font-weight:900;color:var(--primary);line-height:1;letter-spacing:-.5px;word-break:break-all}
 .stat-label{font-size:.7rem;color:var(--muted);margin-top:.28rem;font-weight:500}
 .card{
   background:#ffffff;border-radius:var(--card-radius);
@@ -814,11 +818,11 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
   .stats-row{grid-template-columns:repeat(2,1fr) !important}
   .emergency-grid{grid-template-columns:1fr}
 
-  /* ── Stat cards ── */
+  /* ── Stat cards (الكروت في الأعلى) ── */
   .stat-card{padding:.8rem .7rem}
-  .stat-value{font-size:1.35rem}
-  .stat-icon{font-size:1.5rem}
-  .stat-label{font-size:.7rem}
+  .stat-value{font-size:1.25rem}
+  .stat-icon{font-size:1.2rem}
+  .stat-label{font-size:.68rem}
 
   /* ── Topbar ── */
   .topbar{padding:0 .8rem}
@@ -839,6 +843,15 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
   /* ── Misc ── */
   .badge{font-size:.65rem}
   .modal-body{max-height:70vh;overflow-y:auto}
+
+  /* ── Workshop stat cards (الـ flex row) ── */
+  .ws-summary-grid .stat-card{
+    flex-direction:column;align-items:flex-start;gap:.4rem;
+    padding:.75rem .85rem;
+  }
+  .ws-summary-grid .stat-icon{
+    width:38px;height:38px;font-size:1rem;border-radius:10px;
+  }
 }
 
 /* ══════════════════════════════════════════════════
@@ -852,9 +865,9 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
   /* Stats: 2 columns on mobile */
   .stats-row{grid-template-columns:repeat(2,1fr) !important;gap:.5rem}
   .stat-card{padding:.65rem .5rem;border-radius:10px}
-  .stat-value{font-size:1.2rem}
-  .stat-icon{font-size:1.3rem}
-  .stat-label{font-size:.66rem}
+  .stat-value{font-size:1.1rem}
+  .stat-icon{font-size:1.1rem}
+  .stat-label{font-size:.63rem}
 
   /* Force stat card with grid-column:span 2 to stay full width */
   .stat-card[style*="grid-column:span 2"],
@@ -887,6 +900,13 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
   .srch-bar select{font-size:.82rem;padding:.38rem .5rem}
   .srch-count{font-size:.72rem}
 
+  /* Prevent text overflow everywhere */
+  .card-title{font-size:.82rem}
+  label{font-size:.65rem}
+  input,select,textarea{font-size:.84rem;padding:.55rem .75rem}
+
+  /* Notification toast */
+  .notification{left:8px;right:8px;max-width:none;font-size:.79rem}
 
 }
 
@@ -895,11 +915,14 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
 ══════════════════════════════════════════════════ */
 @media(max-width:400px){
   .stats-row{grid-template-columns:1fr 1fr !important;gap:.4rem}
-  .stat-value{font-size:1.05rem}
-  .stat-card{padding:.55rem .4rem}
+  .stat-value{font-size:.95rem}
+  .stat-card{padding:.5rem .4rem}
   table{min-width:360px;font-size:.67rem}
   th,td{padding:.28rem .32rem}
   .workshop-items{grid-template-columns:1fr 1fr}
+  .page-content{padding:.35rem}
+  .card{padding:.55rem}
+  input,select{font-size:.8rem;padding:.45rem .6rem}
 }
 .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1999;display:none}
 .sidebar-overlay.show{display:block}
@@ -1934,8 +1957,18 @@ async function renderOverview() {
     .xdb-num:hover{border-color:var(--primary);transform:translateY(-2px)}
     .xdb-num-bar{position:absolute;bottom:0;right:0;left:0;height:3px;border-radius:0 0 14px 14px}
     .xdb-num-label{font-size:.7rem;font-weight:700;color:var(--muted);letter-spacing:.05em;margin-bottom:.5rem;text-transform:uppercase}
-    .xdb-num-val{font-size:2.2rem;font-weight:900;line-height:1;letter-spacing:-.03em}
+    .xdb-num-val{font-size:2.2rem;font-weight:900;line-height:1;letter-spacing:-.03em;word-break:break-all}
     .xdb-num-sub{font-size:.7rem;color:var(--muted);margin-top:.3rem}
+    @media(max-width:600px){
+      .xdb-num{padding:.75rem .85rem;border-radius:12px}
+      .xdb-num-val{font-size:1.55rem}
+      .xdb-num-label{font-size:.65rem}
+      .xdb-num-sub{font-size:.64rem}
+    }
+    @media(max-width:400px){
+      .xdb-num{padding:.6rem .65rem}
+      .xdb-num-val{font-size:1.3rem}
+    }
     .xdb-grid{display:grid;grid-template-columns:1fr 1.6fr;gap:.9rem;margin-bottom:.9rem}
     @media(max-width:860px){.xdb-grid,.xdb-two,.xdb-charts-grid{grid-template-columns:1fr}}
     .xdb-panel{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:1rem 1.1rem}
@@ -3376,38 +3409,38 @@ async function renderAdminWorkshops() {
 
   document.getElementById('pageContent').innerHTML=`
     <!-- ── 4 كروت إجماليات ── -->
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem">
-      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
-          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي الزيوت</span>
-          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">🛢️</div>
+    <div class="ws-summary-grid">
+      <div class="ws-total-card">
+        <div class="ws-total-top">
+          <span class="ws-total-label">إجمالي الزيوت</span>
+          <div class="ws-total-icon">🛢️</div>
         </div>
-        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${fmt(oilTotal)}</div>
-        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">جنيه</div>
+        <div class="ws-total-val">${fmt(oilTotal)}</div>
+        <div class="ws-total-sub">جنيه</div>
       </div>
-      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
-          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي الصيانة</span>
-          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">🔧</div>
+      <div class="ws-total-card">
+        <div class="ws-total-top">
+          <span class="ws-total-label">إجمالي الصيانة</span>
+          <div class="ws-total-icon">🔧</div>
         </div>
-        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${fmt(maintenanceTotal+partsTotal)}</div>
-        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">جنيه</div>
+        <div class="ws-total-val">${fmt(maintenanceTotal+partsTotal)}</div>
+        <div class="ws-total-sub">جنيه</div>
       </div>
-      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
-          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي الوقود</span>
-          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">⛽</div>
+      <div class="ws-total-card">
+        <div class="ws-total-top">
+          <span class="ws-total-label">إجمالي الوقود</span>
+          <div class="ws-total-icon">⛽</div>
         </div>
-        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${fmt(fuelTotal)}</div>
-        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">جنيه</div>
+        <div class="ws-total-val">${fmt(fuelTotal)}</div>
+        <div class="ws-total-sub">جنيه</div>
       </div>
-      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem">
-          <span style="font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4">إجمالي التكاليف (جنيه)</span>
-          <div style="width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">💰</div>
+      <div class="ws-total-card">
+        <div class="ws-total-top">
+          <span class="ws-total-label">إجمالي التكاليف (جنيه)</span>
+          <div class="ws-total-icon">💰</div>
         </div>
-        <div style="font-size:1.65rem;font-weight:900;color:#0f172a;line-height:1">${total}</div>
-        <div style="font-size:.73rem;color:#94a3b8;margin-top:.3rem">الإجمالي الكلي لكل البنود</div>
+        <div class="ws-total-val">${total}</div>
+        <div class="ws-total-sub">الإجمالي الكلي لكل البنود</div>
       </div>
     </div>
 
@@ -4260,6 +4293,14 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
   display:flex;align-items:center;justify-content:center;font-size:1.4rem;
   flex-shrink:0;
 }
+@media(max-width:600px){
+  .stat-card{padding:.75rem .9rem;gap:.65rem;border-radius:12px}
+  .stat-icon{width:40px;height:40px;font-size:1.1rem;border-radius:10px;flex-shrink:0}
+}
+@media(max-width:400px){
+  .stat-card{padding:.6rem .7rem;gap:.5rem}
+  .stat-icon{width:34px;height:34px;font-size:.95rem}
+}
 
 /* ── Page Header ── */
 .page-header{
@@ -4269,6 +4310,10 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
 .page-title{
   font-size:1.2rem;font-weight:800;color:var(--text);
   display:flex;align-items:center;gap:.5rem;
+}
+@media(max-width:600px){
+  .page-title{font-size:1rem}
+  .page-header{margin-bottom:.85rem}
 }
 
 /* ── Buttons ── */
@@ -4296,7 +4341,51 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
 
 .ws-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin-bottom:1rem}
 @media(max-width:900px){.ws-summary-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:480px){.ws-summary-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.ws-summary-grid{grid-template-columns:1fr 1fr;gap:.5rem}}
+@media(max-width:360px){.ws-summary-grid{grid-template-columns:1fr 1fr;gap:.4rem}}
+
+/* ── Workshop total cards ── */
+.ws-total-card{
+  background:#fff;border-radius:16px;border:1px solid #e2e8f0;
+  box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem;
+  min-width:0;overflow:hidden;
+}
+.ws-total-top{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  margin-bottom:.75rem;gap:.4rem;
+}
+.ws-total-label{
+  font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4;
+  flex:1;min-width:0;
+}
+.ws-total-icon{
+  width:42px;height:42px;border-radius:12px;background:#f0fdf4;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.25rem;flex-shrink:0;
+}
+.ws-total-val{
+  font-size:1.5rem;font-weight:900;color:#0f172a;line-height:1;
+  word-break:break-all;
+}
+.ws-total-sub{font-size:.73rem;color:#94a3b8;margin-top:.3rem}
+@media(max-width:900px){
+  .ws-total-card{padding:1rem}
+  .ws-total-val{font-size:1.25rem}
+  .ws-total-icon{width:36px;height:36px;font-size:1rem}
+}
+@media(max-width:600px){
+  .ws-total-card{padding:.75rem .7rem;border-radius:12px}
+  .ws-total-val{font-size:1.1rem}
+  .ws-total-label{font-size:.74rem}
+  .ws-total-icon{width:32px;height:32px;font-size:.9rem;border-radius:9px}
+  .ws-total-top{margin-bottom:.5rem}
+}
+@media(max-width:400px){
+  .ws-total-card{padding:.6rem .55rem}
+  .ws-total-val{font-size:.95rem}
+  .ws-total-label{font-size:.68rem}
+  .ws-total-icon{display:none}
+}
 .ws-tabs-row{display:flex;gap:.15rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:0}
 .ws-tabs-row::-webkit-scrollbar{display:none}
 .ws-tabs-row button{white-space:nowrap;flex-shrink:0}
@@ -7474,7 +7563,7 @@ async function renderDriverSinglePage() {
       <div class="modal-header"><div class="modal-title">✔ إنهاء الرحلة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
       <div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#166534">
         🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
-        
+
       </div>
       <div class="form-group"><label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
         <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}" max="999999"
