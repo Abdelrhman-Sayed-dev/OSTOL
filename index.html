@@ -9982,7 +9982,7 @@ function parseMaintenanceCSV(text) {
   });
 }
 
-async function validateMaintenanceRows(rows, carsMap) {
+function validateMaintenanceRows(rows, carsMap) {
   // خريطة لربط اسم العمود في الفورمات الجديد بالـ key الداخلي
   const g = (row, ...keys) => {
     for(const k of keys){ const v=(row[k]||'').trim(); if(v) return v; }
@@ -13544,14 +13544,13 @@ async function renderOperatorSinglePage() {
           '<div style="color:white;font-weight:800;font-size:1.05rem">مرحباً، ' + opName + ' ⚙️</div>' +
           '<div style="color:rgba(255,255,255,.6);font-size:.72rem;margin-top:.1rem">' + dayName + '، ' + dateStr + '</div>' +
         '</div>' +
-        '<div style="display:flex;align-items:center;gap:.6rem">' +
+        '<div style="display:flex;align-items:center;gap:.5rem">' +
           (opFixed ? '<span style="background:rgba(255,255,255,.12);color:white;border-radius:20px;' +
           'padding:.25rem .75rem;font-size:.75rem;font-weight:700">' + opFixed + '</span>' : '') +
-          '<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#06B6D4,#22C55E);' +
-          'display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:800;color:white;cursor:pointer" ' +
-          'onclick="if(confirm(\'تسجيل الخروج؟\')){clearAuth();currentUser=null;location.reload();}">' +
-            opName.charAt(0).toUpperCase() +
-          '</div>' +
+          '<button onclick="if(confirm(\'تسجيل الخروج؟\')){clearAuth();currentUser=null;location.reload();}" ' +
+          'style="background:rgba(239,68,68,.18);border:1.5px solid rgba(239,68,68,.4);color:#fca5a5;' +
+          'border-radius:10px;padding:.35rem .75rem;font-size:.78rem;font-weight:700;cursor:pointer;' +
+          'font-family:inherit;display:flex;align-items:center;gap:.3rem">🚪 خروج</button>' +
         '</div>' +
       '</div>' +
 
@@ -13631,92 +13630,124 @@ async function renderOperatorSinglePage() {
 
     '</div>';
 
+  // ── آخر عداد منتهي (نهاية آخر وردية) ──
+  const lastEndedShift = shiftHistory.filter(s => s.status !== 'active' && s.end_hours != null && s.end_hours > 0)
+    .sort((a,b) => new Date(b.end_time||0) - new Date(a.end_time||0))[0] || null;
+  const lastEndHours = lastEndedShift ? lastEndedShift.end_hours : '';
+
   // ── Shift Events ──
   document.getElementById('opStartShiftBtn')?.addEventListener('click', function() {
+    // اسم المعدة وكودها من المعدة المعيّنة للمشغل
+    const assignedName = operatorData.current_equipment_name || '';
+    const assignedCode = operatorData.current_equipment_id   || '';
+
     openModal(
       '<div class="modal-header">' +
         '<div class="modal-title">🟢 بدء وردية جديدة</div>' +
         '<button class="modal-close" onclick="closeModal()">✕</button>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.5rem">' +
-        '<div class="form-group"><label>اسم المعدة <span class="req">*</span></label>' +
-          '<input id="opSEqName" class="form-control" placeholder="مان لفت 926"></div>' +
-        '<div class="form-group"><label>كود المعدة</label>' +
-          '<input id="opSEqId" class="form-control" placeholder="12/5/926"></div>' +
-        '<div class="form-group"><label>نوع الوردية</label>' +
-          '<select id="opSType" class="form-control">' +
-            '<option value="day">☀️ نهارية</option>' +
-            '<option value="night">🌙 ليلية</option>' +
-            '<option value="extended">⏰ ممتدة</option>' +
-          '</select></div>' +
-        '<div class="form-group"><label>عداد الساعات (بداية)</label>' +
-          '<input id="opSHours" class="form-control" type="number" step="0.1" min="0" placeholder="0.0"></div>' +
-        '<div class="form-group"><label>سولار البداية (لتر)</label>' +
-          '<input id="opSFuel" class="form-control" type="number" step="0.1" min="0" placeholder="0"></div>' +
-        '<div class="form-group"><label>المشروع</label>' +
-          '<input id="opSProject" class="form-control" placeholder="اسم المشروع"></div>' +
+      '<div style="padding:1rem">' +
+        // عرض المعدة تلقائياً
+        (assignedName
+          ? '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:.75rem 1rem;' +
+            'margin-bottom:1rem;display:flex;align-items:center;gap:.6rem">' +
+              '<span style="font-size:1.3rem">⚙️</span>' +
+              '<div><div style="font-weight:700;color:#15803d;font-size:.92rem">' + assignedName + '</div>' +
+              (assignedCode ? '<div style="font-size:.75rem;color:#4ade80;font-family:monospace">' + assignedCode + '</div>' : '') +
+              '</div></div>'
+          : '<div style="background:#fff7ed;border:1.5px solid #fbbf24;border-radius:12px;padding:.65rem 1rem;' +
+            'margin-bottom:1rem;font-size:.83rem;color:#92400e">⚠️ لا توجد معدة مخصصة — تواصل مع الإدارة لتعيين معدة</div>') +
+
+        '<div class="form-group">' +
+          '<label style="font-size:.95rem;font-weight:800;color:#1e3a5f">⏱️ عداد الساعات (البداية) <span class="req">*</span></label>' +
+          '<input id="opSHours" class="form-control" type="number" step="0.1" min="0" ' +
+            'style="font-size:1.4rem;font-weight:800;text-align:center;padding:1rem;letter-spacing:.05em" ' +
+            'placeholder="0.0" value="' + lastEndHours + '">' +
+          (lastEndHours ? '<div style="font-size:.75rem;color:#06B6D4;margin-top:.4rem;text-align:center">✅ مملوء تلقائياً من نهاية آخر وردية (' + lastEndHours + ' ساعة)</div>' : '') +
+        '</div>' +
       '</div>' +
-      '<div class="form-group" style="padding:.5rem"><label>ملاحظات</label>' +
-        '<input id="opSNotes" class="form-control" placeholder="اختياري..."></div>' +
       '<div class="modal-footer">' +
         '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
-        '<button class="btn btn-primary" id="opSConfirm" style="font-size:1rem;padding:.75rem 1.5rem">▶ بدء الوردية</button>' +
+        '<button class="btn btn-primary" id="opSConfirm" style="font-size:1rem;padding:.75rem 2rem">▶ ابدأ الوردية</button>' +
       '</div>'
     );
+
     document.getElementById('opSConfirm').onclick = async function() {
-      var name = document.getElementById('opSEqName').value.trim();
-      if (!name) return showNotification('اسم المعدة مطلوب', 'error');
+      var hours = document.getElementById('opSHours').value;
+      if (hours === '' || isNaN(parseFloat(hours))) return showNotification('أدخل عداد الساعات', 'error');
       var btn = document.getElementById('opSConfirm');
       btn.disabled = true; btn.textContent = '⏳ جاري...';
       try {
         await apiCall('/operators/shifts/start', 'POST', {
           operator_id:    operatorData.id,
-          equipment_name: name,
-          equipment_id:   document.getElementById('opSEqId').value.trim(),
-          shift_type:     document.getElementById('opSType').value,
-          start_hours:    parseFloat(document.getElementById('opSHours').value || 0),
-          fuel_liters:    parseFloat(document.getElementById('opSFuel').value || 0),
-          project:        document.getElementById('opSProject').value.trim(),
+          equipment_name: assignedName || 'معدة',
+          equipment_id:   assignedCode,
+          shift_type:     'day',
+          start_hours:    parseFloat(hours),
+          fuel_liters:    0,
+          project:        operatorData.branch || '',
           branch:         operatorData.branch || '',
-          notes:          document.getElementById('opSNotes').value.trim(),
+          notes:          '',
         });
         showNotification('✅ بدأت الوردية!', 'success');
         closeModal();
         await renderOperatorSinglePage();
       } catch(e) {
         showNotification(e.message, 'error');
-        btn.disabled = false; btn.textContent = '▶ بدء الوردية';
+        btn.disabled = false; btn.textContent = '▶ ابدأ الوردية';
       }
     };
   });
 
   document.getElementById('opEndShiftBtn')?.addEventListener('click', function() {
+    const startHours = activeShift?.start_hours ?? '';
+    const startT = activeShift?.start_time
+      ? new Date(activeShift.start_time).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})
+      : '—';
+
     openModal(
       '<div class="modal-header">' +
         '<div class="modal-title">✔ إنهاء الوردية</div>' +
         '<button class="modal-close" onclick="closeModal()">✕</button>' +
       '</div>' +
-      '<div style="padding:.5rem;display:grid;grid-template-columns:1fr 1fr;gap:.75rem">' +
-        '<div class="form-group"><label>عداد الساعات (نهاية)</label>' +
-          '<input id="opEHours" class="form-control" type="number" step="0.1" min="0" placeholder="0.0" value="' + (activeShift?.end_hours||'') + '"></div>' +
-        '<div class="form-group"><label>إجمالي السولار (لتر)</label>' +
-          '<input id="opEFuel" class="form-control" type="number" step="0.1" min="0" placeholder="0"></div>' +
-        '<div class="form-group" style="grid-column:1/-1"><label>ملاحظات</label>' +
-          '<input id="opENotes" class="form-control" placeholder="اختياري..."></div>' +
+      '<div style="padding:1rem">' +
+        // بطاقة معلومات الوردية الحالية
+        '<div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:12px;padding:.75rem 1rem;margin-bottom:1rem">' +
+          '<div style="font-size:.78rem;color:#64748b;margin-bottom:.3rem">الوردية الحالية</div>' +
+          '<div style="font-weight:700;color:#0f172a;font-size:.9rem">' + (activeShift?.equipment_name||'—') + '</div>' +
+          '<div style="display:flex;gap:1.5rem;margin-top:.4rem">' +
+            '<span style="font-size:.78rem;color:#64748b">بدأت: <strong style="color:#1e3a5f">' + startT + '</strong></span>' +
+            '<span style="font-size:.78rem;color:#64748b">عداد البداية: <strong style="color:#1e3a5f">' + startHours + '</strong></span>' +
+          '</div>' +
+        '</div>' +
+
+        '<div class="form-group">' +
+          '<label style="font-size:.95rem;font-weight:800;color:#1e3a5f">⏱️ عداد الساعات (النهاية) <span class="req">*</span></label>' +
+          '<input id="opEHours" class="form-control" type="number" step="0.1" min="' + (startHours||0) + '" ' +
+            'style="font-size:1.4rem;font-weight:800;text-align:center;padding:1rem;letter-spacing:.05em" ' +
+            'placeholder="' + (startHours ? (parseFloat(startHours)+1).toFixed(1) : '0.0') + '">' +
+          (startHours ? '<div style="font-size:.75rem;color:#94a3b8;margin-top:.35rem;text-align:center">يجب أن يكون أكبر من عداد البداية (' + startHours + ')</div>' : '') +
+        '</div>' +
       '</div>' +
       '<div class="modal-footer">' +
         '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
-        '<button class="btn btn-danger" id="opEConfirm" style="font-size:1rem;padding:.75rem 1.5rem">✔ إنهاء الوردية</button>' +
+        '<button class="btn btn-danger" id="opEConfirm" style="font-size:1rem;padding:.75rem 2rem">✔ إنهاء الوردية</button>' +
       '</div>'
     );
+
     document.getElementById('opEConfirm').onclick = async function() {
+      var endHours = parseFloat(document.getElementById('opEHours').value);
+      if (isNaN(endHours)) return showNotification('أدخل عداد الساعات', 'error');
+      if (startHours !== '' && endHours < parseFloat(startHours)) {
+        return showNotification('عداد النهاية يجب أن يكون أكبر من عداد البداية (' + startHours + ')', 'error');
+      }
       var btn = document.getElementById('opEConfirm');
       btn.disabled = true; btn.textContent = '⏳ جاري...';
       try {
         await apiCall('/operators/shifts/' + activeShift.id + '/end', 'POST', {
-          end_hours:   parseFloat(document.getElementById('opEHours').value || 0),
-          fuel_liters: parseFloat(document.getElementById('opEFuel').value || 0),
-          notes:       document.getElementById('opENotes').value.trim(),
+          end_hours:   endHours,
+          fuel_liters: 0,
+          notes:       '',
         });
         showNotification('✅ انتهت الوردية!', 'success');
         closeModal();
