@@ -13779,7 +13779,6 @@ async function renderDriverRequestsPage() {
 }
 
 async function dpQuickOp(type) {
-  // المشغل يستخدم operator_id مباشرة
   if (!currentUser.operator_id) {
     try {
       const op = await apiCall('/operators/me').catch(() => null);
@@ -13787,13 +13786,25 @@ async function dpQuickOp(type) {
     } catch(e) {}
   }
 
-  // نضمن وجود pageContent للـ render
-  var shell = document.getElementById('appShell');
-  if (shell && !document.getElementById('pageContent')) {
+  // نعمل overlay فوق صفحة المشغل كاملة
+  var overlay = document.getElementById('dpQuickOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'dpQuickOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:var(--bg,#f8fafc);z-index:9000;overflow-y:auto;';
+    // زر رجوع
+    var backBtn = document.createElement('button');
+    backBtn.innerHTML = '← رجوع';
+    backBtn.style.cssText = 'position:sticky;top:0;z-index:9001;width:100%;padding:.85rem 1rem;background:#1e3a5f;color:white;border:none;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit;text-align:right;display:block';
+    backBtn.onclick = function() { overlay.remove(); };
+    overlay.appendChild(backBtn);
     var pc = document.createElement('div');
     pc.id = 'pageContent';
-    pc.style.cssText = 'padding:1rem;max-width:480px;margin:0 auto';
-    shell.appendChild(pc);
+    pc.style.cssText = 'padding:.5rem 1rem 2rem;max-width:480px;margin:0 auto';
+    overlay.appendChild(pc);
+    document.body.appendChild(overlay);
+  } else {
+    document.getElementById('pageContent').innerHTML = '';
   }
 
   switch(type) {
