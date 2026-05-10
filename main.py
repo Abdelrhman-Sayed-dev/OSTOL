@@ -440,7 +440,7 @@ def _safe_add_columns(c):
         c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
         row = c.fetchone()
         tbl_sql = row['sql'] or '' if row else ''
-        needs_role_fix   = 'superuser' not in tbl_sql
+        needs_role_fix   = 'superuser' not in tbl_sql or "'operator'" not in tbl_sql
         needs_unique_fix = 'username TEXT UNIQUE' in tbl_sql  # نشيل UNIQUE من username
         if needs_role_fix or needs_unique_fix:
             c.execute("PRAGMA foreign_keys=OFF")
@@ -460,7 +460,7 @@ def _safe_add_columns(c):
             c.execute("ALTER TABLE users_migrated RENAME TO users")
             c.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
             c.execute("PRAGMA foreign_keys=ON")
-            log.info("✅ Migrated users: removed UNIQUE on username, added superuser role")
+            log.info("✅ Migrated users: added operator role, removed UNIQUE on username")
     except Exception as e:
         log.warning(f"Users migration skipped: {e}")
 
@@ -559,6 +559,36 @@ def _safe_add_columns(c):
                     c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type}")
                 except Exception:
                     pass
+
+    # ── Migration: إضافة operator role في users CHECK constraint ──
+    try:
+        c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+        row = c.fetchone()
+        if row:
+            existing_sql = row['sql'] or ''
+            if "'operator'" not in existing_sql:
+                log.info("🔄 Adding operator role to users table...")
+                c.execute("PRAGMA foreign_keys=OFF")
+                c.execute("""CREATE TABLE IF NOT EXISTS _users_op_fix(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+                    branch TEXT DEFAULT '',
+                    created_at TEXT DEFAULT(datetime('now')),
+                    last_login TEXT,
+                    refresh_token TEXT,
+                    refresh_exp TEXT,
+                    avatar_url TEXT DEFAULT ''
+                )""")
+                c.execute("INSERT OR IGNORE INTO _users_op_fix SELECT id,username,password,role,COALESCE(branch,''),created_at,last_login,refresh_token,refresh_exp,COALESCE(avatar_url,'') FROM users")
+                c.execute("DROP TABLE users")
+                c.execute("ALTER TABLE _users_op_fix RENAME TO users")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+                c.execute("PRAGMA foreign_keys=ON")
+                log.info("✅ operator role added to users table")
+    except Exception as _e:
+        log.warning(f"operator role migration: {_e}")
 
     # ── جدول الصيانة الدورية ──
     c.execute("""CREATE TABLE IF NOT EXISTS maintenance_schedule (
