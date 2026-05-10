@@ -1531,8 +1531,17 @@ const loadGarageRecords=()=> apiCall('/garage/records').catch(()=>[]);
 const loadLatestGarage =()=> apiCall('/garage/latest').catch(()=>[]);
 const loadBranches   = () => apiCall('/reports/branches').then(r=>r.branches||[]).catch(()=>[]);
 const loadRequests   = () => apiCall('/requests'         +branchQ()).catch(()=>[]);
-const loadAllowedCars = () => currentUser?.driver_id
-  ? apiCall(`/drivers/${currentUser.driver_id}/allowed-cars`).catch(()=>[]) : [];
+const loadAllowedCars = () => {
+  if (currentUser?.operator_id && !currentUser?.driver_id) {
+    return apiCall('/operators/me').then(op => {
+      if (!op || !op.current_equipment_id) return [];
+      return [{ id: op.current_equipment_id, plate: op.current_equipment_id,
+                model: op.current_equipment_name || 'معدة', status: 'available' }];
+    }).catch(() => []);
+  }
+  return currentUser?.driver_id
+    ? apiCall(`/drivers/${currentUser.driver_id}/allowed-cars`).catch(()=>[]) : [];
+};
 
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebarOverlay').classList.toggle('show'); }
 function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('show'); }
@@ -13678,6 +13687,7 @@ async function renderOperatorSinglePage() {
       var btn = document.getElementById('opSConfirm');
       btn.disabled = true; btn.textContent = '⏳ جاري...';
       try {
+        var opShiftLoc = ''; try { opShiftLoc = await silentGetLocation(); } catch(e) {}
         await apiCall('/operators/shifts/start', 'POST', {
           operator_id:    operatorData.id,
           equipment_name: assignedName || 'معدة',
@@ -13688,6 +13698,7 @@ async function renderOperatorSinglePage() {
           project:        operatorData.branch || '',
           branch:         operatorData.branch || '',
           notes:          '',
+          start_location: opShiftLoc || '',
         });
         showNotification('✅ بدأت الوردية!', 'success');
         closeModal();
@@ -13768,21 +13779,22 @@ async function renderDriverRequestsPage() {
 }
 
 async function dpQuickOp(type) {
-  // المشغل يستخدم driver_id من operatorData
-  // نجيب operator_id ونستخدمه كـ driver_id مؤقت للـ workshop/requests/photos
+  // المشغل يستخدم operator_id مباشرة
   if (!currentUser.operator_id) {
-    // نجيب operator_id
     try {
       const op = await apiCall('/operators/me').catch(() => null);
       if (op) currentUser.operator_id = op.id;
     } catch(e) {}
   }
 
-  // نحول operator لـ "driver" مؤقتاً عشان تشتغل functions السائق
-  const savedDriverId = currentUser.driver_id;
-  const savedRole     = currentUser.role;
-  currentUser.driver_id = currentUser.operator_id;
-  currentUser.role      = 'driver'; // مؤقت
+  // نضمن وجود pageContent للـ render
+  var shell = document.getElementById('appShell');
+  if (shell && !document.getElementById('pageContent')) {
+    var pc = document.createElement('div');
+    pc.id = 'pageContent';
+    pc.style.cssText = 'padding:1rem;max-width:480px;margin:0 auto';
+    shell.appendChild(pc);
+  }
 
   switch(type) {
     case 'fuel':
@@ -13793,17 +13805,12 @@ async function dpQuickOp(type) {
       await renderDriverEmergency();
       break;
     case 'requests':
-      // صفحة الطلبات — تستخدم driver_id
       await renderDriverRequestsPage();
       break;
     case 'photo':
       await renderDriverPhotosSection();
       break;
   }
-
-  // restore
-  currentUser.driver_id = savedDriverId;
-  currentUser.role      = savedRole;
 }
 
 let _assignOpId = null;
