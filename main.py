@@ -1803,16 +1803,18 @@ async def reassign_permission(body: dict, cu: dict = Depends(require_superuser))
 @app.post("/driver/photo/upload")
 async def upload_driver_photo(body: dict, cu: dict = Depends(get_user)):
     """السائق يرفع صورة (base64) — تُحفظ وتُعرض عند السوبر يوزر."""
-    if cu["role"] != "driver":
-        raise HTTPException(403, "للسائقين فقط")
+    if cu["role"] not in ("driver", "operator"):
+        raise HTTPException(403, "للسائقين والمشغلين فقط")
 
     driver_id = cu.get("driver_id")
-    if not driver_id:
+    if not driver_id and cu["role"] == "operator":
+        driver_id = cu.get("operator_id")
+    if not driver_id and cu["role"] == "driver":
         with get_db() as _c:
             row = _c.execute("SELECT id FROM drivers WHERE user_id=?", (cu["user_id"],)).fetchone()
             driver_id = row["id"] if row else None
     if not driver_id:
-        raise HTTPException(400, "لا يوجد سائق مرتبط بهذا الحساب")
+        raise HTTPException(400, "لا يوجد حساب مرتبط")
 
     b64 = body.get("image")
     caption = body.get("caption", "")[:200]
@@ -2193,7 +2195,10 @@ async def delete_user(uid: int, cu: dict = Depends(require_admin)):
 async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     if rec.type not in WORKSHOP_TYPES:
         raise HTTPException(400, "نوع غير صالح")
-    if cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
+    if cu["role"] == "operator":
+        if cu.get("operator_id") != rec.driver_id:
+            raise HTTPException(403, "يمكنك تسجيل سجلات حسابك فقط")
+    elif cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
     # ── احسب السعر الإجمالي بشكل موحّد لكل الأدوار ──
     # الأنواع اللي ليها كمية: الوقود بكل أنواعه + الزيت + الكوتش
@@ -2296,6 +2301,12 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
                 params.append(month + "%")
             where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
             c.execute(q + where + " ORDER BY w.id DESC LIMIT 500", params)
+        elif cu["role"] == "operator":
+            op_id3 = cu.get("operator_id")
+            if not op_id3: return []
+            month_cond = " AND w.created_at LIKE ?" if month else ""
+            month_params = [month + "%"] if month else []
+            c.execute(q + " WHERE w.driver_id=?" + month_cond + " ORDER BY w.id DESC LIMIT 200", [op_id3] + month_params)
         else:
             did = cu.get("driver_id")
             if not did: return []
@@ -2603,7 +2614,11 @@ async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
 async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = Depends(get_user)):
     if rep.type not in ("emergency", "accident"):
         raise HTTPException(400, "نوع البلاغ غير صالح")
-    if cu["role"] not in ("admin","superuser") and rep.driver_id != cu.get("driver_id"):
+    # المشغل: يُسمح له بإرسال بلاغ بـ operator_id الخاص به كـ driver_id
+    if cu["role"] == "operator":
+        if cu.get("operator_id") != rep.driver_id:
+            raise HTTPException(403, "يمكنك إرسال بلاغات لحسابك فقط")
+    elif cu["role"] not in ("admin","superuser") and rep.driver_id != cu.get("driver_id"):
         raise HTTPException(403, "غير مصرح")
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
@@ -2641,6 +2656,11 @@ async def get_emergency_reports(cu: dict = Depends(get_user), branch: Optional[s
                 c.execute(q + " WHERE d.branch=? ORDER BY e.id DESC LIMIT 500", (branch,))
             else:
                 c.execute(q + " ORDER BY e.id DESC LIMIT 500")
+        elif cu["role"] == "operator":
+            # المشغل يشوف بلاغاته باستخدام operator_id (المخزّن كـ driver_id في emergency_reports)
+            op_id = cu.get("operator_id")
+            if not op_id: return []
+            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC LIMIT 200", (op_id,))
         else:
             did = cu.get("driver_id")
             if not did: return []
@@ -3100,8 +3120,10 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
         raise HTTPException(400, "نوع الطلب غير صالح")
 
     driver_id = cu.get("driver_id")
+    if not driver_id and cu["role"] == "operator":
+        driver_id = cu.get("operator_id")
     if not driver_id:
-        raise HTTPException(403, "فقط السائقون يمكنهم تقديم الطلبات")
+        raise HTTPException(403, "فقط السائقون والمشغلون يمكنهم تقديم الطلبات")
 
     # حقق من صحة تواريخ التجديد
     if req_type == "license_renew":
@@ -3139,6 +3161,13 @@ async def get_requests(cu: dict = Depends(get_user), branch: Optional[str] = Non
                          LEFT JOIN drivers d ON r.driver_id=d.id
                          WHERE r.driver_id=?
                          ORDER BY r.id DESC""", (driver_id,))
+        elif cu["role"] == "operator":
+            op_id2 = cu.get("operator_id")
+            if not op_id2: return []
+            c.execute("""SELECT r.*, NULL as driver_name, NULL as driver_branch
+                         FROM driver_requests r
+                         WHERE r.driver_id=?
+                         ORDER BY r.id DESC""", (op_id2,))
         else:
             # تحديد فلتر الفرع الفعّال
             eff_branch = _effective_branch(cu, branch)
@@ -6288,9 +6317,6 @@ def _ensure_operator_tables(conn):
     # Migration: أضف user_id لو مش موجود
     try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN user_id INTEGER DEFAULT NULL")
     except: pass
-    # Migration: start_location لجدول الورديات
-    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN start_location TEXT DEFAULT ''")
-    except: pass
     # Migration: أضف حقول المعدة الحالية
     try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN current_equipment_id TEXT DEFAULT ''")
     except: pass
@@ -6324,7 +6350,6 @@ class ShiftStart(BaseModel):
     project:        str = ""
     branch:         str = ""
     notes:          str = ""
-    start_location: str = ""
 
 
 class ShiftEnd(BaseModel):
@@ -6503,12 +6528,12 @@ async def get_operator_shifts(
     limit: int = Query(20),
     cu: dict = Depends(get_user),
 ):
-    # السماح للمشغل نفسه أو للأدمن
-    if cu["role"] not in ("admin", "superuser", "reporter"):
-        with get_db() as chk:
-            op = chk.execute("SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)).fetchone()
-            if not op or op["id"] != oid:
-                raise HTTPException(403, "غير مصرح")
+    # المشغل يقدر يجيب ورديات نفسه فقط
+    if cu["role"] == "operator":
+        if cu.get("operator_id") != oid:
+            raise HTTPException(403, "يمكنك الاطلاع على ورديات حسابك فقط")
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+        raise HTTPException(403, "صلاحيات غير كافية")
     with get_db() as conn:
         _ensure_operator_tables(conn)
         rows = [dict(r) for r in conn.execute(
@@ -6518,12 +6543,7 @@ async def get_operator_shifts(
 
 
 @app.get("/operators/{oid}/active-shift")
-async def get_active_shift(oid: int, cu: dict = Depends(get_user)):
-    if cu["role"] not in ("admin", "superuser", "reporter"):
-        with get_db() as chk:
-            op = chk.execute("SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)).fetchone()
-            if not op or op["id"] != oid:
-                raise HTTPException(403, "غير مصرح")
+async def get_active_shift(oid: int, cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         _ensure_operator_tables(conn)
         row = conn.execute(
@@ -6534,17 +6554,12 @@ async def get_active_shift(oid: int, cu: dict = Depends(get_user)):
 
 @app.post("/operators/shifts/start")
 async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
-    # السماح للـ admin/superuser أو للمشغل نفسه فقط
-    is_admin = cu["role"] in ("admin", "superuser")
-    if not is_admin:
-        # المشغل يجب أن يبدأ وردية لنفسه فقط
-        with get_db() as conn:
-            _ensure_operator_tables(conn)
-            op = conn.execute(
-                "SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)
-            ).fetchone()
-            if not op or op["id"] != body.operator_id:
-                raise HTTPException(403, "يمكنك بدء وردية لنفسك فقط")
+    # المشغل يبدأ وردية لنفسه فقط
+    if cu["role"] == "operator":
+        if cu.get("operator_id") != body.operator_id:
+            raise HTTPException(403, "يمكنك بدء وردية لحسابك فقط")
+    elif cu["role"] not in ("admin", "superuser"):
+        raise HTTPException(403, "صلاحيات غير كافية")
     with get_db() as conn:
         _ensure_operator_tables(conn)
         # تحقق من عدم وجود وردية نشطة
@@ -6555,30 +6570,28 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
         conn.execute("""INSERT INTO operator_shifts
             (operator_id,equipment_id,equipment_name,shift_type,start_time,
-             start_hours,fuel_liters,project,branch,notes,status,start_location)
-            VALUES(?,?,?,?,?,?,?,?,?,?,'active',?)""",
+             start_hours,fuel_liters,project,branch,notes,status)
+            VALUES(?,?,?,?,?,?,?,?,?,?,'active')""",
             (body.operator_id, body.equipment_id, body.equipment_name, body.shift_type,
              datetime.utcnow().isoformat(), body.start_hours, body.fuel_liters,
-             body.project, body.branch, body.notes, body.start_location))
+             body.project, body.branch, body.notes))
         sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return {"id": sid, "message": "بدأت الوردية"}
 
 
 @app.post("/operators/shifts/{sid}/end")
 async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
-    is_admin = cu["role"] in ("admin", "superuser")
     with get_db() as conn:
         _ensure_operator_tables(conn)
         shift = conn.execute("SELECT * FROM operator_shifts WHERE id=?", (sid,)).fetchone()
         if not shift: raise HTTPException(404, "الوردية غير موجودة")
         if shift["status"] == "ended": raise HTTPException(400, "الوردية منتهية بالفعل")
-        # تحقق أن المشغل ينهي وردية نفسه فقط
-        if not is_admin:
-            op = conn.execute(
-                "SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)
-            ).fetchone()
-            if not op or op["id"] != shift["operator_id"]:
-                raise HTTPException(403, "يمكنك إنهاء وردية نفسك فقط")
+        # المشغل يقدر ينهي وردية نفسه فقط
+        if cu["role"] == "operator":
+            if cu.get("operator_id") != shift["operator_id"]:
+                raise HTTPException(403, "يمكنك إنهاء ورديات حسابك فقط")
+        elif cu["role"] not in ("admin", "superuser"):
+            raise HTTPException(403, "صلاحيات غير كافية")
         conn.execute("""UPDATE operator_shifts SET
             end_time=?, end_hours=?, fuel_liters=?, notes=?, status='ended'
             WHERE id=?""",
