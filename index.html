@@ -11865,36 +11865,46 @@ async function renderEquipmentOperators() {
 
     <!-- Modal إضافة/تعديل -->
     <div id="opFormModal" class="modal-overlay" style="display:none">
-      <div class="modal" style="max-width:620px">
+      <div class="modal" style="max-width:620px;position:relative;overflow:hidden">
         <div class="modal-header">
           <div class="modal-title" id="opFormTitle">➕ إضافة مشغل</div>
           <button class="modal-close" onclick="closeOpForm()">✕</button>
         </div>
+        <!-- حقول وهمية لمنع browser autofill من حشر بيانات اللوجن -->
+        <div style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;top:-999px" aria-hidden="true">
+          <input type="text" name="fakeuser" tabindex="-1" autocomplete="username">
+          <input type="password" name="fakepass" tabindex="-1" autocomplete="current-password">
+        </div>
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
-          <div class="form-group"><label>الاسم <span class="req">*</span></label><input id="opName" class="form-control" placeholder="اسم المشغل"></div>
-          <div class="form-group"><label>الرقم الثابت</label><input id="opFixed" class="form-control" placeholder="رقم المشغل"></div>
-          <div class="form-group"><label>الهاتف</label><input id="opPhone" class="form-control" type="tel"></div>
-          <div class="form-group"><label>الرقم القومي</label><input id="opNatId" class="form-control"></div>
-          <div class="form-group"><label>تاريخ الميلاد</label><input id="opBirth" class="form-control" type="date"></div>
-          <div class="form-group"><label>الفرع</label><input id="opBranchF" class="form-control" placeholder="حلوان / القاهرة ..."></div>
-          <div class="form-group"><label>القطاع</label><input id="opSector" class="form-control" placeholder="قطاع القاهرة الكبرى"></div>
-          <div class="form-group"><label>نوع رخصة التشغيل</label><input id="opLicType" class="form-control" placeholder="رخصة تشغيل ثقيل"></div>
-          <div class="form-group"><label>انتهاء الرخصة</label><input id="opLicExp" class="form-control" type="date"></div>
+          <div class="form-group"><label>الاسم <span class="req">*</span></label><input id="opName" class="form-control" placeholder="اسم المشغل" autocomplete="off"></div>
+          <div class="form-group"><label>الرقم الثابت</label><input id="opFixed" class="form-control" placeholder="رقم المشغل" autocomplete="off"></div>
+          <div class="form-group"><label>الهاتف</label><input id="opPhone" class="form-control" type="tel" autocomplete="off"></div>
+          <div class="form-group"><label>الرقم القومي</label><input id="opNatId" class="form-control" autocomplete="off"></div>
+          <div class="form-group"><label>تاريخ الميلاد</label><input id="opBirth" class="form-control" type="date" autocomplete="off"></div>
+          <div class="form-group"><label>الفرع</label><input id="opBranchF" class="form-control" placeholder="حلوان / القاهرة ..." autocomplete="off"></div>
+          <div class="form-group"><label>القطاع</label><input id="opSector" class="form-control" placeholder="قطاع القاهرة الكبرى" autocomplete="off"></div>
+          <div class="form-group"><label>نوع رخصة التشغيل</label><input id="opLicType" class="form-control" placeholder="رخصة تشغيل ثقيل" autocomplete="off"></div>
+          <div class="form-group"><label>انتهاء الرخصة</label><input id="opLicExp" class="form-control" type="date" autocomplete="off"></div>
           <div class="form-group"><label>الحالة</label>
-            <select id="opStatusF" class="form-control">
+            <select id="opStatusF" class="form-control" autocomplete="off">
               <option value="active">نشط</option>
               <option value="inactive">غير نشط</option>
             </select>
           </div>
           <div class="form-group" style="grid-column:span 2">
             <label>🔑 اسم المستخدم (لتسجيل الدخول)</label>
-            <input id="opUsername" class="form-control" placeholder="username للمشغل — اتركه فارغاً إن لم تحتج">
+            <input id="opUsername" class="form-control" placeholder="username للمشغل — اتركه فارغاً إن لم تحتج"
+              autocomplete="off" name="operator-username-field">
           </div>
           <div class="form-group">
             <label>🔒 كلمة المرور</label>
-            <input id="opPassword" class="form-control" type="password" placeholder="كلمة المرور (للإنشاء فقط)">
+            <input id="opPassword" class="form-control" type="password"
+              placeholder="كلمة المرور (للإنشاء فقط)"
+              autocomplete="new-password"
+              name="operator-new-password">
           </div>
-          <div class="form-group" style="grid-column:span 2"><label>ملاحظات</label><textarea id="opNotes" class="form-control" rows="2"></textarea></div>
+          <div class="form-group" style="grid-column:span 2"><label>ملاحظات</label><textarea id="opNotes" class="form-control" rows="2" autocomplete="off"></textarea></div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline" onclick="closeOpForm()">إلغاء</button>
@@ -11976,6 +11986,11 @@ async function loadOperators(){
 }
 
 async function openOpForm(id=null){
+  // مسح أي autofill قد يكون ملأ الحقول قبل ما نفتح الفورم
+  ['opName','opFixed','opPhone','opNatId','opBranchF','opSector',
+   'opLicType','opUsername','opPassword'].forEach(fid=>{
+    const el=document.getElementById(fid); if(el) el.value='';
+  });
   _opEditId = id;
   const op = id ? _operatorsData.find(o=>o.id===id) : null;
   document.getElementById('opFormTitle').textContent = id ? '✏️ تعديل مشغل' : '➕ إضافة مشغل';
@@ -11993,6 +12008,11 @@ async function openOpForm(id=null){
   document.getElementById('opUsername').value = op?.username||'';
   document.getElementById('opPassword').value = '';
   document.getElementById('opFormModal').style.display='flex';
+  // ضمان إضافي: مسح autofill بعد 100ms (بعض browsers تملأ بعد الفتح)
+  setTimeout(()=>{
+    const pw=document.getElementById('opPassword'); if(pw && !id) pw.value='';
+    const un=document.getElementById('opUsername'); if(un && !id) un.value='';
+  }, 150);
 }
 function closeOpForm(){ document.getElementById('opFormModal').style.display='none'; }
 
