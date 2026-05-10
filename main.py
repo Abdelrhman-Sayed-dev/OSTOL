@@ -6288,6 +6288,9 @@ def _ensure_operator_tables(conn):
     # Migration: أضف user_id لو مش موجود
     try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN user_id INTEGER DEFAULT NULL")
     except: pass
+    # Migration: start_location لجدول الورديات
+    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN start_location TEXT DEFAULT ''")
+    except: pass
     # Migration: أضف حقول المعدة الحالية
     try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN current_equipment_id TEXT DEFAULT ''")
     except: pass
@@ -6498,8 +6501,14 @@ async def delete_operator(oid: int, cu: dict = Depends(require_admin)):
 async def get_operator_shifts(
     oid: int,
     limit: int = Query(20),
-    cu: dict = Depends(require_admin_or_reporter),
+    cu: dict = Depends(get_user),
 ):
+    # السماح للمشغل نفسه أو للأدمن
+    if cu["role"] not in ("admin", "superuser", "reporter"):
+        with get_db() as chk:
+            op = chk.execute("SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)).fetchone()
+            if not op or op["id"] != oid:
+                raise HTTPException(403, "غير مصرح")
     with get_db() as conn:
         _ensure_operator_tables(conn)
         rows = [dict(r) for r in conn.execute(
@@ -6509,7 +6518,12 @@ async def get_operator_shifts(
 
 
 @app.get("/operators/{oid}/active-shift")
-async def get_active_shift(oid: int, cu: dict = Depends(require_admin_or_reporter)):
+async def get_active_shift(oid: int, cu: dict = Depends(get_user)):
+    if cu["role"] not in ("admin", "superuser", "reporter"):
+        with get_db() as chk:
+            op = chk.execute("SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)).fetchone()
+            if not op or op["id"] != oid:
+                raise HTTPException(403, "غير مصرح")
     with get_db() as conn:
         _ensure_operator_tables(conn)
         row = conn.execute(
@@ -6533,11 +6547,6 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
                 raise HTTPException(403, "يمكنك بدء وردية لنفسك فقط")
     with get_db() as conn:
         _ensure_operator_tables(conn)
-        # Migration: أضف start_location لو مش موجود
-        try:
-            conn.execute("ALTER TABLE operator_shifts ADD COLUMN start_location TEXT DEFAULT ''")
-        except Exception:
-            pass
         # تحقق من عدم وجود وردية نشطة
         active = conn.execute(
             "SELECT id FROM operator_shifts WHERE operator_id=? AND status='active'",
