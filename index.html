@@ -1336,6 +1336,7 @@ tr.row-hidden { display:none; }
 </div>
 
 <script>
+
 // Auto-detect environment: empty string = same domain (Railway/VPS)
 const API = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
   ? "http://127.0.0.1:8000"
@@ -13425,70 +13426,79 @@ async function doReassign() {
 // ═══════════════════════════════════════════════════════════
 
 async function renderOperatorSinglePage() {
+  // ── المشغل يعمل مثل السائق تماماً ──
+  // نضيف driver_id مؤقت من operator حتى تشتغل functions السائق
   document.body.classList.add('driver-mode');
 
   const now     = new Date();
   const dayName = now.toLocaleDateString('ar-EG', {weekday:'long'});
   const dateStr = now.toLocaleDateString('ar-EG', {year:'numeric', month:'long', day:'numeric'});
 
+  // ── جلب بيانات المشغل ──
   let operatorData = null;
-  let activeShift  = null;
-  let shiftHistory = [];
-
   try {
     const ops = await apiCall('/operators').catch(() => ({operators:[]}));
     const allOps = ops.operators || ops || [];
     operatorData = allOps.find(o => String(o.user_id) === String(currentUser.id)) || null;
   } catch(e) {}
 
-  if (operatorData) {
-    try {
-      const sd = await apiCall('/operators/' + operatorData.id + '/shifts?limit=10');
-      shiftHistory = sd?.shifts || [];
-      activeShift  = shiftHistory.find(s => s.status === 'active') || null;
-    } catch(e) {}
+  // لو مش مربوط — نعرض رسالة واضحة
+  if (!operatorData) {
+    document.getElementById('appShell').innerHTML =
+      '<div style="max-width:480px;margin:0 auto;padding:2rem 1rem">' +
+        '<div style="background:linear-gradient(135deg,#1a2942,#1e3a5f);padding:1rem 1.25rem;' +
+        'border-radius:16px;margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between">' +
+          '<div style="color:white;font-weight:800;font-size:1rem">⚙️ ' + currentUser.username + '</div>' +
+          '<div style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.2);' +
+          'display:flex;align-items:center;justify-content:center;font-size:1.2rem;color:white;cursor:pointer" ' +
+          'onclick="if(confirm(\'تسجيل الخروج؟\')){clearAuth();currentUser=null;location.reload();}">' +
+            currentUser.username.charAt(0).toUpperCase() +
+          '</div>' +
+        '</div>' +
+        '<div style="background:#fff7ed;border:2px solid #f59e0b;border-radius:20px;' +
+        'padding:2rem;text-align:center">' +
+          '<div style="font-size:3rem;margin-bottom:.75rem">⚠️</div>' +
+          '<div style="font-weight:800;font-size:1.1rem;color:#92400e;margin-bottom:.5rem">حسابك غير مرتبط بمشغل</div>' +
+          '<div style="font-size:.88rem;color:#b45309">تواصل مع الإدارة لربط حسابك بسجل مشغل</div>' +
+        '</div>' +
+      '</div>';
+    return;
   }
 
-  const pastShifts  = shiftHistory.filter(s => s.status !== 'active').slice(0, 4);
+  // ── نعطي المشغل driver_id مؤقت حتى تشتغل كل features السائق ──
+  // المشغل يستخدم user_id كـ driver_id في الـ workshop/requests/photos
+  const _origDriverId = currentUser.driver_id;
+  // نضيف operator_id كـ driver_id مؤقت (للـ API calls اللي بتستخدم driver_id)
+  currentUser.operator_id = operatorData.id;
+
+  // ── جلب ورديات المشغل ──
+  let activeShift  = null;
+  let shiftHistory = [];
+  try {
+    const sd = await apiCall('/operators/' + operatorData.id + '/shifts?limit=10');
+    shiftHistory = sd?.shifts || [];
+    activeShift  = shiftHistory.find(s => s.status === 'active') || null;
+  } catch(e) {}
+
+  const pastShifts  = shiftHistory.filter(s => s.status !== 'active').slice(0,4);
   const totalShifts = shiftHistory.length;
   const thisWeek    = shiftHistory.filter(s => {
     if (!s.start_time) return false;
     return (now - new Date(s.start_time)) / 86400000 <= 7;
   }).length;
 
-  const opName   = operatorData?.name   || currentUser.username;
-  const opFixed  = operatorData?.fixed_number ? ('رقم ' + operatorData.fixed_number) : '';
+  const opName  = operatorData.name || currentUser.username;
+  const opFixed = operatorData.fixed_number ? ('رقم ' + operatorData.fixed_number) : '';
 
-  // ── build past-shifts rows ──
-  function buildPastRow(s) {
-    const hrs      = (s.end_hours && s.start_hours) ? (s.end_hours - s.start_hours).toFixed(1) : '—';
-    const typeIcon = {day:'☀️', night:'🌙', extended:'⏰'}[s.shift_type] || '';
-    const startT   = s.start_time
-      ? new Date(s.start_time).toLocaleDateString('ar-EG', {month:'short', day:'numeric'})
-      : '—';
-    return '<div style="background:#fff;border-radius:12px;padding:.75rem 1rem;' +
-           'border:1.5px solid #e2e8f0;display:flex;align-items:center;' +
-           'justify-content:space-between;box-shadow:0 1px 6px rgba(15,23,42,.05);margin-bottom:.5rem">' +
-             '<div>' +
-               '<div style="font-weight:700;font-size:.85rem;color:#0f172a">' + (s.equipment_name||'معدة') + ' ' + typeIcon + '</div>' +
-               '<div style="font-size:.72rem;color:#94a3b8;margin-top:.1rem">' + startT + (s.project ? ' · ' + s.project : '') + '</div>' +
-             '</div>' +
-             '<div style="text-align:left;direction:ltr">' +
-               '<div style="font-weight:800;font-size:.9rem;color:#1e3a5f">' + hrs + ' ساعة</div>' +
-               '<div style="font-size:.7rem;color:#94a3b8">' + (s.fuel_liters||0) + ' ل</div>' +
-             '</div>' +
-           '</div>';
-  }
-
-  // ── active shift card ──
+  // ── Active shift card ──
   function buildActiveCard() {
     const startT = activeShift.start_time
       ? new Date(activeShift.start_time).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})
       : '—';
     const typeLabel = {day:'☀️ نهارية', night:'🌙 ليلية', extended:'⏰ ممتدة'}[activeShift.shift_type] || '';
     return '<div style="background:linear-gradient(135deg,#064e3b,#065f46);border-radius:20px;' +
-           'padding:1.1rem 1.25rem;margin-bottom:.8rem;box-shadow:0 4px 20px rgba(6,78,59,.25)">' +
-             '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.6rem">' +
+           'padding:1.1rem 1.25rem;margin-bottom:.75rem;box-shadow:0 4px 20px rgba(6,78,59,.25)">' +
+             '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem">' +
                '<span style="width:10px;height:10px;border-radius:50%;background:#4ade80;' +
                'box-shadow:0 0 0 3px rgba(74,222,128,.3);animation:livePulse 2s infinite"></span>' +
                '<span style="color:#86efac;font-weight:700;font-size:.85rem">وردية نشطة الآن</span>' +
@@ -13501,41 +13511,30 @@ async function renderOperatorSinglePage() {
            '</div>';
   }
 
-  // ── main button ──
-  function buildMainBtn() {
-    if (!operatorData) {
-      return '<div style="background:#fff7ed;border:1.5px solid #f59e0b;border-radius:16px;' +
-             'padding:1.5rem;text-align:center">' +
-               '<div style="font-size:2rem;margin-bottom:.5rem">⚠️</div>' +
-               '<div style="font-weight:700;color:#92400e;margin-bottom:.3rem">حسابك غير مرتبط بمشغل</div>' +
-               '<div style="font-size:.82rem;color:#b45309">تواصل مع الإدارة لربط حسابك بسجل مشغل</div>' +
-             '</div>';
-    }
-    if (!activeShift) {
-      return '<button id="opStartShiftBtn" style="width:100%;padding:1.5rem;' +
-             'background:linear-gradient(135deg,#1e3a5f,#2563eb);color:white;border:none;' +
-             'border-radius:20px;font-size:1.4rem;font-weight:900;cursor:pointer;' +
-             'box-shadow:0 8px 28px rgba(37,99,235,.35);display:flex;flex-direction:column;' +
-             'align-items:center;gap:.4rem;transition:.2s">' +
-               '▶ ابدأ الوردية' +
-               '<small style="font-size:.8rem;font-weight:500;opacity:.8">جاهز للعمل؟ ابدأ وردية جديدة</small>' +
-             '</button>';
-    }
-    return buildActiveCard() +
-           '<button id="opEndShiftBtn" style="width:100%;padding:1.3rem;' +
-           'background:linear-gradient(135deg,#7f1d1d,#dc2626);color:white;border:none;' +
-           'border-radius:18px;font-size:1.3rem;font-weight:900;cursor:pointer;' +
-           'box-shadow:0 6px 24px rgba(220,38,38,.3);transition:.2s">' +
-             '✔ إنهاء الوردية' +
-             '<br><small style="font-size:.78rem;font-weight:500;opacity:.85">سجّل نهاية الوردية</small>' +
-           '</button>';
+  // ── Past shifts ──
+  function buildPastRow(s) {
+    const hrs  = (s.end_hours && s.start_hours) ? (s.end_hours - s.start_hours).toFixed(1) : '—';
+    const icon = {day:'☀️', night:'🌙', extended:'⏰'}[s.shift_type] || '';
+    const dt   = s.start_time ? new Date(s.start_time).toLocaleDateString('ar-EG',{month:'short',day:'numeric'}) : '—';
+    return '<div style="background:#fff;border-radius:12px;padding:.75rem 1rem;border:1.5px solid #e2e8f0;' +
+           'display:flex;align-items:center;justify-content:space-between;margin-bottom:.45rem;' +
+           'box-shadow:0 1px 6px rgba(15,23,42,.05)">' +
+             '<div>' +
+               '<div style="font-weight:700;font-size:.85rem;color:#0f172a">' + (s.equipment_name||'معدة') + ' ' + icon + '</div>' +
+               '<div style="font-size:.72rem;color:#94a3b8;margin-top:.1rem">' + dt + (s.project ? ' · ' + s.project : '') + '</div>' +
+             '</div>' +
+             '<div style="text-align:left;direction:ltr">' +
+               '<div style="font-weight:800;font-size:.9rem;color:#1e3a5f">' + hrs + ' ساعة</div>' +
+               '<div style="font-size:.7rem;color:#94a3b8">' + (s.fuel_liters||0) + ' ل</div>' +
+             '</div>' +
+           '</div>';
   }
 
   document.getElementById('appShell').innerHTML =
-    '<div class="main-content" style="max-width:480px;margin:0 auto;padding:0 0 5rem">' +
+    '<div class="main-content" style="max-width:480px;margin:0 auto;padding:0 0 6rem">' +
 
       // TOPBAR
-      '<div style="background:linear-gradient(135deg,#1a2942 0%,#1e3a5f 100%);padding:1rem 1.25rem .9rem;' +
+      '<div style="background:linear-gradient(135deg,#1a2942,#1e3a5f);padding:1rem 1.25rem .9rem;' +
       'display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;' +
       'box-shadow:0 2px 16px rgba(15,23,42,.18)">' +
         '<div>' +
@@ -13543,7 +13542,8 @@ async function renderOperatorSinglePage() {
           '<div style="color:rgba(255,255,255,.6);font-size:.72rem;margin-top:.1rem">' + dayName + '، ' + dateStr + '</div>' +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:.6rem">' +
-          (opFixed ? '<span style="background:rgba(255,255,255,.12);color:white;border-radius:20px;padding:.25rem .75rem;font-size:.75rem;font-weight:700">' + opFixed + '</span>' : '') +
+          (opFixed ? '<span style="background:rgba(255,255,255,.12);color:white;border-radius:20px;' +
+          'padding:.25rem .75rem;font-size:.75rem;font-weight:700">' + opFixed + '</span>' : '') +
           '<div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#06B6D4,#22C55E);' +
           'display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:800;color:white;cursor:pointer" ' +
           'onclick="if(confirm(\'تسجيل الخروج؟\')){clearAuth();currentUser=null;location.reload();}">' +
@@ -13554,49 +13554,90 @@ async function renderOperatorSinglePage() {
 
       // STATS
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;padding:1rem 1rem .5rem">' +
-        '<div style="background:#fff;border-radius:14px;padding:.85rem .6rem;text-align:center;' +
-        'box-shadow:0 2px 10px rgba(15,23,42,.07);border:1.5px solid #e2e8f0">' +
+        '<div style="background:#fff;border-radius:14px;padding:.85rem .6rem;text-align:center;box-shadow:0 2px 10px rgba(15,23,42,.07);border:1.5px solid #e2e8f0">' +
           '<div style="font-size:1.6rem;font-weight:900;color:#06B6D4">' + totalShifts + '</div>' +
           '<div style="font-size:.7rem;color:#64748b;margin-top:.15rem">إجمالي الورديات</div>' +
         '</div>' +
-        '<div style="background:#fff;border-radius:14px;padding:.85rem .6rem;text-align:center;' +
-        'box-shadow:0 2px 10px rgba(15,23,42,.07);border:1.5px solid #e2e8f0">' +
+        '<div style="background:#fff;border-radius:14px;padding:.85rem .6rem;text-align:center;box-shadow:0 2px 10px rgba(15,23,42,.07);border:1.5px solid #e2e8f0">' +
           '<div style="font-size:1.6rem;font-weight:900;color:#2563eb">' + thisWeek + '</div>' +
           '<div style="font-size:.7rem;color:#64748b;margin-top:.15rem">ورديات الأسبوع</div>' +
         '</div>' +
-        '<div style="background:#fff;border-radius:14px;padding:.85rem .6rem;text-align:center;' +
-        'box-shadow:0 2px 10px rgba(15,23,42,.07);border:1.5px solid #e2e8f0">' +
+        '<div style="background:#fff;border-radius:14px;padding:.85rem .6rem;text-align:center;box-shadow:0 2px 10px rgba(15,23,42,.07);border:1.5px solid #e2e8f0">' +
           '<div style="font-size:1.6rem;font-weight:900;color:' + (activeShift ? '#22C55E' : '#94a3b8') + '">' + (activeShift ? '🟢' : '⭕') + '</div>' +
           '<div style="font-size:.7rem;color:#64748b;margin-top:.15rem">' + (activeShift ? 'وردية نشطة' : 'لا وردية') + '</div>' +
         '</div>' +
       '</div>' +
 
-      // MAIN BUTTON
-      '<div style="padding:.5rem 1rem 1rem">' + buildMainBtn() + '</div>' +
+      // SHIFT CARD / START BUTTON
+      '<div style="padding:.5rem 1rem">' +
+        (activeShift ? buildActiveCard() : '') +
+        (!activeShift
+          ? '<button id="opStartShiftBtn" style="width:100%;padding:1.4rem;background:linear-gradient(135deg,#1e3a5f,#2563eb);' +
+            'color:white;border:none;border-radius:20px;font-size:1.3rem;font-weight:900;cursor:pointer;' +
+            'box-shadow:0 8px 28px rgba(37,99,235,.3);display:flex;flex-direction:column;align-items:center;gap:.35rem">' +
+              '▶ ابدأ الوردية<small style="font-size:.78rem;font-weight:500;opacity:.8">جاهز للعمل؟</small>' +
+            '</button>'
+          : '<button id="opEndShiftBtn" style="width:100%;padding:1.3rem;background:linear-gradient(135deg,#7f1d1d,#dc2626);' +
+            'color:white;border:none;border-radius:18px;font-size:1.2rem;font-weight:900;cursor:pointer;' +
+            'box-shadow:0 6px 24px rgba(220,38,38,.3)">' +
+              '✔ إنهاء الوردية<br><small style="font-size:.76rem;font-weight:500;opacity:.85">سجّل نهاية الوردية</small>' +
+            '</button>') +
+      '</div>' +
+
+      // QUICK ACTIONS — نفس أزرار السائق
+      '<div class="dp-section" style="padding:.5rem 1rem">' +
+        '<div class="dp-label">⚡ إجراءات سريعة</div>' +
+        '<div class="dp-quick">' +
+          '<button class="dp-qbtn dp-qbtn-fuel" onclick="dpQuickOp(\'fuel\')">' +
+            '<div class="qi-wrap">⛽</div>' +
+            '<span class="ql">وقود</span>' +
+            '<span class="qs">تسجيل تزويد</span>' +
+            '<span class="qi-arrow">›</span>' +
+          '</button>' +
+          '<button class="dp-qbtn dp-qbtn-maint" onclick="dpQuickOp(\'maintenance\')">' +
+            '<div class="qi-wrap">🔧</div>' +
+            '<span class="ql">صيانة</span>' +
+            '<span class="qs">تسجيل صيانة</span>' +
+            '<span class="qi-arrow">›</span>' +
+          '</button>' +
+          '<button class="dp-qbtn dp-qbtn-emg" onclick="dpQuickOp(\'emergency\')">' +
+            '<div class="qi-wrap">🚨</div>' +
+            '<span class="ql">طارئ</span>' +
+            '<span class="qs">بلاغ عاجل</span>' +
+            '<span class="qi-arrow">›</span>' +
+          '</button>' +
+          '<button class="dp-qbtn" style="background:linear-gradient(135deg,#f5f3ff,#ede9fe)" onclick="dpQuickOp(\'requests\')">' +
+            '<div class="qi-wrap" style="background:linear-gradient(135deg,#6d28d9,#7c3aed)">📋</div>' +
+            '<span class="ql">طلباتي</span>' +
+            '<span class="qs">إرسال طلب</span>' +
+            '<span class="qi-arrow">›</span>' +
+          '</button>' +
+        '</div>' +
+        '<button style="width:100%;margin-top:.6rem;padding:.75rem;background:#fff;border:1.5px solid #e2e8f0;' +
+        'border-radius:14px;font-family:inherit;font-size:.9rem;font-weight:700;color:#374151;cursor:pointer;' +
+        'display:flex;align-items:center;justify-content:center;gap:.5rem" onclick="dpQuickOp(\'photo\')">' +
+          '📷 رفع صورة' +
+        '</button>' +
+      '</div>' +
 
       // PAST SHIFTS
-      (pastShifts.length ?
-        '<div style="padding:0 1rem">' +
-          '<div style="font-weight:700;font-size:.85rem;color:#334155;margin-bottom:.6rem">📋 آخر الورديات</div>' +
-          pastShifts.map(buildPastRow).join('') +
-        '</div>'
-      : '') +
+      (pastShifts.length
+        ? '<div style="padding:.5rem 1rem"><div style="font-weight:700;font-size:.85rem;color:#334155;margin-bottom:.6rem">📋 آخر الورديات</div>' +
+          pastShifts.map(buildPastRow).join('') + '</div>'
+        : '') +
 
     '</div>';
 
-  // ── Event: Start Shift ──
+  // ── Shift Events ──
   document.getElementById('opStartShiftBtn')?.addEventListener('click', function() {
-    if (!operatorData) return;
-    const eqName = operatorData.equipment_name || '';
-    const proj   = operatorData.project || '';
     openModal(
       '<div class="modal-header">' +
         '<div class="modal-title">🟢 بدء وردية جديدة</div>' +
         '<button class="modal-close" onclick="closeModal()">✕</button>' +
       '</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.5rem">' +
         '<div class="form-group"><label>اسم المعدة <span class="req">*</span></label>' +
-          '<input id="opSEqName" class="form-control" placeholder="مان لفت 926" value="' + eqName + '"></div>' +
+          '<input id="opSEqName" class="form-control" placeholder="مان لفت 926"></div>' +
         '<div class="form-group"><label>كود المعدة</label>' +
           '<input id="opSEqId" class="form-control" placeholder="12/5/926"></div>' +
         '<div class="form-group"><label>نوع الوردية</label>' +
@@ -13610,9 +13651,9 @@ async function renderOperatorSinglePage() {
         '<div class="form-group"><label>سولار البداية (لتر)</label>' +
           '<input id="opSFuel" class="form-control" type="number" step="0.1" min="0" placeholder="0"></div>' +
         '<div class="form-group"><label>المشروع</label>' +
-          '<input id="opSProject" class="form-control" placeholder="مونوريل اكتوبر" value="' + proj + '"></div>' +
+          '<input id="opSProject" class="form-control" placeholder="اسم المشروع"></div>' +
       '</div>' +
-      '<div class="form-group"><label>ملاحظات</label>' +
+      '<div class="form-group" style="padding:.5rem"><label>ملاحظات</label>' +
         '<input id="opSNotes" class="form-control" placeholder="اختياري..."></div>' +
       '<div class="modal-footer">' +
         '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
@@ -13646,45 +13687,31 @@ async function renderOperatorSinglePage() {
     };
   });
 
-  // ── Event: End Shift ──
   document.getElementById('opEndShiftBtn')?.addEventListener('click', function() {
-    if (!activeShift) return;
-    var startH = activeShift.start_hours || 0;
-    var startT = activeShift.start_time
-      ? new Date(activeShift.start_time).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'})
-      : '';
     openModal(
       '<div class="modal-header">' +
-        '<div class="modal-title">🔴 إنهاء الوردية</div>' +
+        '<div class="modal-title">✔ إنهاء الوردية</div>' +
         '<button class="modal-close" onclick="closeModal()">✕</button>' +
       '</div>' +
-      '<div style="background:#f0fdf9;border:1.5px solid #86efac;border-radius:10px;' +
-           'padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#166534">' +
-        '⚙️ <strong>' + (activeShift.equipment_name || 'المعدة') + '</strong>' +
-        (startT ? ' · بدأت ' + startT : '') +
-        ' · عداد البداية: <strong>' + startH + ' ساعة</strong>' +
-      '</div>' +
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">' +
-        '<div class="form-group"><label>عداد الساعات (النهاية) <span class="req">*</span></label>' +
-          '<input id="opEHours" class="form-control" type="number" step="0.1" min="' + startH + '" placeholder="0.0"></div>' +
+      '<div style="padding:.5rem;display:grid;grid-template-columns:1fr 1fr;gap:.75rem">' +
+        '<div class="form-group"><label>عداد الساعات (نهاية)</label>' +
+          '<input id="opEHours" class="form-control" type="number" step="0.1" min="0" placeholder="0.0" value="' + (activeShift?.end_hours||'') + '"></div>' +
         '<div class="form-group"><label>إجمالي السولار (لتر)</label>' +
           '<input id="opEFuel" class="form-control" type="number" step="0.1" min="0" placeholder="0"></div>' +
+        '<div class="form-group" style="grid-column:1/-1"><label>ملاحظات</label>' +
+          '<input id="opENotes" class="form-control" placeholder="اختياري..."></div>' +
       '</div>' +
-      '<div class="form-group"><label>ملاحظات</label>' +
-        '<input id="opENotes" class="form-control" placeholder="اختياري..."></div>' +
       '<div class="modal-footer">' +
         '<button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
         '<button class="btn btn-danger" id="opEConfirm" style="font-size:1rem;padding:.75rem 1.5rem">✔ إنهاء الوردية</button>' +
       '</div>'
     );
     document.getElementById('opEConfirm').onclick = async function() {
-      var endH = parseFloat(document.getElementById('opEHours').value || 0);
-      if (!endH) return showNotification('أدخل عداد الساعات', 'error');
       var btn = document.getElementById('opEConfirm');
       btn.disabled = true; btn.textContent = '⏳ جاري...';
       try {
         await apiCall('/operators/shifts/' + activeShift.id + '/end', 'POST', {
-          end_hours:   endH,
+          end_hours:   parseFloat(document.getElementById('opEHours').value || 0),
           fuel_liters: parseFloat(document.getElementById('opEFuel').value || 0),
           notes:       document.getElementById('opENotes').value.trim(),
         });
@@ -13697,22 +13724,157 @@ async function renderOperatorSinglePage() {
       }
     };
   });
-
-  // Polling كل 90 ثانية
-  if (window._operatorPollInterval) clearInterval(window._operatorPollInterval);
-  window._operatorPollInterval = setInterval(async function() {
-    try { await renderOperatorSinglePage(); } catch(e) {}
-  }, 90000);
 }
 
+// ── Quick actions للمشغل — نفس السائق بالضبط ──
+
+async function renderDriverRequestsPage() {
+  // استخدام صفحة الـ requests الموجودة
+  switchSection('requests');
+}
+
+async function dpQuickOp(type) {
+  // المشغل يستخدم driver_id من operatorData
+  // نجيب operator_id ونستخدمه كـ driver_id مؤقت للـ workshop/requests/photos
+  if (!currentUser.operator_id) {
+    // نجيب operator_id
+    try {
+      const ops = await apiCall('/operators');
+      const allOps = ops.operators || ops || [];
+      const op = allOps.find(o => String(o.user_id) === String(currentUser.id));
+      if (op) currentUser.operator_id = op.id;
+    } catch(e) {}
+  }
+
+  // نحول operator لـ "driver" مؤقتاً عشان تشتغل functions السائق
+  const savedDriverId = currentUser.driver_id;
+  const savedRole     = currentUser.role;
+  currentUser.driver_id = currentUser.operator_id;
+  currentUser.role      = 'driver'; // مؤقت
+
+  switch(type) {
+    case 'fuel':
+    case 'maintenance':
+      await renderDriverWorkshop();
+      break;
+    case 'emergency':
+      await renderDriverEmergency();
+      break;
+    case 'requests':
+      // صفحة الطلبات — تستخدم driver_id
+      await renderDriverRequestsPage();
+      break;
+    case 'photo':
+      await renderDriverPhotosSection();
+      break;
+  }
+
+  // restore
+  currentUser.driver_id = savedDriverId;
+  currentUser.role      = savedRole;
+}
+
+let _assignOpId = null;
+let _allEquipForAssign = [];
+let _selectedEquipForAssign = null;
+
+async function openAssignEquipment(opId, opName) {
+  _assignOpId = opId;
+  _selectedEquipForAssign = null;
+  document.getElementById('assignOpName').innerHTML = `<strong>👷 المشغل:</strong> ${opName}`;
+  document.getElementById('assignEquipSearch').value = '';
+  document.getElementById('assignEquipListWrap').style.display = 'none';
+  document.getElementById('assignEquipList').innerHTML = '';
+  document.getElementById('assignSelectedEq').style.display = 'none';
+  document.getElementById('assignSelectedEqName').textContent = '';
+  document.getElementById('assignCurrentEq').innerHTML = '';
+  document.getElementById('assignEquipModal').style.display = 'flex';
+  try {
+    const activeData = await apiCall(`/operators/${opId}/active-shift`).catch(()=>null);
+    const curEl = document.getElementById('assignCurrentEq');
+    if (activeData && activeData.equipment_name) {
+      curEl.innerHTML = `📌 <strong>المعدة الحالية:</strong> ${activeData.equipment_name} <span style="font-family:monospace;color:#94a3b8">(${activeData.equipment_id||''})</span>`;
+    } else {
+      curEl.innerHTML = '<span style="color:#94a3b8">لا توجد معدة مخصصة حالياً</span>';
+    }
+  } catch(e){}
+  try {
+    const eqData = await apiCall('/equipment');
+    _allEquipForAssign = eqData.equipment || [];
+    renderAssignEquipList(_allEquipForAssign);
+  } catch(e) {
+    document.getElementById('assignEquipList').innerHTML = `<div style="padding:1rem;color:#ef4444">فشل تحميل المعدات: ${e.message}</div>`;
+  }
+}
+
+function renderAssignEquipList(items) {
+  const el = document.getElementById('assignEquipList');
+  if (!items.length) {
+    el.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.85rem">لا توجد نتائج مطابقة</div>';
+    return;
+  }
+  el.innerHTML = items.slice(0,40).map(eq => `
+    <div data-eq-id="${eq.id}" data-eq-code="${eq.car_code}" data-eq-name="${eq.equipment_name}"
+      style="padding:.65rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:flex-start;gap:.75rem"
+      onmousedown="event.preventDefault();selectEquipForAssign(this)">
+      <div style="width:8px;height:8px;border-radius:50%;background:${eq.status==='active'?'#10b981':'#ef4444'};margin-top:.4rem;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.88rem;font-weight:600;color:#1e3a5f">${eq.equipment_name}</div>
+        <div style="font-size:.75rem;color:#94a3b8;margin-top:.1rem">
+          <span style="font-family:monospace;background:#f1f5f9;padding:.05rem .35rem;border-radius:4px">${eq.car_code}</span>
+          · ${eq.equipment_type||''}${eq.branch?' · '+eq.branch:''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterAssignEquip(q) {
+  document.getElementById('assignEquipListWrap').style.display = 'block';
+  const filtered = q.trim()
+    ? _allEquipForAssign.filter(eq =>
+        (eq.equipment_name||'').includes(q) || (eq.car_code||'').includes(q) || (eq.brand||'').includes(q))
+    : _allEquipForAssign;
+  renderAssignEquipList(filtered);
+}
+
+function selectEquipForAssign(el) {
+  _selectedEquipForAssign = { id: el.dataset.eqId, code: el.dataset.eqCode, name: el.dataset.eqName };
+  document.getElementById('assignEquipSearch').value = el.dataset.eqName + ' (' + el.dataset.eqCode + ')';
+  const sel = document.getElementById('assignSelectedEq');
+  document.getElementById('assignSelectedEqName').innerHTML =
+    `✅ تم اختيار: <strong>${el.dataset.eqName}</strong> <span style="font-family:monospace;font-size:.8rem;color:#166534">(${el.dataset.eqCode})</span>`;
+  sel.style.display = 'block';
+  document.getElementById('assignEquipListWrap').style.display = 'none';
+}
+
+async function confirmAssignEquipment() {
+  if (!_selectedEquipForAssign) { showNotification('اختر معدة أولاً', 'error'); return; }
+  if (!_assignOpId) return;
+  try {
+    await apiCall('/operators/shifts/start', 'POST', {
+      operator_id:    parseInt(_assignOpId),
+      equipment_id:   _selectedEquipForAssign.code,
+      equipment_name: _selectedEquipForAssign.name,
+      shift_type:     'day',
+      start_hours:    0,
+      fuel_liters:    0,
+      project:        '',
+      branch:         '',
+      notes:          'تعيين من لوحة التحكم'
+    });
+    showNotification(`✅ تم تعيين "${_selectedEquipForAssign.name}" للمشغل`, 'success');
+    document.getElementById('assignEquipModal').style.display = 'none';
+    await loadOperators();
+  } catch(e) { showNotification('فشل التعيين: ' + e.message, 'error'); }
+}
+
+
 </script>
-
-
 
 <!-- ══ Modal فورم المشغل ══ -->
 <div id="opFormModal" class="modal-overlay" style="display:none">
   <div class="modal" style="max-width:640px;position:relative">
-    <!-- honeypot -->
     <div style="position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none" aria-hidden="true">
       <input type="text" name="username" tabindex="-1">
       <input type="password" name="password" tabindex="-1">
@@ -13757,7 +13919,7 @@ async function renderOperatorSinglePage() {
   </div>
 </div>
 
-<!-- Modal تعيين معدة لمشغل -->
+<!-- ══ Modal تعيين معدة لمشغل ══ -->
 <div id="assignEquipModal" class="modal-overlay" style="display:none">
   <div class="modal" style="max-width:500px;border-radius:16px;overflow:hidden">
     <div class="modal-header" style="padding:1.25rem 1.5rem;border-bottom:1px solid #f1f5f9">
@@ -13766,10 +13928,7 @@ async function renderOperatorSinglePage() {
         style="width:32px;height:32px;border-radius:8px;background:#f1f5f9;border:none;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center">✕</button>
     </div>
     <div class="modal-body" style="padding:1.5rem;padding-bottom:.75rem">
-      <!-- معلومات المشغل -->
       <div id="assignOpName" style="font-size:.88rem;color:#475569;margin-bottom:1.25rem;padding:.6rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-weight:500"></div>
-
-      <!-- فيلد بحث واختيار موحد -->
       <div class="form-group" style="margin-bottom:.5rem">
         <label style="font-size:.8rem;font-weight:700;color:#374151;margin-bottom:.4rem;display:block">المعدة</label>
         <div style="position:relative">
@@ -13778,159 +13937,26 @@ async function renderOperatorSinglePage() {
             autocomplete="off" spellcheck="false"
             oninput="filterAssignEquip(this.value)"
             onfocus="document.getElementById('assignEquipListWrap').style.display='block';filterAssignEquip(this.value)"
-            style="width:100%;padding:.75rem 2.8rem .75rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.9rem;background:#fff;outline:none;box-sizing:border-box;transition:.2s"
-            onfocusin="this.style.borderColor='#1e3a5f';this.style.boxShadow='0 0 0 3px rgba(30,58,95,.1)'"
-            onfocusout="setTimeout(()=>{const w=document.getElementById('assignEquipListWrap');if(w)w.style.display='none'},200);this.style.borderColor='#e2e8f0';this.style.boxShadow='none'">
+            style="width:100%;padding:.75rem 2.8rem .75rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.9rem;background:#fff;outline:none;box-sizing:border-box"
+            onfocusin="this.style.borderColor='#1e3a5f'"
+            onfocusout="setTimeout(()=>{const w=document.getElementById('assignEquipListWrap');if(w)w.style.display='none'},200);this.style.borderColor='#e2e8f0'">
           <span style="position:absolute;left:.85rem;top:50%;transform:translateY(-50%);pointer-events:none;font-size:1rem">🔍</span>
         </div>
       </div>
-
-      <!-- قائمة نتائج البحث -->
       <div id="assignEquipListWrap" style="display:none;margin-bottom:.75rem">
-        <div id="assignEquipList"
-          style="max-height:230px;overflow-y:auto;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.1)">
-        </div>
+        <div id="assignEquipList" style="max-height:230px;overflow-y:auto;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.1)"></div>
       </div>
-
-      <!-- المعدة المختارة -->
       <div id="assignSelectedEq" style="display:none;padding:.65rem 1rem;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;font-size:.88rem;color:#166534;font-weight:600;margin-bottom:.75rem">
         <span id="assignSelectedEqName"></span>
       </div>
-
-      <!-- المعدة الحالية -->
       <div id="assignCurrentEq" style="font-size:.82rem;color:#64748b"></div>
     </div>
     <div class="modal-footer" style="padding:1rem 1.5rem;border-top:1px solid #f1f5f9;display:flex;justify-content:flex-end;gap:.75rem">
-      <button class="btn btn-ghost" onclick="document.getElementById('assignEquipModal').style.display='none'"
-        style="padding:.55rem 1.25rem">إلغاء</button>
-      <button class="btn btn-primary" onclick="confirmAssignEquipment()"
-        style="padding:.55rem 1.5rem;font-weight:700">🔗 تعيين المعدة</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('assignEquipModal').style.display='none'" style="padding:.55rem 1.25rem">إلغاء</button>
+      <button class="btn btn-primary" onclick="confirmAssignEquipment()" style="padding:.55rem 1.5rem;font-weight:700">🔗 تعيين المعدة</button>
     </div>
   </div>
 </div>
 
-<script>
-let _assignOpId = null;
-let _allEquipForAssign = [];
-let _selectedEquipForAssign = null;
-
-async function openAssignEquipment(opId, opName) {
-  _assignOpId = opId;
-  _selectedEquipForAssign = null;
-
-  // reset UI
-  document.getElementById('assignOpName').innerHTML = `<strong>👷 المشغل:</strong> ${opName}`;
-  document.getElementById('assignEquipSearch').value = '';
-  document.getElementById('assignEquipListWrap').style.display = 'none';
-  document.getElementById('assignEquipList').innerHTML = '';
-  document.getElementById('assignSelectedEq').style.display = 'none';
-  document.getElementById('assignSelectedEqName').textContent = '';
-  document.getElementById('assignCurrentEq').innerHTML = '';
-  document.getElementById('assignEquipModal').style.display = 'flex';
-
-  // جلب المعدة الحالية للمشغل
-  try {
-    const activeData = await apiCall(`/operators/${opId}/active-shift`).catch(()=>null);
-    const curEl = document.getElementById('assignCurrentEq');
-    if (activeData && activeData.equipment_name) {
-      curEl.innerHTML = `📌 <strong>المعدة الحالية:</strong> ${activeData.equipment_name} <span style="font-family:monospace;color:#94a3b8">(${activeData.equipment_id||''})</span>`;
-    } else {
-      curEl.innerHTML = '<span style="color:#94a3b8">لا توجد معدة مخصصة حالياً</span>';
-    }
-  } catch(e){}
-
-  // جلب كل المعدات وتخزينها
-  try {
-    const eqData = await apiCall('/equipment');
-    _allEquipForAssign = eqData.equipment || [];
-    // عرض الكل ابتداءً
-    renderAssignEquipList(_allEquipForAssign);
-  } catch(e) {
-    document.getElementById('assignEquipList').innerHTML = `<div style="padding:1rem;color:#ef4444">فشل تحميل المعدات: ${e.message}</div>`;
-  }
-}
-
-function renderAssignEquipList(items) {
-  const el = document.getElementById('assignEquipList');
-  if (!items.length) {
-    el.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:.85rem">لا توجد نتائج مطابقة</div>';
-    return;
-  }
-  el.innerHTML = items.slice(0, 40).map(eq => `
-    <div data-eq-id="${eq.id}" data-eq-code="${eq.car_code}" data-eq-name="${eq.equipment_name}"
-      style="padding:.65rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:flex-start;gap:.75rem;transition:background .1s"
-      onmousedown="event.preventDefault();selectEquipForAssign(this)">
-      <div style="width:8px;height:8px;border-radius:50%;background:${eq.status==='active'?'#10b981':'#ef4444'};margin-top:.4rem;flex-shrink:0"></div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:.88rem;font-weight:600;color:#1e3a5f;line-height:1.3">${eq.equipment_name}</div>
-        <div style="font-size:.75rem;color:#94a3b8;margin-top:.1rem">
-          <span style="font-family:monospace;background:#f1f5f9;padding:.05rem .35rem;border-radius:4px">${eq.car_code}</span>
-          · ${eq.equipment_type||''}
-          ${eq.branch ? '· ' + eq.branch : ''}
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function filterAssignEquip(q) {
-  document.getElementById('assignEquipListWrap').style.display = 'block';
-  const filtered = q.trim()
-    ? _allEquipForAssign.filter(eq =>
-        (eq.equipment_name||'').includes(q) ||
-        (eq.car_code||'').includes(q) ||
-        (eq.brand||'').includes(q))
-    : _allEquipForAssign;
-  renderAssignEquipList(filtered);
-}
-
-function selectEquipForAssign(el) {
-  _selectedEquipForAssign = {
-    id:   el.dataset.eqId,
-    code: el.dataset.eqCode,
-    name: el.dataset.eqName
-  };
-  // تحديث الـ input بالقيمة المختارة
-  document.getElementById('assignEquipSearch').value = el.dataset.eqName + ' (' + el.dataset.eqCode + ')';
-  // إظهار المختار
-  const sel = document.getElementById('assignSelectedEq');
-  document.getElementById('assignSelectedEqName').innerHTML = `✅ تم اختيار: <strong>${el.dataset.eqName}</strong> <span style="font-family:monospace;font-size:.8rem;color:#166534">(${el.dataset.eqCode})</span>`;
-  sel.style.display = 'block';
-  // إغلاق القائمة
-  document.getElementById('assignEquipListWrap').style.display = 'none';
-}
-
-async function confirmAssignEquipment() {
-  if (!_selectedEquipForAssign) {
-    showNotification('اختر معدة أولاً من القائمة', 'error'); return;
-  }
-  if (!_assignOpId) return;
-
-  // جلب اسم المشغل من الـ UI
-  const opNameEl = document.getElementById('assignOpName');
-  const opName = opNameEl ? opNameEl.textContent.replace('👷 المشغل:', '').trim() : '';
-
-  try {
-    const body = {
-      operator_id:    parseInt(_assignOpId),
-      equipment_id:   _selectedEquipForAssign.code,
-      equipment_name: _selectedEquipForAssign.name,
-      shift_type:     'day',
-      start_hours:    0,
-      fuel_liters:    0,
-      project:        '',
-      branch:         '',
-      notes:          'تعيين من لوحة التحكم'
-    };
-    await apiCall('/operators/shifts/start', 'POST', body);
-    showNotification(`✅ تم تعيين "${_selectedEquipForAssign.name}" للمشغل`, 'success');
-    document.getElementById('assignEquipModal').style.display = 'none';
-    await loadOperators();
-  } catch(e) {
-    showNotification('فشل التعيين: ' + e.message, 'error');
-  }
-}
-</script>
-
-
 </body>
+</html>
