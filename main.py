@@ -6288,6 +6288,11 @@ def _ensure_operator_tables(conn):
     # Migration: أضف user_id لو مش موجود
     try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN user_id INTEGER DEFAULT NULL")
     except: pass
+    # Migration: أضف حقول المعدة الحالية
+    try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN current_equipment_id TEXT DEFAULT ''")
+    except: pass
+    try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN current_equipment_name TEXT DEFAULT ''")
+    except: pass
 
 
 class OperatorCreate(BaseModel):
@@ -6328,6 +6333,21 @@ class ShiftEnd(BaseModel):
 async def _migrate_operators():
     with get_db() as conn:
         _ensure_operator_tables(conn)
+
+
+@app.get("/operators/me")
+async def get_my_operator_profile(cu: dict = Depends(get_user)):
+    """المشغل يجيب بياناته الخاصة بدون صلاحيات أدمن"""
+    if cu["role"] != "operator":
+        raise HTTPException(403, "هذا المسار للمشغلين فقط")
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        row = conn.execute(
+            "SELECT * FROM equipment_operators WHERE user_id=?", (cu["user_id"],)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "لم يتم ربط حسابك بسجل مشغل — تواصل مع الإدارة")
+    return dict(row)
 
 
 @app.get("/operators")
@@ -6440,6 +6460,30 @@ async def link_operator_user(oid: int, body: dict, cu: dict = Depends(require_ad
 
     log_event("operator_linked", operator_id=oid, user_id=user_id, admin=cu["username"])
     return {"ok": True, "operator_id": oid, "user_id": user_id}
+
+
+@app.put("/operators/{oid}/assign-equipment")
+async def assign_equipment_to_operator(oid: int, body: dict, cu: dict = Depends(require_admin)):
+    """
+    تعيين معدة حالية للمشغل (بدون بدء وردية).
+    body: { equipment_id: str, equipment_name: str }
+    """
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        op = conn.execute("SELECT id, name FROM equipment_operators WHERE id=?", (oid,)).fetchone()
+        if not op:
+            raise HTTPException(404, "المشغل غير موجود")
+        eq_id   = (body.get("equipment_id") or "").strip()
+        eq_name = (body.get("equipment_name") or "").strip()
+        if not eq_name:
+            raise HTTPException(400, "اسم المعدة مطلوب")
+        conn.execute(
+            "UPDATE equipment_operators SET current_equipment_id=?, current_equipment_name=? WHERE id=?",
+            (eq_id, eq_name, oid)
+        )
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "assign_equipment", f"تعيين {eq_name} ({eq_id}) للمشغل {op['name']}")
+    return {"ok": True, "equipment_id": eq_id, "equipment_name": eq_name}
 
 @app.delete("/operators/{oid}")
 async def delete_operator(oid: int, cu: dict = Depends(require_admin)):
