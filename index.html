@@ -1591,7 +1591,7 @@ function buildAdminNav() {
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
     {id:'equipment-mgmt', icon:'🏗️', label:'إدارة المعدات', separator:true},
     {id:'equipment-list',        icon:'⚙️',  label:'قائمة المعدات'},
-    {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
+    {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات', hidden:true},
     {id:'rental-equipment',      icon:'🔑',  label:'المعدات المستأجرة'},
     {id:'equipment-trips',       icon:'📋',  label:'سجل تشغيل المعدات'},
   ];
@@ -1623,7 +1623,7 @@ function buildDriverNav() {
 }
 
 function renderNav(items) {
-  document.getElementById('sidebarNav').innerHTML = items.map(item=> item.separator
+  document.getElementById('sidebarNav').innerHTML = items.filter(item=>!item.hidden).map(item=> item.separator
     ? `<div style="margin:.5rem .75rem .25rem;font-size:.68rem;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;padding-top:.5rem;border-top:1px solid rgba(255,255,255,.08)">${item.icon} ${item.label}</div>`
     : `<button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
       <span class="nav-icon">${item.icon}</span> ${item.label}
@@ -11985,7 +11985,7 @@ function renderEquipmentMgmtOverview() {
       </div>
       <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
            onmouseover="this.style.borderColor='#1e3a5f'" onmouseout="this.style.borderColor='transparent'"
-           onclick="navigateTo('equipment-operators')">
+           onclick="navigateTo('equipment-operators')" style="display:none">
         <div style="font-size:2.5rem;margin-bottom:.75rem">👷</div>
         <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">مشغلو المعدات</div>
         <div style="font-size:.83rem;color:#64748b">إدارة بيانات المشغلين</div>
