@@ -11876,6 +11876,7 @@ async function renderEquipmentOperators() {
           <input type="password" name="fakepass" tabindex="-1" autocomplete="current-password">
         </div>
 
+        <div style="padding:1.25rem 1.5rem">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
           <div class="form-group"><label>الاسم <span class="req">*</span></label><input id="opName" class="form-control" placeholder="اسم المشغل" autocomplete="off"></div>
           <div class="form-group"><label>الرقم الثابت</label><input id="opFixed" class="form-control" placeholder="رقم المشغل" autocomplete="off"></div>
@@ -11897,16 +11898,21 @@ async function renderEquipmentOperators() {
             <input id="opUsername" class="form-control" placeholder="username للمشغل — اتركه فارغاً إن لم تحتج"
               autocomplete="off" name="operator-username-field">
           </div>
-          <div class="form-group">
-            <label>🔒 كلمة المرور</label>
-            <input id="opPassword" class="form-control" type="password"
-              placeholder="كلمة المرور (للإنشاء فقط)"
-              autocomplete="new-password"
-              name="operator-new-password">
+          <div class="form-group" style="grid-column:span 2">
+            <label>🔒 كلمة المرور <span style="font-weight:400;color:#94a3b8;font-size:.78rem">(اختياري — للتسجيل فقط)</span></label>
+            <div style="position:relative">
+              <input id="opPassword" class="form-control" type="password"
+                placeholder="أدخل كلمة مرور للمشغل..."
+                autocomplete="new-password"
+                name="operator-new-password"
+                style="padding-left:2.5rem">
+              <span style="position:absolute;left:.85rem;top:50%;transform:translateY(-50%);pointer-events:none;color:#94a3b8">🔒</span>
+            </div>
           </div>
           <div class="form-group" style="grid-column:span 2"><label>ملاحظات</label><textarea id="opNotes" class="form-control" rows="2" autocomplete="off"></textarea></div>
         </div>
-        <div class="modal-footer">
+        </div><!-- end padding div -->
+        <div class="modal-footer" style="padding:1rem 1.5rem;border-top:1px solid #f1f5f9">
           <button class="btn btn-outline" onclick="closeOpForm()">إلغاء</button>
           <button class="btn btn-primary" onclick="saveOperator()">💾 حفظ</button>
         </div>
@@ -11927,6 +11933,18 @@ async function renderEquipmentOperators() {
     }
   } catch(e){}
     await loadOperators();
+}
+
+async function viewShiftHistory(opId, opName) {
+  // نفتح صفحة سجل التشغيل مع فلتر هذا المشغل
+  navigateTo('equipment-trips');
+  setTimeout(async () => {
+    const sel = document.getElementById('etOpFilter');
+    if (sel) {
+      sel.value = opId;
+      await loadEquipmentTrips();
+    }
+  }, 400);
 }
 
 async function loadOperators(){
