@@ -3408,38 +3408,44 @@ async function renderAdminWorkshops() {
 
   document.getElementById('pageContent').innerHTML=`
     <!-- ── 4 كروت إجماليات ── -->
-    <div class="ws-summary-grid">
-      <div class="ws-total-card">
-        <div class="ws-total-top">
-          <span class="ws-total-label">إجمالي الزيوت</span>
-          <div class="ws-total-icon">🛢️</div>
-        </div>
-        <div class="ws-total-val">${fmt(oilTotal)}</div>
-        <div class="ws-total-sub">جنيه</div>
+    <style>
+      .wsg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem;margin-bottom:1.25rem}
+      @media(max-width:900px){.wsg{grid-template-columns:repeat(2,1fr)}}
+      @media(max-width:480px){.wsg{grid-template-columns:1fr 1fr;gap:.5rem}}
+      .wtc{background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 1px 4px rgba(15,23,42,.05);padding:1.25rem;min-width:0;overflow:hidden}
+      .wtt{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:.75rem;gap:.4rem}
+      .wtl{font-size:.82rem;color:#64748b;font-weight:600;line-height:1.4;flex:1;min-width:0}
+      .wti{width:42px;height:42px;border-radius:12px;background:#f0fdf4;display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0}
+      .wtv{font-size:1.45rem;font-weight:900;color:#0f172a;line-height:1;word-break:break-all}
+      .wts{font-size:.73rem;color:#94a3b8;margin-top:.3rem}
+      @media(max-width:600px){
+        .wtc{padding:.75rem .7rem;border-radius:12px}
+        .wtv{font-size:1.1rem}
+        .wtl{font-size:.74rem}
+        .wti{width:32px;height:32px;font-size:.9rem}
+      }
+      @media(max-width:400px){
+        .wtc{padding:.6rem .55rem}
+        .wtv{font-size:.95rem}
+        .wti{display:none}
+      }
+    </style>
+    <div class="wsg">
+      <div class="wtc">
+        <div class="wtt"><span class="wtl">إجمالي الزيوت</span><div class="wti">🛢️</div></div>
+        <div class="wtv">${fmt(oilTotal)}</div><div class="wts">جنيه</div>
       </div>
-      <div class="ws-total-card">
-        <div class="ws-total-top">
-          <span class="ws-total-label">إجمالي الصيانة</span>
-          <div class="ws-total-icon">🔧</div>
-        </div>
-        <div class="ws-total-val">${fmt(maintenanceTotal+partsTotal)}</div>
-        <div class="ws-total-sub">جنيه</div>
+      <div class="wtc">
+        <div class="wtt"><span class="wtl">إجمالي الصيانة</span><div class="wti">🔧</div></div>
+        <div class="wtv">${fmt(maintenanceTotal+partsTotal)}</div><div class="wts">جنيه</div>
       </div>
-      <div class="ws-total-card">
-        <div class="ws-total-top">
-          <span class="ws-total-label">إجمالي الوقود</span>
-          <div class="ws-total-icon">⛽</div>
-        </div>
-        <div class="ws-total-val">${fmt(fuelTotal)}</div>
-        <div class="ws-total-sub">جنيه</div>
+      <div class="wtc">
+        <div class="wtt"><span class="wtl">إجمالي الوقود</span><div class="wti">⛽</div></div>
+        <div class="wtv">${fmt(fuelTotal)}</div><div class="wts">جنيه</div>
       </div>
-      <div class="ws-total-card">
-        <div class="ws-total-top">
-          <span class="ws-total-label">إجمالي التكاليف (جنيه)</span>
-          <div class="ws-total-icon">💰</div>
-        </div>
-        <div class="ws-total-val">${total}</div>
-        <div class="ws-total-sub">الإجمالي الكلي لكل البنود</div>
+      <div class="wtc">
+        <div class="wtt"><span class="wtl">إجمالي التكاليف (جنيه)</span><div class="wti">💰</div></div>
+        <div class="wtv">${total}</div><div class="wts">الإجمالي الكلي لكل البنود</div>
       </div>
     </div>
 
