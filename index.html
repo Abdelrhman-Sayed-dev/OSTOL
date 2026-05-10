@@ -1349,7 +1349,7 @@ const isSuperuser    = () => currentUser?.role === 'superuser';
 const isSupervisorWS   = () => currentUser?.role === 'supervisor_workshop';
 const isSupervisorField= () => currentUser?.role === 'supervisor_field';
 const isSupervisor     = () => isSupervisorWS() || isSupervisorField();
-const isOperator       = () => currentUser?.role === 'operator';
+const isOperator       = () => false; // المشغلون لا يسجلون دخول
 const isAdminOrSuper = () => ['admin','superuser'].includes(currentUser?.role);
 let notifPollInterval = null;
 let lastUnreadCount = 0;
@@ -1563,22 +1563,27 @@ function buildSupervisorNav() {
 function buildAdminNav() {
   // ترتيب حسب الأولوية: العمليات الحرجة أولاً، ثم الإدارة، ثم التقارير
   const base = [
-    {id:'overview',   icon:'📊', label:'نظرة عامة'},        // 1. لوحة القيادة
-    {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'}, // 2. حرج - سلامة
-    {id:'trips',      icon:'🗺️', label:'الرحلات'},           // 3. العملية الأساسية
-    {id:'map',        icon:'📍', label:'خريطة الأسطول'},     // 4. متابعة لحظية
-    {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},          // 5. إدارة السائقين
-    {id:'cars',       icon:'🚙', label:'المركبات'},           // 6. إدارة المركبات
-    {id:'requests',   icon:'📋', label:'طلبات السائقين'},    // 7. طلبات معلقة
-    {id:'workshops',  icon:'🛠️', label:'الورش'},              // 8. الصيانة والوقود
-    {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'}, // 9. التقارير
-    {id:'permissions',  icon:'🔗', label:'الصلاحيات'},
+    {id:'overview',   icon:'📊', label:'نظرة عامة'},
+    {id:'emergencies',icon:'🚨', label:'الطوارئ والحوادث'},
+    {id:'trips',      icon:'🗺️', label:'الرحلات'},
+    {id:'map',        icon:'📍', label:'خريطة الأسطول'},
+    {id:'_sep_fleet', icon:'🚗', label:'الأسطول', separator:true},
+    {id:'drivers',    icon:'👨‍✈️', label:'السائقون'},
+    {id:'cars',       icon:'🚙', label:'المركبات'},
+    {id:'requests',   icon:'📋', label:'طلبات السائقين'},
+    {id:'permissions',icon:'🔗', label:'الصلاحيات'},
+    {id:'_sep_ops',   icon:'🛠️', label:'التشغيل', separator:true},
+    {id:'workshops',  icon:'🛠️', label:'الورش'},
+    {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
+    {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
-    {id:'rental-equipment', icon:'🔑', label:'المعدات المستأجرة'},
-    {id:'equipment-operators', icon:'⚙️', label:'مشغلو المعدات'},
-    {id:'equipment-list',   icon:'⚙️', label:'المعدات'},
+    {id:'equipment-mgmt', icon:'🏗️', label:'إدارة المعدات', separator:true},
+    {id:'equipment-list',        icon:'⚙️',  label:'قائمة المعدات'},
+    {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
+    {id:'rental-equipment',      icon:'🔑',  label:'المعدات المستأجرة'},
+    {id:'equipment-trips',       icon:'📋',  label:'سجل تشغيل المعدات'},
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
@@ -1608,8 +1613,9 @@ function buildDriverNav() {
 }
 
 function renderNav(items) {
-  document.getElementById('sidebarNav').innerHTML = items.map(item=>`
-    <button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
+  document.getElementById('sidebarNav').innerHTML = items.map(item=> item.separator
+    ? `<div style="margin:.5rem .75rem .25rem;font-size:.68rem;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;padding-top:.5rem;border-top:1px solid rgba(255,255,255,.08)">${item.icon} ${item.label}</div>`
+    : `<button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
       <span class="nav-icon">${item.icon}</span> ${item.label}
       ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
       ${item.id==='requests' && window._pendingRequestsCount>0 ? `<span class="nav-badge">${window._pendingRequestsCount}</span>` : ''}
@@ -1667,6 +1673,11 @@ async function renderSection(id) {
     case 'driver-kpi':      await renderDriverKpiSection(); break;
     case 'rental-equipment':  await renderRentalEquipment(); break;
     case 'equipment-operators': await renderEquipmentOperators(); break;
+    case '_sep_fleet':
+    case '_sep_ops':
+    case '_sep_reports': return; // separators - do nothing
+    case 'equipment-mgmt':      renderEquipmentMgmtOverview(); break;
+    case 'equipment-trips':     await renderEquipmentTrips(); break;
     case 'equipment-list':    await renderEquipmentSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
@@ -7104,7 +7115,7 @@ function initUI() {
     avatarEl.prepend(img);
   }
   document.getElementById('sidebarUsername').textContent=currentUser.username;
-  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':currentUser.role==='operator'?'⚙️ مشغل معدات':'🚗 سائق';
+  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':'🚗 سائق';
   // إظهار الفرع في الـ sidebar لو الأدمن/المراقب مقيّد بفرع
   const branchBadgeEl = document.getElementById('sidebarBranchBadge');
   if(branchBadgeEl) {
@@ -7117,7 +7128,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list','driver-photos','equipment-operators'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list','driver-photos','equipment-operators','equipment-mgmt','equipment-trips','_sep_fleet','_sep_ops','_sep_reports'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -11536,6 +11547,237 @@ window.CS = { upgrade: function(){}, upgradeAll: function(){} };
 
 
 // ══════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════
+// EQUIPMENT TRIPS — سجل تشغيل المعدات
+// ══════════════════════════════════════════════════════
+
+async function renderEquipmentTrips() {
+  const el = document.getElementById('pageContent');
+  el.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">📋 سجل تشغيل المعدات</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="loadEquipmentTrips()">🔍 تحميل</button>
+      </div>
+    </div>
+
+    <!-- فلاتر -->
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;padding:.5rem 0">
+        <div class="form-group" style="margin:0;min-width:200px">
+          <label>المشغل</label>
+          <select id="etOpFilter" class="form-control">
+            <option value="">كل المشغلين</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin:0;min-width:160px">
+          <label>من تاريخ</label>
+          <input type="date" id="etDateFrom" class="form-control">
+        </div>
+        <div class="form-group" style="margin:0;min-width:160px">
+          <label>إلى تاريخ</label>
+          <input type="date" id="etDateTo" class="form-control">
+        </div>
+        <div class="form-group" style="margin:0;min-width:160px">
+          <label>اسم المعدة</label>
+          <input type="text" id="etEqSearch" class="form-control" placeholder="بحث...">
+        </div>
+        <div style="align-self:flex-end">
+          <button class="btn btn-primary btn-sm" onclick="loadEquipmentTrips()">🔍 بحث</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ملخص -->
+    <div id="etSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem"></div>
+
+    <!-- جدول -->
+    <div class="card table-card">
+      <div class="card-header">
+        <div class="card-title">📋 سجلات التشغيل</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>المشغل</th><th>المعدة</th><th>النوع</th>
+            <th>وقت البداية</th><th>وقت النهاية</th>
+            <th>ساعات البداية</th><th>ساعات النهاية</th><th>الفرق</th>
+            <th>السولار (ل)</th><th>المشروع</th><th>الحالة</th>
+          </tr></thead>
+          <tbody id="etTableBody">
+            <tr><td colspan="12" style="text-align:center;padding:2rem;color:var(--muted)">اضغط تحميل لعرض البيانات</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  // تحميل قائمة المشغلين للفلتر
+  try {
+    const data = await apiCall('/operators?status=active');
+    const sel = document.getElementById('etOpFilter');
+    if (sel && data.operators) {
+      data.operators.forEach(op => {
+        const opt = document.createElement('option');
+        opt.value = op.id; opt.textContent = op.name;
+        sel.appendChild(opt);
+      });
+    }
+  } catch(e) {}
+}
+
+async function loadEquipmentTrips() {
+  const tbody = document.getElementById('etTableBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2rem">جاري التحميل...</td></tr>';
+
+  const opId    = document.getElementById('etOpFilter')?.value || '';
+  const search  = document.getElementById('etEqSearch')?.value?.trim() || '';
+
+  try {
+    let allShifts = [];
+
+    if (opId) {
+      // جلب ورديات مشغل محدد
+      const data = await apiCall(`/operators/${opId}/shifts?limit=200`);
+      allShifts = (data.shifts || []).map(s => ({...s, operator_name: ''}));
+    } else {
+      // جلب كل المشغلين ثم ورديات كل منهم
+      const opsData = await apiCall('/operators');
+      const ops = opsData.operators || [];
+      for (const op of ops.slice(0, 20)) { // حد 20 مشغل
+        try {
+          const d = await apiCall(`/operators/${op.id}/shifts?limit=100`);
+          const shifts = (d.shifts || []).map(s => ({...s, operator_name: op.name}));
+          allShifts = allShifts.concat(shifts);
+        } catch(e) {}
+      }
+      allShifts.sort((a,b) => (b.start_time||'').localeCompare(a.start_time||''));
+    }
+
+    // تصفية بالبحث
+    if (search) {
+      allShifts = allShifts.filter(s =>
+        (s.equipment_name||'').includes(search) || (s.equipment_id||'').includes(search)
+      );
+    }
+
+    // ملخص
+    const total   = allShifts.length;
+    const active  = allShifts.filter(s => s.status === 'active').length;
+    const ended   = allShifts.filter(s => s.status === 'ended').length;
+    const totalFuel = allShifts.reduce((s,r) => s + (parseFloat(r.fuel_liters)||0), 0);
+    const totalHrs  = allShifts.reduce((s,r) => {
+      const diff = (r.end_hours||0) - (r.start_hours||0);
+      return s + (diff > 0 ? diff : 0);
+    }, 0);
+
+    const sumEl = document.getElementById('etSummary');
+    if (sumEl) {
+      sumEl.innerHTML = `
+        <div class="card" style="padding:1rem;text-align:center">
+          <div style="font-size:1.4rem;font-weight:800;color:#1e3a5f">${total}</div>
+          <div style="font-size:.8rem;color:#64748b">إجمالي السجلات</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center">
+          <div style="font-size:1.4rem;font-weight:800;color:#10b981">${active}</div>
+          <div style="font-size:.8rem;color:#64748b">جارية</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center">
+          <div style="font-size:1.4rem;font-weight:800;color:#64748b">${ended}</div>
+          <div style="font-size:.8rem;color:#64748b">منتهية</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center">
+          <div style="font-size:1.4rem;font-weight:800;color:#f97316">${totalFuel.toFixed(1)}</div>
+          <div style="font-size:.8rem;color:#64748b">إجمالي السولار (ل)</div>
+        </div>
+        <div class="card" style="padding:1rem;text-align:center">
+          <div style="font-size:1.4rem;font-weight:800;color:#3b82f6">${totalHrs.toFixed(1)}</div>
+          <div style="font-size:.8rem;color:#64748b">إجمالي الساعات</div>
+        </div>
+      `;
+    }
+
+    if (!allShifts.length) {
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد سجلات</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = allShifts.map((s, i) => {
+      const startT = (s.start_time||'').slice(0,16).replace('T',' ');
+      const endT   = s.end_time ? s.end_time.slice(0,16).replace('T',' ') : '—';
+      const hrsDiff = (s.end_hours > s.start_hours) ? (s.end_hours - s.start_hours).toFixed(1) : '—';
+      const statusBadge = s.status === 'active'
+        ? '<span class="badge badge-green">جارية</span>'
+        : '<span class="badge" style="background:#f1f5f9;color:#64748b">منتهية</span>';
+      const shiftLabel = s.shift_type === 'night' ? '🌙 ليلية' : s.shift_type === 'extended' ? '⏱️ ممتدة' : '☀️ نهارية';
+      return `<tr>
+        <td style="color:var(--muted)">${i+1}</td>
+        <td><strong>${s.operator_name || '—'}</strong></td>
+        <td>
+          <div style="font-size:.85rem">${s.equipment_name||'—'}</div>
+          ${s.equipment_id ? `<div style="font-size:.72rem;color:#94a3b8;font-family:monospace">${s.equipment_id}</div>` : ''}
+        </td>
+        <td>${shiftLabel}</td>
+        <td style="font-size:.82rem">${startT}</td>
+        <td style="font-size:.82rem">${endT}</td>
+        <td style="text-align:center">${s.start_hours||0}</td>
+        <td style="text-align:center">${s.end_hours||0}</td>
+        <td style="text-align:center;font-weight:600;color:#1e3a5f">${hrsDiff}</td>
+        <td style="text-align:center">${s.fuel_liters||0}</td>
+        <td style="font-size:.8rem">${s.project||'—'}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// EQUIPMENT MGMT OVERVIEW — لوحة إدارة المعدات
+// ══════════════════════════════════════════════════════
+
+function renderEquipmentMgmtOverview() {
+  const el = document.getElementById('pageContent');
+  el.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">🏗️ إدارة المعدات</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1.25rem;margin-top:1rem">
+      <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
+           onmouseover="this.style.borderColor='#1e3a5f'" onmouseout="this.style.borderColor='transparent'"
+           onclick="navigateTo('equipment-list')">
+        <div style="font-size:2.5rem;margin-bottom:.75rem">⚙️</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">قائمة المعدات</div>
+        <div style="font-size:.83rem;color:#64748b">عرض وإدارة كل المعدات المملوكة</div>
+      </div>
+      <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
+           onmouseover="this.style.borderColor='#1e3a5f'" onmouseout="this.style.borderColor='transparent'"
+           onclick="navigateTo('equipment-operators')">
+        <div style="font-size:2.5rem;margin-bottom:.75rem">👷</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">مشغلو المعدات</div>
+        <div style="font-size:.83rem;color:#64748b">إدارة بيانات المشغلين</div>
+      </div>
+      <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
+           onmouseover="this.style.borderColor='#1e3a5f'" onmouseout="this.style.borderColor='transparent'"
+           onclick="navigateTo('equipment-trips')">
+        <div style="font-size:2.5rem;margin-bottom:.75rem">📋</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">سجل التشغيل</div>
+        <div style="font-size:.83rem;color:#64748b">سجل ورديات المشغلين والساعات</div>
+      </div>
+      <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
+           onmouseover="this.style.borderColor='#1e3a5f'" onmouseout="this.style.borderColor='transparent'"
+           onclick="navigateTo('rental-equipment')">
+        <div style="font-size:2.5rem;margin-bottom:.75rem">🔑</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">المعدات المستأجرة</div>
+        <div style="font-size:.83rem;color:#64748b">إدارة عقود الإيجار والتكاليف</div>
+      </div>
+    </div>
+  `;
+}
+
 // EQUIPMENT OPERATORS — مشغلو المعدات
 // ══════════════════════════════════════════════════════════════════
 let _operatorsData = [];
@@ -11546,7 +11788,13 @@ async function renderEquipmentOperators() {
   const el = document.getElementById('pageContent');
   el.innerHTML = `
     <div class="page-header">
-      <div class="page-title">⚙️ مشغلو المعدات</div>
+      <div style="display:flex;align-items:center;gap:1rem">
+        <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#1e3a5f,#2d5486);display:flex;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:0 4px 12px rgba(30,58,95,.3)">👷</div>
+        <div>
+          <div class="page-title" style="margin:0">مشغلو المعدات</div>
+          <div style="font-size:.78rem;color:#64748b">إدارة بيانات المشغلين وتاريخ الورديات</div>
+        </div>
+      </div>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         ${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openOpForm()">➕ إضافة مشغل</button>`:''}
       </div>
@@ -11557,7 +11805,7 @@ async function renderEquipmentOperators() {
       <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;padding:.5rem 0">
         <div class="form-group" style="margin:0;min-width:180px">
           <label>بحث</label>
-          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..." 
+          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..."
             style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
         </div>
         <div class="form-group" style="margin:0;min-width:150px">
@@ -11639,68 +11887,7 @@ async function renderEquipmentOperators() {
       </div>
     </div>
 
-    <!-- Modal بدء وردية -->
-    <div id="shiftStartModal" class="modal-overlay" style="display:none">
-      <div class="modal" style="max-width:500px">
-        <div class="modal-header">
-          <div class="modal-title">🟢 بدء وردية</div>
-          <button class="modal-close" onclick="closeShiftModal()">✕</button>
-        </div>
-        <input type="hidden" id="shiftOpId">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
-          <div class="form-group"><label>اسم المعدة</label><input id="shiftEqName" class="form-control" placeholder="مان لفت 926"></div>
-          <div class="form-group"><label>كود المعدة</label><input id="shiftEqId" class="form-control" placeholder="12/5/926"></div>
-          <div class="form-group"><label>نوع الوردية</label>
-            <select id="shiftType" class="form-control">
-              <option value="day">نهارية ☀️</option>
-              <option value="night">ليلية 🌙</option>
-              <option value="extended">ممتدة ⏰</option>
-            </select>
-          </div>
-          <div class="form-group"><label>عداد الساعات الحالي</label><input id="shiftStartH" class="form-control" type="number" step="0.1" placeholder="0"></div>
-          <div class="form-group"><label>سولار بداية الوردية (ل)</label><input id="shiftFuel" class="form-control" type="number" step="0.1" placeholder="0"></div>
-          <div class="form-group"><label>المشروع</label><input id="shiftProject" class="form-control" placeholder="مونوريل اكتوبر"></div>
-          <div class="form-group"><label>الفرع</label><input id="shiftBranch" class="form-control" placeholder="حلوان"></div>
-          <div class="form-group"><label>ملاحظات</label><input id="shiftNotes" class="form-control"></div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" onclick="closeShiftModal()">إلغاء</button>
-          <button class="btn btn-success" onclick="startShift()">🟢 بدء الوردية</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal إنهاء وردية -->
-    <div id="shiftEndModal" class="modal-overlay" style="display:none">
-      <div class="modal" style="max-width:420px">
-        <div class="modal-header">
-          <div class="modal-title">🔴 إنهاء الوردية</div>
-          <button class="modal-close" onclick="closeShiftEndModal()">✕</button>
-        </div>
-        <input type="hidden" id="shiftEndId">
-        <div style="display:grid;gap:.85rem">
-          <div class="form-group"><label>عداد الساعات النهائي</label><input id="shiftEndH" class="form-control" type="number" step="0.1" placeholder="0"></div>
-          <div class="form-group"><label>إجمالي السولار (ل)</label><input id="shiftEndFuel" class="form-control" type="number" step="0.1" placeholder="0"></div>
-          <div class="form-group"><label>ملاحظات</label><input id="shiftEndNotes" class="form-control"></div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" onclick="closeShiftEndModal()">إلغاء</button>
-          <button class="btn btn-danger" onclick="endShift()">🔴 إنهاء الوردية</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal سجل الورديات -->
-    <div id="shiftHistoryModal" class="modal-overlay" style="display:none">
-      <div class="modal" style="max-width:700px">
-        <div class="modal-header">
-          <div class="modal-title" id="shiftHistoryTitle">📋 سجل الورديات</div>
-          <button class="modal-close" onclick="document.getElementById('shiftHistoryModal').style.display='none'">✕</button>
-        </div>
-        <div class="table-wrap" id="shiftHistoryBody" style="max-height:400px;overflow-y:auto">
-          <p style="text-align:center;color:var(--muted);padding:2rem">جاري التحميل...</p>
-        </div>
-      </div>
+    
     </div>
   `;
   await loadOperators();
@@ -11734,20 +11921,11 @@ async function loadOperators(){
   const tbody = document.getElementById('opTableBody');
   if(!tbody) return;
   if(!_operatorsData.length){
-    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد مشغلون</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد مشغلون</td></tr>`;
     return;
   }
 
-  // نجلب الورديات النشطة
-  const activeShiftsData = await apiCall('/shifts/active').catch(()=>({active_shifts:[]}));
-  const activeShiftMap = {};
-  (activeShiftsData?.active_shifts||[]).forEach(s=>{ activeShiftMap[s.operator_id]=s; });
-
   tbody.innerHTML = _operatorsData.map((op,i)=>{
-    const shift = activeShiftMap[op.id];
-    const shiftBadge = shift
-      ? `<span class="badge badge-green" style="cursor:pointer" onclick="openShiftEnd(${shift.id})">🟢 ${shift.shift_type==='night'?'ليلية':'نهارية'} — ${shift.equipment_name||'بدون معدة'}</span>`
-      : `<span class="badge badge-red">لا توجد وردية</span>`;
     const statusBadge = op.status==='active'
       ? `<span class="badge badge-green">نشط</span>`
       : `<span class="badge badge-red">غير نشط</span>`;
@@ -11759,12 +11937,10 @@ async function loadOperators(){
       <td style="font-size:.78rem">${op.sector||'—'}</td>
       <td dir="ltr">${op.phone||'—'}</td>
       <td>${statusBadge}</td>
-      <td>${shiftBadge}</td>
       ${!isReporter()?`<td style="text-align:center">
         <div style="display:flex;gap:.3rem;justify-content:center;flex-wrap:wrap">
-          ${!shift?`<button class="btn btn-success btn-sm" onclick="openShiftStart(${op.id})">🟢 وردية</button>`
-                   :`<button class="btn btn-danger btn-sm" onclick="openShiftEnd(${shift.id})">🔴 إنهاء</button>`}
-          <button class="btn btn-ghost btn-sm" onclick="viewShiftHistory(${op.id},'${op.name}')">📋</button>
+          <button class="btn btn-ghost btn-sm" onclick="viewShiftHistory(${op.id},'${op.name}')">📋 السجل</button>
+          <button class="btn btn-primary btn-sm" onclick="openAssignEquipment(${op.id},'${op.name}')">🔗 تعيين معدة</button>
           <button class="btn btn-outline btn-sm" onclick="openOpForm(${op.id})">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="deleteOperator(${op.id})">🗑️</button>
         </div>
@@ -11826,87 +12002,8 @@ async function deleteOperator(id){
 }
 
 // ── Shift functions ──
-async function openShiftStart(opId){
-  document.getElementById('shiftOpId').value = opId;
-  document.getElementById('shiftEqName').value='';
-  document.getElementById('shiftEqId').value='';
-  document.getElementById('shiftType').value='day';
-  document.getElementById('shiftStartH').value='';
-  document.getElementById('shiftFuel').value='';
-  document.getElementById('shiftProject').value='';
-  document.getElementById('shiftBranch').value='';
-  document.getElementById('shiftNotes').value='';
-  document.getElementById('shiftStartModal').style.display='flex';
-}
-function closeShiftModal(){ document.getElementById('shiftStartModal').style.display='none'; }
 
-async function startShift(){
-  const opId = parseInt(document.getElementById('shiftOpId').value);
-  const body = {
-    operator_id:    opId,
-    equipment_name: document.getElementById('shiftEqName').value.trim(),
-    equipment_id:   document.getElementById('shiftEqId').value.trim(),
-    shift_type:     document.getElementById('shiftType').value,
-    start_hours:    parseFloat(document.getElementById('shiftStartH').value||0),
-    fuel_liters:    parseFloat(document.getElementById('shiftFuel').value||0),
-    project:        document.getElementById('shiftProject').value.trim(),
-    branch:         document.getElementById('shiftBranch').value.trim(),
-    notes:          document.getElementById('shiftNotes').value.trim(),
-  };
-  const res = await apiCall('/operators/shifts/start','POST',body);
-  if(res){ showNotification('✅ بدأت الوردية','success'); closeShiftModal(); await loadOperators(); }
-}
 
-async function openShiftEnd(shiftId){
-  _activeShiftId = shiftId;
-  document.getElementById('shiftEndId').value = shiftId;
-  document.getElementById('shiftEndH').value='';
-  document.getElementById('shiftEndFuel').value='';
-  document.getElementById('shiftEndNotes').value='';
-  document.getElementById('shiftEndModal').style.display='flex';
-}
-function closeShiftEndModal(){ document.getElementById('shiftEndModal').style.display='none'; }
-
-async function endShift(){
-  const sid = document.getElementById('shiftEndId').value;
-  const body = {
-    end_hours:   parseFloat(document.getElementById('shiftEndH').value||0),
-    fuel_liters: parseFloat(document.getElementById('shiftEndFuel').value||0),
-    notes:       document.getElementById('shiftEndNotes').value.trim(),
-  };
-  const res = await apiCall(`/operators/shifts/${sid}/end`,'POST',body);
-  if(res){ showNotification('✅ انتهت الوردية','success'); closeShiftEndModal(); await loadOperators(); }
-}
-
-async function viewShiftHistory(opId, opName){
-  document.getElementById('shiftHistoryTitle').textContent = `📋 ورديات: ${opName}`;
-  document.getElementById('shiftHistoryModal').style.display='flex';
-  const data = await apiCall(`/operators/${opId}/shifts?limit=30`);
-  const shifts = data?.shifts||[];
-  const el = document.getElementById('shiftHistoryBody');
-  if(!shifts.length){
-    el.innerHTML='<p style="text-align:center;color:var(--muted);padding:2rem">لا توجد ورديات مسجلة</p>';
-    return;
-  }
-  el.innerHTML=`<table><thead><tr>
-    <th>#</th><th>المعدة</th><th>النوع</th><th>البداية</th><th>النهاية</th>
-    <th>ساعات</th><th>سولار(ل)</th><th>المشروع</th><th>الحالة</th>
-  </tr></thead><tbody>${shifts.map((s,i)=>{
-    const hrs = s.end_hours && s.start_hours ? (s.end_hours - s.start_hours).toFixed(1) : '—';
-    const typeMap = {day:'☀️ نهارية', night:'🌙 ليلية', extended:'⏰ ممتدة'};
-    return `<tr>
-      <td>${i+1}</td>
-      <td>${s.equipment_name||'—'}<br><small style="color:var(--muted)">${s.equipment_id||''}</small></td>
-      <td>${typeMap[s.shift_type]||s.shift_type}</td>
-      <td style="font-size:.78rem">${s.start_time?s.start_time.replace('T',' ').slice(0,16):'—'}</td>
-      <td style="font-size:.78rem">${s.end_time?s.end_time.replace('T',' ').slice(0,16):'—'}</td>
-      <td style="text-align:center">${hrs}</td>
-      <td style="text-align:center">${s.fuel_liters||0}</td>
-      <td>${s.project||'—'}</td>
-      <td>${s.status==='active'?'<span class="badge badge-green">نشطة</span>':'<span class="badge badge-red">منتهية</span>'}</td>
-    </tr>`;
-  }).join('')}</tbody></table>`;
-}
 
 
 
@@ -12346,9 +12443,12 @@ async function pollMaintenanceAlerts() {
 // ===================================================================
 async function checkAndShowVoiceNotes() {
   try {
-    const notes = await apiCall('/voice-notes').catch(() => []);
+    // للسائقين والأدمن: اجلب الرسائل المستلمة
+    const inboxEndpoint = (isSuperuser()) ? null : '/voice-notes/inbox';
+    if (!inboxEndpoint) return; // السوبر يوزر لا يستلم — فقط يرسل
+    const notes = await apiCall(inboxEndpoint).catch(() => []);
     if (!notes || !notes.length) return;
-    const unplayed = notes.filter(n => !n.is_deleted && n.play_count < n.max_plays && n.audio_data);
+    const unplayed = notes.filter(n => n.audio_data && n.play_count < n.max_plays);
     if (!unplayed.length) return;
     // عرض أول رسالة غير مشغولة في popup
     _showVoiceNotePopup(unplayed, 0);
@@ -12869,6 +12969,7 @@ async function renderSuperVoice() {
         <div style="display:flex;gap:.5rem">
           <button class="btn btn-outline btn-sm" onclick="showVnReassign()">🔄 إعادة تخصيص</button>
           <button class="btn btn-ghost btn-sm" onclick="loadVoiceNotes()">↺ تحديث</button>
+          ${isAdmin() ? '<button class="btn btn-outline btn-sm" onclick="loadInboxNotes()">📥 الرسائل الواردة</button>' : ''}
         </div>
       </div>
       <div class="table-wrap">
@@ -12895,8 +12996,7 @@ async function loadVoiceNotes() {
   const tbody = document.getElementById('vnTableBody');
   if (!tbody) return;
   try {
-    // السوبر/أدمن في صفحة الإدارة: يشوف الرسائل اللي بعتوها هم
-    const endpoint = (isSuperuser() || isAdmin()) ? '/voice-notes/sent' : '/voice-notes';
+    const endpoint = '/voice-notes/sent';
     _voiceNotes = await apiCall(endpoint);
     if (!_voiceNotes.length) {
       tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد رسائل مرسلة حتى الآن</td></tr>`;
@@ -12985,6 +13085,38 @@ async function toggleVoiceRecording() {
   } catch(e) {
     showNotification('تعذر الوصول للميكروفون: ' + e.message, 'error');
   }
+}
+
+
+async function loadInboxNotes() {
+  try {
+    const notes = await apiCall('/voice-notes/inbox');
+    if (!notes || !notes.length) {
+      showNotification('لا توجد رسائل واردة', 'info'); return;
+    }
+    // عرض في modal بسيط
+    const lines = notes.map((n,i)=>{
+      const dur = n.duration_sec ? Math.round(n.duration_sec)+'ث' : '—';
+      const dt  = (n.created_at||'').slice(0,16).replace('T',' ');
+      return `<div style="padding:.75rem;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:1rem">
+        <span style="color:#64748b;font-size:.8rem">${i+1}</span>
+        <div style="flex:1">
+          <div style="font-size:.85rem;color:#334155">رسالة ${dt} (${dur})</div>
+        </div>
+        ${n.audio_data ? `<audio controls src="${n.audio_data}" style="height:32px;max-width:200px"></audio>` : ''}
+      </div>`;
+    }).join('');
+    const d = document.createElement('div');
+    d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+    d.innerHTML=`<div style="background:#fff;border-radius:16px;padding:1.5rem;max-width:600px;width:95%;max-height:80vh;overflow-y:auto;direction:rtl">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <h3 style="margin:0;font-size:1.1rem">📥 الرسائل الواردة (${notes.length})</h3>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="border:none;background:none;font-size:1.25rem;cursor:pointer">✕</button>
+      </div>
+      ${lines}
+    </div>`;
+    document.body.appendChild(d);
+  } catch(e) { showNotification('فشل التحميل: '+e.message,'error'); }
 }
 
 async function sendVoiceNote() {
@@ -13447,4 +13579,132 @@ async function renderOperatorSinglePage() {
 }
 
 </script>
+
+
+<!-- Modal تعيين معدة لمشغل -->
+<div id="assignEquipModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title">🔗 تعيين معدة للمشغل</div>
+      <button class="modal-close" onclick="document.getElementById('assignEquipModal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body" style="padding:1.25rem">
+      <div id="assignOpName" style="font-size:.9rem;color:#64748b;margin-bottom:1rem;padding:.5rem .75rem;background:#f8fafc;border-radius:8px"></div>
+      <div class="form-group">
+        <label>اختر المعدة</label>
+        <select id="assignEquipId" class="form-control">
+          <option value="">-- اختر معدة --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>أو ابحث بالكود / الاسم</label>
+        <input type="text" id="assignEquipSearch" class="form-control" placeholder="كود المعدة أو اسمها..."
+          oninput="filterAssignEquip(this.value)">
+      </div>
+      <div id="assignEquipList" style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;margin-top:.5rem"></div>
+      <div id="assignCurrentEq" style="margin-top:1rem;font-size:.85rem;color:#64748b"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="document.getElementById('assignEquipModal').style.display='none'">إلغاء</button>
+      <button class="btn btn-primary" onclick="confirmAssignEquipment()">🔗 تعيين</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _assignOpId = null;
+let _allEquipForAssign = [];
+let _selectedEquipForAssign = null;
+
+async function openAssignEquipment(opId, opName) {
+  _assignOpId = opId;
+  _selectedEquipForAssign = null;
+  document.getElementById('assignOpName').innerHTML = `<strong>المشغل:</strong> ${opName}`;
+  document.getElementById('assignEquipModal').style.display = 'flex';
+  document.getElementById('assignEquipSearch').value = '';
+  document.getElementById('assignEquipList').innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8">جاري التحميل...</div>';
+
+  try {
+    // جلب آخر وردية للمشغل لمعرفة المعدة الحالية
+    const activeData = await apiCall(`/operators/${opId}/active-shift`).catch(()=>null);
+    const curEl = document.getElementById('assignCurrentEq');
+    if (activeData && activeData.equipment_name) {
+      curEl.innerHTML = `<span style="background:#f0fdf4;color:#16a34a;padding:.3rem .7rem;border-radius:8px">📌 المعدة الحالية: <strong>${activeData.equipment_name}</strong></span>`;
+    } else {
+      curEl.innerHTML = '<span style="color:#94a3b8">لا توجد معدة مخصصة حالياً</span>';
+    }
+
+    // جلب قائمة المعدات
+    const eqData = await apiCall('/equipment?status=active');
+    _allEquipForAssign = eqData.equipment || [];
+    renderAssignEquipList(_allEquipForAssign);
+  } catch(e) {
+    document.getElementById('assignEquipList').innerHTML = `<div style="padding:1rem;color:#ef4444">${e.message}</div>`;
+  }
+}
+
+function renderAssignEquipList(items) {
+  const el = document.getElementById('assignEquipList');
+  if (!items.length) {
+    el.innerHTML = '<div style="padding:1rem;text-align:center;color:#94a3b8">لا توجد معدات</div>';
+    return;
+  }
+  el.innerHTML = items.slice(0,30).map(eq => `
+    <div data-eq-id="${eq.id}" data-eq-code="${eq.car_code}" data-eq-name="${eq.equipment_name}"
+      style="padding:.65rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:center;gap:.75rem;transition:background .12s"
+      onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''"
+      onclick="selectEquipForAssign(this)">
+      <div style="flex:1">
+        <div style="font-size:.88rem;font-weight:600;color:#1e3a5f">${eq.equipment_name}</div>
+        <div style="font-size:.75rem;color:#94a3b8;font-family:monospace">${eq.car_code} · ${eq.equipment_type||''} · ${eq.branch||''}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterAssignEquip(q) {
+  const filtered = _allEquipForAssign.filter(eq =>
+    (eq.equipment_name||'').includes(q) || (eq.car_code||'').includes(q)
+  );
+  renderAssignEquipList(filtered);
+}
+
+function selectEquipForAssign(el) {
+  document.querySelectorAll('#assignEquipList [data-eq-id]').forEach(r => r.style.background = '');
+  el.style.background = '#eff6ff';
+  _selectedEquipForAssign = {
+    id: el.dataset.eqId,
+    code: el.dataset.eqCode,
+    name: el.dataset.eqName
+  };
+}
+
+async function confirmAssignEquipment() {
+  if (!_selectedEquipForAssign) {
+    showNotification('اختر معدة أولاً', 'error'); return;
+  }
+  if (!_assignOpId) return;
+  try {
+    // بدء وردية جديدة مع المعدة المختارة
+    const body = {
+      operator_id:    parseInt(_assignOpId),
+      equipment_id:   _selectedEquipForAssign.code,
+      equipment_name: _selectedEquipForAssign.name,
+      shift_type:     'day',
+      start_hours:    0,
+      fuel_liters:    0,
+      project:        '',
+      branch:         '',
+      notes:          'تعيين من لوحة التحكم'
+    };
+    await apiCall('/operators/shifts/start', 'POST', body);
+    showNotification(`✅ تم تعيين "${_selectedEquipForAssign.name}" للمشغل`, 'success');
+    document.getElementById('assignEquipModal').style.display = 'none';
+    await loadOperators();
+  } catch(e) {
+    showNotification('فشل التعيين: ' + e.message, 'error');
+  }
+}
+</script>
+
 </body>
