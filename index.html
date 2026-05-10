@@ -11992,10 +11992,11 @@ async function loadOperators(){
             <span style="width:7px;height:7px;border-radius:50%;background:#ef4444"></span> غير نشط
            </span>`;
 
-      // الوردية الحالية - نعرض آخر وردية من المشغل لو موجودة
-      const shiftCell = op.current_shift
-        ? `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#eff6ff;color:#2563eb;padding:.25rem .75rem;border-radius:8px;font-size:.78rem">
-            <span>⏱️</span> ${op.current_shift}
+      // المعدة المعيّنة للمشغل (current_equipment)
+      const shiftCell = op.current_equipment_name
+        ? `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#eff6ff;color:#2563eb;padding:.25rem .75rem;border-radius:8px;font-size:.78rem;font-weight:600">
+            <span>⚙️</span> ${op.current_equipment_name}
+            ${op.current_equipment_id ? `<span style="font-family:monospace;font-size:.72rem;opacity:.7">(${op.current_equipment_id})</span>` : ''}
            </span>`
         : `<span style="color:#cbd5e1;font-size:.85rem">—</span>`;
 
@@ -12025,7 +12026,7 @@ async function loadOperators(){
               style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:.8rem;color:#475569;font-family:inherit;white-space:nowrap">
               <span>📅</span> السجل
             </button>
-            <button onclick="openAssignEquipment(${op.id},'${op.name}')"
+            <button onclick="openAssignEquipment(${op.id},'${op.name}','${op.current_equipment_id||''}','${op.current_equipment_name||''}')"
               style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:none;border-radius:8px;background:#eff6ff;cursor:pointer;font-size:.8rem;color:#2563eb;font-family:inherit;font-weight:600;white-space:nowrap">
               🔗 تعيين معدة
             </button>
@@ -13440,9 +13441,8 @@ async function renderOperatorSinglePage() {
   // ── جلب بيانات المشغل ──
   let operatorData = null;
   try {
-    const ops = await apiCall('/operators').catch(() => ({operators:[]}));
-    const allOps = ops.operators || ops || [];
-    operatorData = allOps.find(o => String(o.user_id) === String(currentUser.id)) || null;
+    // نستخدم endpoint مخصص للمشغل بدل جلب كل القائمة
+    operatorData = await apiCall('/operators/me').catch(() => null);
   } catch(e) {}
 
   // لو مش مربوط — نعرض رسالة واضحة
@@ -13742,9 +13742,7 @@ async function dpQuickOp(type) {
   if (!currentUser.operator_id) {
     // نجيب operator_id
     try {
-      const ops = await apiCall('/operators');
-      const allOps = ops.operators || ops || [];
-      const op = allOps.find(o => String(o.user_id) === String(currentUser.id));
+      const op = await apiCall('/operators/me').catch(() => null);
       if (op) currentUser.operator_id = op.id;
     } catch(e) {}
   }
@@ -13781,7 +13779,7 @@ let _assignOpId = null;
 let _allEquipForAssign = [];
 let _selectedEquipForAssign = null;
 
-async function openAssignEquipment(opId, opName) {
+async function openAssignEquipment(opId, opName, curEqId, curEqName) {
   _assignOpId = opId;
   _selectedEquipForAssign = null;
   document.getElementById('assignOpName').innerHTML = `<strong>👷 المشغل:</strong> ${opName}`;
@@ -13790,17 +13788,15 @@ async function openAssignEquipment(opId, opName) {
   document.getElementById('assignEquipList').innerHTML = '';
   document.getElementById('assignSelectedEq').style.display = 'none';
   document.getElementById('assignSelectedEqName').textContent = '';
-  document.getElementById('assignCurrentEq').innerHTML = '';
+  const curEl = document.getElementById('assignCurrentEq');
+  // عرض المعدة الحالية المعيّنة للمشغل
+  if (curEqName) {
+    curEl.innerHTML = `📌 <strong>المعدة الحالية:</strong> ${curEqName}` +
+      (curEqId ? ` <span style="font-family:monospace;color:#94a3b8">(${curEqId})</span>` : '');
+  } else {
+    curEl.innerHTML = '<span style="color:#94a3b8">لا توجد معدة مخصصة حالياً</span>';
+  }
   document.getElementById('assignEquipModal').style.display = 'flex';
-  try {
-    const activeData = await apiCall(`/operators/${opId}/active-shift`).catch(()=>null);
-    const curEl = document.getElementById('assignCurrentEq');
-    if (activeData && activeData.equipment_name) {
-      curEl.innerHTML = `📌 <strong>المعدة الحالية:</strong> ${activeData.equipment_name} <span style="font-family:monospace;color:#94a3b8">(${activeData.equipment_id||''})</span>`;
-    } else {
-      curEl.innerHTML = '<span style="color:#94a3b8">لا توجد معدة مخصصة حالياً</span>';
-    }
-  } catch(e){}
   try {
     const eqData = await apiCall('/equipment');
     _allEquipForAssign = eqData.equipment || [];
@@ -13855,16 +13851,9 @@ async function confirmAssignEquipment() {
   if (!_selectedEquipForAssign) { showNotification('اختر معدة أولاً', 'error'); return; }
   if (!_assignOpId) return;
   try {
-    await apiCall('/operators/shifts/start', 'POST', {
-      operator_id:    parseInt(_assignOpId),
+    await apiCall('/operators/' + _assignOpId + '/assign-equipment', 'PUT', {
       equipment_id:   _selectedEquipForAssign.code,
       equipment_name: _selectedEquipForAssign.name,
-      shift_type:     'day',
-      start_hours:    0,
-      fuel_liters:    0,
-      project:        '',
-      branch:         '',
-      notes:          'تعيين من لوحة التحكم'
     });
     showNotification(`✅ تم تعيين "${_selectedEquipForAssign.name}" للمشغل`, 'success');
     document.getElementById('assignEquipModal').style.display = 'none';
