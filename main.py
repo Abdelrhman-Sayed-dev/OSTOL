@@ -6321,6 +6321,7 @@ class ShiftStart(BaseModel):
     project:        str = ""
     branch:         str = ""
     notes:          str = ""
+    start_location: str = ""
 
 
 class ShiftEnd(BaseModel):
@@ -6518,9 +6519,25 @@ async def get_active_shift(oid: int, cu: dict = Depends(require_admin_or_reporte
 
 
 @app.post("/operators/shifts/start")
-async def start_shift(body: ShiftStart, cu: dict = Depends(require_admin)):
+async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
+    # السماح للـ admin/superuser أو للمشغل نفسه فقط
+    is_admin = cu["role"] in ("admin", "superuser")
+    if not is_admin:
+        # المشغل يجب أن يبدأ وردية لنفسه فقط
+        with get_db() as conn:
+            _ensure_operator_tables(conn)
+            op = conn.execute(
+                "SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)
+            ).fetchone()
+            if not op or op["id"] != body.operator_id:
+                raise HTTPException(403, "يمكنك بدء وردية لنفسك فقط")
     with get_db() as conn:
         _ensure_operator_tables(conn)
+        # Migration: أضف start_location لو مش موجود
+        try:
+            conn.execute("ALTER TABLE operator_shifts ADD COLUMN start_location TEXT DEFAULT ''")
+        except Exception:
+            pass
         # تحقق من عدم وجود وردية نشطة
         active = conn.execute(
             "SELECT id FROM operator_shifts WHERE operator_id=? AND status='active'",
@@ -6529,22 +6546,30 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(require_admin)):
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
         conn.execute("""INSERT INTO operator_shifts
             (operator_id,equipment_id,equipment_name,shift_type,start_time,
-             start_hours,fuel_liters,project,branch,notes,status)
-            VALUES(?,?,?,?,?,?,?,?,?,?,'active')""",
+             start_hours,fuel_liters,project,branch,notes,status,start_location)
+            VALUES(?,?,?,?,?,?,?,?,?,?,'active',?)""",
             (body.operator_id, body.equipment_id, body.equipment_name, body.shift_type,
              datetime.utcnow().isoformat(), body.start_hours, body.fuel_liters,
-             body.project, body.branch, body.notes))
+             body.project, body.branch, body.notes, body.start_location))
         sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return {"id": sid, "message": "بدأت الوردية"}
 
 
 @app.post("/operators/shifts/{sid}/end")
-async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(require_admin)):
+async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
+    is_admin = cu["role"] in ("admin", "superuser")
     with get_db() as conn:
         _ensure_operator_tables(conn)
         shift = conn.execute("SELECT * FROM operator_shifts WHERE id=?", (sid,)).fetchone()
         if not shift: raise HTTPException(404, "الوردية غير موجودة")
         if shift["status"] == "ended": raise HTTPException(400, "الوردية منتهية بالفعل")
+        # تحقق أن المشغل ينهي وردية نفسه فقط
+        if not is_admin:
+            op = conn.execute(
+                "SELECT id FROM equipment_operators WHERE user_id=?", (cu["id"],)
+            ).fetchone()
+            if not op or op["id"] != shift["operator_id"]:
+                raise HTTPException(403, "يمكنك إنهاء وردية نفسك فقط")
         conn.execute("""UPDATE operator_shifts SET
             end_time=?, end_hours=?, fuel_liters=?, notes=?, status='ended'
             WHERE id=?""",
