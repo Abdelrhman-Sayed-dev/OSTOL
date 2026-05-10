@@ -1349,7 +1349,7 @@ const isSuperuser    = () => currentUser?.role === 'superuser';
 const isSupervisorWS   = () => currentUser?.role === 'supervisor_workshop';
 const isSupervisorField= () => currentUser?.role === 'supervisor_field';
 const isSupervisor     = () => isSupervisorWS() || isSupervisorField();
-const isOperator       = () => false; // المشغلون لا يسجلون دخول
+const isOperator       = () => currentUser?.role === 'operator';
 const isAdminOrSuper = () => ['admin','superuser'].includes(currentUser?.role);
 let notifPollInterval = null;
 let lastUnreadCount = 0;
@@ -7124,7 +7124,7 @@ function initUI() {
     avatarEl.prepend(img);
   }
   document.getElementById('sidebarUsername').textContent=currentUser.username;
-  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':'🚗 سائق';
+  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':currentUser.role==='operator'?'⚙️ مشغل معدات':'🚗 سائق';
   // إظهار الفرع في الـ sidebar لو الأدمن/المراقب مقيّد بفرع
   const branchBadgeEl = document.getElementById('sidebarBranchBadge');
   if(branchBadgeEl) {
@@ -11802,115 +11802,101 @@ let _activeShiftId = null;
 async function renderEquipmentOperators() {
   const el = document.getElementById('pageContent');
   el.innerHTML = `
-    <div class="page-header">
-      <div style="display:flex;align-items:center;gap:1rem">
-        <div style="width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#1e3a5f,#2d5486);display:flex;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:0 4px 12px rgba(30,58,95,.3)">👷</div>
-        <div>
-          <div class="page-title" style="margin:0">مشغلو المعدات</div>
-          <div style="font-size:.78rem;color:#64748b">إدارة بيانات المشغلين وتاريخ الورديات</div>
-        </div>
+    <!-- Header -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem">
+      <div>
+        <h2 style="margin:0;font-size:1.6rem;font-weight:900;color:#0f172a">مشغلو المعدات</h2>
+        <p style="margin:.25rem 0 0;font-size:.88rem;color:#64748b">إدارة بيانات المشغلين وتاريخ الورديات</p>
       </div>
-      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        ${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openOpForm()">➕ إضافة مشغل</button>`:''}
-      </div>
+      ${!isReporter()?`<button class="btn btn-primary" onclick="openOpForm()" style="display:flex;align-items:center;gap:.5rem;padding:.6rem 1.25rem;font-weight:700">
+        <span style="font-size:1.1rem">+</span> إضافة مشغل
+      </button>`:''}
     </div>
 
     <!-- فلاتر -->
-    <div class="card" style="margin-bottom:1rem">
-      <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;padding:.5rem 0">
-        <div class="form-group" style="margin:0;min-width:180px">
-          <label>بحث</label>
-          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..." autocomplete="off"
-            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        <div style="font-size:.75rem;font-weight:700;color:#64748b;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">
+          <span>🔍</span> الاسم أو الرقم...
         </div>
-        <div class="form-group" style="margin:0;min-width:150px">
-          <label>الفرع</label>
-          <select id="opBranch" class="form-control" autocomplete="off" style="font-family:inherit">
+        <div style="position:relative">
+          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..." autocomplete="off"
+            style="width:100%;padding:.6rem .9rem .6rem 2.5rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;box-sizing:border-box"
+            onfocus="this.style.borderColor='#6366f1';this.style.background='#fff'"
+            onblur="this.style.borderColor='#e2e8f0';this.style.background='#f8fafc'">
+          <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🔍</span>
+        </div>
+      </div>
+      <div style="min-width:220px">
+        <div style="font-size:.75rem;font-weight:700;color:#64748b;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">
+          <span>🏢</span> الفرع
+        </div>
+        <div style="position:relative">
+          <select id="opBranch" autocomplete="off"
+            style="width:100%;padding:.6rem 2.5rem .6rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;appearance:none;cursor:pointer">
             <option value="">كل الفروع</option>
           </select>
+          <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🏢</span>
         </div>
-        <div class="form-group" style="margin:0">
-          <label>الحالة</label>
-          <select id="opStatus" style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+      </div>
+      <div style="min-width:160px">
+        <div style="font-size:.75rem;font-weight:700;color:#64748b;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">
+          <span>⚙️</span> الحالة
+        </div>
+        <div style="position:relative">
+          <select id="opStatus"
+            style="width:100%;padding:.6rem 2.5rem .6rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;appearance:none;cursor:pointer">
             <option value="">الكل</option>
             <option value="active">نشط</option>
             <option value="inactive">غير نشط</option>
           </select>
+          <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">⚙️</span>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="loadOperators()">🔍 عرض</button>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-primary" onclick="loadOperators()" style="padding:.6rem 1.25rem;font-weight:700;display:flex;align-items:center;gap:.4rem">
+          <span>🔍</span> عرض
+        </button>
+        <button onclick="document.getElementById('opSearch').value='';document.getElementById('opBranch').value='';document.getElementById('opStatus').value='';loadOperators()"
+          style="padding:.6rem 1rem;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:.85rem;color:#64748b;display:flex;align-items:center;gap:.35rem">
+          <span>✕</span> مسح
+        </button>
       </div>
     </div>
 
     <!-- إحصائيات -->
-    <div id="opStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.25rem"></div>
+    <div id="opStats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.25rem"></div>
 
     <!-- جدول -->
-    <div class="card table-card">
-      <div class="card-header">
-        <div class="card-title">👷 قائمة المشغلين</div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">
+      <div style="padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:.95rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:.5rem">
+          <span>👷</span> قائمة المشغلين
+        </div>
+        <div id="opCount" style="font-size:.8rem;color:#64748b"></div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>#</th><th>الاسم</th><th>الرقم الثابت</th><th>الفرع</th>
-            <th>القطاع</th><th>الهاتف</th><th>الحالة</th><th>الوردية الحالية</th>
-            ${!isReporter()?'<th style="text-align:center">إجراءات</th>':''}
-          </tr></thead>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem;white-space:nowrap">#</th>
+              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">الاسم</th>
+              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">رقم الهاتف</th>
+              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">الفرع</th>
+              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">الوردية الحالية</th>
+              <th style="padding:.75rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.78rem">الحالة</th>
+              ${!isReporter()?'<th style="padding:.75rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.78rem">إجراءات</th>':''}
+            </tr>
+          </thead>
           <tbody id="opTableBody">
-            <tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8">اضغط عرض لتحميل البيانات</td></tr>
           </tbody>
         </table>
       </div>
-    </div>
-
-    <!-- Modal إضافة/تعديل -->
-    <div id="opFormModal" class="modal-overlay" style="display:none">
-      <div class="modal" style="max-width:640px;position:relative">
-        <!-- honeypot: يمتص browser autofill -->
-        <div style="position:fixed;top:-9999px;left:-9999px;opacity:0;pointer-events:none" aria-hidden="true">
-          <input type="text" name="username" tabindex="-1">
-          <input type="password" name="password" tabindex="-1">
-        </div>
-        <div class="modal-header">
-          <div class="modal-title" id="opFormTitle">➕ إضافة مشغل</div>
-          <button class="modal-close" onclick="closeOpForm()">✕</button>
-        </div>
-        <div style="padding:1.25rem 1.5rem;display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
-          <div class="form-group" style="margin:0"><label>الاسم <span class="req">*</span></label><input id="opName" class="form-control" placeholder="اسم المشغل" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>الرقم الثابت</label><input id="opFixed" class="form-control" placeholder="رقم المشغل" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>الهاتف</label><input id="opPhone" class="form-control" type="tel" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>الرقم القومي</label><input id="opNatId" class="form-control" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>تاريخ الميلاد</label><input id="opBirth" class="form-control" type="date" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>الفرع</label><input id="opBranchF" class="form-control" placeholder="حلوان / القاهرة ..." autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>القطاع</label><input id="opSector" class="form-control" placeholder="قطاع القاهرة الكبرى" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>نوع رخصة التشغيل</label><input id="opLicType" class="form-control" placeholder="رخصة تشغيل ثقيل" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>انتهاء الرخصة</label><input id="opLicExp" class="form-control" type="date" autocomplete="off"></div>
-          <div class="form-group" style="margin:0"><label>الحالة</label>
-            <select id="opStatusF" class="form-control">
-              <option value="active">نشط</option>
-              <option value="inactive">غير نشط</option>
-            </select>
-          </div>
-          <div class="form-group" style="margin:0;grid-column:1/-1">
-            <label>🔑 اسم المستخدم <span style="font-weight:400;color:#94a3b8;font-size:.78rem">(اختياري)</span></label>
-            <input id="opUsername" class="form-control" placeholder="اتركه فارغاً إن لم تحتج لتسجيل دخول" autocomplete="off" name="op-uname-x7q2">
-          </div>
-          <div class="form-group" style="margin:0;grid-column:1/-1">
-            <label>🔒 كلمة المرور <span style="font-weight:400;color:#94a3b8;font-size:.78rem">(اختياري — للتسجيل فقط)</span></label>
-            <input id="opPassword" class="form-control" type="password" placeholder="أدخل كلمة مرور للمشغل..." autocomplete="new-password" name="op-pass-x7q2">
-          </div>
-          <div class="form-group" style="margin:0;grid-column:1/-1"><label>ملاحظات</label><textarea id="opNotes" class="form-control" rows="2" autocomplete="off"></textarea></div>
-        </div>
-        <div class="modal-footer" style="padding:1rem 1.5rem;border-top:1px solid #f1f5f9">
-          <button class="btn btn-outline" onclick="closeOpForm()">إلغاء</button>
-          <button class="btn btn-primary" onclick="saveOperator()">💾 حفظ</button>
-        </div>
-      </div>
-    </div>
-
-    
+      <div id="opPagination" style="padding:.75rem 1.25rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;font-size:.82rem;color:#64748b"></div>
     </div>
   `;
+
   // ملء الفروع في الـ select
   try {
     const bd = await apiCall('/reports/branches');
@@ -11921,18 +11907,14 @@ async function renderEquipmentOperators() {
       bd.branches.forEach(b=>{ const o=document.createElement('option'); o.value=b; o.textContent=b; if(b===cur) o.selected=true; bsel.appendChild(o); });
     }
   } catch(e){}
-    await loadOperators();
+  await loadOperators();
 }
 
 async function viewShiftHistory(opId, opName) {
-  // نفتح صفحة سجل التشغيل مع فلتر هذا المشغل
   navigateTo('equipment-trips');
   setTimeout(async () => {
     const sel = document.getElementById('etOpFilter');
-    if (sel) {
-      sel.value = opId;
-      await loadEquipmentTrips();
-    }
+    if (sel) { sel.value = opId; await loadEquipmentTrips(); }
   }, 400);
 }
 
@@ -11943,109 +11925,125 @@ async function loadOperators(){
   let url = '/operators?';
   if(search) url+=`search=${encodeURIComponent(search)}&`;
   if(branch) url+=`branch=${encodeURIComponent(branch)}&`;
-  if(status) url+=`status=${status}&`;
-  const data = await apiCall(url);
-  if(!data) return;
-  _operatorsData = data.operators||[];
+  if(status) url+=`status=${encodeURIComponent(status)}&`;
 
-  // إحصائيات
-  const active = _operatorsData.filter(o=>o.status==='active').length;
-  const statsEl = document.getElementById('opStats');
-  if(statsEl) statsEl.innerHTML = `
-    <div class="wtc"><div class="wtt"><span class="wtl">إجمالي المشغلين</span><div class="wti">👷</div></div>
-      <div class="wtv">${_operatorsData.length}</div><div class="wts">مشغل</div></div>
-    <div class="wtc"><div class="wtt"><span class="wtl">نشط</span><div class="wti">🟢</div></div>
-      <div class="wtv">${active}</div><div class="wts">مشغل</div></div>
-    <div class="wtc"><div class="wtt"><span class="wtl">غير نشط</span><div class="wti">⛔</div></div>
-      <div class="wtv">${_operatorsData.length-active}</div><div class="wts">مشغل</div></div>
-  `;
-
-  // جدول
   const tbody = document.getElementById('opTableBody');
-  if(!tbody) return;
-  if(!_operatorsData.length){
-    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد مشغلون</td></tr>`;
-    return;
-  }
+  if(tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8">جاري التحميل...</td></tr>`;
 
-  tbody.innerHTML = _operatorsData.map((op,i)=>{
-    const statusBadge = op.status==='active'
-      ? `<span class="badge badge-green">نشط</span>`
-      : `<span class="badge badge-red">غير نشط</span>`;
-    return `<tr>
-      <td>${i+1}</td>
-      <td><strong>${op.name}</strong></td>
-      <td style="font-family:monospace;font-size:.8rem">${op.fixed_number||'—'}</td>
-      <td>${op.branch||'—'}</td>
-      <td style="font-size:.78rem">${op.sector||'—'}</td>
-      <td dir="ltr">${op.phone||'—'}</td>
-      <td>${statusBadge}</td>
-      ${!isReporter()?`<td style="text-align:center">
-        <div style="display:flex;gap:.3rem;justify-content:center;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="viewShiftHistory(${op.id},'${op.name}')">📋 السجل</button>
-          <button class="btn btn-primary btn-sm" onclick="openAssignEquipment(${op.id},'${op.name}')">🔗 تعيين معدة</button>
-          <button class="btn btn-outline btn-sm" onclick="openOpForm(${op.id})">✏️</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteOperator(${op.id})">🗑️</button>
+  try {
+    const data = await apiCall(url);
+    _operatorsData = data.operators || [];
+
+    // إحصائيات بالستايل الجديد
+    const activeC   = _operatorsData.filter(o=>o.status==='active').length;
+    const inactiveC = _operatorsData.filter(o=>o.status!=='active').length;
+
+    const statsEl = document.getElementById('opStats');
+    if(statsEl) statsEl.innerHTML = `
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:.8rem;color:#64748b;margin-bottom:.3rem">إجمالي المشغلين</div>
+          <div style="font-size:1.8rem;font-weight:900;color:#0f172a">${_operatorsData.length}</div>
+          <div style="font-size:.75rem;color:#94a3b8">مشغل</div>
         </div>
-      </td>`:''}
-    </tr>`;
-  }).join('');
-}
+        <div style="width:52px;height:52px;border-radius:50%;background:#f1f0ff;display:flex;align-items:center;justify-content:center;font-size:1.5rem">👥</div>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:.8rem;color:#64748b;margin-bottom:.3rem">نشط</div>
+          <div style="font-size:1.8rem;font-weight:900;color:#16a34a">${activeC}</div>
+          <div style="font-size:.75rem;color:#94a3b8">مشغل</div>
+        </div>
+        <div style="width:52px;height:52px;border-radius:50%;background:#f0fdf4;display:flex;align-items:center;justify-content:center">
+          <div style="width:28px;height:28px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center">
+            <div style="width:10px;height:10px;border-radius:50%;background:#fff"></div>
+          </div>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:.8rem;color:#64748b;margin-bottom:.3rem">غير نشط</div>
+          <div style="font-size:1.8rem;font-weight:900;color:#ef4444">${inactiveC}</div>
+          <div style="font-size:.75rem;color:#94a3b8">مشغل</div>
+        </div>
+        <div style="width:52px;height:52px;border-radius:50%;background:#fef2f2;display:flex;align-items:center;justify-content:center">
+          <div style="width:28px;height:28px;border-radius:50%;background:#ef4444;display:flex;align-items:center;justify-content:center">
+            <div style="width:10px;height:10px;border-radius:50%;background:#fff"></div>
+          </div>
+        </div>
+      </div>
+    `;
 
-async function openOpForm(id=null){
-  // مسح أي autofill قد يكون ملأ الحقول قبل ما نفتح الفورم
-  ['opName','opFixed','opPhone','opNatId','opBranchF','opSector',
-   'opLicType','opUsername','opPassword'].forEach(fid=>{
-    const el=document.getElementById(fid); if(el) el.value='';
-  });
-  _opEditId = id;
-  const op = id ? _operatorsData.find(o=>o.id===id) : null;
-  document.getElementById('opFormTitle').textContent = id ? '✏️ تعديل مشغل' : '➕ إضافة مشغل';
-  document.getElementById('opName').value   = op?.name||'';
-  document.getElementById('opFixed').value  = op?.fixed_number||'';
-  document.getElementById('opPhone').value  = op?.phone||'';
-  document.getElementById('opNatId').value  = op?.national_id||'';
-  document.getElementById('opBirth').value  = op?.birth_date||'';
-  document.getElementById('opBranchF').value= op?.branch||'';
-  document.getElementById('opSector').value = op?.sector||'';
-  document.getElementById('opLicType').value= op?.license_type||'';
-  document.getElementById('opLicExp').value = op?.license_expiry||'';
-  document.getElementById('opStatusF').value= op?.status||'active';
-  document.getElementById('opNotes').value  = op?.notes||'';
-  document.getElementById('opUsername').value = op?.username||'';
-  document.getElementById('opPassword').value = '';
-  document.getElementById('opFormModal').style.display='flex';
-  // ضمان إضافي: مسح autofill بعد 100ms (بعض browsers تملأ بعد الفتح)
-  setTimeout(()=>{
-    const pw=document.getElementById('opPassword'); if(pw && !id) pw.value='';
-    const un=document.getElementById('opUsername'); if(un && !id) un.value='';
-  }, 150);
-}
-function closeOpForm(){ document.getElementById('opFormModal').style.display='none'; }
+    const countEl = document.getElementById('opCount');
+    if(countEl) countEl.textContent = `${_operatorsData.length} مشغل`;
 
-async function saveOperator(){
-  const body = {
-    name:          document.getElementById('opName').value.trim(),
-    fixed_number:  document.getElementById('opFixed').value.trim(),
-    phone:         document.getElementById('opPhone').value.trim(),
-    national_id:   document.getElementById('opNatId').value.trim(),
-    birth_date:    document.getElementById('opBirth').value,
-    branch:        document.getElementById('opBranchF').value.trim(),
-    sector:        document.getElementById('opSector').value.trim(),
-    license_type:  document.getElementById('opLicType').value.trim(),
-    license_expiry:document.getElementById('opLicExp').value,
-    status:        document.getElementById('opStatusF').value,
-    notes:         document.getElementById('opNotes').value.trim(),
-  };
-  const username = document.getElementById('opUsername').value.trim();
-  const password = document.getElementById('opPassword').value.trim();
-  if(username) body.username = username;
-  if(password) body.password = password;
-  if(!body.name){showNotification('الاسم مطلوب','error');return;}
-  const method = _opEditId ? 'PUT' : 'POST';
-  const url = _opEditId ? `/operators/${_opEditId}` : '/operators';
-  const res = await apiCall(url, method, body);
-  if(res){ showNotification('✅ تم الحفظ','success'); closeOpForm(); await loadOperators(); }
+    if(!_operatorsData.length){
+      tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8">لا يوجد مشغلون مطابقون</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = _operatorsData.map((op,i)=>{
+      const statusBadge = op.status==='active'
+        ? `<span style="display:inline-flex;align-items:center;gap:.35rem;background:#f0fdf4;color:#16a34a;padding:.25rem .75rem;border-radius:20px;font-size:.78rem;font-weight:700">
+            <span style="width:7px;height:7px;border-radius:50%;background:#16a34a"></span> نشط
+           </span>`
+        : `<span style="display:inline-flex;align-items:center;gap:.35rem;background:#fef2f2;color:#ef4444;padding:.25rem .75rem;border-radius:20px;font-size:.78rem;font-weight:700">
+            <span style="width:7px;height:7px;border-radius:50%;background:#ef4444"></span> غير نشط
+           </span>`;
+
+      // الوردية الحالية - نعرض آخر وردية من المشغل لو موجودة
+      const shiftCell = op.current_shift
+        ? `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#eff6ff;color:#2563eb;padding:.25rem .75rem;border-radius:8px;font-size:.78rem">
+            <span>⏱️</span> ${op.current_shift}
+           </span>`
+        : `<span style="color:#cbd5e1;font-size:.85rem">—</span>`;
+
+      const avatarLetter = (op.name||'?')[0].toUpperCase();
+      return `<tr style="border-top:1px solid #f1f5f9;transition:background .12s" onmouseover="this.style.background='#fafafa'" onmouseout="this.style.background=''">
+        <td style="padding:.85rem 1rem;color:#94a3b8;font-size:.8rem">${i+1}</td>
+        <td style="padding:.85rem 1rem">
+          <div style="display:flex;align-items:center;gap:.75rem">
+            <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:.9rem;flex-shrink:0">${avatarLetter}</div>
+            <div>
+              <div style="font-weight:700;color:#0f172a">${op.name}</div>
+              ${op.fixed_number?`<div style="font-size:.75rem;color:#94a3b8;font-family:monospace">${op.fixed_number}</div>`:''}
+            </div>
+          </div>
+        </td>
+        <td style="padding:.85rem 1rem">
+          ${op.phone ? `<div style="display:flex;align-items:center;gap:.4rem;color:#475569;font-size:.85rem"><span>📱</span>${op.phone}</div>` : '<span style="color:#cbd5e1">—</span>'}
+        </td>
+        <td style="padding:.85rem 1rem">
+          ${op.branch ? `<div style="display:flex;align-items:center;gap:.4rem;color:#475569;font-size:.85rem"><span>🏢</span>${op.branch}</div>` : '<span style="color:#cbd5e1">—</span>'}
+        </td>
+        <td style="padding:.85rem 1rem">${shiftCell}</td>
+        <td style="padding:.85rem 1rem;text-align:center">${statusBadge}</td>
+        ${!isReporter()?`<td style="padding:.85rem 1rem;text-align:center">
+          <div style="display:flex;align-items:center;justify-content:center;gap:.4rem">
+            <button onclick="viewShiftHistory(${op.id},'${op.name}')"
+              style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:.8rem;color:#475569;font-family:inherit;white-space:nowrap">
+              <span>📅</span> السجل
+            </button>
+            <button onclick="openAssignEquipment(${op.id},'${op.name}')"
+              style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:none;border-radius:8px;background:#eff6ff;cursor:pointer;font-size:.8rem;color:#2563eb;font-family:inherit;font-weight:600;white-space:nowrap">
+              🔗 تعيين معدة
+            </button>
+            <button onclick="openOpForm(${op.id})"
+              style="width:32px;height:32px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#475569">✏️</button>
+            <button onclick="deleteOperator(${op.id})"
+              style="width:32px;height:32px;border:none;border-radius:8px;background:#fef2f2;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#ef4444">🗑️</button>
+          </div>
+        </td>`:''}
+      </tr>`;
+    }).join('');
+
+    // Pagination info
+    const pagEl = document.getElementById('opPagination');
+    if(pagEl) pagEl.innerHTML = `<span>${_operatorsData.length} مشغلين</span><span>من ${_operatorsData.length} مشغل</span>`;
+
+  } catch(e) {
+    if(tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#ef4444;padding:3rem">❌ ${e.message}</td></tr>`;
+  }
 }
 
 async function deleteOperator(id){
