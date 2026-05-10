@@ -110,7 +110,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field')),
+            role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
@@ -448,7 +448,7 @@ def _safe_add_columns(c):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field')),
+                role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
                 branch TEXT DEFAULT '',
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
@@ -728,6 +728,12 @@ async def get_user(
             c.execute("SELECT id FROM drivers WHERE user_id=?", (result["user_id"],))
             drv = c.fetchone()
             result["driver_id"] = drv["id"] if drv else None
+    if result["role"] == "operator":
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id FROM equipment_operators WHERE user_id=?", (result["user_id"],))
+            op = c.fetchone()
+            result["operator_id"] = op["id"] if op else None
     return result
 
 def require_admin(cu: dict = Depends(get_user)):
@@ -986,7 +992,7 @@ class UserCreate(BaseModel):
 
     @validator('role')
     def validate_role(cls, v):
-        allowed = ("admin","superuser","driver","reporter","supervisor_workshop","supervisor_field")
+        allowed = ("admin","superuser","driver","reporter","supervisor_workshop","supervisor_field","operator")
         if v not in allowed:
             raise ValueError(f"دور غير صالح. المتاح: {allowed}")
         return v
@@ -6249,6 +6255,9 @@ def _ensure_operator_tables(conn):
     except: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_status ON operator_shifts(status)")
     except: pass
+    # Migration: أضف user_id لو مش موجود
+    try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN user_id INTEGER DEFAULT NULL")
+    except: pass
 
 
 class OperatorCreate(BaseModel):
@@ -6263,6 +6272,8 @@ class OperatorCreate(BaseModel):
     license_expiry:str = ""
     status:        str = "active"
     notes:         str = ""
+    username:      str = ""   # اختياري — لو موجود يُنشئ حساب login
+    password:      str = ""   # اختياري
 
 
 class ShiftStart(BaseModel):
@@ -6317,16 +6328,28 @@ async def create_operator(body: OperatorCreate, cu: dict = Depends(require_admin
     if not body.name.strip(): raise HTTPException(400, "الاسم مطلوب")
     with get_db() as conn:
         _ensure_operator_tables(conn)
+        # إنشاء حساب login لو username وpassword موجودين
+        user_id = None
+        if body.username.strip() and body.password.strip():
+            try:
+                conn.execute(
+                    "INSERT INTO users(username,password,role) VALUES(?,?,?)",
+                    (body.username.strip(), _hash(body.password.strip()), "operator")
+                )
+                user_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            except Exception as e:
+                raise HTTPException(400, f"اسم المستخدم موجود مسبقاً: {body.username}")
+
         conn.execute("""INSERT INTO equipment_operators
             (name,phone,national_id,birth_date,branch,sector,fixed_number,
-             license_type,license_expiry,status,notes)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+             license_type,license_expiry,status,notes,user_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.name.strip(), body.phone, body.national_id, body.birth_date,
              body.branch, body.sector, body.fixed_number, body.license_type,
-             body.license_expiry, body.status, body.notes))
+             body.license_expiry, body.status, body.notes, user_id))
         oid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     write_audit_log(cu["user_id"], cu["username"], cu["role"], "create_operator", f"مشغل: {body.name}")
-    return {"id": oid, "message": "تم الإضافة"}
+    return {"id": oid, "message": "تم الإضافة", "user_id": user_id}
 
 
 @app.put("/operators/{oid}")
