@@ -6397,6 +6397,50 @@ async def update_operator(oid: int, body: OperatorCreate, cu: dict = Depends(req
     return {"message": "تم التعديل"}
 
 
+
+@app.put("/operators/{oid}/link-user")
+async def link_operator_user(oid: int, body: dict, cu: dict = Depends(require_admin)):
+    """
+    ربط مشغل بـ user_id موجود أو إنشاء حساب جديد وربطه.
+    body: { user_id: int }  — ربط بـ user موجود
+    أو: { username: str, password: str }  — إنشاء حساب جديد
+    """
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        c = conn.cursor()
+        c.execute("SELECT id, name FROM equipment_operators WHERE id=?", (oid,))
+        op = c.fetchone()
+        if not op:
+            raise HTTPException(404, "المشغل غير موجود")
+
+        user_id = body.get("user_id")
+
+        if user_id:
+            # ربط بـ user موجود مباشرة
+            c.execute("SELECT id, role FROM users WHERE id=?", (user_id,))
+            user = c.fetchone()
+            if not user:
+                raise HTTPException(404, "المستخدم غير موجود")
+            # تحديث الـ role ليكون operator
+            c.execute("UPDATE users SET role='operator' WHERE id=?", (user_id,))
+            c.execute("UPDATE equipment_operators SET user_id=? WHERE id=?", (user_id, oid))
+        else:
+            # إنشاء حساب جديد
+            username = (body.get("username") or "").strip()
+            password = (body.get("password") or "").strip()
+            if not username or not password:
+                raise HTTPException(400, "user_id أو (username + password) مطلوب")
+            c.execute("SELECT id FROM users WHERE username=?", (username,))
+            if c.fetchone():
+                raise HTTPException(400, f"اسم المستخدم '{username}' موجود مسبقاً")
+            c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+                      (username, _hash(password), "operator"))
+            user_id = c.lastrowid
+            c.execute("UPDATE equipment_operators SET user_id=? WHERE id=?", (user_id, oid))
+
+    log_event("operator_linked", operator_id=oid, user_id=user_id, admin=cu["username"])
+    return {"ok": True, "operator_id": oid, "user_id": user_id}
+
 @app.delete("/operators/{oid}")
 async def delete_operator(oid: int, cu: dict = Depends(require_admin)):
     with get_db() as conn:
