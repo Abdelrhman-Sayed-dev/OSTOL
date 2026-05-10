@@ -358,20 +358,17 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
   transition:.28s cubic-bezier(.4,0,.2,1);
   border-left:1px solid #e2e8f0;
   box-shadow:-2px 0 24px rgba(15,23,42,.08);
+  transform:translateX(100%);
 }
-/* ── Desktop: sidebar always visible ── */
-@media(min-width:901px){
-  .sidebar{transform:translateX(0) !important}
-  .main-content{margin-right:256px !important;width:calc(100vw - 256px) !important}
-  .sidebar-overlay{display:none !important}
-  .sidebar-toggle{display:none !important}
+.sidebar.open{ transform:translateX(0); }
+.main-content{
+  flex:1;
+  min-height:100vh;display:flex;flex-direction:column;
+  background:var(--bg);
+  width:100%;
+  margin-right:0 !important;
 }
-/* ── Mobile: sidebar slides in as overlay ── */
-@media(max-width:900px){
-  .sidebar{transform:translateX(100%)}
-  .sidebar.open{transform:translateX(0)}
-  .main-content{margin-right:0 !important;width:100vw !important}
-}
+.sidebar-toggle{display:flex !important}
 .sidebar-header{
   padding:1.4rem 1.25rem 1rem;
   border-bottom:1px solid #e2e8f0;
@@ -807,7 +804,7 @@ code{font-size:.8rem;background:#f1f5f9;padding:.1rem .5rem;border-radius:6px;fo
 ══════════════════════════════════════════════════ */
 @media(max-width:900px){
   /* ── Layout ── */
-  .main-content{width:100vw;max-width:100vw;overflow-x:hidden;margin-right:0 !important}
+  .main-content{width:100vw;max-width:100vw;overflow-x:hidden}
   #appShell{overflow-x:hidden;width:100vw}
   .page-content{padding:.7rem;overflow-x:hidden}
 
@@ -1528,22 +1525,6 @@ const loadAllowedCars = () => currentUser?.driver_id
 
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebarOverlay').classList.toggle('show'); }
 function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('show'); }
-
-/* ── JS Layout Fix: ضبط الـ margin تلقائياً ── */
-function applyLayoutFix(){
-  const mc = document.getElementById('appShell')?.querySelector('.main-content');
-  if(!mc) return;
-  if(window.innerWidth > 900){
-    mc.style.marginRight = '256px';
-    mc.style.width = 'calc(100vw - 256px)';
-    const sidebar = document.getElementById('sidebar');
-    if(sidebar) sidebar.style.transform = 'translateX(0)';
-  } else {
-    mc.style.marginRight = '0';
-    mc.style.width = '100vw';
-  }
-}
-window.addEventListener('resize', applyLayoutFix);
 
 /* ── MODAL ── */
 function openModal(html) {
@@ -7107,7 +7088,6 @@ window.addEventListener('popstate', (e) => {
 /* ── INIT ── */
 function initUI() {
   document.getElementById('appShell').style.display='flex';
-  applyLayoutFix();
   // ── Avatar ──
   const avatarEl = document.getElementById('userAvatar');
   const initialEl = document.getElementById('userAvatarInitial');
