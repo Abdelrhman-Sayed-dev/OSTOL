@@ -503,6 +503,51 @@ def _safe_add_columns(c):
         created_at          TEXT NOT NULL,
         FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
     )""")
+    # ── Migration: إزالة CHECK constraint من driver_requests لو موجود ──
+    try:
+        c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='driver_requests'")
+        _dr_row = c.fetchone()
+        _dr_sql = _dr_row["sql"] if _dr_row else ""
+        if "CHECK" in _dr_sql and "license_renew" not in _dr_sql:
+            # أعد بناء الجدول بدون CHECK constraint على type
+            c.execute("PRAGMA foreign_keys=OFF")
+            c.execute("""CREATE TABLE IF NOT EXISTS driver_requests_v2 (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                driver_id           INTEGER NOT NULL,
+                type                TEXT NOT NULL,
+                notes               TEXT DEFAULT '',
+                new_odometer        REAL,
+                trip_id             INTEGER,
+                status              TEXT DEFAULT 'pending',
+                priority            TEXT DEFAULT 'medium',
+                admin_notes         TEXT DEFAULT '',
+                admin_message       TEXT DEFAULT '',
+                handled_by          TEXT DEFAULT '',
+                handled_at          TEXT DEFAULT '',
+                forwarded_to_super  INTEGER DEFAULT 0,
+                super_decision      TEXT DEFAULT '',
+                super_notes         TEXT DEFAULT '',
+                super_handled_by    TEXT DEFAULT '',
+                super_handled_at    TEXT DEFAULT '',
+                created_at          TEXT NOT NULL
+            )""")
+            c.execute("""INSERT OR IGNORE INTO driver_requests_v2
+                SELECT id,driver_id,type,notes,new_odometer,trip_id,status,
+                       COALESCE(priority,'medium'),
+                       COALESCE(admin_notes,''),COALESCE(admin_message,''),
+                       COALESCE(handled_by,''),COALESCE(handled_at,''),
+                       COALESCE(forwarded_to_super,0),COALESCE(super_decision,''),
+                       COALESCE(super_notes,''),COALESCE(super_handled_by,''),
+                       COALESCE(super_handled_at,''),created_at
+                FROM driver_requests""")
+            c.execute("DROP TABLE driver_requests")
+            c.execute("ALTER TABLE driver_requests_v2 RENAME TO driver_requests")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
+            c.execute("PRAGMA foreign_keys=ON")
+            log.info("✅ driver_requests: removed CHECK constraint on type")
+    except Exception as _e:
+        log.warning(f"driver_requests migration (check fix): {_e}")
 
     # Migrate driver_requests new columns
     try:
