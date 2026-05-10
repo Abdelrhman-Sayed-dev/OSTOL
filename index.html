@@ -1576,6 +1576,7 @@ function buildAdminNav() {
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
     {id:'rental-equipment', icon:'🔑', label:'المعدات المستأجرة'},
+    {id:'equipment-operators', icon:'⚙️', label:'مشغلو المعدات'},
     {id:'equipment-list',   icon:'⚙️', label:'المعدات'},
   ];
   if(isSuperuser()) {
@@ -1617,7 +1618,7 @@ function renderNav(items) {
     </button>`).join('');
 }
 
-function switchSection(id) {
+async function switchSection(id) {
   currentSection=id;
   const items = isSupervisor() ? buildSupervisorNav()
               : isAdminLike()  ? buildAdminNav()
@@ -1664,6 +1665,7 @@ async function renderSection(id) {
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
     case 'rental-equipment':  await renderRentalEquipment(); break;
+    case 'equipment-operators': await renderEquipmentOperators(); break;
     case 'equipment-list':    await renderEquipmentSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
@@ -1767,7 +1769,7 @@ function liveSearch(inputEl, tableBodyId, colIndices) {
 }
 
 /** Generic: filter <tr> by select value in a specific column */
-function liveFilter(selectEl, tableBodyId, colIdx) {
+async function liveFilter(selectEl, tableBodyId, colIdx) {
   const val = selectEl.value.toLowerCase();
   const tbody = document.getElementById(tableBodyId);
   if(!tbody) return;
@@ -2359,7 +2361,7 @@ function openAddDriverModal() {
   };
 }
 
-function openLicenseRenewalModal(driverId, driverName) {
+async function openLicenseRenewalModal(driverId, driverName) {
   openModal(`
     <div class="modal-header">
       <div class="modal-title">📋 تجديد رخصة — ${driverName}</div>
@@ -2950,7 +2952,7 @@ function openAddCarModal(editId='', editCar={}) {
 }
 
 
-function openEditCarModal(id,plate,model,status) {
+async function openEditCarModal(id,plate,model,status) {
   openModal(`
     <div class="modal-header"><div class="modal-title">✏️ تعديل بيانات المركبة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="form-group"><label>رقم اللوحة <span class="req">*</span></label><input id="mEditCarPlate" value="${plate}"></div>
@@ -3253,7 +3255,7 @@ document.addEventListener('click', async e=>{
   openEditOdoModal(tid, curStart, curEnd, dName, isActive);
 });
 
-function openEditOdoModal(tid, curStart, curEnd, dName, isActive) {
+async function openEditOdoModal(tid, curStart, curEnd, dName, isActive) {
   openModal(`
     <div class="modal-header">
       <div class="modal-title">✏️ تعديل عداد الرحلة #${tid}</div>
@@ -3323,7 +3325,7 @@ function exportDriversCSV(){
   showNotification('تم تصدير السائقين ✅','success');
 }
 
-function exportCarsCSV(){
+async function exportCarsCSV(){
   const cars=window._carsCSVData||[];
   const rows=[['#','رقم اللوحة','الموديل','الحالة']];
   cars.forEach(c=>rows.push([c.id,c.plate,c.model,c.status==='available'?'متاحة':'صيانة']));
@@ -3680,7 +3682,7 @@ async function reloadWorkshopsByMonth() {
   }
 }
 
-function filterWS(){
+async function filterWS(){
   const car  = document.getElementById('filterCar')?.value  || '';
   const type = document.getElementById('filterType')?.value || '';
   const date = document.getElementById('filterDate')?.value || '';
@@ -4538,20 +4540,20 @@ function _renderOpCarList(cars, query) {
   }
 }
 
-function showOpCarList() {
+async function showOpCarList() {
   const dd = document.getElementById('opCarDropdown');
   if (dd) dd.style.display = 'block';
   filterOpCarList();
 }
 
-function filterOpCarList() {
+async function filterOpCarList() {
   const q = document.getElementById('opCarSearch')?.value || '';
   const dd = document.getElementById('opCarDropdown');
   if (dd) dd.style.display = 'block';
   _renderOpCarList(window._opCars || [], q);
 }
 
-function selectOpCar(val, label) {
+async function selectOpCar(val, label) {
   document.getElementById('opCar').value = val;
   document.getElementById('opCarSearch').value = val ? label : '';
   const dd = document.getElementById('opCarDropdown');
@@ -5503,7 +5505,7 @@ function filterReqCards(q) {
   if(cnt) cnt.textContent = `${vis} / ${total}`;
 }
 
-function filterRequests(status, btn) {
+async function filterRequests(status, btn) {
   document.querySelectorAll('.req-filter-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   document.querySelectorAll('.req-card').forEach(card=>{
@@ -5554,7 +5556,7 @@ async function adminDirectDecision(rid, status, reqType) {
 }
 
 // الأدمن: إضافة ملاحظة وتحديد الأولوية والإحالة للسوبر
-function openAdminRequestModal(rid) {
+async function openAdminRequestModal(rid) {
   openModal(`
     <div class="modal-header">
       <div class="modal-title">📤 إحالة الطلب للسوبر يوزر</div>
@@ -5602,7 +5604,7 @@ function openAdminRequestModal(rid) {
 }
 
 // السوبر: اتخاذ القرار النهائي
-function openSuperDecisionModal(rid, defaultStatus) {
+async function openSuperDecisionModal(rid, defaultStatus) {
   openModal(`
     <div class="modal-header">
       <div class="modal-title">${defaultStatus==='approved'?'✅ قبول نهائي':'❌ رفض نهائي'}</div>
@@ -6371,7 +6373,7 @@ async function startRecording(type) {
   }
 }
 
-function cancelRecording() {
+async function cancelRecording() {
   clearInterval(recInterval);
   if(mediaRecorder){ try{ if(mediaRecorder.state!=='inactive'){ mediaRecorder.stream?.getTracks().forEach(t=>t.stop()); mediaRecorder.stop(); } }catch(e){} mediaRecorder=null; }
   audioChunks=[];
@@ -6379,7 +6381,7 @@ function cancelRecording() {
   if(panel) panel.style.display='none';
 }
 
-function stopAndSend() {
+async function stopAndSend() {
   if(!mediaRecorder||mediaRecorder.state==='inactive'){ showNotification('لا يوجد تسجيل نشط','error'); return; }
   const btn=document.getElementById('stopRecBtn');
   btn.disabled=true; btn.textContent='⏳ جاري المعالجة...';
@@ -6581,7 +6583,7 @@ function openWsModal(type) {
 }
 
 /* ── EMERGENCY ACTION MODAL ── */
-function openEmergencyActionModal(reportId) {
+async function openEmergencyActionModal(reportId) {
   const rep = (window._emergencyReports||[]).find(r=>r.id===reportId) || {};
   openModal(`
     <div class="modal-header">
@@ -6649,7 +6651,7 @@ async function saveTypePrices() {
   }catch(e){ showNotification(e.message,'error'); }
 }
 
-function openPricesPopup(basePrices) {
+async function openPricesPopup(basePrices) {
   const isSup = isSuperuser();
   const isAdm = isAdminOrSuper() && !isSuperuser();
   const canEditFuel  = isSup;
@@ -6841,7 +6843,7 @@ const _liveMarkers = {};
 // ── Dead reckoning constants ──
 const DEG_PER_METER = 1 / 111320; // approx degrees per meter at equator
 
-function startLiveTracking(map) {
+async function startLiveTracking(map) {
   if(_liveTrackingInterval) clearInterval(_liveTrackingInterval);
 
   async function fetchAndUpdate() {
@@ -7022,7 +7024,7 @@ function buildLivePopupHtml(loc) {
   </div>`;
 }
 
-function updateLivePopup(did, loc) {
+async function updateLivePopup(did, loc) {
   const m = _liveMarkers[did];
   if(!m) return;
   const kmh = loc.speed ? (loc.speed*3.6).toFixed(1) : '0';
@@ -7114,7 +7116,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list','driver-photos'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list','driver-photos','equipment-operators'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -7850,7 +7852,7 @@ function openSubmitRequestModal() {
   };
 }
 
-function toggleRequestFields() {
+async function toggleRequestFields() {
   const t = document.getElementById('reqType').value;
   const odoF = document.getElementById('odometerField');
   const licF = document.getElementById('licenseRenewFields');
@@ -8110,7 +8112,7 @@ async function startEmergencyRecording(type) {
   }
 }
 
-function stopAndSendEmergency() {
+async function stopAndSendEmergency() {
   clearInterval(recInterval);
 
   // لو التسجيل فاشل من الأساس، ابعت بدون صوت مباشرة
@@ -8200,7 +8202,7 @@ function openDriverPhotoCapture() {
 
 let _photoBase64 = null;
 
-function handlePhotoSelected(input) {
+async function handlePhotoSelected(input) {
   const file = input.files[0];
   if(!file) return;
 
@@ -8304,7 +8306,7 @@ function renderPhotosGrid(photos) {
   }).join('');
 }
 
-function openPhotoModal(url, name, datetime, caption) {
+async function openPhotoModal(url, name, datetime, caption) {
   openModal(`
     <div class="modal-header">
       <div class="modal-title">📷 ${name}</div>
@@ -8622,7 +8624,7 @@ async function renderSuperUserRole(role) {
     </div>`;
 }
 
-function openAddRoleModal(role) {
+async function openAddRoleModal(role) {
   const cfg = ROLE_CONFIG[role];
   openModal(`
     <div class="modal-header">
@@ -8656,7 +8658,7 @@ function openAddRoleModal(role) {
   };
 }
 
-function openEditRoleModal(role, uid, oldUsername, oldBranch='') {
+async function openEditRoleModal(role, uid, oldUsername, oldBranch='') {
   const cfg = ROLE_CONFIG[role];
   openModal(`
     <div class="modal-header">
@@ -9756,7 +9758,7 @@ async function openAddMaintenanceModal() {
   };
 }
 
-function openMaintenanceDoneModal(id, plate, type) {
+async function openMaintenanceDoneModal(id, plate, type) {
   openModal(`
     <div class="modal-header"><div class="modal-title">✅ تسجيل إتمام الصيانة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div style="background:#f0fdf4;border:1px solid #6ee7b7;border-radius:10px;padding:.8rem;margin-bottom:1rem;font-size:.88rem">
@@ -9948,7 +9950,7 @@ function parseMaintenanceCSV(text) {
   });
 }
 
-function validateMaintenanceRows(rows, carsMap) {
+async function validateMaintenanceRows(rows, carsMap) {
   // خريطة لربط اسم العمود في الفورمات الجديد بالـ key الداخلي
   const g = (row, ...keys) => {
     for(const k of keys){ const v=(row[k]||'').trim(); if(v) return v; }
@@ -10842,7 +10844,7 @@ function showEquipmentForm(id=null) {
   modal.style.display = 'flex';
 }
 
-function closeEquipmentForm() {
+async function closeEquipmentForm() {
   document.getElementById('eqFormModal').style.display = 'none';
   _eqEditId = null;
 }
@@ -10991,6 +10993,7 @@ async function renderRentalEquipment() {
           🗑️ حذف بيانات شهر
         </button>
         <button class="btn btn-outline btn-sm" onclick="showRentalImport()">📥 استيراد CSV</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="downloadRentalTemplate()" title="تحميل قالب بالفورمات العربي">📋 قالب</button>
         <button class="btn btn-primary btn-sm" onclick="showRentalForm()">+ إضافة سجل</button>
       </div>
     </div>
@@ -11100,35 +11103,74 @@ async function renderRentalEquipment() {
           <h3 style="margin:0">📥 استيراد معدات مستأجرة</h3>
           <button onclick="closeRentalImport()" style="background:none;border:none;font-size:1.3rem;cursor:pointer">✕</button>
         </div>
-        <div style="background:var(--surface-2);border-radius:10px;padding:1rem;margin-bottom:1rem;font-size:.85rem;color:var(--muted)">
-          💡 الأعمدة المطلوبة: <strong>branch</strong> (الفرع) و <strong>equipment_name</strong> (اسم المعدة).
-          <a href="#" onclick="downloadRentalTemplate();return false;" style="color:var(--primary);font-weight:700;margin-right:.5rem">⬇️ تحميل القالب</a>
+
+        <!-- tabs داخل المودال -->
+        <div style="display:flex;gap:.5rem;margin-bottom:1rem;border-bottom:2px solid var(--border);padding-bottom:.5rem">
+          <button id="importTabAr" onclick="switchImportTab('ar')"
+            style="padding:.4rem 1rem;border:none;border-radius:8px 8px 0 0;font-family:inherit;font-size:.85rem;font-weight:700;cursor:pointer;background:var(--primary);color:#fff">
+            📋 الفورمات العربي (كالشيت)
+          </button>
+          <button id="importTabEn" onclick="switchImportTab('en')"
+            style="padding:.4rem 1rem;border:none;border-radius:8px 8px 0 0;font-family:inherit;font-size:.85rem;font-weight:600;cursor:pointer;background:var(--surface-2);color:var(--muted)">
+            🔤 الفورمات الإنجليزي
+          </button>
         </div>
-        <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end">
-          <div class="form-group" style="margin:0;flex:1;min-width:220px">
-            <label>ملف CSV <span class="req">*</span></label>
-            <input type="file" id="rentalImportFile" accept=".csv,.xlsx,.xls"
-              style="padding:.5rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
+
+        <!-- الفورمات العربي -->
+        <div id="importPanelAr">
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:1rem;margin-bottom:1rem;font-size:.85rem;color:#065f46">
+            ✅ ارفع ملف CSV بنفس الأعمدة الموجودة في الشيت:
+            <strong>الفرع — نوع المعدة — كود المعدة — جهة الايجار — ايام العمل — القيمة الايجارية الشهرية — استهلاك السولار — عداد أول — عداد آخر — الفرق — الشهر</strong>
+            <a href="#" onclick="downloadRentalTemplate();return false;" style="color:var(--primary);font-weight:700;margin-right:.5rem;display:inline-block;margin-top:.3rem">⬇️ تحميل القالب العربي</a>
           </div>
-          <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" id="rentalReplaceMonth" checked> استبدال بيانات الشهر (يمنع التكرار)
-          </label>
-          <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" id="rentalSkipErrors"> تخطي الأخطاء
-          </label>
-          <button class="btn btn-outline btn-sm" onclick="previewRentalImport()">🔍 استعراض</button>
-        </div>
-        <div id="rentalImportPreview" style="display:none">
-          <div id="rentalImportSummary" style="margin-bottom:.75rem"></div>
-          <div class="table-wrap" style="max-height:280px;overflow-y:auto">
-            <table style="font-size:.82rem">
-              <thead><tr><th>#</th><th>الفرع</th><th>اسم المعدة</th><th>الكود</th><th>أيام</th><th>شهري</th><th>حالة</th></tr></thead>
-              <tbody id="rentalImportRows"></tbody>
-            </table>
+          <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end">
+            <div class="form-group" style="margin:0;flex:1;min-width:220px">
+              <label>ملف CSV <span class="req">*</span></label>
+              <input type="file" id="rentalImportFile" accept=".csv"
+                style="padding:.5rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
+            </div>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
+              <input type="checkbox" id="rentalReplaceMonthAr" checked> استبدال بيانات الشهر (يمنع التكرار)
+            </label>
           </div>
-          <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1rem">
+          <div style="display:flex;justify-content:flex-end;gap:.75rem">
             <button class="btn btn-outline" onclick="closeRentalImport()">إلغاء</button>
-            <button class="btn btn-primary" id="rentalImportConfirmBtn" onclick="confirmRentalImport()">✅ تأكيد الاستيراد</button>
+            <button class="btn btn-primary" onclick="importRentalArabic(document.getElementById('rentalReplaceMonthAr').checked)">✅ استيراد</button>
+          </div>
+        </div>
+
+        <!-- الفورمات الإنجليزي -->
+        <div id="importPanelEn" style="display:none">
+          <div style="background:var(--surface-2);border-radius:10px;padding:1rem;margin-bottom:1rem;font-size:.85rem;color:var(--muted)">
+            💡 الأعمدة المطلوبة: <strong>branch</strong> (الفرع) و <strong>equipment_name</strong> (اسم المعدة).
+            <a href="#" onclick="downloadRentalTemplateEN();return false;" style="color:var(--primary);font-weight:700;margin-right:.5rem">⬇️ تحميل القالب الإنجليزي</a>
+          </div>
+          <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end">
+            <div class="form-group" style="margin:0;flex:1;min-width:220px">
+              <label>ملف CSV <span class="req">*</span></label>
+              <input type="file" id="rentalImportFileEN" accept=".csv,.xlsx,.xls"
+                style="padding:.5rem;border:2px dashed var(--border-2);border-radius:8px;width:100%;cursor:pointer;background:var(--surface-2)">
+            </div>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
+              <input type="checkbox" id="rentalReplaceMonth" checked> استبدال بيانات الشهر
+            </label>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.85rem;cursor:pointer;white-space:nowrap">
+              <input type="checkbox" id="rentalSkipErrors"> تخطي الأخطاء
+            </label>
+            <button class="btn btn-outline btn-sm" onclick="previewRentalImport()">🔍 استعراض</button>
+          </div>
+          <div id="rentalImportPreview" style="display:none">
+            <div id="rentalImportSummary" style="margin-bottom:.75rem"></div>
+            <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+              <table style="font-size:.82rem">
+                <thead><tr><th>#</th><th>الفرع</th><th>اسم المعدة</th><th>الكود</th><th>أيام</th><th>شهري</th><th>حالة</th></tr></thead>
+                <tbody id="rentalImportRows"></tbody>
+              </table>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:1rem">
+              <button class="btn btn-outline" onclick="closeRentalImport()">إلغاء</button>
+              <button class="btn btn-primary" id="rentalImportConfirmBtn" onclick="confirmRentalImport()">✅ تأكيد الاستيراد</button>
+            </div>
           </div>
         </div>
       </div>
@@ -11200,7 +11242,7 @@ async function loadRentalData() {
 }
 
 // عند تغيير الشهر من الـ dropdown — فلترة فورية بدون re-fetch
-function onRentalMonthChange() {
+async function onRentalMonthChange() {
   loadRentalData();
 }
 
@@ -11322,7 +11364,7 @@ function showRentalForm(id=null) {
   }
   document.getElementById('rentalFormModal').style.display = 'flex';
 }
-function closeRentalForm() {
+async function closeRentalForm() {
   document.getElementById('rentalFormModal').style.display = 'none';
   _rentalEditId = null;
 }
@@ -11423,24 +11465,429 @@ async function confirmRentalImport() {
   } catch(e) { showNotification(e.message,'error'); }
 }
 
-function exportRentalCSV() {
+async function exportRentalCSV() {
   if(!_rentalData.length) return showNotification('لا توجد بيانات','error');
-  const headers = ['الفرع','اسم المعدة','الكود','جهة الإيجار','أيام العمل','قيمة يومية','قيمة شهرية',
-                   'سولار(ل)','عداد أول','عداد آخر','الفرق','نسبة الاستخدام%','معدل الاستهلاك','المشروع','ملاحظات','الشهر'];
-  const rows = _rentalData.map(r=>[
-    r.branch,r.equipment_name,r.code,r.rental_source,r.work_days,r.daily_rate,r.monthly_rate,
-    r.fuel_liters,r.hours_start,r.hours_end,r.hours_diff,r.utilization_pct,
-    r.consumption_rate,r.project,r.notes,r.month
-  ]);
-  const csv = '\uFEFF'+[headers,...rows].map(r=>r.map(v=>'"'+String(v||'').replace(/"/g,'\"')+'"').join(',')).join('\r\n');
+  // تصدير بفورمات الشيت العربي
+  const month = document.getElementById('rentalMonth')?.value || '';
+  const branch = document.getElementById('rentalBranch')?.value || '';
+  let url = `/rental-equipment/export/excel-format`;
+  const params = [];
+  if(month) params.push(`month=${encodeURIComponent(month)}`);
+  if(branch) params.push(`branch=${encodeURIComponent(branch)}`);
+  if(params.length) url += '?' + params.join('&');
+  const res = await fetch(url, {headers:{'Authorization':'Bearer '+(localStorage.getItem('access_token')||'')}});
+  if(!res.ok){showNotification('❌ خطأ في التصدير','error');return;}
+  const blob = await res.blob();
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download = `rental_${document.getElementById('rentalMonth')?.value||'all'}.csv`;
+  a.href = URL.createObjectURL(blob);
+  a.download = `rental_${month||'all'}.csv`;
   a.click(); URL.revokeObjectURL(a.href);
-  showNotification('✅ تم التصدير','success');
+  showNotification('✅ تم التصدير بالفورمات العربي','success');
+}
+
+async function downloadRentalTemplate(){
+  const res = await fetch('/rental-equipment/template/excel-format',{headers:{'Authorization':'Bearer '+(localStorage.getItem('access_token')||'')}});
+  if(!res.ok){showNotification('❌ خطأ','error');return;}
+  const blob = await res.blob();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'rental_template_arabic.csv'; a.click(); URL.revokeObjectURL(a.href);
+  showNotification('✅ تم تحميل القالب','success');
+}
+
+async function downloadRentalTemplateEN(){
+  const res = await fetch('/rental-equipment/import/template',{headers:{'Authorization':'Bearer '+(localStorage.getItem('access_token')||'')}});
+  if(!res.ok){showNotification('❌ خطأ','error');return;}
+  const blob = await res.blob();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'rental_template.csv'; a.click(); URL.revokeObjectURL(a.href);
+  showNotification('✅ تم تحميل القالب','success');
+}
+
+async function switchImportTab(tab){
+  const isAr = tab==='ar';
+  document.getElementById('importPanelAr').style.display = isAr?'block':'none';
+  document.getElementById('importPanelEn').style.display = isAr?'none':'block';
+  document.getElementById('importTabAr').style.background = isAr?'var(--primary)':'var(--surface-2)';
+  document.getElementById('importTabAr').style.color = isAr?'#fff':'var(--muted)';
+  document.getElementById('importTabEn').style.background = isAr?'var(--surface-2)':'var(--primary)';
+  document.getElementById('importTabEn').style.color = isAr?'var(--muted)':'#fff';
+}
+
+async function importRentalArabic(replaceMonth=false){
+  const fi = document.getElementById('rentalImportFile');
+  if(!fi?.files[0]){showNotification('اختر ملف أولاً','error');return;}
+  const fd = new FormData(); fd.append('file', fi.files[0]);
+  const res = await fetch(`/rental-equipment/import/arabic?replace_month=${replaceMonth}`,{
+    method:'POST', headers:{'Authorization':'Bearer '+(localStorage.getItem('access_token')||'')}, body:fd
+  });
+  const data = await res.json();
+  if(!res.ok){showNotification('❌ '+( data.detail||'خطأ'),'error');return;}
+  showNotification(`✅ تم استيراد ${data.inserted} معدة${data.skipped?' — تجاوز '+data.skipped:''}`, 'success');
+  document.getElementById('rentalImportModal').style.display='none';
+  await loadRentalData();
 }
 
 window.CS = { upgrade: function(){}, upgradeAll: function(){} };
+
+
+// ══════════════════════════════════════════════════════════════════
+// EQUIPMENT OPERATORS — مشغلو المعدات
+// ══════════════════════════════════════════════════════════════════
+let _operatorsData = [];
+let _opEditId = null;
+let _activeShiftId = null;
+
+async function renderEquipmentOperators() {
+  const el = document.getElementById('pageContent');
+  el.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">⚙️ مشغلو المعدات</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        ${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openOpForm()">➕ إضافة مشغل</button>`:''}
+      </div>
+    </div>
+
+    <!-- فلاتر -->
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;padding:.5rem 0">
+        <div class="form-group" style="margin:0;min-width:180px">
+          <label>بحث</label>
+          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..." 
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+        </div>
+        <div class="form-group" style="margin:0;min-width:150px">
+          <label>الفرع</label>
+          <input type="text" id="opBranch" placeholder="الكل"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>الحالة</label>
+          <select id="opStatus" style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+            <option value="">الكل</option>
+            <option value="active">نشط</option>
+            <option value="inactive">غير نشط</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadOperators()">🔍 عرض</button>
+      </div>
+    </div>
+
+    <!-- إحصائيات -->
+    <div id="opStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.75rem;margin-bottom:1rem"></div>
+
+    <!-- جدول -->
+    <div class="card table-card">
+      <div class="card-header">
+        <div class="card-title">👷 قائمة المشغلين</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>#</th><th>الاسم</th><th>الرقم الثابت</th><th>الفرع</th>
+            <th>القطاع</th><th>الهاتف</th><th>الحالة</th><th>الوردية الحالية</th>
+            ${!isReporter()?'<th style="text-align:center">إجراءات</th>':''}
+          </tr></thead>
+          <tbody id="opTableBody">
+            <tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Modal إضافة/تعديل -->
+    <div id="opFormModal" class="modal-overlay" style="display:none">
+      <div class="modal" style="max-width:620px">
+        <div class="modal-header">
+          <div class="modal-title" id="opFormTitle">➕ إضافة مشغل</div>
+          <button class="modal-close" onclick="closeOpForm()">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
+          <div class="form-group"><label>الاسم <span class="req">*</span></label><input id="opName" class="form-control" placeholder="اسم المشغل"></div>
+          <div class="form-group"><label>الرقم الثابت</label><input id="opFixed" class="form-control" placeholder="رقم المشغل"></div>
+          <div class="form-group"><label>الهاتف</label><input id="opPhone" class="form-control" type="tel"></div>
+          <div class="form-group"><label>الرقم القومي</label><input id="opNatId" class="form-control"></div>
+          <div class="form-group"><label>تاريخ الميلاد</label><input id="opBirth" class="form-control" type="date"></div>
+          <div class="form-group"><label>الفرع</label><input id="opBranchF" class="form-control" placeholder="حلوان / القاهرة ..."></div>
+          <div class="form-group"><label>القطاع</label><input id="opSector" class="form-control" placeholder="قطاع القاهرة الكبرى"></div>
+          <div class="form-group"><label>نوع رخصة التشغيل</label><input id="opLicType" class="form-control" placeholder="رخصة تشغيل ثقيل"></div>
+          <div class="form-group"><label>انتهاء الرخصة</label><input id="opLicExp" class="form-control" type="date"></div>
+          <div class="form-group"><label>الحالة</label>
+            <select id="opStatusF" class="form-control">
+              <option value="active">نشط</option>
+              <option value="inactive">غير نشط</option>
+            </select>
+          </div>
+          <div class="form-group" style="grid-column:span 2"><label>ملاحظات</label><textarea id="opNotes" class="form-control" rows="2"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeOpForm()">إلغاء</button>
+          <button class="btn btn-primary" onclick="saveOperator()">💾 حفظ</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal بدء وردية -->
+    <div id="shiftStartModal" class="modal-overlay" style="display:none">
+      <div class="modal" style="max-width:500px">
+        <div class="modal-header">
+          <div class="modal-title">🟢 بدء وردية</div>
+          <button class="modal-close" onclick="closeShiftModal()">✕</button>
+        </div>
+        <input type="hidden" id="shiftOpId">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
+          <div class="form-group"><label>اسم المعدة</label><input id="shiftEqName" class="form-control" placeholder="مان لفت 926"></div>
+          <div class="form-group"><label>كود المعدة</label><input id="shiftEqId" class="form-control" placeholder="12/5/926"></div>
+          <div class="form-group"><label>نوع الوردية</label>
+            <select id="shiftType" class="form-control">
+              <option value="day">نهارية ☀️</option>
+              <option value="night">ليلية 🌙</option>
+              <option value="extended">ممتدة ⏰</option>
+            </select>
+          </div>
+          <div class="form-group"><label>عداد الساعات الحالي</label><input id="shiftStartH" class="form-control" type="number" step="0.1" placeholder="0"></div>
+          <div class="form-group"><label>سولار بداية الوردية (ل)</label><input id="shiftFuel" class="form-control" type="number" step="0.1" placeholder="0"></div>
+          <div class="form-group"><label>المشروع</label><input id="shiftProject" class="form-control" placeholder="مونوريل اكتوبر"></div>
+          <div class="form-group"><label>الفرع</label><input id="shiftBranch" class="form-control" placeholder="حلوان"></div>
+          <div class="form-group"><label>ملاحظات</label><input id="shiftNotes" class="form-control"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeShiftModal()">إلغاء</button>
+          <button class="btn btn-success" onclick="startShift()">🟢 بدء الوردية</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal إنهاء وردية -->
+    <div id="shiftEndModal" class="modal-overlay" style="display:none">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <div class="modal-title">🔴 إنهاء الوردية</div>
+          <button class="modal-close" onclick="closeShiftEndModal()">✕</button>
+        </div>
+        <input type="hidden" id="shiftEndId">
+        <div style="display:grid;gap:.85rem">
+          <div class="form-group"><label>عداد الساعات النهائي</label><input id="shiftEndH" class="form-control" type="number" step="0.1" placeholder="0"></div>
+          <div class="form-group"><label>إجمالي السولار (ل)</label><input id="shiftEndFuel" class="form-control" type="number" step="0.1" placeholder="0"></div>
+          <div class="form-group"><label>ملاحظات</label><input id="shiftEndNotes" class="form-control"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeShiftEndModal()">إلغاء</button>
+          <button class="btn btn-danger" onclick="endShift()">🔴 إنهاء الوردية</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal سجل الورديات -->
+    <div id="shiftHistoryModal" class="modal-overlay" style="display:none">
+      <div class="modal" style="max-width:700px">
+        <div class="modal-header">
+          <div class="modal-title" id="shiftHistoryTitle">📋 سجل الورديات</div>
+          <button class="modal-close" onclick="document.getElementById('shiftHistoryModal').style.display='none'">✕</button>
+        </div>
+        <div class="table-wrap" id="shiftHistoryBody" style="max-height:400px;overflow-y:auto">
+          <p style="text-align:center;color:var(--muted);padding:2rem">جاري التحميل...</p>
+        </div>
+      </div>
+    </div>
+  `;
+  await loadOperators();
+}
+
+async function loadOperators(){
+  const search = document.getElementById('opSearch')?.value||'';
+  const branch = document.getElementById('opBranch')?.value||'';
+  const status = document.getElementById('opStatus')?.value||'';
+  let url = '/operators?';
+  if(search) url+=`search=${encodeURIComponent(search)}&`;
+  if(branch) url+=`branch=${encodeURIComponent(branch)}&`;
+  if(status) url+=`status=${status}&`;
+  const data = await apiCall(url);
+  if(!data) return;
+  _operatorsData = data.operators||[];
+
+  // إحصائيات
+  const active = _operatorsData.filter(o=>o.status==='active').length;
+  const statsEl = document.getElementById('opStats');
+  if(statsEl) statsEl.innerHTML = `
+    <div class="wtc"><div class="wtt"><span class="wtl">إجمالي المشغلين</span><div class="wti">👷</div></div>
+      <div class="wtv">${_operatorsData.length}</div><div class="wts">مشغل</div></div>
+    <div class="wtc"><div class="wtt"><span class="wtl">نشط</span><div class="wti">🟢</div></div>
+      <div class="wtv">${active}</div><div class="wts">مشغل</div></div>
+    <div class="wtc"><div class="wtt"><span class="wtl">غير نشط</span><div class="wti">⛔</div></div>
+      <div class="wtv">${_operatorsData.length-active}</div><div class="wts">مشغل</div></div>
+  `;
+
+  // جدول
+  const tbody = document.getElementById('opTableBody');
+  if(!tbody) return;
+  if(!_operatorsData.length){
+    tbody.innerHTML=`<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا يوجد مشغلون</td></tr>`;
+    return;
+  }
+
+  // نجلب الورديات النشطة
+  const activeShiftsData = await apiCall('/shifts/active').catch(()=>({active_shifts:[]}));
+  const activeShiftMap = {};
+  (activeShiftsData?.active_shifts||[]).forEach(s=>{ activeShiftMap[s.operator_id]=s; });
+
+  tbody.innerHTML = _operatorsData.map((op,i)=>{
+    const shift = activeShiftMap[op.id];
+    const shiftBadge = shift
+      ? `<span class="badge badge-green" style="cursor:pointer" onclick="openShiftEnd(${shift.id})">🟢 ${shift.shift_type==='night'?'ليلية':'نهارية'} — ${shift.equipment_name||'بدون معدة'}</span>`
+      : `<span class="badge badge-red">لا توجد وردية</span>`;
+    const statusBadge = op.status==='active'
+      ? `<span class="badge badge-green">نشط</span>`
+      : `<span class="badge badge-red">غير نشط</span>`;
+    return `<tr>
+      <td>${i+1}</td>
+      <td><strong>${op.name}</strong></td>
+      <td style="font-family:monospace;font-size:.8rem">${op.fixed_number||'—'}</td>
+      <td>${op.branch||'—'}</td>
+      <td style="font-size:.78rem">${op.sector||'—'}</td>
+      <td dir="ltr">${op.phone||'—'}</td>
+      <td>${statusBadge}</td>
+      <td>${shiftBadge}</td>
+      ${!isReporter()?`<td style="text-align:center">
+        <div style="display:flex;gap:.3rem;justify-content:center;flex-wrap:wrap">
+          ${!shift?`<button class="btn btn-success btn-sm" onclick="openShiftStart(${op.id})">🟢 وردية</button>`
+                   :`<button class="btn btn-danger btn-sm" onclick="openShiftEnd(${shift.id})">🔴 إنهاء</button>`}
+          <button class="btn btn-ghost btn-sm" onclick="viewShiftHistory(${op.id},'${op.name}')">📋</button>
+          <button class="btn btn-outline btn-sm" onclick="openOpForm(${op.id})">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteOperator(${op.id})">🗑️</button>
+        </div>
+      </td>`:''}
+    </tr>`;
+  }).join('');
+}
+
+async function openOpForm(id=null){
+  _opEditId = id;
+  const op = id ? _operatorsData.find(o=>o.id===id) : null;
+  document.getElementById('opFormTitle').textContent = id ? '✏️ تعديل مشغل' : '➕ إضافة مشغل';
+  document.getElementById('opName').value   = op?.name||'';
+  document.getElementById('opFixed').value  = op?.fixed_number||'';
+  document.getElementById('opPhone').value  = op?.phone||'';
+  document.getElementById('opNatId').value  = op?.national_id||'';
+  document.getElementById('opBirth').value  = op?.birth_date||'';
+  document.getElementById('opBranchF').value= op?.branch||'';
+  document.getElementById('opSector').value = op?.sector||'';
+  document.getElementById('opLicType').value= op?.license_type||'';
+  document.getElementById('opLicExp').value = op?.license_expiry||'';
+  document.getElementById('opStatusF').value= op?.status||'active';
+  document.getElementById('opNotes').value  = op?.notes||'';
+  document.getElementById('opFormModal').style.display='flex';
+}
+function closeOpForm(){ document.getElementById('opFormModal').style.display='none'; }
+
+async function saveOperator(){
+  const body = {
+    name:          document.getElementById('opName').value.trim(),
+    fixed_number:  document.getElementById('opFixed').value.trim(),
+    phone:         document.getElementById('opPhone').value.trim(),
+    national_id:   document.getElementById('opNatId').value.trim(),
+    birth_date:    document.getElementById('opBirth').value,
+    branch:        document.getElementById('opBranchF').value.trim(),
+    sector:        document.getElementById('opSector').value.trim(),
+    license_type:  document.getElementById('opLicType').value.trim(),
+    license_expiry:document.getElementById('opLicExp').value,
+    status:        document.getElementById('opStatusF').value,
+    notes:         document.getElementById('opNotes').value.trim(),
+  };
+  if(!body.name){showNotification('الاسم مطلوب','error');return;}
+  const method = _opEditId ? 'PUT' : 'POST';
+  const url = _opEditId ? `/operators/${_opEditId}` : '/operators';
+  const res = await apiCall(url, method, body);
+  if(res){ showNotification('✅ تم الحفظ','success'); closeOpForm(); await loadOperators(); }
+}
+
+async function deleteOperator(id){
+  if(!confirm('حذف هذا المشغل؟')) return;
+  const res = await apiCall(`/operators/${id}`,'DELETE');
+  if(res){ showNotification('✅ تم الحذف','success'); await loadOperators(); }
+}
+
+// ── Shift functions ──
+async function openShiftStart(opId){
+  document.getElementById('shiftOpId').value = opId;
+  document.getElementById('shiftEqName').value='';
+  document.getElementById('shiftEqId').value='';
+  document.getElementById('shiftType').value='day';
+  document.getElementById('shiftStartH').value='';
+  document.getElementById('shiftFuel').value='';
+  document.getElementById('shiftProject').value='';
+  document.getElementById('shiftBranch').value='';
+  document.getElementById('shiftNotes').value='';
+  document.getElementById('shiftStartModal').style.display='flex';
+}
+function closeShiftModal(){ document.getElementById('shiftStartModal').style.display='none'; }
+
+async function startShift(){
+  const opId = parseInt(document.getElementById('shiftOpId').value);
+  const body = {
+    operator_id:    opId,
+    equipment_name: document.getElementById('shiftEqName').value.trim(),
+    equipment_id:   document.getElementById('shiftEqId').value.trim(),
+    shift_type:     document.getElementById('shiftType').value,
+    start_hours:    parseFloat(document.getElementById('shiftStartH').value||0),
+    fuel_liters:    parseFloat(document.getElementById('shiftFuel').value||0),
+    project:        document.getElementById('shiftProject').value.trim(),
+    branch:         document.getElementById('shiftBranch').value.trim(),
+    notes:          document.getElementById('shiftNotes').value.trim(),
+  };
+  const res = await apiCall('/operators/shifts/start','POST',body);
+  if(res){ showNotification('✅ بدأت الوردية','success'); closeShiftModal(); await loadOperators(); }
+}
+
+async function openShiftEnd(shiftId){
+  _activeShiftId = shiftId;
+  document.getElementById('shiftEndId').value = shiftId;
+  document.getElementById('shiftEndH').value='';
+  document.getElementById('shiftEndFuel').value='';
+  document.getElementById('shiftEndNotes').value='';
+  document.getElementById('shiftEndModal').style.display='flex';
+}
+function closeShiftEndModal(){ document.getElementById('shiftEndModal').style.display='none'; }
+
+async function endShift(){
+  const sid = document.getElementById('shiftEndId').value;
+  const body = {
+    end_hours:   parseFloat(document.getElementById('shiftEndH').value||0),
+    fuel_liters: parseFloat(document.getElementById('shiftEndFuel').value||0),
+    notes:       document.getElementById('shiftEndNotes').value.trim(),
+  };
+  const res = await apiCall(`/operators/shifts/${sid}/end`,'POST',body);
+  if(res){ showNotification('✅ انتهت الوردية','success'); closeShiftEndModal(); await loadOperators(); }
+}
+
+async function viewShiftHistory(opId, opName){
+  document.getElementById('shiftHistoryTitle').textContent = `📋 ورديات: ${opName}`;
+  document.getElementById('shiftHistoryModal').style.display='flex';
+  const data = await apiCall(`/operators/${opId}/shifts?limit=30`);
+  const shifts = data?.shifts||[];
+  const el = document.getElementById('shiftHistoryBody');
+  if(!shifts.length){
+    el.innerHTML='<p style="text-align:center;color:var(--muted);padding:2rem">لا توجد ورديات مسجلة</p>';
+    return;
+  }
+  el.innerHTML=`<table><thead><tr>
+    <th>#</th><th>المعدة</th><th>النوع</th><th>البداية</th><th>النهاية</th>
+    <th>ساعات</th><th>سولار(ل)</th><th>المشروع</th><th>الحالة</th>
+  </tr></thead><tbody>${shifts.map((s,i)=>{
+    const hrs = s.end_hours && s.start_hours ? (s.end_hours - s.start_hours).toFixed(1) : '—';
+    const typeMap = {day:'☀️ نهارية', night:'🌙 ليلية', extended:'⏰ ممتدة'};
+    return `<tr>
+      <td>${i+1}</td>
+      <td>${s.equipment_name||'—'}<br><small style="color:var(--muted)">${s.equipment_id||''}</small></td>
+      <td>${typeMap[s.shift_type]||s.shift_type}</td>
+      <td style="font-size:.78rem">${s.start_time?s.start_time.replace('T',' ').slice(0,16):'—'}</td>
+      <td style="font-size:.78rem">${s.end_time?s.end_time.replace('T',' ').slice(0,16):'—'}</td>
+      <td style="text-align:center">${hrs}</td>
+      <td style="text-align:center">${s.fuel_liters||0}</td>
+      <td>${s.project||'—'}</td>
+      <td>${s.status==='active'?'<span class="badge badge-green">نشطة</span>':'<span class="badge badge-red">منتهية</span>'}</td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
 
 
 
@@ -11850,7 +12297,7 @@ function renderFraudTable(rows) {
 }
 
 
-function exportFraudCSV() {
+async function exportFraudCSV() {
   if (!_fraudData.length) return showNotification('لا توجد بيانات', 'error');
   const headers = ['الخطورة','النوع','لوحة','المركبة','التاريخ','التفاصيل'];
   const rows = _fraudData.map(a=>[a.severity, a.label, a.plate, a.model, a.date, a.detail]);
@@ -12232,7 +12679,7 @@ function renderMrTable(data) {
 
 // تبديل الترتيب بالضغط على العمود
 const _mrSortCycle = { km:['km_desc','km_asc'], trips:['trips_desc','trips_asc'], cost:['cost_desc'] };
-function cycleMrSort(field) {
+async function cycleMrSort(field) {
   const sel = document.getElementById('mrSort');
   if (!sel) return;
   const cycle = _mrSortCycle[field] || ['km_desc'];
@@ -12556,7 +13003,7 @@ async function sendVoiceNote() {
 var _vnSearchTimer = null;
 window._vnSelectedUserId = null;
 
-function onVnTargetChange() {
+async function onVnTargetChange() {
   const val = document.getElementById('vnTarget')?.value;
   const el  = document.getElementById('vnSpecificUser');
   if (el) el.style.display = val === 'specific' ? 'block' : 'none';
