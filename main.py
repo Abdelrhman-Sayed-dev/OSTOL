@@ -4608,6 +4608,40 @@ async def play_voice_note(note_id: int, cu: dict = Depends(get_user)):
             c.execute("UPDATE voice_notes SET play_count=? WHERE id=?", (new_count, note_id))
     return {"play_count": new_count, "deleted": new_count >= row["max_plays"]}
 
+
+@app.get("/voice-notes/inbox")
+async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
+    """
+    رسائل صوتية مستلمة — للأدمن والسائقين:
+    - admin: يستلم الرسائل المرسلة لـ 'admins' أو لشخصه تحديداً
+    - driver: يستلم الرسائل المرسلة لـ 'drivers' أو لشخصه تحديداً
+    """
+    role = cu["role"]
+    uid  = cu["user_id"]
+    now  = datetime.utcnow().isoformat() + "Z"
+
+    if role in ("admin", "reporter", "supervisor_workshop", "supervisor_field"):
+        group = "admins"
+    elif role == "driver":
+        group = "drivers"
+    else:
+        return []
+
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, duration_sec, created_at, expires_at,
+                   play_count, max_plays, audio_data, target_group, target_user_id
+            FROM voice_notes
+            WHERE (target_group = ? OR COALESCE(target_user_id, 0) = ?)
+              AND sender_id != ?
+              AND is_deleted = 0
+              AND expires_at > ?
+              AND play_count < max_plays
+            ORDER BY created_at DESC
+        """, (group, uid, uid, now))
+        return [dict(r) for r in c.fetchall()]
+
 @app.delete("/voice-notes/{note_id}")
 async def delete_voice_note(note_id: int, cu: dict = Depends(get_user)):
     if cu["role"] not in ("superuser", "admin"):
