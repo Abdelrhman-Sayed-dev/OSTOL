@@ -12031,8 +12031,11 @@ async function loadOperators(){
             </button>
             <button onclick="openOpForm(${op.id})"
               style="width:32px;height:32px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#475569">✏️</button>
+            ${!op.user_id ? `<button onclick="openLinkUserModal(${op.id},'${op.name}')" title="ربط بحساب للدخول"
+              style="width:32px;height:32px;border:none;border-radius:8px;background:#eff6ff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#2563eb;font-size:.75rem;font-weight:700">🔑</button>` : ''}
             <button onclick="deleteOperator(${op.id})"
               style="width:32px;height:32px;border:none;border-radius:8px;background:#fef2f2;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#ef4444">🗑️</button>
+
           </div>
         </td>`:''}
       </tr>`;
@@ -13870,7 +13873,109 @@ async function confirmAssignEquipment() {
 }
 
 
+
+// ══ Link User to Operator ══
+let _linkOpId = null;
+let _linkMode = 'new';
+
+function openLinkUserModal(opId, opName) {
+  _linkOpId = opId;
+  _linkMode = 'new';
+  document.getElementById('linkOpNameDisplay').innerHTML = '<strong>👷 المشغل:</strong> ' + opName;
+  ['linkUsername','linkPassword','linkUserSearch'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('linkUserResults').innerHTML = '';
+  document.getElementById('linkSelectedUserId').value = '';
+  switchLinkTab('new');
+  document.getElementById('linkUserModal').style.display = 'flex';
+}
+
+function switchLinkTab(tab) {
+  _linkMode = tab;
+  document.getElementById('linkTabNewContent').style.display   = tab==='new' ? 'block' : 'none';
+  document.getElementById('linkTabExistContent').style.display = tab==='exist' ? 'block' : 'none';
+  document.getElementById('linkTabNew').style.cssText   = tab==='new' ? 'flex:1;padding:.5rem;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:700;background:#1e3a5f;color:#fff' : 'flex:1;padding:.5rem;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:700;background:transparent;color:#64748b';
+  document.getElementById('linkTabExist').style.cssText = tab==='exist' ? 'flex:1;padding:.5rem;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:700;background:#1e3a5f;color:#fff' : 'flex:1;padding:.5rem;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:700;background:transparent;color:#64748b';
+}
+
+async function searchUsersForLink(q) {
+  const res = document.getElementById('linkUserResults');
+  if (!q || q.length < 1) { res.innerHTML = ''; return; }
+  try {
+    const data = await apiCall('/users/list');
+    const users = (data||[]).filter(u=>(u.username||'').includes(q) && u.role!=='operator').slice(0,10);
+    if (!users.length) { res.innerHTML='<div style="padding:.75rem;color:#94a3b8;text-align:center;font-size:.85rem">لا توجد نتائج</div>'; return; }
+    res.innerHTML = users.map(u=>`
+      <div onclick="selectUserForLink(${u.id},'${u.username}')"
+        style="padding:.65rem 1rem;cursor:pointer;border-bottom:.5px solid #f1f5f9;display:flex;align-items:center;gap:.75rem"
+        onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:.8rem">${(u.username||'?')[0].toUpperCase()}</div>
+        <div><div style="font-weight:600;font-size:.88rem;color:#1e3a5f">${u.username}</div><div style="font-size:.75rem;color:#94a3b8">${u.role}</div></div>
+      </div>`).join('');
+  } catch(e) { res.innerHTML='<div style="padding:.75rem;color:#ef4444;font-size:.85rem">'+e.message+'</div>'; }
+}
+
+function selectUserForLink(userId, username) {
+  document.getElementById('linkSelectedUserId').value = userId;
+  document.getElementById('linkUserSearch').value = username;
+  document.getElementById('linkUserResults').innerHTML = '<div style="padding:.65rem 1rem;background:#f0fdf4;border-radius:8px;color:#16a34a;font-weight:600;font-size:.88rem">✅ تم اختيار: '+username+'</div>';
+}
+
+async function confirmLinkUser() {
+  if (!_linkOpId) return;
+  let body = {};
+  if (_linkMode === 'new') {
+    const username = document.getElementById('linkUsername').value.trim();
+    const password = document.getElementById('linkPassword').value.trim();
+    if (!username || !password) { showNotification('اسم المستخدم وكلمة المرور مطلوبان','error'); return; }
+    body = { username, password };
+  } else {
+    const userId = document.getElementById('linkSelectedUserId').value;
+    if (!userId) { showNotification('اختر مستخدماً من القائمة','error'); return; }
+    body = { user_id: parseInt(userId) };
+  }
+  try {
+    await apiCall('/operators/' + _linkOpId + '/link-user', 'PUT', body);
+    showNotification('✅ تم ربط الحساب — يمكن للمشغل الآن تسجيل الدخول','success');
+    document.getElementById('linkUserModal').style.display = 'none';
+    await loadOperators();
+  } catch(e) { showNotification('فشل الربط: '+e.message,'error'); }
+}
+
 </script>
+
+<!-- ══ Modal ربط مشغل بحساب ══ -->
+<div id="linkUserModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title">🔑 ربط مشغل بحساب للدخول</div>
+      <button class="modal-close" onclick="document.getElementById('linkUserModal').style.display='none'">✕</button>
+    </div>
+    <div style="padding:1.5rem">
+      <div id="linkOpNameDisplay" style="font-size:.88rem;color:#475569;margin-bottom:1.25rem;padding:.6rem 1rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;font-weight:500"></div>
+      <div style="display:flex;gap:.5rem;margin-bottom:1.25rem;background:#f1f5f9;border-radius:10px;padding:.25rem">
+        <button id="linkTabNew" onclick="switchLinkTab('new')" style="flex:1;padding:.5rem;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:700;background:#1e3a5f;color:#fff">➕ إنشاء حساب جديد</button>
+        <button id="linkTabExist" onclick="switchLinkTab('exist')" style="flex:1;padding:.5rem;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:700;background:transparent;color:#64748b">🔗 ربط بـ user موجود</button>
+      </div>
+      <div id="linkTabNewContent">
+        <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label>
+          <input id="linkUsername" class="form-control" placeholder="username للمشغل" autocomplete="off" name="lnk-u-q9x"></div>
+        <div class="form-group"><label>كلمة المرور <span class="req">*</span></label>
+          <input id="linkPassword" class="form-control" type="password" placeholder="كلمة مرور" autocomplete="new-password" name="lnk-p-q9x"></div>
+      </div>
+      <div id="linkTabExistContent" style="display:none">
+        <div class="form-group"><label>ابحث عن المستخدم</label>
+          <input id="linkUserSearch" class="form-control" placeholder="اسم المستخدم..." autocomplete="off" oninput="searchUsersForLink(this.value)"></div>
+        <div id="linkUserResults" style="max-height:180px;overflow-y:auto;border:1.5px solid #e2e8f0;border-radius:10px;margin-top:.5rem"></div>
+        <input type="hidden" id="linkSelectedUserId">
+      </div>
+    </div>
+    <div class="modal-footer" style="padding:1rem 1.5rem;border-top:1px solid #f1f5f9">
+      <button class="btn btn-ghost" onclick="document.getElementById('linkUserModal').style.display='none'">إلغاء</button>
+      <button class="btn btn-primary" onclick="confirmLinkUser()" style="font-weight:700">🔑 ربط الحساب</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- ══ Modal فورم المشغل ══ -->
 <div id="opFormModal" class="modal-overlay" style="display:none">
