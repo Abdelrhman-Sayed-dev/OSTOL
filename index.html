@@ -362,7 +362,7 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 /* ── Desktop: sidebar always visible ── */
 @media(min-width:901px){
   .sidebar{transform:translateX(0) !important}
-  .main-content{margin-right:var(--sidebar-width) !important}
+  .main-content{margin-right:256px !important;width:calc(100vw - 256px) !important}
   .sidebar-overlay{display:none !important}
   .sidebar-toggle{display:none !important}
 }
@@ -370,7 +370,7 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 @media(max-width:900px){
   .sidebar{transform:translateX(100%)}
   .sidebar.open{transform:translateX(0)}
-  .main-content{margin-right:0}
+  .main-content{margin-right:0 !important;width:100vw !important}
 }
 .sidebar-header{
   padding:1.4rem 1.25rem 1rem;
@@ -1528,6 +1528,22 @@ const loadAllowedCars = () => currentUser?.driver_id
 
 function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebarOverlay').classList.toggle('show'); }
 function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('show'); }
+
+/* ── JS Layout Fix: ضبط الـ margin تلقائياً ── */
+function applyLayoutFix(){
+  const mc = document.getElementById('appShell')?.querySelector('.main-content');
+  if(!mc) return;
+  if(window.innerWidth > 900){
+    mc.style.marginRight = '256px';
+    mc.style.width = 'calc(100vw - 256px)';
+    const sidebar = document.getElementById('sidebar');
+    if(sidebar) sidebar.style.transform = 'translateX(0)';
+  } else {
+    mc.style.marginRight = '0';
+    mc.style.width = '100vw';
+  }
+}
+window.addEventListener('resize', applyLayoutFix);
 
 /* ── MODAL ── */
 function openModal(html) {
@@ -7091,6 +7107,7 @@ window.addEventListener('popstate', (e) => {
 /* ── INIT ── */
 function initUI() {
   document.getElementById('appShell').style.display='flex';
+  applyLayoutFix();
   // ── Avatar ──
   const avatarEl = document.getElementById('userAvatar');
   const initialEl = document.getElementById('userAvatarInitial');
