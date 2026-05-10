@@ -6489,12 +6489,15 @@ function openWsModal(type) {
   selWsType = type;
   const wt  = WT[type];
   const activeCarId = window._wsActiveCarId;
-  const carOpts = (window._wsAllowedCars||[]).length
-    ? '<option value="">-- اختر المركبة --</option>'
-      + (window._wsAllowedCars||[]).map(c=>`<option value="${c.id}" ${c.id===activeCarId?'selected':''}>
-          ${c.id===activeCarId?'🚗 ':''}${c.plate} — ${c.model}
-        </option>`).join('')
-    : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
+  const _isOpWs = currentUser?.role === 'operator';
+  const carOpts = _isOpWs
+    ? '<option value="0">⚙️ المعدة الحالية</option>'
+    : ((window._wsAllowedCars||[]).length
+        ? '<option value="">-- اختر المركبة --</option>'
+          + (window._wsAllowedCars||[]).map(c=>`<option value="${c.id}" ${c.id===activeCarId?'selected':''}>
+              ${c.id===activeCarId?'🚗 ':''}${c.plate} — ${c.model}
+            </option>`).join('')
+        : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>');
 
   let specific = '';
   if(type==='fuel'||type.startsWith('fuel_')) specific=`
@@ -6533,13 +6536,13 @@ function openWsModal(type) {
     ${specific}
 
     <div class="form-group">
-      <label>المركبة <span class="req">*</span></label>
+      <label>${currentUser?.role==='operator' ? 'المعدة' : 'المركبة'} ${!_isOpWs?'<span class="req">*</span>':''}</label>
       <select id="wVehicle">${carOpts}</select>
     </div>
 
     <div class="form-group">
-      <label>قراءة العداد (كم) <span class="req">*</span></label>
-      <input type="number" id="wOdo" placeholder="مثال: 54000" min="0">
+      <label>${currentUser?.role==='operator' ? 'ساعات التشغيل' : 'قراءة العداد (كم)'} <span class="req">*</span></label>
+      <input type="number" id="wOdo" placeholder="${currentUser?.role==='operator' ? 'مثال: 1250.5' : 'مثال: 54000'}" min="0" step="${currentUser?.role==='operator' ? '0.1' : '1'}">
     </div>
 
     <div class="form-group">
@@ -6561,12 +6564,14 @@ function openWsModal(type) {
     const notes            = document.getElementById('wNotes')?.value?.trim()||'';
     const btn              = document.getElementById('wsSubmitBtn');
 
-    if(!vehicle_id)                             return showNotification('اختر المركبة','error');
-    if(!odometer_reading||odometer_reading<=0)  return showNotification('أدخل قراءة العداد','error');
+    if(!vehicle_id && !_isOpWs)                 return showNotification('اختر المركبة','error');
+    const _finalVehicleId = _isOpWs ? null : vehicle_id;
+    if(!odometer_reading||odometer_reading<=0)  return showNotification(currentUser?.role==='operator'?'أدخل ساعات التشغيل':'أدخل قراءة العداد','error');
 
+    const _wsDriverId = currentUser.role==='operator' ? (currentUser.operator_id|0) : currentUser.driver_id;
     const payload = {
-      driver_id:currentUser.driver_id, type:selWsType,
-      price, notes, vehicle_id, odometer_reading, location:''
+      driver_id:_wsDriverId, type:selWsType,
+      price, notes, vehicle_id:_finalVehicleId, odometer_reading, location:''
     };
 
     if(selWsType.startsWith('fuel_')||['oil','tire'].includes(selWsType)){
@@ -8280,8 +8285,8 @@ async function startEmergencyRecording(type) {
         const emgLocation = await silentGetLocation(8000);
         try {
           await apiCall('/emergency/report','POST',{
-            driver_id: currentUser.driver_id,
-            car_id:    window._driverCar?.id || null,
+            driver_id: currentUser.role==='operator' ? (currentUser.operator_id|0) : currentUser.driver_id,
+            car_id:    currentUser.role==='operator' ? null : (window._driverCar?.id || null),
             type:      currentRecordingType,
             audio_data: reader.result,
             notes,
@@ -8374,8 +8379,8 @@ async function _sendEmergencyNoAudio() {
   const emgLocation = await silentGetLocation(8000).catch(() => '');
   try {
     await apiCall('/emergency/report','POST',{
-      driver_id:  currentUser.driver_id,
-      car_id:     window._driverCar?.id || null,
+      driver_id:  currentUser.role==='operator' ? (currentUser.operator_id|0) : currentUser.driver_id,
+      car_id:     currentUser.role==='operator' ? null : (window._driverCar?.id || null),
       type:       currentRecordingType,
       audio_data: '',
       notes:      window._emgPendingNotes || '',
