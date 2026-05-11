@@ -3279,100 +3279,122 @@ REQUEST_TYPES = {
 
 @app.post("/requests", status_code=201)
 async def create_request(body: dict, cu: dict = Depends(get_user)):
-    log.info(f"[REQUEST] role={cu.get('role')} op_id={cu.get('operator_id')} drv_id={cu.get('driver_id')} body={body}")
-    req_type       = (body.get("type") or "").strip()
-    notes          = (body.get("notes") or "").strip()
-    new_odometer   = body.get("new_odometer")
-    trip_id        = body.get("trip_id")
-    renewal_date   = (body.get("renewal_date") or "").strip()
-    new_expiry_date= (body.get("new_expiry_date") or "").strip()
-    license_type   = (body.get("license_type") or "").strip()
+    """إنشاء طلب جديد — يدعم السائق والمشغل بنفس الـ endpoint"""
+    import traceback as _tb_mod
+    log.info(f"[REQUEST] role={cu.get('role')} op_id={cu.get('operator_id')} drv_id={cu.get('driver_id')} type={body.get('type')}")
+    try:
+        req_type        = (body.get("type") or "").strip()
+        notes           = (body.get("notes") or "").strip()
+        new_odometer    = body.get("new_odometer")
+        trip_id         = body.get("trip_id")
+        renewal_date    = (body.get("renewal_date") or "").strip()
+        new_expiry_date = (body.get("new_expiry_date") or "").strip()
+        license_type    = (body.get("license_type") or "").strip()
 
-    if req_type not in REQUEST_TYPES:
-        raise HTTPException(400, "نوع الطلب غير صالح")
+        if req_type not in REQUEST_TYPES:
+            raise HTTPException(400, f"نوع الطلب غير صالح: {req_type}")
 
-    is_op     = cu["role"] == "operator"
-    driver_id = cu.get("driver_id") if not is_op else None
-    op_id     = cu.get("operator_id") if is_op else None
+        is_op     = cu["role"] == "operator"
+        driver_id = cu.get("driver_id") if not is_op else None
+        op_id     = cu.get("operator_id") if is_op else None
 
-    if not is_op and not driver_id:
-        raise HTTPException(403, "فقط السائقون والمشغلون يمكنهم تقديم الطلبات")
+        if not is_op and not driver_id:
+            raise HTTPException(403, "فقط السائقون والمشغلون يمكنهم تقديم الطلبات")
 
-    if req_type == "license_renew":
-        if not renewal_date:   raise HTTPException(400, "تاريخ التجديد مطلوب")
-        if not new_expiry_date:raise HTTPException(400, "تاريخ انتهاء الرخصة الجديد مطلوب")
-        if not license_type:   raise HTTPException(400, "نوع الرخصة مطلوب")
-        notes = f"نوع الرخصة: {'رخصة القيادة' if license_type=='driver' else 'رخصة العربة'} | تاريخ التجديد: {renewal_date} | تاريخ الانتهاء الجديد: {new_expiry_date}"
+        if req_type == "license_renew":
+            if not renewal_date:    raise HTTPException(400, "تاريخ التجديد مطلوب")
+            if not new_expiry_date: raise HTTPException(400, "تاريخ انتهاء الرخصة الجديد مطلوب")
+            if not license_type:    raise HTTPException(400, "نوع الرخصة مطلوب")
+            notes = (f"نوع الرخصة: {'رخصة القيادة' if license_type=='driver' else 'رخصة العربة'}"
+                     f" | تاريخ التجديد: {renewal_date} | تاريخ الانتهاء الجديد: {new_expiry_date}")
 
-    now = datetime.utcnow().isoformat() + "Z"
-    odo = float(new_odometer) if new_odometer else None
-    tid = int(trip_id) if trip_id else None
+        now = datetime.utcnow().isoformat() + "Z"
+        odo = float(new_odometer) if new_odometer else None
+        tid = int(trip_id)        if trip_id      else None
 
-    with get_db() as conn:
-        c = conn.cursor()
+        with get_db() as conn:
+            c = conn.cursor()
 
-        # ── inline schema check + migration ──
-        _cols = {r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()}
-        _tbl_sql = (c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='driver_requests'").fetchone() or [""])[0]
+            # ── inline schema fix: شيل FK + NOT NULL لو لسه موجودين ──
+            _tbl = (c.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='driver_requests'"
+            ).fetchone() or {})
+            _tbl_sql = _tbl["sql"] if _tbl else ""
+            _cols    = {r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()}
 
-        # لو الجدول لسه بالـ schema القديم (FK أو NOT NULL) — rebuild فوري
-        if "FOREIGN KEY" in (_tbl_sql or "") or "NOT NULL" in (_tbl_sql or "") or "operator_id" not in _cols:
-            log.warning("driver_requests: old schema detected — running inline rebuild...")
-            c.execute("PRAGMA foreign_keys=OFF")
-            c.execute("""CREATE TABLE IF NOT EXISTS driver_requests_inline (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                driver_id INTEGER, operator_id INTEGER, is_operator INTEGER DEFAULT 0,
-                type TEXT NOT NULL, notes TEXT DEFAULT '', new_odometer REAL,
-                trip_id INTEGER, status TEXT DEFAULT 'pending', priority TEXT DEFAULT 'medium',
-                admin_notes TEXT DEFAULT '', admin_message TEXT DEFAULT '',
-                handled_by TEXT DEFAULT '', handled_at TEXT DEFAULT '',
-                forwarded_to_super INTEGER DEFAULT 0, super_decision TEXT DEFAULT '',
-                super_notes TEXT DEFAULT '', super_handled_by TEXT DEFAULT '',
-                super_handled_at TEXT DEFAULT '', created_at TEXT NOT NULL
-            )""")
-            c.execute("""INSERT OR IGNORE INTO driver_requests_inline
-                (id,driver_id,type,notes,new_odometer,trip_id,status,created_at)
-                SELECT id,driver_id,type,notes,new_odometer,trip_id,
-                       COALESCE(status,'pending'),created_at FROM driver_requests""")
-            c.execute("DROP TABLE driver_requests")
-            c.execute("ALTER TABLE driver_requests_inline RENAME TO driver_requests")
-            c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS idx_req_operator ON driver_requests(operator_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
-            c.execute("PRAGMA foreign_keys=ON")
-            log.info("✅ driver_requests inline rebuild done")
-        else:
-            # أضف columns لو ناقصة فقط
-            for col, definition in [("operator_id","INTEGER"), ("is_operator","INTEGER DEFAULT 0")]:
-                if col not in _cols:
-                    try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {col} {definition}")
-                    except Exception: pass
+            if "FOREIGN KEY" in _tbl_sql or "NOT NULL" in _tbl_sql or "operator_id" not in _cols:
+                log.warning("[REQUEST] Rebuilding driver_requests schema inline...")
+                c.execute("PRAGMA foreign_keys=OFF")
+                c.execute("""CREATE TABLE IF NOT EXISTS _dr_tmp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    driver_id INTEGER, operator_id INTEGER, is_operator INTEGER DEFAULT 0,
+                    type TEXT NOT NULL, notes TEXT DEFAULT '', new_odometer REAL,
+                    trip_id INTEGER, status TEXT DEFAULT 'pending',
+                    priority TEXT DEFAULT 'medium', admin_notes TEXT DEFAULT '',
+                    admin_message TEXT DEFAULT '', handled_by TEXT DEFAULT '',
+                    handled_at TEXT DEFAULT '', forwarded_to_super INTEGER DEFAULT 0,
+                    super_decision TEXT DEFAULT '', super_notes TEXT DEFAULT '',
+                    super_handled_by TEXT DEFAULT '', super_handled_at TEXT DEFAULT '',
+                    created_at TEXT NOT NULL
+                )""")
+                _safe_cols = [r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()
+                              if r[1] in ("id","driver_id","type","notes","new_odometer",
+                                          "trip_id","status","priority","admin_notes",
+                                          "admin_message","handled_by","handled_at",
+                                          "forwarded_to_super","super_decision","super_notes",
+                                          "super_handled_by","super_handled_at","created_at")]
+                _col_str = ",".join(_safe_cols)
+                c.execute(f"INSERT OR IGNORE INTO _dr_tmp ({_col_str}) SELECT {_col_str} FROM driver_requests")
+                c.execute("DROP TABLE driver_requests")
+                c.execute("ALTER TABLE _dr_tmp RENAME TO driver_requests")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver   ON driver_requests(driver_id)")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_req_operator ON driver_requests(operator_id)")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_req_status   ON driver_requests(status)")
+                c.execute("PRAGMA foreign_keys=ON")
+                log.info("[REQUEST] Schema rebuild done ✅")
+            else:
+                # أضف operator columns لو ناقصة فقط
+                for _c, _d in [("operator_id","INTEGER"),("is_operator","INTEGER DEFAULT 0")]:
+                    if _c not in _cols:
+                        try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {_c} {_d}")
+                        except Exception: pass
 
-        if is_op:
-            c.execute(
-                """INSERT INTO driver_requests
-                   (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
-                   VALUES(NULL,?,1,?,?,?,?,'pending',?)""",
-                (op_id or 0, req_type, notes, odo, tid, now)
-            )
-        else:
-            c.execute(
-                """INSERT INTO driver_requests
-                   (driver_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
-                   VALUES(?,0,?,?,?,?,'pending',?)""",
-                (driver_id, req_type, notes, odo, tid, now)
-            )
-        rid = c.lastrowid
+            # ── INSERT ──
+            if is_op:
+                c.execute(
+                    """INSERT INTO driver_requests
+                       (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                       VALUES(NULL,?,1,?,?,?,?,'pending',?)""",
+                    (op_id, req_type, notes, odo, tid, now)
+                )
+            else:
+                c.execute(
+                    """INSERT INTO driver_requests
+                       (driver_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                       VALUES(?,0,?,?,?,?,'pending',?)""",
+                    (driver_id, req_type, notes, odo, tid, now)
+                )
+            rid = c.lastrowid
 
-    log.info(f"[REQUEST] created id={rid} type={req_type} is_op={is_op}")
-    log_event("request_created",
-              driver_id=op_id if is_op else driver_id,
-              request_id=rid, type=req_type)
-    return {"id": rid, "status": "pending"}
+        log.info(f"[REQUEST] ✅ created id={rid} type={req_type} is_op={is_op} op_id={op_id}")
+        log_event("request_created",
+                  driver_id=op_id if is_op else driver_id,
+                  request_id=rid, type=req_type)
+        return {"id": rid, "status": "pending"}
 
+    except HTTPException:
+        raise
+    except Exception as _err:
+        _tb = _tb_mod.format_exc()
+        log.error(f"[REQUEST ERROR] {_err}\n{_tb}")
+        raise HTTPException(500, f"خطأ في إنشاء الطلب: {str(_err)}")
 
 @app.get("/requests")
-async def get_requests(cu: dict = Depends(get_user), branch: Optional[str] = None):
+async def get_requests(
+    cu: dict = Depends(get_user),
+    branch:    Optional[str] = None,
+    user_type: Optional[str] = None,   # 'driver' | 'operator' — للأدمن/السوبر
+):
     with get_db() as conn:
         c = conn.cursor()
         if cu["role"] == "driver":
@@ -3385,25 +3407,32 @@ async def get_requests(cu: dict = Depends(get_user), branch: Optional[str] = Non
         elif cu["role"] == "operator":
             op_id2 = cu.get("operator_id")
             if not op_id2: return []
-            # المشغل: operator_id column أو driver_id=0 sentinel
             c.execute("""SELECT r.*, op.name as driver_name, op.branch as driver_branch
                          FROM driver_requests r
                          LEFT JOIN equipment_operators op ON op.id=?
                          WHERE (r.operator_id=? OR (r.driver_id=0 AND r.is_operator=1))
                          ORDER BY r.id DESC""", (op_id2, op_id2))
         else:
-            # تحديد فلتر الفرع الفعّال
             eff_branch = _effective_branch(cu, branch)
+            # user_type filter: driver=is_operator=0, operator=is_operator=1
+            ut_cond = ""
+            if user_type == "driver":   ut_cond = " AND (r.is_operator=0 OR r.is_operator IS NULL)"
+            elif user_type == "operator": ut_cond = " AND r.is_operator=1"
             if eff_branch:
-                c.execute("""SELECT r.*, d.name as driver_name, d.branch as driver_branch
+                c.execute(f"""SELECT r.*, COALESCE(d.name,op.name) as driver_name,
+                                    COALESCE(d.branch,op.branch) as driver_branch
                              FROM driver_requests r
-                             LEFT JOIN drivers d ON r.driver_id=d.id
-                             WHERE d.branch=?
+                             LEFT JOIN drivers d ON r.driver_id=d.id AND (r.is_operator IS NULL OR r.is_operator=0)
+                             LEFT JOIN equipment_operators op ON r.operator_id=op.id
+                             WHERE COALESCE(d.branch,op.branch)=? {ut_cond}
                              ORDER BY r.id DESC""", (eff_branch,))
             else:
-                c.execute("""SELECT r.*, d.name as driver_name, d.branch as driver_branch
+                c.execute(f"""SELECT r.*, COALESCE(d.name,op.name) as driver_name,
+                                    COALESCE(d.branch,op.branch) as driver_branch
                              FROM driver_requests r
-                             LEFT JOIN drivers d ON r.driver_id=d.id
+                             LEFT JOIN drivers d ON r.driver_id=d.id AND (r.is_operator IS NULL OR r.is_operator=0)
+                             LEFT JOIN equipment_operators op ON r.operator_id=op.id
+                             WHERE 1=1 {ut_cond}
                              ORDER BY r.id DESC""")
         return [dict(row) for row in c.fetchall()]
 
