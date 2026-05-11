@@ -1300,72 +1300,7 @@ tr.row-hidden { display:none; }
 
 
 /* ── Global Entity Switcher ── */
-#globalEntitySwitcher {
-  display: none;
-  position: sticky;
-  top: 0;
-  z-index: 200;
-  background: #fff;
-  border-bottom: 1.5px solid #e2e8f0;
-  padding: .55rem 1.25rem;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  box-shadow: 0 1px 8px rgba(0,0,0,.06);
-}
-#globalEntitySwitcher.visible { display: flex; }
-.ges-pill {
-  display: flex;
-  background: #f1f5f9;
-  border-radius: 10px;
-  padding: 3px;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.ges-btn {
-  padding: .38rem 1rem;
-  border-radius: 8px;
-  border: none;
-  font-family: inherit;
-  font-size: .84rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all .15s;
-  white-space: nowrap;
-}
-.ges-btn.active {
-  background: #6366f1;
-  color: #fff;
-  box-shadow: 0 1px 4px rgba(99,102,241,.3);
-}
-.ges-btn:not(.active) {
-  background: transparent;
-  color: #64748b;
-}
-.ges-label {
-  font-size: .75rem;
-  font-weight: 700;
-  color: #94a3b8;
-  white-space: nowrap;
-}
-.ges-stats {
-  display: flex;
-  gap: .75rem;
-  flex-wrap: wrap;
-  margin-right: auto;
-}
-.ges-stat {
-  display: flex;
-  align-items: center;
-  gap: .3rem;
-  font-size: .78rem;
-  color: #475569;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: .2rem .6rem;
-}
-.ges-stat strong { color: #0f172a; font-weight: 800; }
+/* Global entity switcher removed — unified view */
 
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -1420,14 +1355,7 @@ tr.row-hidden { display:none; }
         🚪
       </button>
     </header>
-    <div id="globalEntitySwitcher">
-      <span class="ges-label">عرض:</span>
-      <div class="ges-pill">
-        <button class="ges-btn active" id="gesBtnDriver"   onclick="gesSetType('driver')">🚗 السائقون</button>
-        <button class="ges-btn"        id="gesBtnOperator" onclick="gesSetType('operator')">⚙️ المشغلون</button>
-      </div>
-      <div class="ges-stats" id="gesStats"></div>
-    </div>
+    <!-- globalEntitySwitcher removed — unified view -->
     <div class="page-content" id="pageContent"></div>
   </div>
 </div>
@@ -1942,17 +1870,7 @@ async function renderOverview() {
     pc.appendChild(sel);
   }
 
-  // ── Entity Switcher ──
-  const _ovSwDiv = document.createElement('div');
-  _ovSwDiv.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.5rem 1.25rem 0;flex-wrap:wrap';
-  const _t = window._gesType || 'driver';
-  _ovSwDiv.innerHTML = `
-    <span style="font-size:.74rem;font-weight:700;color:#94a3b8">عرض البيانات:</span>
-    <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-      <button onclick="gesSetType('driver');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='driver'?'#6366f1':'transparent'};color:${_t==='driver'?'#fff':'#64748b'}">🚗 سائقون</button>
-      <button onclick="gesSetType('operator');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='operator'?'#6366f1':'transparent'};color:${_t==='operator'?'#fff':'#64748b'}">⚙️ مشغلون</button>
-    </div>`;
-  pc.appendChild(_ovSwDiv);
+  // Entity switcher removed — unified view always shows all data
 
   const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
 
@@ -3219,16 +3137,6 @@ async function renderTripsSection() {
       <div class="card-header">
         <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
           <div class="card-title">🗺️ الرحلات والورديات</div>
-          <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-            <button onclick="_gesSetTripsType('driver')" id="tripsTabD"
-              style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:#6366f1;color:#fff">
-              🚗 رحلات السائقين (<span id="tripCount">${trips.length}</span>)
-            </button>
-            <button onclick="_gesSetTripsType('operator')" id="tripsTabO"
-              style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:transparent;color:#64748b">
-              ⚙️ ورديات المشغلين
-            </button>
-          </div>
         </div>
         <button class="btn btn-success btn-sm" onclick="exportCSV()" ${isReporter()?'style="display:none"':''}>⬇️ تصدير CSV</button>
       </div>
@@ -5572,21 +5480,10 @@ async function renderRequestsSection() {
     <!-- ══ MAIN CARD ══ -->
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
 
-      <!-- Driver / Operator switcher -->
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9">
-        <div style="display:flex;background:#f1f5f9;border-radius:10px;padding:3px;gap:2px">
-          <button id="reqTabDriver" onclick="_reqSetType('driver')"
-            style="padding:.45rem 1.1rem;border-radius:8px;border:none;font-family:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:all .15s;background:#6366f1;color:#fff">
-            🚗 السائقون
-          </button>
-          <button id="reqTabOperator" onclick="_reqSetType('operator')"
-            style="padding:.45rem 1.1rem;border-radius:8px;border:none;font-family:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:all .15s;background:transparent;color:#64748b">
-            ⚙️ المشغلون
-          </button>
-        </div>
-
+      <!-- Unified search bar -->
+      <div style="display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9">
         <!-- Search -->
-        <div style="position:relative;flex:1;max-width:300px">
+        <div style="position:relative;flex:1;max-width:340px">
           <span style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🔍</span>
           <input id="reqSearchInput" type="text" placeholder="بحث بالاسم أو نوع الطلب..."
             oninput="_reqApplyFilters()"
@@ -5614,6 +5511,7 @@ async function renderRequestsSection() {
           <thead>
             <tr style="background:#f8fafc">
               <th style="padding:.65rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem;white-space:nowrap">المستخدم</th>
+              <th style="padding:.65rem .6rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">النوع</th>
               <th style="padding:.65rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">نوع الطلب</th>
               <th style="padding:.65rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">التفاصيل</th>
               <th style="padding:.65rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">الأولوية</th>
@@ -5651,7 +5549,7 @@ function _reqSkeleton() {
 }
 
 function _reqStatusPills(isSuper) {
-  const all = window._reqData[window._reqUserType] || [];
+  const all = [...(window._reqData.driver||[]), ...(window._reqData.operator||[])];
   const pills = [
     { v:'all',           l:'الكل', count: all.length },
     { v:'pending',       l:'⏳ انتظار', count: all.filter(r=>r.status==='pending').length },
@@ -5693,27 +5591,9 @@ function _reqRenderStats() {
 }
 
 function _reqSetType(type) {
+  // Unified view: type switching is internal-only, no UI tabs exist
   window._reqUserType = type;
-  const btnD = document.getElementById('reqTabDriver');
-  const btnO = document.getElementById('reqTabOperator');
-  if (btnD) {
-    btnD.style.background = type==='driver' ? '#6366f1' : 'transparent';
-    btnD.style.color      = type==='driver' ? '#fff'    : '#64748b';
-  }
-  if (btnO) {
-    btnO.style.background = type==='operator' ? '#6366f1' : 'transparent';
-    btnO.style.color      = type==='operator' ? '#fff'    : '#64748b';
-  }
-  // refresh status pills
-  const pWrapper = document.querySelector('[id^="reqTabDriver"]')?.parentElement?.parentElement;
   _reqApplyFilters();
-  // re-render pills
-  const pillsEl = document.querySelector('#reqTableWrap')?.previousElementSibling?.previousElementSibling;
-  if (pillsEl) {
-    const isSuper = currentUser?.role === 'superuser';
-    const firstChild = pillsEl.firstElementChild;
-    if (firstChild) firstChild.nextSibling && (pillsEl.innerHTML = '<span style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-left:.25rem">الحالة:</span>' + _reqStatusPills(isSuper) + '<div style="flex:1"></div><select id="reqTypeFilter" onchange="_reqApplyFilters()" style="padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.78rem;background:#fff;outline:none;cursor:pointer;color:#475569"><option value="all">كل الأنواع</option>' + Object.entries(REQ_TYPE_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('') + '</select>');
-  }
 }
 
 function _reqSetStatus(status) {
@@ -5735,24 +5615,31 @@ function _reqApplyFilters() {
   const search    = (document.getElementById('reqSearchInput')?.value  || '').toLowerCase().trim();
   const typeFilt  = document.getElementById('reqTypeFilter')?.value   || 'all';
   const statusFilt= window._reqStatusFilt;
-  const userType  = window._reqUserType;
 
-  let rows = (window._reqData[userType] || []).filter(r => {
+  // Unified: merge driver + operator requests, tag each with its source
+  const driverRows   = (window._reqData.driver   || []).map(r => ({...r, _entityType:'driver'}));
+  const operatorRows = (window._reqData.operator  || []).map(r => ({...r, _entityType:'operator'}));
+  let rows = [...driverRows, ...operatorRows].filter(r => {
     if (statusFilt !== 'all' && r.status !== statusFilt && r.priority !== statusFilt) return false;
     if (typeFilt   !== 'all' && r.type   !== typeFilt)   return false;
     if (search) {
-      const hay = `${r.driver_name||''} ${r.type||''} ${r.notes||''}`.toLowerCase();
+      const hay = `${r.driver_name||''} ${r.operator_name||''} ${r.type||''} ${r.notes||''}`.toLowerCase();
       if (!hay.includes(search)) return false;
     }
     return true;
   });
+  // Sort: pending first, then by date desc
+  rows.sort((a,b) => {
+    if (a.status === 'pending' && b.status !== 'pending') return -1;
+    if (b.status === 'pending' && a.status !== 'pending') return 1;
+    return (b.created_at||'').localeCompare(a.created_at||'');
+  });
 
   const tbody  = document.getElementById('reqTableBody');
   const footer = document.getElementById('reqFooter');
-  const isOp   = userType === 'operator';
 
   if (!rows.length) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:3rem">
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:3rem">
       <div style="font-size:2rem;margin-bottom:.5rem">📭</div>
       <div style="color:#94a3b8;font-size:.9rem">لا توجد طلبات مطابقة</div>
     </td></tr>`;
@@ -5761,6 +5648,7 @@ function _reqApplyFilters() {
   }
 
   if (tbody) tbody.innerHTML = rows.map(r => {
+    const isOp  = r._entityType === 'operator';
     const st  = REQ_STATUS[r.status] || REQ_STATUS.pending;
     const pr  = REQ_PRIORITY[r.priority || 'medium'];
     const tl  = REQ_TYPE_LABELS[r.type] || r.type;
@@ -5798,9 +5686,11 @@ function _reqApplyFilters() {
           <span style="width:32px;height:32px;border-radius:50%;background:${isOp?'#eff6ff':'#f0fdf4'};display:flex;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0">${isOp?'⚙️':'🚗'}</span>
           <div>
             <div style="font-weight:700;color:#0f172a;font-size:.86rem">${name}</div>
-            <div style="font-size:.73rem;color:#94a3b8">${isOp?'مشغل':'سائق'}</div>
           </div>
         </div>
+      </td>
+      <td style="padding:.7rem .6rem;text-align:center">
+        <span style="display:inline-block;padding:.18rem .5rem;border-radius:20px;font-size:.7rem;font-weight:700;background:${isOp?'#eff6ff':'#f0fdf4'};color:${isOp?'#2563eb':'#16a34a'};white-space:nowrap">${isOp?'مشغل':'سائق'}</span>
       </td>
       <td style="padding:.7rem 1rem">
         <span style="font-size:.84rem;font-weight:600;color:#334155">${tl}</span>
@@ -5822,7 +5712,7 @@ function _reqApplyFilters() {
       ${actionBtns}
     </tr>
     ${hasExtra ? `<tr id="${detId}" style="display:none;background:#f9fafb">
-      <td colspan="7" style="padding:.75rem 1.25rem 1rem">
+      <td colspan="8" style="padding:.75rem 1.25rem 1rem">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.6rem">
           ${r.notes        ? `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem"><div style="font-size:.71rem;font-weight:700;color:#94a3b8;margin-bottom:.2rem">📝 الطلب</div><div style="font-size:.82rem;color:#334155">${r.notes}</div></div>` : ''}
           ${r.admin_notes  ? `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem"><div style="font-size:.71rem;font-weight:700;color:#94a3b8;margin-bottom:.2rem">🗒️ ملاحظات الأدمن</div><div style="font-size:.82rem;color:#334155">${r.admin_notes}</div><div style="font-size:.71rem;color:#94a3b8;margin-top:.25rem">بواسطة: ${r.handled_by||'—'}</div></div>` : ''}
@@ -5972,15 +5862,9 @@ async function openSuperDecisionModal(rid, defaultStatus) {
 
 
 /* ── EMERGENCIES SECTION (Admin) ── */
-async function renderEmergenciesSection(entityType) {
-  if (entityType) window._gesType = entityType;
-  const type = window._gesType || 'driver';
+async function renderEmergenciesSection() {
   const reports = await loadEmergencies();
-  // Filter by type: driver=is_operator falsy, operator=is_operator=1
-  const filtered = reports.filter(r =>
-    type === 'operator' ? r.is_operator == 1 : !r.is_operator || r.is_operator == 0
-  );
-  const _reportsForRender = filtered;  // used below
+  const filtered = reports;  // unified: show all
   window._emergencyReports = reports;
   const unread=reports.filter(r=>!r.is_read).length;
   // Mark all as read
@@ -5999,12 +5883,6 @@ async function renderEmergenciesSection(entityType) {
         <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;width:100%;justify-content:space-between">
           <div class="card-title">🚨 البلاغات (<span id="emgCount">${filtered.length}</span> / ${reports.length} إجمالي)</div>
           <div style="display:flex;align-items:center;gap:.5rem">
-            <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-              <button onclick="renderEmergenciesSection('driver')"
-                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${type==='driver'?'#6366f1':'transparent'};color:${type==='driver'?'#fff':'#64748b'}">🚗 السائقون</button>
-              <button onclick="renderEmergenciesSection('operator')"
-                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${type==='operator'?'#6366f1':'transparent'};color:${type==='operator'?'#fff':'#64748b'}">⚙️ المشغلون</button>
-            </div>
             <button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button>
           </div>
         </div>
@@ -6030,10 +5908,10 @@ async function renderEmergenciesSection(entityType) {
         <th>الموقع</th><th>ملاحظات</th><th>التسجيل الصوتي</th>
         <th>الحالة</th><th>الإجراء المتخذ</th><th>رسالة للسائق</th><th>بواسطة</th><th>وقت الإجراء</th><th>إجراء</th>
       </tr></thead><tbody id="emgBody">
-      ${reports.map(r=>`<tr class="report-row-${r.type}">
+      ${reports.map(r=>{const isOpRpt = r.is_operator==1; return `<tr class="report-row-${r.type}">
         <td>${r.id}</td>
         <td>${r.type==='emergency'?'<span class="badge badge-emg">🚨 طارئ</span>':'<span class="badge badge-acc">🚗 حادث</span>'}</td>
-        <td><strong>${r.driver_name||'—'}</strong></td>
+        <td><strong>${r.driver_name||'—'}</strong> <span style="display:inline-block;padding:.12rem .45rem;border-radius:20px;font-size:.66rem;font-weight:700;background:${isOpRpt?'#eff6ff':'#f0fdf4'};color:${isOpRpt?'#2563eb':'#16a34a'};margin-right:.2rem">${isOpRpt?'مشغل':'سائق'}</span></td>
         <td dir="ltr">${r.car_plate||'—'}</td>
         <td style="font-size:.8rem">${r.created_at?fmtDT(r.created_at):'—'}</td>
         <td>${r.location?formatLocation(r.location):'<span style="color:var(--muted);font-size:.78rem">—</span>'}</td>
@@ -6050,7 +5928,7 @@ async function renderEmergenciesSection(entityType) {
           ${!isReporter() ? (!r.is_handled?`<button class="btn btn-success btn-sm" onclick="openEmergencyActionModal(${r.id})">✍️ إجراء</button>`
           :`<button class="btn btn-ghost btn-sm" onclick="openEmergencyActionModal(${r.id})">✏️ تعديل</button>`) : '—'}
         </td>
-      </tr>`).join('')}
+      </tr>`}).join('')}
       </tbody></table></div>` : '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد بلاغات حتى الآن</p></div>'}
     </div>
       `;
@@ -14486,111 +14364,37 @@ async function _previewLocation() {
 // يظهر في كل الصفحات اللي فيها بيانات تشغيل
 // ══════════════════════════════════════════════════════════════════
 
-window._gesType = 'driver';  // global: 'driver' | 'operator'
+window._gesType = 'driver';  // kept for legacy API compatibility
 
-// الصفحات اللي بيظهر فيها السويتشر
-const GES_SECTIONS = new Set([
-  'trips', 'requests', 'emergencies', 'workshops',
-  'permissions', 'driver-kpi', 'op-card',
-  'equipment-trips', 'shifts-table', 'equipment-operators',
-  'monthly-report', 'overview',
-]);
-
-function gesShow(sectionId) {
-  const bar = document.getElementById('globalEntitySwitcher');
-  if (!bar) return;
-  if (GES_SECTIONS.has(sectionId)) {
-    bar.classList.add('visible');
-    gesUpdateStats();
-  } else {
-    bar.classList.remove('visible');
-  }
-}
+// Unified view: no visible switcher — gesShow/gesSetType are safe no-ops
+function gesShow(sectionId) { /* no-op: global switcher removed */ }
 
 function gesSetType(type) {
   window._gesType = type;
-  // Update button styles
-  const btnD = document.getElementById('gesBtnDriver');
-  const btnO = document.getElementById('gesBtnOperator');
-  if (btnD) { btnD.classList.toggle('active', type==='driver');   }
-  if (btnO) { btnO.classList.toggle('active', type==='operator'); }
-  gesUpdateStats();
-  // Also sync requests tab switcher if visible
+  // sync internal state only
   if (typeof _reqSetType === 'function') {
     window._reqUserType = type;
     _reqApplyFilters && _reqApplyFilters();
   }
-  // Re-render current section with new type
-  const cur = window.currentSection;
-  if (cur && GES_SECTIONS.has(cur)) {
-    // trigger re-render
-    _gesRerenderSection(cur);
-  }
 }
 
-async function _gesRerenderSection(section) {
-  switch(section) {
-    case 'requests':    await renderRequestsSection(); break;
-    case 'emergencies': await renderEmergenciesSection(); break;
-    case 'trips':       await renderTripsSection(); break;
-    case 'workshops':   await renderAdminWorkshops(); break;
-    case 'shifts-table':await renderShiftsTable(); break;
-    case 'overview':    await renderOverview(); break;
-  }
-}
+async function gesUpdateStats() { /* no-op: switcher bar removed */ }
 
-async function gesUpdateStats() {
-  const el = document.getElementById('gesStats');
-  if (!el) return;
-  const type = window._gesType;
-  try {
-    if (type === 'driver') {
-      const [drvs, trips] = await Promise.all([
-        apiCall('/drivers?limit=1').catch(()=>({total:0})),
-        apiCall('/trips?limit=1').catch(()=>({total:0})),
-      ]);
-      el.innerHTML = `
-        <div class="ges-stat">🚗 <strong>${drvs.total??'—'}</strong> سائق</div>
-        <div class="ges-stat">🛣️ <strong>${trips.total??'—'}</strong> رحلة</div>`;
-    } else {
-      const [ops, shifts] = await Promise.all([
-        apiCall('/operators?limit=1').catch(()=>({total:0})),
-        apiCall('/shifts?limit=1').catch(()=>({total:0})),
-      ]);
-      el.innerHTML = `
-        <div class="ges-stat">⚙️ <strong>${ops.total??'—'}</strong> مشغل</div>
-        <div class="ges-stat">⏱️ <strong>${shifts.total??'—'}</strong> وردية</div>`;
-    }
-  } catch(e) { el.innerHTML = ''; }
-}
-
-// Hook into switchSection to show/hide switcher
+// Hook into switchSection — no visual switcher, just keep internal state
 const _origSwitchSection = switchSection;
 switchSection = async function(id) {
   await _origSwitchSection(id);
-  gesShow(id);
-  // sync _reqUserType with _gesType when entering requests
+  // sync _reqUserType when entering requests (internal only)
   if (id === 'requests' && typeof _reqSetType === 'function') {
-    _reqSetType(window._gesType);
+    window._reqUserType = 'driver'; // reset to show all unified
   }
 };
 
 
-// ── Trips section: switch between driver trips and operator shifts ──
+// Trips unified view — type is internal only, no tab buttons
 function _gesSetTripsType(type) {
   window._gesType = type;
-  const btnD = document.getElementById('tripsTabD');
-  const btnO = document.getElementById('tripsTabO');
-  if (btnD) { btnD.style.background = type==='driver'?'#6366f1':'transparent'; btnD.style.color = type==='driver'?'#fff':'#64748b'; }
-  if (btnO) { btnO.style.background = type==='operator'?'#6366f1':'transparent'; btnO.style.color = type==='operator'?'#fff':'#64748b'; }
-  // Also update global switcher
-  const gbD = document.getElementById('gesBtnDriver');
-  const gbO = document.getElementById('gesBtnOperator');
-  if (gbD) gbD.classList.toggle('active', type==='driver');
-  if (gbO) gbO.classList.toggle('active', type==='operator');
-
   if (type === 'operator') {
-    // Show shifts table inline instead
     renderShiftsTable();
   } else {
     renderTripsSection();
