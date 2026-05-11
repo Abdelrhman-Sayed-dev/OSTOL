@@ -6593,22 +6593,21 @@ function openWsModal(type) {
     </div>`);
 
   document.getElementById('wsSubmitBtn').onclick = async () => {
-    const vehicle_id       = parseInt(document.getElementById('wVehicle')?.value)||null;
+    const vehicle_id       = _isOpWs ? null : (parseInt(document.getElementById('wVehicle')?.value)||null);
     const odometer_reading = parseFloat(document.getElementById('wOdo')?.value)||null;
     const price            = parseFloat(document.getElementById('wPrice')?.value)||0;
     const notes            = document.getElementById('wNotes')?.value?.trim()||'';
     const btn              = document.getElementById('wsSubmitBtn');
 
-    if(!vehicle_id && !_isOpWs)                 return showNotification('اختر المركبة','error');
-    const _finalVehicleId = _isOpWs ? null : (vehicle_id || null);
-    if(!odometer_reading||odometer_reading<=0)  return showNotification(currentUser?.role==='operator'?'أدخل ساعات التشغيل':'أدخل قراءة العداد','error');
+    if(!vehicle_id && !_isOpWs) return showNotification('اختر المركبة','error');
+    const _finalVehicleId = _isOpWs ? null : vehicle_id;
+    if(!odometer_reading||odometer_reading<=0) return showNotification(_isOpWs?'أدخل ساعات التشغيل':'أدخل قراءة العداد','error');
 
-    // المشغل: نستخدم _opData.id (الأكثر موثوقية) أو operator_id من currentUser
-    const _wsDriverId = currentUser.role==='operator'
+    const _wsDriverId = _isOpWs
       ? (window._opData?.id || currentUser.operator_id || 0)
       : currentUser.driver_id;
-    if (currentUser.role === 'operator' && !_wsDriverId) {
-      return showNotification('❌ لم يتم تحديد بيانات المشغل — أعد تحميل الصفحة', 'error');
+    if (_isOpWs && !_wsDriverId) {
+      return showNotification('❌ بيانات المشغل غير متاحة — أعد تحميل الصفحة', 'error');
     }
     const payload = {
       driver_id:_wsDriverId, type:selWsType,
@@ -7278,9 +7277,16 @@ async function renderDriverSinglePage() {
       _opData = await apiCall('/operators/me').catch(() => null);
       if (_opData) {
         currentUser.operator_id = _opData.id;
+        window._opData = _opData;  // ← نخزنه globally عشان dpWsModal يقدر يوصله
         const sd = await apiCall('/operators/' + _opData.id + '/shifts?limit=20').catch(()=>({shifts:[]}));
         shiftHistory = sd?.shifts || [];
         activeShift  = shiftHistory.find(s => s.status === 'active') || null;
+        // لو فيه وردية نشطة، نحدث اسم المعدة في _opData
+        if (activeShift && activeShift.equipment_name) {
+          _opData.current_equipment_name = _opData.current_equipment_name || activeShift.equipment_name;
+          _opData.current_equipment_id   = _opData.current_equipment_id   || activeShift.equipment_id;
+          window._opData = _opData;
+        }
       }
     } catch(e) {}
 
@@ -8137,21 +8143,12 @@ function toggleOdometerField() { toggleRequestFields(); }
 
 /* Quick action dispatcher */
 async function dpQuick(type) {
-  // ── المشغل يستخدم operator_id كـ driver_id مؤقتاً ──
-  const _opTmp = currentUser?.role === 'operator' && currentUser.operator_id;
-  const _savedDrvId = currentUser.driver_id;
-  const _savedRole  = currentUser.role;
-  if (_opTmp) { currentUser.driver_id = currentUser.operator_id; currentUser.role = 'driver'; }
-
   if(type==='accident'||type==='emergency'){
     openEmergencyModal(type);
-    if (_opTmp) { currentUser.driver_id = _savedDrvId; currentUser.role = _savedRole; }
     return;
   }
-  if(!window._typePrices) window._typePrices=await apiCall('/settings/prices').catch(()=>({}));
+  if(!window._typePrices) window._typePrices = await apiCall('/settings/prices').catch(()=>({}));
   dpWsModal(type);
-
-  if (_opTmp) { currentUser.driver_id = _savedDrvId; currentUser.role = _savedRole; }
 }
 
 /* ── EMERGENCY MODAL — يسجل الصوت أولاً ثم يرسل عند الضغط على الزر ── */
@@ -8662,204 +8659,257 @@ function toggleOilQty(key) {
   if(selected) document.getElementById('oil_qty_' + key)?.focus();
 }
 
+// ═══════════════════════════════════════════════════════════════
+// dpWsModal — Workshop Modal — يدعم السائق والمشغل بدون conflicts
+// ═══════════════════════════════════════════════════════════════
 function dpWsModal(type) {
-  // 'fuel' is a virtual type — show subtype selector first
+  const _isOp = currentUser?.role === 'operator';
+
+  // ── Operator: نجيب بيانات المعدة من _opData أو active shift ──
+  const _opEquipName = window._opData?.current_equipment_name || '';
+  const _opEquipId   = window._opData?.current_equipment_id   || '';
+  const _opId        = window._opData?.id || currentUser?.operator_id || null;
+
+  // ── Driver: نجيب السيارة المخصصة ──
+  const car = _isOp ? null : window._driverCar;
+
+  const wt = WT[type] || {icon:'⛽', label: type};
+
+  // Fuel subtype selector
   if(type === 'fuel') {
-    openModal(`
-      <div class="modal-header"><div class="modal-title">⛽ اختر نوع الوقود</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:.5rem 0">
-        ${FUEL_TYPES.map(f=>`
-          <button onclick="closeModal();dpWsModal('${f.key}')"
-            style="padding:1rem;border:2px solid #f59e0b;border-radius:12px;background:#fff7ed;font-size:1rem;font-weight:700;cursor:pointer;color:#92400e;font-family:inherit">
-            ⛽ ${f.label}
-          </button>`).join('')}
-      </div>`);
+    openModal(
+      '<div class="modal-header"><div class="modal-title">⛽ اختر نوع الوقود</div><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:.5rem 0">' +
+      FUEL_TYPES.map(f =>
+        '<button onclick="closeModal();dpWsModal(\'' + f.key + '\')" style="padding:1rem;border:2px solid #f59e0b;border-radius:12px;background:#fff7ed;font-size:1rem;font-weight:700;cursor:pointer;color:#92400e;font-family:inherit">⛽ ' + f.label + '</button>'
+      ).join('') + '</div>');
     return;
   }
 
-  selWsType=type;
-  const car=window._driverCar, wt=WT[type]||{icon:'⛽',label:type};
-  const carOpts=car?`<option value="${car.id}" selected>${car.plate} — ${car.model}</option>`
-    :'<option value="">⚠️ لا توجد مركبة</option>';
+  selWsType = type;
 
-  let specific='';
+  // ── Asset info block (معدة للمشغل / مركبة للسائق) ──
+  let assetBlock = '';
+  if (_isOp) {
+    if (_opEquipName) {
+      assetBlock =
+        '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:.65rem 1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.6rem">' +
+        '<span style="font-size:1.2rem">⚙️</span>' +
+        '<div><div style="font-weight:700;color:#15803d;font-size:.88rem">' + _opEquipName + '</div>' +
+        (_opEquipId ? '<div style="font-size:.73rem;color:#4ade80;font-family:monospace">' + _opEquipId + '</div>' : '') +
+        '</div></div>';
+    } else {
+      assetBlock =
+        '<div style="background:#fff7ed;border:1.5px solid #fbbf24;border-radius:12px;padding:.65rem 1rem;margin-bottom:.75rem;font-size:.83rem;color:#92400e">' +
+        '⚠️ لا توجد معدة مخصصة حالياً — يمكنك التسجيل بدون ربط معدة</div>';
+    }
+  }
+
+  // ── Odometer label ──
+  const odoLabel = _isOp ? 'ساعات التشغيل' : 'قراءة العداد (كم)';
+  const odoPlaceholder = _isOp ? 'مثال: 1250.5' : 'مثال: 54000';
+  const odoStep = _isOp ? '0.1' : '1';
+
+  // ── Type-specific fields ──
+  let specific = '';
   const isFuelType = type.startsWith('fuel_');
-  if(isFuelType) specific=`<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
-  else if(type==='oil') specific=`
-    <div class="form-group">
-      <label>نوع الزيت <span class="req">*</span></label>
-      <select id="wOilType" onchange="document.getElementById('wOilUnit').textContent=this.value==='oil_grease'?'كجم':'لتر'"
-        style="font-size:.88rem">
-        <option value="">-- اختر نوع الزيت --</option>
-        <option value="oil_motor">🔴 زيت المحرك</option>
-        <option value="oil_gear">🟠 زيت التروس</option>
-        <option value="oil_brake">🟡 زيت الفرامل</option>
-        <option value="oil_hydro">🔵 زيت الهيدروليك</option>
-        <option value="oil_grease">⚫ شحم</option>
-      </select>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group">
-        <label>الكمية <span class="req">*</span> (<span id="wOilUnit">لتر</span>)</label>
-        <input type="number" id="wQty" placeholder="0.0" min="0.1" step="0.1">
-      </div>
-      <div class="form-group"><label>ساعات المحرك</label><input type="number" id="wEngHours" placeholder="2500" min="0"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>رقم المستند</label><input type="text" id="wDocNum" placeholder="2024/001"></div>
-      <div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="ورشة الموقع"></div>
-    </div>
-  `;
-  else if(type==='tire') specific=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>اسم الصنف / الماركة</label><input type="text" id="wItemName" placeholder="مثال: ميشلان، بريدجستون"></div>
-      <div class="form-group"><label>المقاس</label><input type="text" id="wItemSpec" placeholder="مثال: 11R22.5"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label><input type="number" id="wQty" placeholder="4" min="1"></div>
-      <div class="form-group"><label>حالة الكوتش <span class="req">*</span></label>
-        <select id="wTireAction"><option value="">-- اختر --</option>
-          <option value="puncture">🔴 ثقب</option><option value="repair">🔧 تصليح</option><option value="replacement">🔄 استبدال</option>
-        </select>
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/050"></div>
-      <div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>
-    </div>
-  `;
-  else if(type==='battery') specific=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>اسم الصنف / الماركة</label><input type="text" id="wItemName" placeholder="مثال: فارتا، اكسايد"></div>
-      <div class="form-group"><label>المقاس / السعة</label><input type="text" id="wItemSpec" placeholder="مثال: 12V-200Ah"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>الكمية (عدد)</label><input type="number" id="wQty" placeholder="1" min="1"></div>
-      <div class="form-group"><label>نوع العملية <span class="req">*</span></label>
-        <select id="wOpType"><option value="">-- اختر --</option>
-          <option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option>
-        </select>
-      </div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-      <div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/075"></div>
-      <div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>
-    </div>
-  `;
-  else if(['filter','belt'].includes(type)) specific=`<div class="form-group"><label>نوع العملية <span class="req">*</span></label>
-    <select id="wOpType"><option value="">-- اختر --</option>
-      <option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option>
-    </select></div>`;
-  else if(type==='other') specific=`<div class="form-group"><label>وصف العملية <span class="req">*</span></label><textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>`;
 
-  openModal(`
-    <div class="modal-header"><div class="modal-title">${wt.icon} ${wt.label}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    ${specific}
-    <div class="form-group"><label>قراءة العداد (كم) <span class="req">*</span></label><input type="number" id="wOdo" placeholder="مثال: 54000" min="0"></div>
-    <div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>
-    <input type="hidden" id="wPrice" value="${(window._typePrices&&window._typePrices[type])||0}">
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button>
-    </div>`);
+  if (isFuelType) {
+    specific = '<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>';
+  } else if (type === 'oil') {
+    specific =
+      '<div class="form-group"><label>نوع الزيت <span class="req">*</span></label>' +
+      '<select id="wOilType" onchange="document.getElementById(\'wOilUnit\').textContent=this.value===\'oil_grease\'?\'كجم\':\'لتر\'" style="font-size:.88rem">' +
+      '<option value="">-- اختر نوع الزيت --</option>' +
+      '<option value="oil_motor">🔴 زيت المحرك</option>' +
+      '<option value="oil_gear">🟠 زيت التروس</option>' +
+      '<option value="oil_brake">🟡 زيت الفرامل</option>' +
+      '<option value="oil_hydro">🔵 زيت الهيدروليك</option>' +
+      '<option value="oil_grease">⚫ شحم</option>' +
+      '</select></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>الكمية <span class="req">*</span> (<span id="wOilUnit">لتر</span>)</label><input type="number" id="wQty" placeholder="0.0" min="0.1" step="0.1"></div>' +
+      '<div class="form-group"><label>' + ((_isOp) ? 'ساعات المحرك' : 'ساعات المحرك') + '</label><input type="number" id="wEngHours" placeholder="2500" min="0"></div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>رقم المستند</label><input type="text" id="wDocNum" placeholder="2024/001"></div>' +
+      '<div class="form-group"><label>جهة الصرف</label><input type="text" id="wSupply" placeholder="ورشة الموقع"></div>' +
+      '</div>';
+  } else if (type === 'tire') {
+    specific =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>اسم الصنف / الماركة</label><input type="text" id="wItemName" placeholder="مثال: ميشلان"></div>' +
+      '<div class="form-group"><label>المقاس</label><input type="text" id="wItemSpec" placeholder="مثال: 11R22.5"></div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>عدد الإطارات <span class="req">*</span></label><input type="number" id="wQty" placeholder="4" min="1"></div>' +
+      '<div class="form-group"><label>حالة الكوتش <span class="req">*</span></label><select id="wTireAction"><option value="">-- اختر --</option><option value="puncture">🔴 ثقب</option><option value="repair">🔧 تصليح</option><option value="replacement">🔄 استبدال</option></select></div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/050"></div>' +
+      '<div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>' +
+      '</div>';
+  } else if (type === 'battery') {
+    specific =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>اسم الصنف / الماركة</label><input type="text" id="wItemName" placeholder="مثال: فارتا"></div>' +
+      '<div class="form-group"><label>المقاس / السعة</label><input type="text" id="wItemSpec" placeholder="مثال: 12V-200Ah"></div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>الكمية (عدد)</label><input type="number" id="wQty" placeholder="1" min="1"></div>' +
+      '<div class="form-group"><label>نوع العملية <span class="req">*</span></label><select id="wOpType"><option value="">-- اختر --</option><option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option></select></div>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/075"></div>' +
+      '<div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>' +
+      '</div>';
+  } else if (['filter', 'belt'].includes(type)) {
+    specific =
+      '<div class="form-group"><label>نوع العملية <span class="req">*</span></label>' +
+      '<select id="wOpType"><option value="">-- اختر --</option><option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option></select></div>';
+  } else if (type === 'other') {
+    specific = '<div class="form-group"><label>وصف العملية <span class="req">*</span></label><textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>';
+  }
 
-  document.getElementById('wsSubmitBtn').onclick=async()=>{
-    const vid=car?.id||null, odo=parseFloat(document.getElementById('wOdo')?.value)||null;
-    const price=parseFloat(document.getElementById('wPrice')?.value)||0;
-    const notes=document.getElementById('wNotes')?.value?.trim()||'';
-    const btn=document.getElementById('wsSubmitBtn');
-    if(!vid)            return showNotification('لا توجد مركبة مخصصة','error');
-    if(!odo||odo<=0)    return showNotification('أدخل قراءة العداد','error');
-    const payload={driver_id:currentUser.driver_id,type:selWsType,price,notes,vehicle_id:vid,odometer_reading:odo,location:''};
-    const _isFuel=selWsType.startsWith('fuel_')||selWsType==='fuel';
+  const priceVal = (window._typePrices && window._typePrices[type]) || 0;
 
-    // Quantity (fuel & tire only — oil handled separately below)
-    if(_isFuel||selWsType==='tire'||selWsType==='battery'){
-      const q=parseFloat(document.getElementById('wQty')?.value);
-      if((_isFuel||selWsType==='tire')&&(!q||q<=0))return showNotification('أدخل الكمية','error');
-      if(q&&q>0) payload.quantity=q;
+  openModal(
+    '<div class="modal-header"><div class="modal-title">' + wt.icon + ' ' + wt.label + '</div><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+    assetBlock +
+    specific +
+    '<div class="form-group"><label>' + odoLabel + ' <span class="req">*</span></label>' +
+    '<input type="number" id="wOdo" placeholder="' + odoPlaceholder + '" min="0" step="' + odoStep + '"></div>' +
+    '<div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>' +
+    '<input type="hidden" id="wPrice" value="' + priceVal + '">' +
+    (priceVal > 0 ? '<div style="padding:.4rem .8rem;background:#f0fdf9;border:1px solid #6ee7b7;border-radius:8px;margin-bottom:.5rem;font-size:.85rem">💰 سعر الوحدة: <strong>' + priceVal.toFixed(2) + ' جنيه/وحدة</strong></div>' : '') +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button></div>'
+  );
+
+  document.getElementById('wsSubmitBtn').onclick = async () => {
+    const odo   = parseFloat(document.getElementById('wOdo')?.value) || null;
+    const price = parseFloat(document.getElementById('wPrice')?.value) || 0;
+    const notes = document.getElementById('wNotes')?.value?.trim() || '';
+    const btn   = document.getElementById('wsSubmitBtn');
+
+    // ── Validation: عداد مطلوب دايماً ──
+    if (!odo || odo <= 0) return showNotification(_isOp ? 'أدخل ساعات التشغيل' : 'أدخل قراءة العداد', 'error');
+
+    // ── تحديد driver_id وvehicle_id حسب الدور ──
+    let _drvId, _vidFinal;
+    if (_isOp) {
+      _drvId   = _opId;
+      _vidFinal = null;  // المشغل لا يستخدم cars table
+      if (!_drvId) return showNotification('❌ بيانات المشغل غير متاحة — أعد تحميل الصفحة', 'error');
+    } else {
+      _drvId   = currentUser.driver_id;
+      _vidFinal = car?.id || null;
+      if (!_vidFinal) return showNotification('لا توجد مركبة مخصصة', 'error');
     }
 
-    // Oil — single record with chosen subtype
-    if(selWsType==='oil'){
+    const payload = {
+      driver_id: _drvId,
+      type: selWsType,
+      price, notes,
+      vehicle_id: _vidFinal,
+      odometer_reading: odo,
+      location: ''
+    };
+
+    // ── Oil: single record with chosen subtype ──
+    if (selWsType === 'oil') {
       const oilType = document.getElementById('wOilType')?.value;
-      if(!oilType) return showNotification('اختر نوع الزيت', 'error');
-      const qty = parseFloat(document.getElementById('wQty')?.value)||0;
-      if(!qty || qty <= 0) return showNotification('أدخل الكمية', 'error');
-      const eh  = parseFloat(document.getElementById('wEngHours')?.value)||null;
-      const dn  = document.getElementById('wDocNum')?.value?.trim()||'';
-      const sup = document.getElementById('wSupply')?.value?.trim()||'';
-      btn.disabled=true; btn.textContent='جاري...';
+      if (!oilType) return showNotification('اختر نوع الزيت', 'error');
+      const qty = parseFloat(document.getElementById('wQty')?.value) || 0;
+      if (!qty || qty <= 0) return showNotification('أدخل الكمية', 'error');
+      const eh  = parseFloat(document.getElementById('wEngHours')?.value) || null;
+      const dn  = document.getElementById('wDocNum')?.value?.trim() || '';
+      const sup = document.getElementById('wSupply')?.value?.trim() || '';
+      btn.disabled = true; btn.textContent = 'جاري...';
       payload.location = await silentGetLocation();
-      const prices = window._currentWsPrices || {};
-      const unitPrice = prices[oilType] || prices['oil'] || 0;
-      try{
-        await apiCall('/workshops','POST',{
-          ...payload,
-          type:          oilType,
-          quantity:      qty,
-          price:         unitPrice * qty,
-          engine_hours:  eh,
-          doc_number:    dn,
-          supply_source: sup,
+      const prices     = window._currentWsPrices || window._typePrices || {};
+      const unitPrice  = prices[oilType] || prices['oil'] || 0;
+      try {
+        await apiCall('/workshops', 'POST', {
+          ...payload, type: oilType, quantity: qty,
+          price: unitPrice * qty, engine_hours: eh, doc_number: dn, supply_source: sup,
         });
         showNotification('✅ تم حفظ تغيير الزيت', 'success');
         closeModal();
-      }catch(e){
-        showNotification(e.message,'error');
-        btn.disabled=false; btn.textContent='💾 حفظ';
-      }
+      } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ'; }
       return;
     }
 
-    // Tire specific
-    if(selWsType==='tire'){
-      const ta=document.getElementById('wTireAction')?.value;
-      if(!ta) return showNotification('اختر حالة الكوتش','error');
-      payload.tire_action=ta;
-      const iname=document.getElementById('wItemName')?.value?.trim();
-      if(iname) payload.item_name=iname;
-      const ispec=document.getElementById('wItemSpec')?.value?.trim();
-      if(ispec) payload.item_spec=ispec;
-      const dn=document.getElementById('wDocNum')?.value?.trim();
-      if(dn) payload.doc_number=dn;
-      const recv=document.getElementById('wRecvName')?.value?.trim();
-      if(recv) payload.receiver_name=recv;
+    // ── Fuel: quantity required ──
+    const isFuel = selWsType.startsWith('fuel_');
+    if (isFuel) {
+      const q = parseFloat(document.getElementById('wQty')?.value);
+      if (!q || q <= 0) return showNotification('أدخل الكمية', 'error');
+      payload.quantity = q;
     }
 
-    // Battery specific
-    if(selWsType==='battery'){
-      const op=document.getElementById('wOpType')?.value;
-      if(!op) return showNotification('اختر نوع العملية','error');
-      payload.operation_type=op;
-      const iname=document.getElementById('wItemName')?.value?.trim();
-      if(iname) payload.item_name=iname;
-      const ispec=document.getElementById('wItemSpec')?.value?.trim();
-      if(ispec) payload.item_spec=ispec;
-      const dn=document.getElementById('wDocNum')?.value?.trim();
-      if(dn) payload.doc_number=dn;
-      const recv=document.getElementById('wRecvName')?.value?.trim();
-      if(recv) payload.receiver_name=recv;
+    // ── Tire ──
+    if (selWsType === 'tire') {
+      const ta = document.getElementById('wTireAction')?.value;
+      if (!ta) return showNotification('اختر حالة الكوتش', 'error');
+      payload.tire_action = ta;
+      const q = parseFloat(document.getElementById('wQty')?.value);
+      if (!q || q <= 0) return showNotification('أدخل عدد الإطارات', 'error');
+      payload.quantity = q;
+      const iname = document.getElementById('wItemName')?.value?.trim();
+      if (iname) payload.item_name = iname;
+      const ispec = document.getElementById('wItemSpec')?.value?.trim();
+      if (ispec) payload.item_spec = ispec;
+      const dn   = document.getElementById('wDocNum')?.value?.trim();
+      if (dn)    payload.doc_number = dn;
+      const recv = document.getElementById('wRecvName')?.value?.trim();
+      if (recv)  payload.receiver_name = recv;
     }
 
-    // Filter/belt
-    if(['filter','belt'].includes(selWsType)){
-      const op=document.getElementById('wOpType')?.value;
-      if(!op) return showNotification('اختر نوع العملية','error');
-      payload.operation_type=op;
+    // ── Battery ──
+    if (selWsType === 'battery') {
+      const op = document.getElementById('wOpType')?.value;
+      if (!op) return showNotification('اختر نوع العملية', 'error');
+      payload.operation_type = op;
+      const q = parseFloat(document.getElementById('wQty')?.value);
+      if (q && q > 0) payload.quantity = q;
+      const iname = document.getElementById('wItemName')?.value?.trim();
+      if (iname) payload.item_name = iname;
+      const ispec = document.getElementById('wItemSpec')?.value?.trim();
+      if (ispec) payload.item_spec = ispec;
+      const dn   = document.getElementById('wDocNum')?.value?.trim();
+      if (dn)    payload.doc_number = dn;
+      const recv = document.getElementById('wRecvName')?.value?.trim();
+      if (recv)  payload.receiver_name = recv;
     }
 
-    // Other
-    if(selWsType==='other'){const d=document.getElementById('wDesc')?.value?.trim();if(!d)return showNotification('أدخل وصف العملية','error');payload.description=d;}
-    btn.disabled=true; btn.textContent='جاري...';
-    payload.location=await silentGetLocation();
-    try{
-      await apiCall('/workshops','POST',payload);
-      showNotification(`✅ تم حفظ ${WT[selWsType]?.label}`,'success');
+    // ── Filter / Belt ──
+    if (['filter', 'belt'].includes(selWsType)) {
+      const op = document.getElementById('wOpType')?.value;
+      if (!op) return showNotification('اختر نوع العملية', 'error');
+      payload.operation_type = op;
+    }
+
+    // ── Other ──
+    if (selWsType === 'other') {
+      const d = document.getElementById('wDesc')?.value?.trim();
+      if (!d) return showNotification('أدخل وصف العملية', 'error');
+      payload.description = d;
+    }
+
+    btn.disabled = true; btn.textContent = 'جاري...';
+    payload.location = await silentGetLocation();
+    try {
+      await apiCall('/workshops', 'POST', payload);
+      showNotification('✅ تم حفظ ' + (WT[selWsType]?.label || selWsType), 'success');
       closeModal();
-    }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='💾 حفظ';}
+    } catch(e) {
+      showNotification(e.message, 'error');
+      btn.disabled = false; btn.textContent = '💾 حفظ';
+    }
   };
 }
+
+
 
 
 /* ══════════════════════════════════════════════════════
