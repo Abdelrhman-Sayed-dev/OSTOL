@@ -464,6 +464,26 @@ def _safe_add_columns(c):
     except Exception as e:
         log.warning(f"Users migration skipped: {e}")
 
+    # ── operator_equipment_permissions: migration آمنة ──
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS operator_equipment_permissions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            operator_id  INTEGER NOT NULL,
+            equipment_id TEXT    NOT NULL,
+            equipment_name TEXT  DEFAULT '',
+            granted_by   TEXT   DEFAULT '',
+            granted_at   TEXT   DEFAULT (datetime('now')),
+            UNIQUE(operator_id, equipment_id),
+            FOREIGN KEY (operator_id) REFERENCES equipment_operators(id) ON DELETE CASCADE
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_oep_operator ON operator_equipment_permissions(operator_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_oep_equip ON operator_equipment_permissions(equipment_id)")
+    except Exception as _e:
+        log.warning(f"operator_equipment_permissions migration: {_e}")
+    for _col, _def in [("equipment_name","TEXT DEFAULT ''"),("granted_by","TEXT DEFAULT ''"),("granted_at","TEXT DEFAULT ''")]:
+        try: c.execute(f"ALTER TABLE operator_equipment_permissions ADD COLUMN {_col} {_def}")
+        except Exception: pass
+
     # ── UNIQUE index على fixed_number في drivers (بيتجاهل الفارغ) ──
     try:
         c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_fixed_number
@@ -6368,6 +6388,32 @@ def _ensure_operator_tables(conn):
     try: conn.execute("ALTER TABLE equipment_operators ADD COLUMN current_equipment_name TEXT DEFAULT ''")
     except: pass
 
+    # ── جدول صلاحيات المشغلين على المعدات (operator_equipment_permissions) ──
+    conn.execute("""CREATE TABLE IF NOT EXISTS operator_equipment_permissions (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        operator_id    INTEGER NOT NULL,
+        equipment_id   TEXT    NOT NULL,
+        equipment_name TEXT    DEFAULT '',
+        granted_by     TEXT    DEFAULT '',
+        granted_at     TEXT    DEFAULT (datetime('now')),
+        UNIQUE(operator_id, equipment_id),
+        FOREIGN KEY (operator_id) REFERENCES equipment_operators(id) ON DELETE CASCADE
+    )""")
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_oep_operator ON operator_equipment_permissions(operator_id)")
+    except Exception: pass
+    try:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_oep_equip ON operator_equipment_permissions(equipment_id)")
+    except Exception: pass
+    # Migration: أضف أعمدة جديدة لو مش موجودة
+    for _oep_col, _oep_def in [
+        ("equipment_name", "TEXT DEFAULT ''"),
+        ("granted_by",     "TEXT DEFAULT ''"),
+        ("granted_at",     "TEXT DEFAULT ''"),
+    ]:
+        try: conn.execute(f"ALTER TABLE operator_equipment_permissions ADD COLUMN {_oep_col} {_oep_def}")
+        except Exception: pass
+
 
 class OperatorCreate(BaseModel):
     name:          str
@@ -6564,6 +6610,279 @@ async def delete_operator(oid: int, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         conn.execute("DELETE FROM equipment_operators WHERE id=?", (oid,))
     return {"message": "تم الحذف"}
+
+
+# ─────────────────────────────────────────────────────────
+# Operator: GET by ID
+# ─────────────────────────────────────────────────────────
+@app.get("/operators/{oid}")
+async def get_operator_by_id(oid: int, cu: dict = Depends(require_admin_or_reporter)):
+    """جلب بيانات مشغل محدد"""
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        row = conn.execute("SELECT * FROM equipment_operators WHERE id=?", (oid,)).fetchone()
+    if not row:
+        raise HTTPException(404, "المشغل غير موجود")
+    return dict(row)
+
+
+# ─────────────────────────────────────────────────────────
+# Operator Equipment Permissions — CRUD كامل
+# ─────────────────────────────────────────────────────────
+
+@app.get("/operators/{oid}/permissions")
+async def get_operator_permissions(oid: int, cu: dict = Depends(get_user)):
+    """جلب قائمة المعدات المصرح بها للمشغل."""
+    if cu["role"] == "operator":
+        if cu.get("operator_id") != oid:
+            raise HTTPException(403, "يمكنك الاطلاع على صلاحياتك فقط")
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+        raise HTTPException(403, "صلاحيات غير كافية")
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        perms = conn.execute(
+            """SELECT oep.*, e.equipment_name as eq_name_ref, e.equipment_type, e.branch as eq_branch
+               FROM operator_equipment_permissions oep
+               LEFT JOIN equipment e ON e.car_code = oep.equipment_id
+               WHERE oep.operator_id=?
+               ORDER BY oep.equipment_name""",
+            (oid,)
+        ).fetchall()
+    return {"operator_id": oid, "permissions": [dict(p) for p in perms]}
+
+
+@app.post("/operators/{oid}/permissions")
+async def add_operator_permission(oid: int, body: dict, cu: dict = Depends(require_admin)):
+    """منح مشغل صلاحية تشغيل معدة. body: { equipment_id, equipment_name }"""
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        op = conn.execute("SELECT id, name FROM equipment_operators WHERE id=?", (oid,)).fetchone()
+        if not op:
+            raise HTTPException(404, "المشغل غير موجود")
+        eq_id   = (body.get("equipment_id") or "").strip()
+        eq_name = (body.get("equipment_name") or "").strip()
+        if not eq_id and not eq_name:
+            raise HTTPException(400, "equipment_id أو equipment_name مطلوب")
+        # استكمال البيانات من جدول equipment لو ناقصة
+        if eq_id and not eq_name:
+            r = conn.execute("SELECT equipment_name FROM equipment WHERE car_code=? LIMIT 1", (eq_id,)).fetchone()
+            if r: eq_name = r["equipment_name"]
+        if not eq_id and eq_name:
+            r = conn.execute("SELECT car_code FROM equipment WHERE equipment_name=? LIMIT 1", (eq_name,)).fetchone()
+            if r: eq_id = r["car_code"]
+        key = eq_id or eq_name
+        try:
+            conn.execute(
+                """INSERT INTO operator_equipment_permissions
+                   (operator_id, equipment_id, equipment_name, granted_by, granted_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (oid, key, eq_name, cu["username"], datetime.utcnow().isoformat())
+            )
+            perm_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        except Exception as e:
+            if "UNIQUE" in str(e):
+                raise HTTPException(400, f"الصلاحية ممنوحة بالفعل: {eq_name or eq_id}")
+            raise HTTPException(500, str(e))
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "grant_operator_permission", f"منح مشغل [{op['name']}] صلاحية [{eq_name or eq_id}]")
+    return {"ok": True, "id": perm_id, "operator_id": oid, "equipment_id": key, "equipment_name": eq_name}
+
+
+@app.delete("/operators/{oid}/permissions/{pid}")
+async def remove_operator_permission(oid: int, pid: int, cu: dict = Depends(require_admin)):
+    """سحب صلاحية معدة من مشغل."""
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        perm = conn.execute(
+            "SELECT * FROM operator_equipment_permissions WHERE id=? AND operator_id=?", (pid, oid)
+        ).fetchone()
+        if not perm:
+            raise HTTPException(404, "الصلاحية غير موجودة")
+        conn.execute("DELETE FROM operator_equipment_permissions WHERE id=?", (pid,))
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "revoke_operator_permission", f"سحب صلاحية [{perm['equipment_name']}] من مشغل [{oid}]")
+    return {"ok": True, "deleted": pid}
+
+
+@app.get("/operators/{oid}/allowed-equipment")
+async def get_allowed_equipment(oid: int, cu: dict = Depends(get_user)):
+    """المعدات المتاحة للمشغل — إذا لم تكن هناك صلاحيات محددة يرجع كل المعدات النشطة."""
+    if cu["role"] == "operator":
+        if cu.get("operator_id") != oid:
+            raise HTTPException(403, "يمكنك الاطلاع على صلاحياتك فقط")
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+        raise HTTPException(403, "صلاحيات غير كافية")
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        perms = conn.execute(
+            "SELECT equipment_id, equipment_name FROM operator_equipment_permissions WHERE operator_id=?",
+            (oid,)
+        ).fetchall()
+        if perms:
+            eq_ids = [p["equipment_id"] for p in perms]
+            ph = ",".join("?" * len(eq_ids))
+            equipment = conn.execute(
+                f"""SELECT car_code as equipment_id, equipment_name, equipment_type,
+                           branch, sector, project, status
+                    FROM equipment WHERE car_code IN ({ph}) AND status='active'
+                    ORDER BY equipment_name""", eq_ids
+            ).fetchall()
+            eq_from_table = {e["equipment_id"] for e in equipment}
+            extras = [{"equipment_id": p["equipment_id"], "equipment_name": p["equipment_name"],
+                       "equipment_type": "", "branch": "", "sector": "", "project": "", "status": "active"}
+                      for p in perms if p["equipment_id"] not in eq_from_table]
+            result = [dict(e) for e in equipment] + extras
+        else:
+            equipment = conn.execute(
+                """SELECT car_code as equipment_id, equipment_name, equipment_type,
+                          branch, sector, project, status
+                   FROM equipment WHERE status='active' ORDER BY equipment_name"""
+            ).fetchall()
+            result = [dict(e) for e in equipment]
+    return {"operator_id": oid, "equipment": result, "restricted": len(perms) > 0}
+
+
+@app.get("/operators/{oid}/stats")
+async def get_operator_stats(oid: int, cu: dict = Depends(get_user)):
+    """إحصائيات مشغل محدد."""
+    if cu["role"] == "operator":
+        if cu.get("operator_id") != oid:
+            raise HTTPException(403, "يمكنك الاطلاع على بياناتك فقط")
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+        raise HTTPException(403, "صلاحيات غير كافية")
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        total_shifts  = conn.execute("SELECT COUNT(*) FROM operator_shifts WHERE operator_id=?", (oid,)).fetchone()[0]
+        active_shifts = conn.execute("SELECT COUNT(*) FROM operator_shifts WHERE operator_id=? AND status='active'", (oid,)).fetchone()[0]
+        ended_shifts  = conn.execute("SELECT COUNT(*) FROM operator_shifts WHERE operator_id=? AND status='ended'", (oid,)).fetchone()[0]
+        hours_row     = conn.execute(
+            "SELECT SUM(end_hours - start_hours) FROM operator_shifts WHERE operator_id=? AND status='ended' AND end_hours > start_hours", (oid,)
+        ).fetchone()
+        total_hours   = round(hours_row[0] or 0, 2)
+        fuel_row      = conn.execute("SELECT SUM(fuel_liters) FROM operator_shifts WHERE operator_id=?", (oid,)).fetchone()
+        total_fuel    = round(fuel_row[0] or 0, 2)
+        last_shift    = conn.execute(
+            "SELECT * FROM operator_shifts WHERE operator_id=? ORDER BY start_time DESC LIMIT 1", (oid,)
+        ).fetchone()
+        week_ago      = (datetime.utcnow() - timedelta(days=7)).isoformat()
+        week_shifts   = conn.execute(
+            "SELECT COUNT(*) FROM operator_shifts WHERE operator_id=? AND start_time >= ?", (oid, week_ago)
+        ).fetchone()[0]
+        allowed_count = conn.execute(
+            "SELECT COUNT(*) FROM operator_equipment_permissions WHERE operator_id=?", (oid,)
+        ).fetchone()[0]
+    return {
+        "operator_id": oid, "total_shifts": total_shifts, "active_shifts": active_shifts,
+        "ended_shifts": ended_shifts, "total_hours": total_hours, "total_fuel": total_fuel,
+        "week_shifts": week_shifts, "allowed_equipment_count": allowed_count,
+        "last_shift": dict(last_shift) if last_shift else None,
+    }
+
+
+# ─────────────────────────────────────────────────────────
+# Shifts: قائمة كاملة مع فلاتر + تصدير CSV
+# ─────────────────────────────────────────────────────────
+
+@app.get("/shifts")
+async def list_all_shifts(
+    operator_id: int = Query(None),
+    branch:      str = Query(None),
+    project:     str = Query(None),
+    status:      str = Query(None),
+    date_from:   str = Query(None),
+    date_to:     str = Query(None),
+    search:      str = Query(None),
+    limit:       int = Query(100),
+    offset:      int = Query(0),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """كل الورديات مع فلاتر كاملة"""
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        q = """SELECT s.*, o.name as operator_name, o.phone as operator_phone,
+                      o.fixed_number as operator_fixed, o.branch as operator_branch
+               FROM operator_shifts s
+               LEFT JOIN equipment_operators o ON o.id = s.operator_id
+               WHERE 1=1"""
+        params: list = []
+        eff_branch = _branch_filter(cu) or branch
+        if eff_branch:
+            q += " AND (s.branch=? OR o.branch=?)"; params.extend([eff_branch, eff_branch])
+        if operator_id:
+            q += " AND s.operator_id=?"; params.append(operator_id)
+        if project:
+            q += " AND s.project LIKE ?"; params.append(f"%{project}%")
+        if status:
+            q += " AND s.status=?"; params.append(status)
+        if date_from:
+            q += " AND s.start_time >= ?"; params.append(date_from)
+        if date_to:
+            q += " AND s.start_time <= ?"; params.append(date_to + "T23:59:59")
+        if search:
+            s = f"%{search}%"
+            q += " AND (o.name LIKE ? OR s.equipment_name LIKE ? OR s.project LIKE ?)"
+            params.extend([s, s, s])
+        total = conn.execute(f"SELECT COUNT(*) FROM ({q})", params).fetchone()[0]
+        q += " ORDER BY s.start_time DESC LIMIT ? OFFSET ?"; params.extend([limit, offset])
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+        for r in rows:
+            if r.get("start_hours") is not None and r.get("end_hours") is not None and r["end_hours"] > r["start_hours"]:
+                r["working_hours"] = round(r["end_hours"] - r["start_hours"], 2)
+            else:
+                r["working_hours"] = None
+    return {"total": total, "shifts": rows}
+
+
+@app.get("/shifts/export")
+async def export_shifts_csv(
+    operator_id: int = Query(None),
+    branch:      str = Query(None),
+    date_from:   str = Query(None),
+    date_to:     str = Query(None),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """تصدير الورديات CSV"""
+    from fastapi.responses import Response
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        q = """SELECT s.*, o.name as operator_name, o.fixed_number as operator_fixed
+               FROM operator_shifts s
+               LEFT JOIN equipment_operators o ON o.id = s.operator_id WHERE 1=1"""
+        params: list = []
+        eff_branch = _branch_filter(cu) or branch
+        if eff_branch:
+            q += " AND (s.branch=? OR o.branch=?)"; params.extend([eff_branch, eff_branch])
+        if operator_id:
+            q += " AND s.operator_id=?"; params.append(operator_id)
+        if date_from:
+            q += " AND s.start_time >= ?"; params.append(date_from)
+        if date_to:
+            q += " AND s.start_time <= ?"; params.append(date_to + "T23:59:59")
+        q += " ORDER BY s.start_time DESC"
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["#","المشغل","الرقم الثابت","المعدة","كود المعدة",
+                "نوع الوردية","وقت البداية","وقت النهاية",
+                "ساعات البداية","ساعات النهاية","مدة التشغيل (ساعة)",
+                "الوقود (لتر)","المشروع","الفرع","الحالة","ملاحظات"])
+    type_labels = {"day":"نهارية","night":"ليلية","extended":"ممتدة"}
+    for i, r in enumerate(rows, 1):
+        wh = None
+        if r.get("start_hours") is not None and r.get("end_hours") is not None and r["end_hours"] > r["start_hours"]:
+            wh = round(r["end_hours"] - r["start_hours"], 2)
+        w.writerow([i, r.get("operator_name",""), r.get("operator_fixed",""),
+                    r.get("equipment_name",""), r.get("equipment_id",""),
+                    type_labels.get(r.get("shift_type",""), r.get("shift_type","")),
+                    (r.get("start_time") or "")[:16].replace("T"," "),
+                    (r.get("end_time") or "")[:16].replace("T"," "),
+                    r.get("start_hours",""), r.get("end_hours",""), wh or "",
+                    r.get("fuel_liters",""), r.get("project",""), r.get("branch",""),
+                    "نشطة" if r.get("status")=="active" else "منتهية", r.get("notes","")])
+    fname = f"shifts_{date_from or 'all'}_{date_to or 'all'}.csv"
+    return Response(content=buf.getvalue().encode("utf-8-sig"),
+                    media_type="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 
 # ── Shifts ──
