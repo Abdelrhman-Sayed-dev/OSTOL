@@ -589,6 +589,11 @@ def _safe_add_columns(c):
     c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
 
+    # Migration: أضف operator_id + is_operator لـ driver_requests
+    for _col, _def in [("operator_id","INTEGER"), ("is_operator","INTEGER DEFAULT 0")]:
+        try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {_col} {_def}")
+        except Exception: pass
+
     additions = {
         "users":              [("refresh_token","TEXT"),("refresh_exp","TEXT"),("last_login","TEXT"),
                                ("branch","TEXT DEFAULT ''")],
@@ -3238,14 +3243,24 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
         notes = f"نوع الرخصة: {'رخصة القيادة' if license_type=='driver' else 'رخصة العربة'} | تاريخ التجديد: {renewal_date} | تاريخ الانتهاء الجديد: {new_expiry_date}"
 
     now = datetime.utcnow().isoformat() + "Z"
+    is_op = cu["role"] == "operator"
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""INSERT INTO driver_requests
-                     (driver_id,type,notes,new_odometer,trip_id,status,created_at)
-                     VALUES(?,?,?,?,?,'pending',?)""",
-                  (driver_id, req_type, notes,
-                   float(new_odometer) if new_odometer else None,
-                   int(trip_id) if trip_id else None, now))
+        if is_op:
+            # المشغل: driver_id=NULL، نحفظ في operator_id
+            c.execute("""INSERT INTO driver_requests
+                         (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                         VALUES(NULL,?,1,?,?,?,?,'pending',?)""",
+                      (cu.get("operator_id"), req_type, notes,
+                       float(new_odometer) if new_odometer else None,
+                       int(trip_id) if trip_id else None, now))
+        else:
+            c.execute("""INSERT INTO driver_requests
+                         (driver_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                         VALUES(?,0,?,?,?,?,'pending',?)""",
+                      (driver_id, req_type, notes,
+                       float(new_odometer) if new_odometer else None,
+                       int(trip_id) if trip_id else None, now))
         rid = c.lastrowid
     log_event("request_created", driver_id=driver_id, request_id=rid, type=req_type)
     return {"id": rid, "status": "pending"}
@@ -3265,10 +3280,12 @@ async def get_requests(cu: dict = Depends(get_user), branch: Optional[str] = Non
         elif cu["role"] == "operator":
             op_id2 = cu.get("operator_id")
             if not op_id2: return []
-            c.execute("""SELECT r.*, NULL as driver_name, NULL as driver_branch
+            # المشغل: نبحث بـ operator_id column
+            c.execute("""SELECT r.*, op.name as driver_name, op.branch as driver_branch
                          FROM driver_requests r
-                         WHERE r.driver_id=?
-                         ORDER BY r.id DESC""", (op_id2,))
+                         LEFT JOIN equipment_operators op ON r.operator_id=op.id
+                         WHERE (r.operator_id=? OR (r.driver_id=? AND r.is_operator=1))
+                         ORDER BY r.id DESC""", (op_id2, op_id2))
         else:
             # تحديد فلتر الفرع الفعّال
             eff_branch = _effective_branch(cu, branch)
