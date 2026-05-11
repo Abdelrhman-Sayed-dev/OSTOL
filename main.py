@@ -607,7 +607,9 @@ def _safe_add_columns(c):
                                ("supply_source","TEXT DEFAULT ''"),
                                ("item_name","TEXT DEFAULT ''"),
                                ("item_spec","TEXT DEFAULT ''"),
-                               ("receiver_name","TEXT DEFAULT ''")],
+                               ("receiver_name","TEXT DEFAULT ''"),
+                               ("operator_id","INTEGER"),
+                               ("is_operator","INTEGER DEFAULT 0")],
         "drivers":            [("national_id","TEXT DEFAULT ''"),("birth_date","TEXT DEFAULT ''"),
                                ("driver_license_expiry","TEXT DEFAULT ''"),
                                ("vehicle_license_expiry","TEXT DEFAULT ''"),
@@ -2262,11 +2264,10 @@ async def delete_user(uid: int, cu: dict = Depends(require_admin)):
 async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     if rec.type not in WORKSHOP_TYPES:
         raise HTTPException(400, "نوع غير صالح")
-    if cu["role"] == "operator":
-        if cu.get("operator_id") != rec.driver_id:
-            raise HTTPException(403, "يمكنك تسجيل سجلات حسابك فقط")
-    elif cu["role"] not in ("admin", "superuser") and rec.driver_id != cu.get("driver_id"):
-        raise HTTPException(403, "غير مصرح")
+    # المشغل: لا يحتاج driver_id صالح في جدول drivers — يُسمح له دائماً
+    if cu["role"] not in ("operator", "admin", "superuser"):
+        if rec.driver_id != cu.get("driver_id"):
+            raise HTTPException(403, "غير مصرح")
     # ── احسب السعر الإجمالي بشكل موحّد لكل الأدوار ──
     # الأنواع اللي ليها كمية: الوقود بكل أنواعه + الزيت + الكوتش
     QUANTITY_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil") or t in ("tire",)}
@@ -2274,10 +2275,9 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
 
     with get_db() as conn:
         c = conn.cursor()
-        # جيب فرع السائق/المركبة لتحديد السعر الصحيح
-        # المشغل: نجيب الفرع من equipment_operators بدلاً من drivers
+        # جيب الفرع لتحديد السعر — المشغل من equipment_operators بالـ token operator_id
         if cu["role"] == "operator":
-            c.execute("SELECT branch FROM equipment_operators WHERE id=?", (rec.driver_id,))
+            c.execute("SELECT branch FROM equipment_operators WHERE id=?", (cu.get("operator_id"),))
         else:
             c.execute("SELECT branch FROM drivers WHERE id=?", (rec.driver_id,))
         drv_row = c.fetchone()
@@ -2309,16 +2309,29 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("""INSERT INTO workshop_records
-                     (driver_id,type,quantity,price,notes,created_at,
-                      operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                      doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
-                   rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
-                   rec.description or "", rec.tire_action or "", rec.location or "",
-                   rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                   rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+        # المشغل: driver_id يبقى NULL، نحفظ operator_id بشكل منفصل
+        if cu["role"] == "operator":
+            c.execute("""INSERT INTO workshop_records
+                         (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
+                          operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                          doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                         VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (cu.get("operator_id"), rec.type, rec.quantity, final_price, rec.notes or "", now,
+                       rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
+                       rec.description or "", rec.tire_action or "", rec.location or "",
+                       rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
+                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+        else:
+            c.execute("""INSERT INTO workshop_records
+                         (driver_id,is_operator,type,quantity,price,notes,created_at,
+                          operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                          doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                         VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
+                       rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
+                       rec.description or "", rec.tire_action or "", rec.location or "",
+                       rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
+                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
         rid = c.lastrowid
         vp = None
         if rec.vehicle_id:
@@ -2346,7 +2359,9 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                     log_event("maintenance_auto_updated",
                               car_id=rec.vehicle_id, types=related_types, km=rec.odometer_reading)
 
-        return {"id":rid,"driver_id":rec.driver_id,"type":rec.type,"quantity":rec.quantity,
+        eff_driver_id = None if cu["role"] == "operator" else rec.driver_id
+        return {"id":rid,"driver_id":eff_driver_id,"operator_id":cu.get("operator_id") if cu["role"]=="operator" else None,
+                "type":rec.type,"quantity":rec.quantity,
                 "price":final_price,"notes":rec.notes or "","created_at":now,
                 "operation_type":rec.operation_type or "","vehicle_id":rec.vehicle_id,
                 "odometer_reading":rec.odometer_reading,"description":rec.description or "",
@@ -2354,9 +2369,12 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
 
 @app.get("/workshops")
 async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None, month: Optional[str] = None):
-    q = """SELECT w.*,d.name as driver_name,c.plate as vehicle_plate
+    q = """SELECT w.*,
+                  COALESCE(d.name, op.name) as driver_name,
+                  c.plate as vehicle_plate
            FROM workshop_records w
-           LEFT JOIN drivers d ON w.driver_id=d.id
+           LEFT JOIN drivers d ON w.driver_id=d.id AND (w.is_operator IS NULL OR w.is_operator=0)
+           LEFT JOIN equipment_operators op ON w.operator_id=op.id
            LEFT JOIN cars c ON w.vehicle_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
@@ -2377,7 +2395,9 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
             if not op_id3: return []
             month_cond = " AND w.created_at LIKE ?" if month else ""
             month_params = [month + "%"] if month else []
-            c.execute(q + " WHERE w.driver_id=?" + month_cond + " ORDER BY w.id DESC LIMIT 200", [op_id3] + month_params)
+            # المشغل: نبحث بـ operator_id column (مش driver_id)
+            c.execute(q + " WHERE (w.operator_id=? OR (w.driver_id=? AND w.is_operator=1))" + month_cond + " ORDER BY w.id DESC LIMIT 200",
+                      [op_id3, op_id3] + month_params)
         else:
             did = cu.get("driver_id")
             if not did: return []
