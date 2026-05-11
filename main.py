@@ -2294,6 +2294,12 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
 
     with get_db() as conn:
         c = conn.cursor()
+        # ── inline migration: تأكد من operator columns في workshop_records ──
+        _ws_cols = {r[1] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
+        for _wc, _wd in [("operator_id","INTEGER"),("is_operator","INTEGER DEFAULT 0")]:
+            if _wc not in _ws_cols:
+                try: c.execute(f"ALTER TABLE workshop_records ADD COLUMN {_wc} {_wd}")
+                except Exception: pass
         # جيب الفرع لتحديد السعر — المشغل من equipment_operators بالـ token operator_id
         if cu["role"] == "operator":
             c.execute("SELECT branch FROM equipment_operators WHERE id=?", (cu.get("operator_id"),))
@@ -2760,6 +2766,12 @@ async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = De
                 audio_url = f"/uploads/{fname}"
             except Exception as e:
                 log.warning(f"Audio save failed: {e}")
+        # ── inline migration: تأكد من operator columns في emergency_reports ──
+        _emg_cols = {r[1] for r in c.execute("PRAGMA table_info(emergency_reports)").fetchall()}
+        for _ec, _ed in [("operator_id","INTEGER"),("is_operator","INTEGER DEFAULT 0")]:
+            if _ec not in _emg_cols:
+                try: c.execute(f"ALTER TABLE emergency_reports ADD COLUMN {_ec} {_ed}")
+                except Exception: pass
         # المشغل: نحفظ بيانات البلاغ بدون driver_id (FK على drivers) — نستخدم operator_id
         if cu["role"] == "operator":
             op_id_emg = cu.get("operator_id") or 0
@@ -3262,65 +3274,60 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
     notes          = (body.get("notes") or "").strip()
     new_odometer   = body.get("new_odometer")
     trip_id        = body.get("trip_id")
-    renewal_date   = (body.get("renewal_date") or "").strip()     # تاريخ التجديد الفعلي
-    new_expiry_date= (body.get("new_expiry_date") or "").strip()  # تاريخ الانتهاء الجديد
-    license_type   = (body.get("license_type") or "").strip()     # driver | vehicle
+    renewal_date   = (body.get("renewal_date") or "").strip()
+    new_expiry_date= (body.get("new_expiry_date") or "").strip()
+    license_type   = (body.get("license_type") or "").strip()
 
     if req_type not in REQUEST_TYPES:
         raise HTTPException(400, "نوع الطلب غير صالح")
 
-    driver_id = cu.get("driver_id")
-    if not driver_id and cu["role"] == "operator":
-        driver_id = cu.get("operator_id")
-    if not driver_id:
+    is_op     = cu["role"] == "operator"
+    driver_id = cu.get("driver_id") if not is_op else None
+    op_id     = cu.get("operator_id") if is_op else None
+
+    if not is_op and not driver_id:
         raise HTTPException(403, "فقط السائقون والمشغلون يمكنهم تقديم الطلبات")
 
-    # حقق من صحة تواريخ التجديد
     if req_type == "license_renew":
-        if not renewal_date:
-            raise HTTPException(400, "تاريخ التجديد مطلوب")
-        if not new_expiry_date:
-            raise HTTPException(400, "تاريخ انتهاء الرخصة الجديد مطلوب")
-        if not license_type:
-            raise HTTPException(400, "نوع الرخصة مطلوب (driver أو vehicle)")
-        # ضيف المعلومات في الملاحظات
+        if not renewal_date:   raise HTTPException(400, "تاريخ التجديد مطلوب")
+        if not new_expiry_date:raise HTTPException(400, "تاريخ انتهاء الرخصة الجديد مطلوب")
+        if not license_type:   raise HTTPException(400, "نوع الرخصة مطلوب")
         notes = f"نوع الرخصة: {'رخصة القيادة' if license_type=='driver' else 'رخصة العربة'} | تاريخ التجديد: {renewal_date} | تاريخ الانتهاء الجديد: {new_expiry_date}"
 
     now = datetime.utcnow().isoformat() + "Z"
-    is_op = cu["role"] == "operator"
+    odo = float(new_odometer) if new_odometer else None
+    tid = int(trip_id) if trip_id else None
+
     with get_db() as conn:
         c = conn.cursor()
+
+        # ── تأكد من وجود columns الجديدة — inline migration ──
+        existing_cols = {row[1] for row in c.execute("PRAGMA table_info(driver_requests)").fetchall()}
+        for col, definition in [("operator_id","INTEGER"), ("is_operator","INTEGER DEFAULT 0")]:
+            if col not in existing_cols:
+                try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {col} {definition}")
+                except Exception: pass
+
         if is_op:
-            op_id_val = cu.get("operator_id") or 0
-            # محاولة INSERT مع operator_id column
-            try:
-                c.execute("""INSERT INTO driver_requests
-                             (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
-                             VALUES(?,?,1,?,?,?,?,'pending',?)""",
-                          (0, op_id_val, req_type, notes,
-                           float(new_odometer) if new_odometer else None,
-                           int(trip_id) if trip_id else None, now))
-            except Exception:
-                # fallback: operator_id column لسه مش موجود — تشغيل migration فوري
-                try: c.execute("ALTER TABLE driver_requests ADD COLUMN operator_id INTEGER")
-                except Exception: pass
-                try: c.execute("ALTER TABLE driver_requests ADD COLUMN is_operator INTEGER DEFAULT 0")
-                except Exception: pass
-                c.execute("""INSERT INTO driver_requests
-                             (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
-                             VALUES(?,?,1,?,?,?,?,'pending',?)""",
-                          (0, op_id_val, req_type, notes,
-                           float(new_odometer) if new_odometer else None,
-                           int(trip_id) if trip_id else None, now))
+            # المشغل: نستخدم driver_id=0 لتجنب NOT NULL، operator_id للتتبع الصحيح
+            c.execute(
+                """INSERT INTO driver_requests
+                   (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                   VALUES(0,?,1,?,?,?,?,'pending',?)""",
+                (op_id or 0, req_type, notes, odo, tid, now)
+            )
         else:
-            c.execute("""INSERT INTO driver_requests
-                         (driver_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
-                         VALUES(?,0,?,?,?,?,'pending',?)""",
-                      (driver_id, req_type, notes,
-                       float(new_odometer) if new_odometer else None,
-                       int(trip_id) if trip_id else None, now))
+            c.execute(
+                """INSERT INTO driver_requests
+                   (driver_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                   VALUES(?,0,?,?,?,?,'pending',?)""",
+                (driver_id, req_type, notes, odo, tid, now)
+            )
         rid = c.lastrowid
-    log_event("request_created", driver_id=driver_id, request_id=rid, type=req_type)
+
+    log_event("request_created",
+              driver_id=op_id if is_op else driver_id,
+              request_id=rid, type=req_type)
     return {"id": rid, "status": "pending"}
 
 
