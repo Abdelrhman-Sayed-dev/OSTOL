@@ -6590,7 +6590,13 @@ function openWsModal(type) {
     const _finalVehicleId = _isOpWs ? null : vehicle_id;
     if(!odometer_reading||odometer_reading<=0)  return showNotification(currentUser?.role==='operator'?'أدخل ساعات التشغيل':'أدخل قراءة العداد','error');
 
-    const _wsDriverId = currentUser.role==='operator' ? (currentUser.operator_id|0) : currentUser.driver_id;
+    // المشغل: نستخدم _opData.id (الأكثر موثوقية) أو operator_id من currentUser
+    const _wsDriverId = currentUser.role==='operator'
+      ? (window._opData?.id || currentUser.operator_id || 0)
+      : currentUser.driver_id;
+    if (currentUser.role === 'operator' && !_wsDriverId) {
+      return showNotification('❌ لم يتم تحديد بيانات المشغل — أعد تحميل الصفحة', 'error');
+    }
     const payload = {
       driver_id:_wsDriverId, type:selWsType,
       price, notes, vehicle_id:_finalVehicleId, odometer_reading, location:''
@@ -7711,6 +7717,8 @@ async function renderDriverSinglePage() {
         const btn = document.getElementById('dpStartOk');
         btn.disabled = true; btn.textContent = '⏳ جاري...';
         try {
+          btn.textContent = '📍 جاري تحديد الموقع...';
+          const _startLoc = await silentGetLocation(8000);
           await apiCall('/operators/shifts/start', 'POST', {
             operator_id:    _opData.id,
             equipment_name: assignedName || 'معدة',
@@ -7721,8 +7729,9 @@ async function renderDriverSinglePage() {
             project:        _opData.branch || '',
             branch:         _opData.branch || '',
             notes:          '',
+            start_location: _startLoc,
           });
-          showNotification('✅ بدأت الوردية!', 'success');
+          showNotification('✅ بدأت الوردية!' + (_startLoc ? ' 📍' : ''), 'success');
           closeModal(); await renderDriverSinglePage();
         } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '▶ ابدأ الوردية'; }
       };
@@ -7813,8 +7822,10 @@ async function renderDriverSinglePage() {
         const btn = document.getElementById('dpEndOk');
         btn.disabled = true; btn.textContent = '⏳ جاري...';
         try {
-          await apiCall('/operators/shifts/' + activeShift.id + '/end', 'POST', {end_hours: endHours, fuel_liters: 0, notes: ''});
-          showNotification('✅ انتهت الوردية!', 'success');
+          btn.textContent = '📍 جاري تحديد الموقع...';
+          const _endLoc = await silentGetLocation(8000);
+          await apiCall('/operators/shifts/' + activeShift.id + '/end', 'POST', {end_hours: endHours, fuel_liters: 0, notes: '', end_location: _endLoc});
+          showNotification('✅ انتهت الوردية!' + (_endLoc ? ' 📍' : ''), 'success');
           closeModal(); await renderDriverSinglePage();
         } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '✔ إنهاء الوردية'; }
       };
@@ -13960,9 +13971,11 @@ async function renderShiftsTable() {
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">\u0645\u062F\u0629 (\u0633\u0627\u0639\u0629)</th>' +
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">\u0648\u0642\u0648\u062F (\u0644)</th>' +
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u0641\u0631\u0639</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0645\u0648\u0642\u0639 \u0627\u0644\u0628\u062F\u0627\u064A\u0629</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0645\u0648\u0642\u0639 \u0627\u0644\u0646\u0647\u0627\u064A\u0629</th>' +
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u062D\u0627\u0644\u0629</th>' +
         '</tr></thead>' +
-        '<tbody id="sfTableBody"><tr><td colspan="10" style="text-align:center;padding:3rem;color:#94a3b8">\u0627\u0636\u063A\u0637 \u0639\u0631\u0636 \u0644\u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A</td></tr></tbody>' +
+        '<tbody id="sfTableBody"><tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">\u0627\u0636\u063A\u0637 \u0639\u0631\u0636 \u0644\u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A</td></tr></tbody>' +
       '</table></div>' +
       '<div id="sfPagination" style="padding:.75rem 1.25rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem"></div>' +
     '</div>';
@@ -13976,7 +13989,7 @@ function _resetShiftFilters(){
 
 async function loadShiftsData(){
   const tbody=document.getElementById('sfTableBody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:3rem;color:#94a3b8">\u23F3 \u062C\u0627\u0631\u064A \u0627\u0644\u062A\u062D\u0645\u064A\u0644...</td></tr>';
+  if(tbody)tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">\u23F3 \u062C\u0627\u0631\u064A \u0627\u0644\u062A\u062D\u0645\u064A\u0644...</td></tr>';
   const search=document.getElementById('sfSearch')?.value||'';
   const status=document.getElementById('sfStatus')?.value||'';
   const from=document.getElementById('sfFrom')?.value||'';
@@ -14005,7 +14018,7 @@ async function loadShiftsData(){
     const countEl=document.getElementById('sfCount');
     if(countEl)countEl.textContent=_shiftsTotal+' \u0648\u0631\u062F\u064A\u0629';
     if(!_shiftsData.length){
-      if(tbody)tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:3rem;color:#94a3b8">\u0644\u0627 \u062A\u0648\u062C\u062F \u0628\u064A\u0627\u0646\u0627\u062A</td></tr>';
+      if(tbody)tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">\u0644\u0627 \u062A\u0648\u062C\u062F \u0628\u064A\u0627\u0646\u0627\u062A</td></tr>';
       if(document.getElementById('sfPagination'))document.getElementById('sfPagination').innerHTML='';
       return;
     }
@@ -14025,11 +14038,13 @@ async function loadShiftsData(){
         '</td><td style="padding:.7rem 1rem;text-align:center;font-weight:700;color:'+(wh!=='\u2014'?'#0f172a':'#94a3b8')+'">'+wh+
         '</td><td style="padding:.7rem 1rem;text-align:center">'+(s.fuel_liters>0?s.fuel_liters:'\u2014')+
         '</td><td style="padding:.7rem 1rem;font-size:.82rem;color:#475569">'+(s.branch||s.operator_branch||'\u2014')+
+        '</td><td style="padding:.7rem 1rem;font-size:.78rem">'+(s.start_location?'<a href="https://maps.google.com/?q='+s.start_location+'" target="_blank" style="color:#2563eb;text-decoration:none">\uD83D\uDCCD '+s.start_location+'</a>':'\u2014')+
+        '</td><td style="padding:.7rem 1rem;font-size:.78rem">'+(s.end_location?'<a href="https://maps.google.com/?q='+s.end_location+'" target="_blank" style="color:#dc2626;text-decoration:none">\uD83D\uDCCD '+s.end_location+'</a>':'\u2014')+
         '</td><td style="padding:.7rem 1rem;text-align:center">'+st+'</td></tr>';
     }).join('');
     _renderShiftPagination();
   }catch(e){
-    if(tbody)tbody.innerHTML='<tr><td colspan="10" style="text-align:center;color:#ef4444;padding:3rem">&#x274C; '+e.message+'</td></tr>';
+    if(tbody)tbody.innerHTML='<tr><td colspan="12" style="text-align:center;color:#ef4444;padding:3rem">&#x274C; '+e.message+'</td></tr>';
   }
 }
 
