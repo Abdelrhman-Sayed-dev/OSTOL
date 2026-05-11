@@ -1299,179 +1299,6 @@ tr.row-hidden { display:none; }
 .shift-badge-ended{display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .65rem;border-radius:20px;background:#f1f5f9;color:#475569;font-size:.73rem;font-weight:700}
 
 
-/* ── Global Entity Switcher ── */
-#globalEntitySwitcher {
-  display: none;
-  position: sticky;
-  top: 0;
-  z-index: 200;
-  background: #fff;
-  border-bottom: 1.5px solid #e2e8f0;
-  padding: .55rem 1.25rem;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  box-shadow: 0 1px 8px rgba(0,0,0,.06);
-}
-#globalEntitySwitcher.visible { display: flex; }
-.ges-pill {
-  display: flex;
-  background: #f1f5f9;
-  border-radius: 10px;
-  padding: 3px;
-  gap: 2px;
-  flex-shrink: 0;
-}
-.ges-btn {
-  padding: .38rem 1rem;
-  border-radius: 8px;
-  border: none;
-  font-family: inherit;
-  font-size: .84rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all .15s;
-  white-space: nowrap;
-}
-.ges-btn.active {
-  background: #6366f1;
-  color: #fff;
-  box-shadow: 0 1px 4px rgba(99,102,241,.3);
-}
-.ges-btn:not(.active) {
-  background: transparent;
-  color: #64748b;
-}
-.ges-label {
-  font-size: .75rem;
-  font-weight: 700;
-  color: #94a3b8;
-  white-space: nowrap;
-}
-.ges-stats {
-  display: flex;
-  gap: .75rem;
-  flex-wrap: wrap;
-  margin-right: auto;
-}
-.ges-stat {
-  display: flex;
-  align-items: center;
-  gap: .3rem;
-  font-size: .78rem;
-  color: #475569;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: .2rem .6rem;
-}
-.ges-stat strong { color: #0f172a; font-weight: 800; }
-
-</style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-</head>
-<body>
-<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
-
-<div id="appShell" style="display:none">
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-logo">
-  <svg viewBox="0 0 100 100" width="28" height="28" style="flex-shrink:0">
-    <rect width="100" height="100" rx="18" fill="#b8860b"/>
-    <rect x="12" y="42" width="50" height="28" rx="4" fill="white"/>
-    <rect x="62" y="48" width="20" height="22" rx="4" fill="rgba(255,255,255,.2)"/>
-    <rect x="64" y="50" width="16" height="12" rx="2" fill="rgba(255,255,255,.3)"/>
-    <rect x="12" y="60" width="50" height="4" fill="rgba(30,58,95,.4)"/>
-    <circle cx="26" cy="73" r="8" fill="#0f1d2e"/>
-    <circle cx="26" cy="73" r="4" fill="#b8860b"/>
-    <circle cx="52" cy="73" r="8" fill="#0f1d2e"/>
-    <circle cx="52" cy="73" r="4" fill="#b8860b"/>
-    <ellipse cx="78" cy="24" rx="8" ry="9" fill="white"/>
-    <path d="M70 30 Q78 42 78 42 Q78 42 86 30Z" fill="white"/>
-    <circle cx="78" cy="22" r="4" fill="#b8860b"/>
-    <circle cx="78" cy="24" r="11" fill="none" stroke="white" stroke-width="1.5" opacity="0.5"/>
-  </svg>
-  إدارة الأسطول
-</div>
-      <div class="sidebar-subtitle">Fleet Management v2</div>
-    </div>
-    <div class="sidebar-user">
-      <div class="user-avatar" id="userAvatar" onclick="openAvatarModal()" title="تغيير الصورة الشخصية">
-        <span id="userAvatarInitial">؟</span>
-        <div class="avatar-edit-overlay">✏️</div>
-      </div>
-      <div>
-        <div class="user-name" id="sidebarUsername">—</div>
-        <div class="user-role" id="sidebarRole">—</div>
-        <div id="sidebarBranchBadge" style="display:none;margin-top:.3rem;font-size:.72rem;font-weight:700;color:var(--gold);background:rgba(184,134,11,.15);padding:.15rem .5rem;border-radius:20px;border:1px solid rgba(184,134,11,.3)"></div>
-      </div>
-    </div>
-    <nav class="sidebar-nav" id="sidebarNav"></nav>
-    <div class="sidebar-footer">
-      <button class="logout-btn-sidebar" id="logoutBtn"><span>🚪</span> تسجيل الخروج</button>
-    </div>
-  </aside>
-  <div class="main-content">
-    <header class="topbar">
-      <button class="btn btn-ghost btn-sm sidebar-toggle" onclick="toggleSidebar()">☰</button>
-      <div class="topbar-title" id="topbarTitle">لوحة التحكم</div>
-      <button class="topbar-logout-btn" id="topbarLogoutBtn" onclick="document.getElementById('logoutBtn').click()" title="تسجيل الخروج">
-        🚪
-      </button>
-    </header>
-    <div id="globalEntitySwitcher">
-      <span class="ges-label">عرض:</span>
-      <div class="ges-pill">
-        <button class="ges-btn active" id="gesBtnDriver"   onclick="gesSetType('driver')">🚗 السائقون</button>
-        <button class="ges-btn"        id="gesBtnOperator" onclick="gesSetType('operator')">⚙️ المشغلون</button>
-      </div>
-      <div class="ges-stats" id="gesStats"></div>
-    </div>
-    <div class="page-content" id="pageContent"></div>
-  </div>
-</div>
-
-<script>
-
-// Auto-detect environment: empty string = same domain (Railway/VPS)
-const API = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
-  ? "http://127.0.0.1:8000"
-  : "";
-let currentUser = null;
-const isReporter     = () => currentUser?.role === 'reporter';
-const isAdmin        = () => currentUser?.role === 'admin';
-const isAdminOrSup   = () => ['admin','superuser'].includes(currentUser?.role);
-const isAdminLike    = () => ['admin','reporter','superuser','supervisor_workshop','supervisor_field'].includes(currentUser?.role);
-const isSuperuser    = () => currentUser?.role === 'superuser';
-const isSupervisorWS   = () => currentUser?.role === 'supervisor_workshop';
-const isSupervisorField= () => currentUser?.role === 'supervisor_field';
-const isSupervisor     = () => isSupervisorWS() || isSupervisorField();
-const isOperator       = () => currentUser?.role === 'operator';
-const isAdminOrSuper = () => ['admin','superuser'].includes(currentUser?.role);
-let notifPollInterval = null;
-let lastUnreadCount = 0;
-
-// Recording globals
-let mediaRecorder = null;
-let audioChunks = [];
-let recInterval = null;
-let recSeconds = 0;
-let currentRecordingType = null;
-
-const getToken = () => localStorage.getItem('access_token');
-const setToken = t => t ? localStorage.setItem('access_token',t) : localStorage.removeItem('access_token');
-const clearAuth = () => { localStorage.removeItem('access_token'); localStorage.removeItem('user_data'); localStorage.removeItem('refresh_token'); };
-const saveUser = u => localStorage.setItem('user_data', JSON.stringify(u));
-const loadUser = () => { try { return JSON.parse(localStorage.getItem('user_data')); } catch { return null; } };
-
-function showNotification(msg, type='success', duration=3200) {
-  const el = document.createElement('div');
-  el.className = `notification ${type}`;
-  el.innerHTML = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), duration);
-}
 
 async function apiCall(endpoint, method='GET', body=null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
@@ -1942,20 +1769,7 @@ async function renderOverview() {
     pc.appendChild(sel);
   }
 
-  // ── Entity Switcher ──
-  const _ovPc = document.getElementById('pageContent');
-  if (_ovPc) {
-    const _ovSwDiv = document.createElement('div');
-    _ovSwDiv.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.5rem 1.25rem 0;flex-wrap:wrap';
-    const _t = window._gesType || 'driver';
-    _ovSwDiv.innerHTML = `
-      <span style="font-size:.74rem;font-weight:700;color:#94a3b8">عرض البيانات:</span>
-      <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-        <button onclick="gesSetType('driver');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='driver'?'#6366f1':'transparent'};color:${_t==='driver'?'#fff':'#64748b'}">🚗 سائقون</button>
-        <button onclick="gesSetType('operator');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='operator'?'#6366f1':'transparent'};color:${_t==='operator'?'#fff':'#64748b'}">⚙️ مشغلون</button>
-      </div>`;
-    _ovPc.appendChild(_ovSwDiv);
-  }
+
 
   const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
 
@@ -5563,21 +5377,9 @@ async function renderRequestsSection() {
     <!-- ══ MAIN CARD ══ -->
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
 
-      <!-- Driver / Operator switcher -->
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9">
-        <div style="display:flex;background:#f1f5f9;border-radius:10px;padding:3px;gap:2px">
-          <button id="reqTabDriver" onclick="_reqSetType('driver')"
-            style="padding:.45rem 1.1rem;border-radius:8px;border:none;font-family:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:all .15s;background:#6366f1;color:#fff">
-            🚗 السائقون
-          </button>
-          <button id="reqTabOperator" onclick="_reqSetType('operator')"
-            style="padding:.45rem 1.1rem;border-radius:8px;border:none;font-family:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:all .15s;background:transparent;color:#64748b">
-            ⚙️ المشغلون
-          </button>
-        </div>
-
-        <!-- Search -->
-        <div style="position:relative;flex:1;max-width:300px">
+      <!-- Search only -->
+      <div style="padding:.75rem 1.25rem;border-bottom:1px solid #f1f5f9">
+        <div style="position:relative;max-width:340px">
           <span style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🔍</span>
           <input id="reqSearchInput" type="text" placeholder="بحث بالاسم أو نوع الطلب..."
             oninput="_reqApplyFilters()"
@@ -5685,27 +5487,11 @@ function _reqRenderStats() {
 }
 
 function _reqSetType(type) {
-  window._reqUserType  = type;
-  window._gesType      = type;  // sync global state
-  window._reqStatusFilt = 'all'; // reset status filter when switching type
-
-  // Update tab buttons
-  const btnD = document.getElementById('reqTabDriver');
-  const btnO = document.getElementById('reqTabOperator');
-  if (btnD) { btnD.style.background = type==='driver'?'#6366f1':'transparent'; btnD.style.color = type==='driver'?'#fff':'#64748b'; }
-  if (btnO) { btnO.style.background = type==='operator'?'#6366f1':'transparent'; btnO.style.color = type==='operator'?'#fff':'#64748b'; }
-
-  // Update global switcher buttons
-  const gbD = document.getElementById('gesBtnDriver');
-  const gbO = document.getElementById('gesBtnOperator');
-  if (gbD) gbD.classList.toggle('active', type==='driver');
-  if (gbO) gbO.classList.toggle('active', type==='operator');
-
-  // Refresh pills counts (replace innerHTML of pills container only)
+  window._reqUserType   = type;
+  window._reqStatusFilt = 'all';
   const isSuper = currentUser?.role === 'superuser';
   const pillsBar = document.getElementById('reqPillsBar');
   if (pillsBar) pillsBar.innerHTML = _reqStatusPills(isSuper);
-
   _reqApplyFilters();
 }
 
@@ -5965,22 +5751,10 @@ async function openSuperDecisionModal(rid, defaultStatus) {
 
 
 /* ── EMERGENCIES SECTION (Admin) ── */
-async function renderEmergenciesSection(entityType) {
-  if (entityType) { window._gesType = entityType; window._gesType = entityType; }
-  const type = window._gesType || 'driver';
+async function renderEmergenciesSection() {
   const reports = await loadEmergencies();
-  const filtered = reports.filter(r =>
-    type === 'operator' ? r.is_operator == 1 : (!r.is_operator || r.is_operator == 0)
-  );
-  // Update button states after render
-  setTimeout(() => {
-    const bd = document.getElementById('emgBtnD');
-    const bo = document.getElementById('emgBtnO');
-    if (bd) { bd.style.background = type==='driver'?'#6366f1':'transparent'; bd.style.color = type==='driver'?'#fff':'#64748b'; }
-    if (bo) { bo.style.background = type==='operator'?'#6366f1':'transparent'; bo.style.color = type==='operator'?'#fff':'#64748b'; }
-    const cnt = document.getElementById('emgCount');
-    if (cnt) cnt.textContent = filtered.length;
-  }, 50);
+  const filtered = reports;
+
   const _reportsForRender = filtered;
   window._emergencyReports = reports;
   const unread=reports.filter(r=>!r.is_read).length;
@@ -5997,13 +5771,10 @@ async function renderEmergenciesSection(entityType) {
     </div>
     <div class="card">
       <div class="card-header">
-        <div class="card-title">🚨 البلاغات (<span id="emgCount">0</span>)</div>
+        <div class="card-title">🚨 البلاغات (<span id="emgCount">${filtered.length}</span>)</div>
           <div style="display:flex;align-items:center;gap:.5rem">
             <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-              <button id="emgBtnD" onclick="renderEmergenciesSection('driver')"
-                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:#6366f1;color:#fff">🚗 السائقون</button>
-              <button id="emgBtnO" onclick="renderEmergenciesSection('operator')"
-                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:transparent;color:#64748b">⚙️ المشغلون</button>
+              
             </div>
             <button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button>
           </div>
@@ -14480,99 +14251,6 @@ async function _previewLocation() {
 }
 
 
-// ══════════════════════════════════════════════════════════════════
-// GLOBAL ENTITY SWITCHER — Driver / Operator
-// يظهر في كل الصفحات اللي فيها بيانات تشغيل
-// ══════════════════════════════════════════════════════════════════
-
-window._gesType = 'driver';  // global: 'driver' | 'operator'
-
-// الصفحات اللي بيظهر فيها السويتشر
-const GES_SECTIONS = new Set([
-  'requests', 'emergencies',
-]);
-
-function gesShow(sectionId) {
-  const bar = document.getElementById('globalEntitySwitcher');
-  if (!bar) return;
-  if (GES_SECTIONS.has(sectionId)) {
-    bar.classList.add('visible');
-    gesUpdateStats();
-  } else {
-    bar.classList.remove('visible');
-  }
-}
-
-function gesSetType(type) {
-  window._gesType = type;
-  // Update button styles
-  const btnD = document.getElementById('gesBtnDriver');
-  const btnO = document.getElementById('gesBtnOperator');
-  if (btnD) { btnD.classList.toggle('active', type==='driver');   }
-  if (btnO) { btnO.classList.toggle('active', type==='operator'); }
-  gesUpdateStats();
-  // Also sync requests tab switcher if visible
-  if (typeof _reqSetType === 'function') {
-    window._reqUserType = type;
-    _reqApplyFilters && _reqApplyFilters();
-  }
-  // Re-render current section with new type
-  const cur = window.currentSection;
-  if (cur && GES_SECTIONS.has(cur)) {
-    // trigger re-render
-    _gesRerenderSection(cur);
-  }
-}
-
-async function _gesRerenderSection(section) {
-  switch(section) {
-    case 'requests':    await renderRequestsSection(); break;
-    case 'emergencies': await renderEmergenciesSection(); break;
-    case 'trips':       await renderTripsSection(); break;
-    case 'workshops':   await renderAdminWorkshops(); break;
-    case 'shifts-table':await renderShiftsTable(); break;
-    case 'overview':    await renderOverview(); break;
-  }
-}
-
-async function gesUpdateStats() {
-  const el = document.getElementById('gesStats');
-  if (!el) return;
-  const type = window._gesType;
-  try {
-    if (type === 'driver') {
-      const [drvs, trips] = await Promise.all([
-        apiCall('/drivers?limit=1').catch(()=>({total:0})),
-        apiCall('/trips?limit=1').catch(()=>({total:0})),
-      ]);
-      el.innerHTML = `
-        <div class="ges-stat">🚗 <strong>${drvs.total??'—'}</strong> سائق</div>
-        <div class="ges-stat">🛣️ <strong>${trips.total??'—'}</strong> رحلة</div>`;
-    } else {
-      const [ops, shifts] = await Promise.all([
-        apiCall('/operators?limit=1').catch(()=>({total:0})),
-        apiCall('/shifts?limit=1').catch(()=>({total:0})),
-      ]);
-      el.innerHTML = `
-        <div class="ges-stat">⚙️ <strong>${ops.total??'—'}</strong> مشغل</div>
-        <div class="ges-stat">⏱️ <strong>${shifts.total??'—'}</strong> وردية</div>`;
-    }
-  } catch(e) { el.innerHTML = ''; }
-}
-
-// Hook into switchSection to show/hide switcher
-const _origSwitchSection = switchSection;
-switchSection = async function(id) {
-  await _origSwitchSection(id);
-  gesShow(id);
-  // sync _reqUserType with _gesType when entering requests
-  if (id === 'requests' && typeof _reqSetType === 'function') {
-    _reqSetType(window._gesType);
-  }
-};
-
-
-// _gesSetTripsType removed — trips and shifts are separate sections
 
 </script>
 
