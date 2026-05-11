@@ -504,7 +504,9 @@ def _safe_add_columns(c):
     # Create driver_requests table if not exists
     c.execute("""CREATE TABLE IF NOT EXISTS driver_requests (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-        driver_id           INTEGER NOT NULL,
+        driver_id           INTEGER,
+        operator_id         INTEGER,
+        is_operator         INTEGER DEFAULT 0,
         type                TEXT NOT NULL,
         notes               TEXT DEFAULT '',
         new_odometer        REAL,
@@ -520,20 +522,27 @@ def _safe_add_columns(c):
         super_notes         TEXT DEFAULT '',
         super_handled_by    TEXT DEFAULT '',
         super_handled_at    TEXT DEFAULT '',
-        created_at          TEXT NOT NULL,
-        FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
+        created_at          TEXT NOT NULL
     )""")
-    # ── Migration: إزالة CHECK constraint من driver_requests لو موجود ──
+    # ── Migration: إزالة CHECK + NOT NULL + FK من driver_requests + إضافة operator columns ──
     try:
         c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='driver_requests'")
         _dr_row = c.fetchone()
         _dr_sql = _dr_row["sql"] if _dr_row else ""
-        if "CHECK" in _dr_sql and "license_renew" not in _dr_sql:
-            # أعد بناء الجدول بدون CHECK constraint على type
+        # نعيد البناء لو فيه CHECK constraint أو driver_id NOT NULL أو مفيش operator_id
+        _needs_rebuild = (
+            ("CHECK" in _dr_sql and "license_renew" not in _dr_sql)
+            or ("driver_id           INTEGER NOT NULL" in _dr_sql)
+            or ("operator_id" not in _dr_sql)
+        )
+        if _needs_rebuild:
+            log.info("🔄 Rebuilding driver_requests table for operator support...")
             c.execute("PRAGMA foreign_keys=OFF")
             c.execute("""CREATE TABLE IF NOT EXISTS driver_requests_v2 (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                driver_id           INTEGER NOT NULL,
+                driver_id           INTEGER,
+                operator_id         INTEGER,
+                is_operator         INTEGER DEFAULT 0,
                 type                TEXT NOT NULL,
                 notes               TEXT DEFAULT '',
                 new_odometer        REAL,
@@ -552,22 +561,27 @@ def _safe_add_columns(c):
                 created_at          TEXT NOT NULL
             )""")
             c.execute("""INSERT OR IGNORE INTO driver_requests_v2
+                (id,driver_id,type,notes,new_odometer,trip_id,status,
+                 priority,admin_notes,admin_message,handled_by,handled_at,
+                 forwarded_to_super,super_decision,super_notes,super_handled_by,
+                 super_handled_at,created_at,is_operator)
                 SELECT id,driver_id,type,notes,new_odometer,trip_id,status,
                        COALESCE(priority,'medium'),
                        COALESCE(admin_notes,''),COALESCE(admin_message,''),
                        COALESCE(handled_by,''),COALESCE(handled_at,''),
                        COALESCE(forwarded_to_super,0),COALESCE(super_decision,''),
                        COALESCE(super_notes,''),COALESCE(super_handled_by,''),
-                       COALESCE(super_handled_at,''),created_at
+                       COALESCE(super_handled_at,''),created_at,0
                 FROM driver_requests""")
             c.execute("DROP TABLE driver_requests")
             c.execute("ALTER TABLE driver_requests_v2 RENAME TO driver_requests")
             c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_operator ON driver_requests(operator_id)")
             c.execute("PRAGMA foreign_keys=ON")
-            log.info("✅ driver_requests: removed CHECK constraint on type")
+            log.info("✅ driver_requests: rebuilt with operator support (removed NOT NULL + FK)")
     except Exception as _e:
-        log.warning(f"driver_requests migration (check fix): {_e}")
+        log.warning(f"driver_requests migration (rebuild): {_e}")
 
     # Migrate driver_requests new columns
     try:
@@ -2316,16 +2330,34 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
         c = conn.cursor()
         # المشغل: driver_id يبقى NULL، نحفظ operator_id بشكل منفصل
         if cu["role"] == "operator":
-            c.execute("""INSERT INTO workshop_records
-                         (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
-                          operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                          doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                         VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                      (cu.get("operator_id"), rec.type, rec.quantity, final_price, rec.notes or "", now,
-                       rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
-                       rec.description or "", rec.tire_action or "", rec.location or "",
-                       rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+            op_id_ws = cu.get("operator_id") or 0
+            try:
+                c.execute("""INSERT INTO workshop_records
+                             (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
+                              operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                             VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
+                           rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
+                           rec.description or "", rec.tire_action or "", rec.location or "",
+                           rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
+                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+            except Exception:
+                # fallback: operator_id column لسه مش موجود
+                try: c.execute("ALTER TABLE workshop_records ADD COLUMN operator_id INTEGER")
+                except Exception: pass
+                try: c.execute("ALTER TABLE workshop_records ADD COLUMN is_operator INTEGER DEFAULT 0")
+                except Exception: pass
+                c.execute("""INSERT INTO workshop_records
+                             (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
+                              operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                             VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
+                           rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
+                           rec.description or "", rec.tire_action or "", rec.location or "",
+                           rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
+                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
         else:
             c.execute("""INSERT INTO workshop_records
                          (driver_id,is_operator,type,quantity,price,notes,created_at,
@@ -2400,9 +2432,9 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
             if not op_id3: return []
             month_cond = " AND w.created_at LIKE ?" if month else ""
             month_params = [month + "%"] if month else []
-            # المشغل: نبحث بـ operator_id column (مش driver_id)
-            c.execute(q + " WHERE (w.operator_id=? OR (w.driver_id=? AND w.is_operator=1))" + month_cond + " ORDER BY w.id DESC LIMIT 200",
-                      [op_id3, op_id3] + month_params)
+            # المشغل: operator_id column أو driver_id=0 sentinel
+            c.execute(q + " WHERE (w.operator_id=? OR (w.driver_id=0 AND w.is_operator=1 AND w.operator_id IS NULL AND w.created_at IS NOT NULL))" + month_cond + " ORDER BY w.id DESC LIMIT 200",
+                      [op_id3] + month_params)
         else:
             did = cu.get("driver_id")
             if not did: return []
@@ -2730,10 +2762,22 @@ async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = De
                 log.warning(f"Audio save failed: {e}")
         # المشغل: نحفظ بيانات البلاغ بدون driver_id (FK على drivers) — نستخدم operator_id
         if cu["role"] == "operator":
-            c.execute("""INSERT INTO emergency_reports
-                         (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,operator_id,is_operator)
-                         VALUES(NULL,NULL,?,?,?,?,0,?,?,1)""",
-                      (rep.type, audio_url, rep.notes or "", now, rep.location or "", cu.get("operator_id")))
+            op_id_emg = cu.get("operator_id") or 0
+            try:
+                c.execute("""INSERT INTO emergency_reports
+                             (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,operator_id,is_operator)
+                             VALUES(NULL,NULL,?,?,?,?,0,?,?,1)""",
+                          (rep.type, audio_url, rep.notes or "", now, rep.location or "", op_id_emg))
+            except Exception:
+                # driver_id NOT NULL — نستخدم 0 كـ sentinel
+                try: c.execute("ALTER TABLE emergency_reports ADD COLUMN operator_id INTEGER")
+                except Exception: pass
+                try: c.execute("ALTER TABLE emergency_reports ADD COLUMN is_operator INTEGER DEFAULT 0")
+                except Exception: pass
+                c.execute("""INSERT INTO emergency_reports
+                             (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,operator_id,is_operator)
+                             VALUES(0,NULL,?,?,?,?,0,?,?,1)""",
+                          (rep.type, audio_url, rep.notes or "", now, rep.location or "", op_id_emg))
         else:
             c.execute("""INSERT INTO emergency_reports
                          (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,is_operator)
@@ -3247,13 +3291,27 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
         if is_op:
-            # المشغل: driver_id=NULL، نحفظ في operator_id
-            c.execute("""INSERT INTO driver_requests
-                         (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
-                         VALUES(NULL,?,1,?,?,?,?,'pending',?)""",
-                      (cu.get("operator_id"), req_type, notes,
-                       float(new_odometer) if new_odometer else None,
-                       int(trip_id) if trip_id else None, now))
+            op_id_val = cu.get("operator_id") or 0
+            # محاولة INSERT مع operator_id column
+            try:
+                c.execute("""INSERT INTO driver_requests
+                             (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                             VALUES(?,?,1,?,?,?,?,'pending',?)""",
+                          (0, op_id_val, req_type, notes,
+                           float(new_odometer) if new_odometer else None,
+                           int(trip_id) if trip_id else None, now))
+            except Exception:
+                # fallback: operator_id column لسه مش موجود — تشغيل migration فوري
+                try: c.execute("ALTER TABLE driver_requests ADD COLUMN operator_id INTEGER")
+                except Exception: pass
+                try: c.execute("ALTER TABLE driver_requests ADD COLUMN is_operator INTEGER DEFAULT 0")
+                except Exception: pass
+                c.execute("""INSERT INTO driver_requests
+                             (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
+                             VALUES(?,?,1,?,?,?,?,'pending',?)""",
+                          (0, op_id_val, req_type, notes,
+                           float(new_odometer) if new_odometer else None,
+                           int(trip_id) if trip_id else None, now))
         else:
             c.execute("""INSERT INTO driver_requests
                          (driver_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
@@ -3280,11 +3338,11 @@ async def get_requests(cu: dict = Depends(get_user), branch: Optional[str] = Non
         elif cu["role"] == "operator":
             op_id2 = cu.get("operator_id")
             if not op_id2: return []
-            # المشغل: نبحث بـ operator_id column
+            # المشغل: operator_id column أو driver_id=0 sentinel
             c.execute("""SELECT r.*, op.name as driver_name, op.branch as driver_branch
                          FROM driver_requests r
-                         LEFT JOIN equipment_operators op ON r.operator_id=op.id
-                         WHERE (r.operator_id=? OR (r.driver_id=? AND r.is_operator=1))
+                         LEFT JOIN equipment_operators op ON op.id=?
+                         WHERE (r.operator_id=? OR (r.driver_id=0 AND r.is_operator=1))
                          ORDER BY r.id DESC""", (op_id2, op_id2))
         else:
             # تحديد فلتر الفرع الفعّال
