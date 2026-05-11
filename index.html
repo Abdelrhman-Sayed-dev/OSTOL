@@ -1298,6 +1298,75 @@ tr.row-hidden { display:none; }
 .shift-badge-active{display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .65rem;border-radius:20px;background:#dcfce7;color:#16a34a;font-size:.73rem;font-weight:700}
 .shift-badge-ended{display:inline-flex;align-items:center;gap:.3rem;padding:.2rem .65rem;border-radius:20px;background:#f1f5f9;color:#475569;font-size:.73rem;font-weight:700}
 
+
+/* ── Global Entity Switcher ── */
+#globalEntitySwitcher {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  background: #fff;
+  border-bottom: 1.5px solid #e2e8f0;
+  padding: .55rem 1.25rem;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 8px rgba(0,0,0,.06);
+}
+#globalEntitySwitcher.visible { display: flex; }
+.ges-pill {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.ges-btn {
+  padding: .38rem 1rem;
+  border-radius: 8px;
+  border: none;
+  font-family: inherit;
+  font-size: .84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.ges-btn.active {
+  background: #6366f1;
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(99,102,241,.3);
+}
+.ges-btn:not(.active) {
+  background: transparent;
+  color: #64748b;
+}
+.ges-label {
+  font-size: .75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.ges-stats {
+  display: flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+.ges-stat {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .78rem;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: .2rem .6rem;
+}
+.ges-stat strong { color: #0f172a; font-weight: 800; }
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
@@ -1351,6 +1420,14 @@ tr.row-hidden { display:none; }
         🚪
       </button>
     </header>
+    <div id="globalEntitySwitcher">
+      <span class="ges-label">عرض:</span>
+      <div class="ges-pill">
+        <button class="ges-btn active" id="gesBtnDriver"   onclick="gesSetType('driver')">🚗 السائقون</button>
+        <button class="ges-btn"        id="gesBtnOperator" onclick="gesSetType('operator')">⚙️ المشغلون</button>
+      </div>
+      <div class="ges-stats" id="gesStats"></div>
+    </div>
     <div class="page-content" id="pageContent"></div>
   </div>
 </div>
@@ -1864,6 +1941,19 @@ async function renderOverview() {
     `;
     pc.appendChild(sel);
   }
+
+  // ── Entity Switcher ──
+  const _ovSwDiv = document.createElement('div');
+  _ovSwDiv.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.5rem 1.25rem 0;flex-wrap:wrap';
+  const _t = window._gesType || 'driver';
+  _ovSwDiv.innerHTML = `
+    <span style="font-size:.74rem;font-weight:700;color:#94a3b8">عرض البيانات:</span>
+    <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
+      <button onclick="gesSetType('driver');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='driver'?'#6366f1':'transparent'};color:${_t==='driver'?'#fff':'#64748b'}">🚗 سائقون</button>
+      <button onclick="gesSetType('operator');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='operator'?'#6366f1':'transparent'};color:${_t==='operator'?'#fff':'#64748b'}">⚙️ مشغلون</button>
+    </div>`;
+  pc.appendChild(_ovSwDiv);
+
   const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
 
   // ── شريط الفرع للأدمن (للقراءة فقط) ──
@@ -3127,7 +3217,19 @@ async function renderTripsSection() {
   document.getElementById('pageContent').innerHTML=`
     <div class="card">
       <div class="card-header">
-        <div class="card-title">🗺️ جميع الرحلات (<span id="tripCount">${trips.length}</span>)</div>
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+          <div class="card-title">🗺️ الرحلات والورديات</div>
+          <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
+            <button onclick="_gesSetTripsType('driver')" id="tripsTabD"
+              style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:#6366f1;color:#fff">
+              🚗 رحلات السائقين (<span id="tripCount">${trips.length}</span>)
+            </button>
+            <button onclick="_gesSetTripsType('operator')" id="tripsTabO"
+              style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:transparent;color:#64748b">
+              ⚙️ ورديات المشغلين
+            </button>
+          </div>
+        </div>
         <button class="btn btn-success btn-sm" onclick="exportCSV()" ${isReporter()?'style="display:none"':''}>⬇️ تصدير CSV</button>
       </div>
 
@@ -5870,8 +5972,15 @@ async function openSuperDecisionModal(rid, defaultStatus) {
 
 
 /* ── EMERGENCIES SECTION (Admin) ── */
-async function renderEmergenciesSection() {
-  const reports=await loadEmergencies();
+async function renderEmergenciesSection(entityType) {
+  if (entityType) window._gesType = entityType;
+  const type = window._gesType || 'driver';
+  const reports = await loadEmergencies();
+  // Filter by type: driver=is_operator falsy, operator=is_operator=1
+  const filtered = reports.filter(r =>
+    type === 'operator' ? r.is_operator == 1 : !r.is_operator || r.is_operator == 0
+  );
+  const _reportsForRender = filtered;  // used below
   window._emergencyReports = reports;
   const unread=reports.filter(r=>!r.is_read).length;
   // Mark all as read
@@ -5886,7 +5995,20 @@ async function renderEmergenciesSection() {
       <div class="stat-card"><div class="stat-icon">📋</div><div class="stat-value">${reports.length}</div><div class="stat-label">إجمالي البلاغات</div></div>
     </div>
     <div class="card">
-      <div class="card-header"><div class="card-title">🚨 جميع البلاغات والحوادث (<span id="emgCount">${reports.length}</span>)</div><button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button></div>
+      <div class="card-header">
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;width:100%;justify-content:space-between">
+          <div class="card-title">🚨 البلاغات (<span id="emgCount">${filtered.length}</span> / ${reports.length} إجمالي)</div>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
+              <button onclick="renderEmergenciesSection('driver')"
+                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${type==='driver'?'#6366f1':'transparent'};color:${type==='driver'?'#fff':'#64748b'}">🚗 السائقون</button>
+              <button onclick="renderEmergenciesSection('operator')"
+                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${type==='operator'?'#6366f1':'transparent'};color:${type==='operator'?'#fff':'#64748b'}">⚙️ المشغلون</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button>
+          </div>
+        </div>
+      </div>
       <div class="srch-bar">
         <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الموقع..."
           oninput="liveSearch(this,'emgBody')" style="flex:1">
@@ -14356,6 +14478,123 @@ async function _previewLocation() {
     btn.textContent = '❌ خطأ';
   }
   btn.disabled = false;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// GLOBAL ENTITY SWITCHER — Driver / Operator
+// يظهر في كل الصفحات اللي فيها بيانات تشغيل
+// ══════════════════════════════════════════════════════════════════
+
+window._gesType = 'driver';  // global: 'driver' | 'operator'
+
+// الصفحات اللي بيظهر فيها السويتشر
+const GES_SECTIONS = new Set([
+  'trips', 'requests', 'emergencies', 'workshops',
+  'permissions', 'driver-kpi', 'op-card',
+  'equipment-trips', 'shifts-table', 'equipment-operators',
+  'monthly-report', 'overview',
+]);
+
+function gesShow(sectionId) {
+  const bar = document.getElementById('globalEntitySwitcher');
+  if (!bar) return;
+  if (GES_SECTIONS.has(sectionId)) {
+    bar.classList.add('visible');
+    gesUpdateStats();
+  } else {
+    bar.classList.remove('visible');
+  }
+}
+
+function gesSetType(type) {
+  window._gesType = type;
+  // Update button styles
+  const btnD = document.getElementById('gesBtnDriver');
+  const btnO = document.getElementById('gesBtnOperator');
+  if (btnD) { btnD.classList.toggle('active', type==='driver');   }
+  if (btnO) { btnO.classList.toggle('active', type==='operator'); }
+  gesUpdateStats();
+  // Also sync requests tab switcher if visible
+  if (typeof _reqSetType === 'function') {
+    window._reqUserType = type;
+    _reqApplyFilters && _reqApplyFilters();
+  }
+  // Re-render current section with new type
+  const cur = window.currentSection;
+  if (cur && GES_SECTIONS.has(cur)) {
+    // trigger re-render
+    _gesRerenderSection(cur);
+  }
+}
+
+async function _gesRerenderSection(section) {
+  switch(section) {
+    case 'requests':    await renderRequestsSection(); break;
+    case 'emergencies': await renderEmergenciesSection(); break;
+    case 'trips':       await renderTripsSection(); break;
+    case 'workshops':   await renderAdminWorkshops(); break;
+    case 'shifts-table':await renderShiftsTable(); break;
+    case 'overview':    await renderOverview(); break;
+  }
+}
+
+async function gesUpdateStats() {
+  const el = document.getElementById('gesStats');
+  if (!el) return;
+  const type = window._gesType;
+  try {
+    if (type === 'driver') {
+      const [drvs, trips] = await Promise.all([
+        apiCall('/drivers?limit=1').catch(()=>({total:0})),
+        apiCall('/trips?limit=1').catch(()=>({total:0})),
+      ]);
+      el.innerHTML = `
+        <div class="ges-stat">🚗 <strong>${drvs.total??'—'}</strong> سائق</div>
+        <div class="ges-stat">🛣️ <strong>${trips.total??'—'}</strong> رحلة</div>`;
+    } else {
+      const [ops, shifts] = await Promise.all([
+        apiCall('/operators?limit=1').catch(()=>({total:0})),
+        apiCall('/shifts?limit=1').catch(()=>({total:0})),
+      ]);
+      el.innerHTML = `
+        <div class="ges-stat">⚙️ <strong>${ops.total??'—'}</strong> مشغل</div>
+        <div class="ges-stat">⏱️ <strong>${shifts.total??'—'}</strong> وردية</div>`;
+    }
+  } catch(e) { el.innerHTML = ''; }
+}
+
+// Hook into switchSection to show/hide switcher
+const _origSwitchSection = switchSection;
+switchSection = async function(id) {
+  await _origSwitchSection(id);
+  gesShow(id);
+  // sync _reqUserType with _gesType when entering requests
+  if (id === 'requests' && typeof _reqSetType === 'function') {
+    _reqSetType(window._gesType);
+  }
+};
+
+
+// ── Trips section: switch between driver trips and operator shifts ──
+function _gesSetTripsType(type) {
+  window._gesType = type;
+  const btnD = document.getElementById('tripsTabD');
+  const btnO = document.getElementById('tripsTabO');
+  if (btnD) { btnD.style.background = type==='driver'?'#6366f1':'transparent'; btnD.style.color = type==='driver'?'#fff':'#64748b'; }
+  if (btnO) { btnO.style.background = type==='operator'?'#6366f1':'transparent'; btnO.style.color = type==='operator'?'#fff':'#64748b'; }
+  // Also update global switcher
+  const gbD = document.getElementById('gesBtnDriver');
+  const gbO = document.getElementById('gesBtnOperator');
+  if (gbD) gbD.classList.toggle('active', type==='driver');
+  if (gbO) gbO.classList.toggle('active', type==='operator');
+
+  if (type === 'operator') {
+    // Show shifts table inline instead
+    renderShiftsTable();
+  } else {
+    renderTripsSection();
+  }
 }
 
 </script>
