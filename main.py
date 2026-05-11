@@ -595,7 +595,9 @@ def _safe_add_columns(c):
         "emergency_reports":  [("audio_url","TEXT DEFAULT ''"),("is_handled","INTEGER DEFAULT 0"),
                                ("action_taken","TEXT DEFAULT ''"),("handled_by","TEXT DEFAULT ''"),
                                ("action_time","TEXT DEFAULT ''"),("location","TEXT DEFAULT ''"),
-                               ("driver_message","TEXT DEFAULT ''")] ,
+                               ("driver_message","TEXT DEFAULT ''"),
+                               ("operator_id","INTEGER"),
+                               ("is_operator","INTEGER DEFAULT 0")] ,
         "trips":              [("garage_location","TEXT DEFAULT ''")],
         "workshop_records":   [("location","TEXT DEFAULT ''"),("operation_type","TEXT DEFAULT ''"),
                                ("vehicle_id","INTEGER"),("odometer_reading","REAL"),
@@ -2683,12 +2685,10 @@ async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
 async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = Depends(get_user)):
     if rep.type not in ("emergency", "accident"):
         raise HTTPException(400, "نوع البلاغ غير صالح")
-    # المشغل: يُسمح له بإرسال بلاغ بـ operator_id الخاص به كـ driver_id
-    if cu["role"] == "operator":
-        if cu.get("operator_id") != rep.driver_id:
-            raise HTTPException(403, "يمكنك إرسال بلاغات لحسابك فقط")
-    elif cu["role"] not in ("admin","superuser") and rep.driver_id != cu.get("driver_id"):
-        raise HTTPException(403, "غير مصرح")
+    # المشغل: لا يحتاج driver_id — يُسمح له دائماً بإرسال بلاغ
+    if cu["role"] not in ("operator", "admin", "superuser"):
+        if rep.driver_id != cu.get("driver_id"):
+            raise HTTPException(403, "غير مصرح")
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
@@ -2703,19 +2703,31 @@ async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = De
                 audio_url = f"/uploads/{fname}"
             except Exception as e:
                 log.warning(f"Audio save failed: {e}")
-        c.execute("""INSERT INTO emergency_reports
-                     (driver_id,car_id,type,audio_url,notes,created_at,is_read,location)
-                     VALUES(?,?,?,?,?,?,0,?)""",
-                  (rep.driver_id, rep.car_id, rep.type, audio_url, rep.notes or "", now, rep.location or ""))
+        # المشغل: نحفظ بيانات البلاغ بدون driver_id (FK على drivers) — نستخدم operator_id
+        if cu["role"] == "operator":
+            c.execute("""INSERT INTO emergency_reports
+                         (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,operator_id,is_operator)
+                         VALUES(NULL,NULL,?,?,?,?,0,?,?,1)""",
+                      (rep.type, audio_url, rep.notes or "", now, rep.location or "", cu.get("operator_id")))
+        else:
+            c.execute("""INSERT INTO emergency_reports
+                         (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,is_operator)
+                         VALUES(?,?,?,?,?,?,0,?,0)""",
+                      (rep.driver_id, rep.car_id, rep.type, audio_url, rep.notes or "", now, rep.location or ""))
         rid = c.lastrowid
         log_event("emergency_reported", report_id=rid, driver_id=rep.driver_id, type=rep.type)
         return {"id": rid, "created_at": now, "type": rep.type}
 
 @app.get("/emergency/reports")
 async def get_emergency_reports(cu: dict = Depends(get_user), branch: Optional[str] = None):
-    q = """SELECT e.*,d.name as driver_name,c.plate as car_plate
+    q = """SELECT e.*,
+                  COALESCE(d.name, op.name) as driver_name,
+                  COALESCE(d.name, op.name) as sender_name,
+                  c.plate as car_plate,
+                  op.name as operator_name
            FROM emergency_reports e
-           LEFT JOIN drivers d ON e.driver_id=d.id
+           LEFT JOIN drivers d ON e.driver_id=d.id AND e.is_operator=0
+           LEFT JOIN equipment_operators op ON e.operator_id=op.id
            LEFT JOIN cars c ON e.car_id=c.id"""
     with get_db() as conn:
         c = conn.cursor()
