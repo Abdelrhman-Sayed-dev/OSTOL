@@ -2273,7 +2273,11 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
         # جيب فرع السائق/المركبة لتحديد السعر الصحيح
-        c.execute("SELECT branch FROM drivers WHERE id=?", (rec.driver_id,))
+        # المشغل: نجيب الفرع من equipment_operators بدلاً من drivers
+        if cu["role"] == "operator":
+            c.execute("SELECT branch FROM equipment_operators WHERE id=?", (rec.driver_id,))
+        else:
+            c.execute("SELECT branch FROM drivers WHERE id=?", (rec.driver_id,))
         drv_row = c.fetchone()
         drv_branch = drv_row["branch"] if drv_row else ""
 
@@ -6372,9 +6376,16 @@ def _ensure_operator_tables(conn):
         branch          TEXT DEFAULT '',
         notes           TEXT DEFAULT '',
         status          TEXT DEFAULT 'active' CHECK(status IN ('active','ended')),
+        start_location  TEXT DEFAULT '',
+        end_location    TEXT DEFAULT '',
         created_at      TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (operator_id) REFERENCES equipment_operators(id) ON DELETE CASCADE
     )""")
+    # Migration: أضف location columns لو مش موجودة
+    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN start_location TEXT DEFAULT ''")
+    except Exception: pass
+    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN end_location TEXT DEFAULT ''")
+    except Exception: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_op ON operator_shifts(operator_id)")
     except: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_status ON operator_shifts(status)")
@@ -6441,12 +6452,14 @@ class ShiftStart(BaseModel):
     project:        str = ""
     branch:         str = ""
     notes:          str = ""
+    start_location: str = ""
 
 
 class ShiftEnd(BaseModel):
-    end_hours:  float = 0
-    fuel_liters:float = 0
-    notes:      str = ""
+    end_hours:    float = 0
+    fuel_liters:  float = 0
+    notes:        str = ""
+    end_location: str = ""
 
 
 @app.on_event("startup")
@@ -6865,7 +6878,7 @@ async def export_shifts_csv(
     w.writerow(["#","المشغل","الرقم الثابت","المعدة","كود المعدة",
                 "نوع الوردية","وقت البداية","وقت النهاية",
                 "ساعات البداية","ساعات النهاية","مدة التشغيل (ساعة)",
-                "الوقود (لتر)","المشروع","الفرع","الحالة","ملاحظات"])
+                "الوقود (لتر)","المشروع","الفرع","موقع البداية","موقع النهاية","الحالة","ملاحظات"])
     type_labels = {"day":"نهارية","night":"ليلية","extended":"ممتدة"}
     for i, r in enumerate(rows, 1):
         wh = None
@@ -6878,6 +6891,7 @@ async def export_shifts_csv(
                     (r.get("end_time") or "")[:16].replace("T"," "),
                     r.get("start_hours",""), r.get("end_hours",""), wh or "",
                     r.get("fuel_liters",""), r.get("project",""), r.get("branch",""),
+                    r.get("start_location",""), r.get("end_location",""),
                     "نشطة" if r.get("status")=="active" else "منتهية", r.get("notes","")])
     fname = f"shifts_{date_from or 'all'}_{date_to or 'all'}.csv"
     return Response(content=buf.getvalue().encode("utf-8-sig"),
@@ -6934,11 +6948,11 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
         conn.execute("""INSERT INTO operator_shifts
             (operator_id,equipment_id,equipment_name,shift_type,start_time,
-             start_hours,fuel_liters,project,branch,notes,status)
-            VALUES(?,?,?,?,?,?,?,?,?,?,'active')""",
+             start_hours,fuel_liters,project,branch,notes,start_location,status)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,'active')""",
             (body.operator_id, body.equipment_id, body.equipment_name, body.shift_type,
              datetime.utcnow().isoformat(), body.start_hours, body.fuel_liters,
-             body.project, body.branch, body.notes))
+             body.project, body.branch, body.notes, body.start_location or ""))
         sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return {"id": sid, "message": "بدأت الوردية"}
 
@@ -6957,10 +6971,10 @@ async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
         elif cu["role"] not in ("admin", "superuser"):
             raise HTTPException(403, "صلاحيات غير كافية")
         conn.execute("""UPDATE operator_shifts SET
-            end_time=?, end_hours=?, fuel_liters=?, notes=?, status='ended'
+            end_time=?, end_hours=?, fuel_liters=?, notes=?, end_location=?, status='ended'
             WHERE id=?""",
             (datetime.utcnow().isoformat(), body.end_hours, body.fuel_liters,
-             body.notes or shift["notes"], sid))
+             body.notes or shift["notes"], body.end_location or "", sid))
     return {"message": "انتهت الوردية"}
 
 
