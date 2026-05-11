@@ -1943,16 +1943,19 @@ async function renderOverview() {
   }
 
   // ── Entity Switcher ──
-  const _ovSwDiv = document.createElement('div');
-  _ovSwDiv.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.5rem 1.25rem 0;flex-wrap:wrap';
-  const _t = window._gesType || 'driver';
-  _ovSwDiv.innerHTML = `
-    <span style="font-size:.74rem;font-weight:700;color:#94a3b8">عرض البيانات:</span>
-    <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-      <button onclick="gesSetType('driver');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='driver'?'#6366f1':'transparent'};color:${_t==='driver'?'#fff':'#64748b'}">🚗 سائقون</button>
-      <button onclick="gesSetType('operator');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='operator'?'#6366f1':'transparent'};color:${_t==='operator'?'#fff':'#64748b'}">⚙️ مشغلون</button>
-    </div>`;
-  pc.appendChild(_ovSwDiv);
+  const _ovPc = document.getElementById('pageContent');
+  if (_ovPc) {
+    const _ovSwDiv = document.createElement('div');
+    _ovSwDiv.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.5rem 1.25rem 0;flex-wrap:wrap';
+    const _t = window._gesType || 'driver';
+    _ovSwDiv.innerHTML = `
+      <span style="font-size:.74rem;font-weight:700;color:#94a3b8">عرض البيانات:</span>
+      <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
+        <button onclick="gesSetType('driver');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='driver'?'#6366f1':'transparent'};color:${_t==='driver'?'#fff':'#64748b'}">🚗 سائقون</button>
+        <button onclick="gesSetType('operator');renderOverview()" style="padding:.3rem .85rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${_t==='operator'?'#6366f1':'transparent'};color:${_t==='operator'?'#fff':'#64748b'}">⚙️ مشغلون</button>
+      </div>`;
+    _ovPc.appendChild(_ovSwDiv);
+  }
 
   const [drivers, cars, trips, records, emgs] = await Promise.all([loadDrivers(),loadCars(),loadTrips(),loadWorkshops(),loadEmergencies()]);
 
