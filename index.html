@@ -6376,13 +6376,17 @@ async function startRecording(type) {
       reader.onloadend=async()=>{
         const emgLocation = await silentGetLocation(8000);
         try{
+          // المشغل ليس له driver_id — نبعت operator_id
+          const _emgDriverId = currentUser.role === 'operator'
+            ? (window._opData?.id || currentUser.operator_id || null)
+            : currentUser.driver_id;
           await apiCall('/emergency/report','POST',{
-            driver_id:currentUser.driver_id,
-            car_id:window._driverCar?.id||null,
-            type:currentRecordingType,
-            audio_data:reader.result,
+            driver_id: _emgDriverId,
+            car_id: currentUser.role === 'operator' ? null : (window._driverCar?.id||null),
+            type: currentRecordingType,
+            audio_data: reader.result,
             notes,
-            location:emgLocation
+            location: emgLocation
           });
           showNotification(currentRecordingType==='emergency'?'🚨 تم إرسال بلاغ الطوارئ للإدارة!':'💥 تم إرسال تقرير الحادث للإدارة!','emergency',4000);
           audioChunks=[]; mediaRecorder=null;
@@ -6557,10 +6561,19 @@ function openWsModal(type) {
 
     ${specific}
 
-    <div class="form-group">
-      <label>${currentUser?.role==='operator' ? 'المعدة' : 'المركبة'} ${!_isOpWs?'<span class="req">*</span>':''}</label>
-      <select id="wVehicle">${carOpts}</select>
+    ${_isOpWs ? `
+    <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:.65rem 1rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.6rem">
+      <span style="font-size:1.2rem">⚙️</span>
+      <div>
+        <div style="font-weight:700;color:#15803d;font-size:.88rem">${window._opData?.current_equipment_name || 'المعدة الحالية'}</div>
+        ${window._opData?.current_equipment_id ? `<div style="font-size:.73rem;color:#4ade80;font-family:monospace">${window._opData.current_equipment_id}</div>` : ''}
+      </div>
     </div>
+    <input type="hidden" id="wVehicle" value="0">` : `
+    <div class="form-group">
+      <label>المركبة <span class="req">*</span></label>
+      <select id="wVehicle">${carOpts}</select>
+    </div>`}
 
     <div class="form-group">
       <label>${currentUser?.role==='operator' ? 'ساعات التشغيل' : 'قراءة العداد (كم)'} <span class="req">*</span></label>
@@ -6587,7 +6600,7 @@ function openWsModal(type) {
     const btn              = document.getElementById('wsSubmitBtn');
 
     if(!vehicle_id && !_isOpWs)                 return showNotification('اختر المركبة','error');
-    const _finalVehicleId = _isOpWs ? null : vehicle_id;
+    const _finalVehicleId = _isOpWs ? null : (vehicle_id || null);
     if(!odometer_reading||odometer_reading<=0)  return showNotification(currentUser?.role==='operator'?'أدخل ساعات التشغيل':'أدخل قراءة العداد','error');
 
     // المشغل: نستخدم _opData.id (الأكثر موثوقية) أو operator_id من currentUser
@@ -7709,6 +7722,7 @@ async function renderDriverSinglePage() {
           '</div>' +
         '</div>' +
         '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
+
         '<button class="btn btn-primary" id="dpStartOk" style="font-size:1rem;padding:.75rem 2rem">▶ ابدأ الوردية</button></div>'
       );
       document.getElementById('dpStartOk').onclick = async function() {
@@ -7717,7 +7731,6 @@ async function renderDriverSinglePage() {
         const btn = document.getElementById('dpStartOk');
         btn.disabled = true; btn.textContent = '⏳ جاري...';
         try {
-          btn.textContent = '📍 جاري تحديد الموقع...';
           const _startLoc = await silentGetLocation(8000);
           await apiCall('/operators/shifts/start', 'POST', {
             operator_id:    _opData.id,
@@ -7731,7 +7744,7 @@ async function renderDriverSinglePage() {
             notes:          '',
             start_location: _startLoc,
           });
-          showNotification('✅ بدأت الوردية!' + (_startLoc ? ' 📍' : ''), 'success');
+          showNotification('✅ بدأت الوردية!', 'success');
           closeModal(); await renderDriverSinglePage();
         } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '▶ ابدأ الوردية'; }
       };
@@ -7822,10 +7835,9 @@ async function renderDriverSinglePage() {
         const btn = document.getElementById('dpEndOk');
         btn.disabled = true; btn.textContent = '⏳ جاري...';
         try {
-          btn.textContent = '📍 جاري تحديد الموقع...';
           const _endLoc = await silentGetLocation(8000);
           await apiCall('/operators/shifts/' + activeShift.id + '/end', 'POST', {end_hours: endHours, fuel_liters: 0, notes: '', end_location: _endLoc});
-          showNotification('✅ انتهت الوردية!' + (_endLoc ? ' 📍' : ''), 'success');
+          showNotification('✅ انتهت الوردية!', 'success');
           closeModal(); await renderDriverSinglePage();
         } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '✔ إنهاء الوردية'; }
       };
@@ -14093,6 +14105,28 @@ async function exportShiftsCSV(){
     URL.revokeObjectURL(objUrl);
     showNotification('\u2705 \u062A\u0645 \u062A\u0635\u062F\u064A\u0631 \u0627\u0644\u0648\u0631\u062F\u064A\u0627\u062A', 'success');
   }catch(e){showNotification('\u274C \u0641\u0634\u0644 \u0627\u0644\u062A\u0635\u062F\u064A\u0631: '+e.message,'error');}
+}
+
+
+// ── معاينة الموقع الحالي قبل بدء الوردية ──
+async function _previewLocation() {
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = '⏳ جاري...'; btn.disabled = true;
+  try {
+    const loc = await silentGetLocation(8000);
+    if (loc) {
+      const [lat, lng] = loc.split(',');
+      btn.textContent = '📍 ' + parseFloat(lat).toFixed(4) + ', ' + parseFloat(lng).toFixed(4);
+      btn.style.color = '#16a34a'; btn.style.borderColor = '#86efac';
+    } else {
+      btn.textContent = '❌ الموقع غير متاح';
+      btn.style.color = '#dc2626';
+    }
+  } catch(e) {
+    btn.textContent = '❌ خطأ';
+  }
+  btn.disabled = false;
 }
 
 </script>
