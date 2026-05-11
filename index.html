@@ -1619,7 +1619,7 @@ function buildAdminNav() {
     {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
     {id:'shifts-table',          icon:'⏱️',  label:'جدول الورديات'},
     {id:'rental-equipment',      icon:'🔑',  label:'المعدات المستأجرة'},
-    {id:'equipment-trips',       icon:'📋',  label:'سجل تشغيل المعدات'},
+    /* equipment-trips tab removed */
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
@@ -1714,7 +1714,7 @@ async function renderSection(id) {
     case '_sep_ops':
     case '_sep_reports': return; // separators - do nothing
     case 'equipment-mgmt':      renderEquipmentMgmtOverview(); break;
-    case 'equipment-trips':     await renderEquipmentTrips(); break;
+    /* equipment-trips case removed */
     case 'equipment-list':    await renderEquipmentSection(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
@@ -7362,7 +7362,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list','driver-photos','equipment-operators','equipment-mgmt','equipment-trips','shifts-table','_sep_fleet','_sep_ops','_sep_reports'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','import-data','driver-kpi','rental-equipment','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','_sep_fleet','_sep_ops','_sep_reports'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -10091,12 +10091,12 @@ async function renderMaintenanceSection() {
       <td>${curKmDisplay}</td>
       <td><strong style="color:${ac.badge}">${remDisplay}</strong></td>
       <td>${r.next_due_date||'—'}</td>
-      <td><span style="background:${ac.badge};color:white;border-radius:20px;font-size:.7rem;padding:.15rem .55rem;font-weight:700">${ac.label}</span></td>
-      <td>
+      <td><span style="display:inline-flex;align-items:center;gap:.28rem;background:${ac.badge};color:white;border-radius:8px;font-size:.7rem;padding:.22rem .6rem;font-weight:700;white-space:nowrap">${ac.label}</span></td>
+      <td style="white-space:nowrap">
         ${!isReporter()?`
-        <button class="btn btn-ghost btn-sm" onclick="openMaintenanceDoneModal(${r.id},'${r.car_plate}','${r.maintenance_type}')">✅ تم</button>
-        <button class="btn btn-ghost btn-sm" onclick="openEditMaintenanceModal(${r.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteMaintenanceRecord(${r.id})">🗑️</button>
+        <button title="تم" style="width:30px;height:30px;border:none;border-radius:7px;background:#dcfce7;color:#16a34a;cursor:pointer;font-size:.88rem;display:inline-flex;align-items:center;justify-content:center;margin-left:2px" onclick="openMaintenanceDoneModal(${r.id},'${r.car_plate}','${r.maintenance_type}')">✅</button>
+        <button title="تعديل" style="width:30px;height:30px;border:none;border-radius:7px;background:#eff6ff;color:#2563eb;cursor:pointer;font-size:.88rem;display:inline-flex;align-items:center;justify-content:center;margin-left:2px" onclick="openEditMaintenanceModal(${r.id})">✏️</button>
+        <button title="حذف" style="width:30px;height:30px;border:none;border-radius:7px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:.88rem;display:inline-flex;align-items:center;justify-content:center" onclick="deleteMaintenanceRecord(${r.id})">🗑️</button>
         `:'—'}
       </td>
     </tr>`;
@@ -12266,7 +12266,7 @@ function renderEquipmentMgmtOverview() {
       </div>
       <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
            onmouseover="this.style.borderColor='#1e3a5f'" onmouseout="this.style.borderColor='transparent'"
-           onclick="navigateTo('equipment-trips')">
+           onclick="navigateTo('shifts-table')">
         <div style="font-size:2.5rem;margin-bottom:.75rem">📋</div>
         <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">سجل التشغيل</div>
         <div style="font-size:.83rem;color:#64748b">سجل ورديات المشغلين والساعات</div>
@@ -12400,7 +12400,7 @@ async function renderEquipmentOperators() {
 }
 
 async function viewShiftHistory(opId, opName) {
-  navigateTo('equipment-trips');
+  navigateTo('shifts-table');
   setTimeout(async () => {
     const sel = document.getElementById('etOpFilter');
     if (sel) { sel.value = opId; await loadEquipmentTrips(); }
@@ -12451,7 +12451,7 @@ async function loadOperators(){
         </div>
       </div>
       <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer"
-           onclick="navigateTo('equipment-trips')">
+           onclick="navigateTo('shifts-table')">
         <div>
           <div style="font-size:.8rem;color:#64748b;margin-bottom:.3rem">مع معدة مخصصة</div>
           <div style="font-size:1.8rem;font-weight:900;color:#2563eb">${withShiftC}</div>
@@ -12512,7 +12512,7 @@ async function loadOperators(){
               style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:.8rem;color:#475569;font-family:inherit;white-space:nowrap">
               <span>📅</span> السجل
             </button>
-            <button onclick="openPermissionsModal(${op.id},'${op.name}')"
+            <button onclick="openPermissionsModal(${op.id},'${op.name}','${(op.current_equipment_id||'').replace(/'/g,"\\'")}','${(op.current_equipment_name||'').replace(/'/g,"\\'")}')  "
               style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:none;border-radius:8px;background:#f0fdf4;cursor:pointer;font-size:.8rem;color:#16a34a;font-family:inherit;font-weight:600;white-space:nowrap">
               🔐 الصلاحيات
             </button>
@@ -13232,6 +13232,7 @@ async function renderMonthlyReport() {
 
 function setMrView(view) {
   window._mrView = view;
+  window._mrPage = 1;
   const btnD = document.getElementById('mrViewDrivers');
   const btnC = document.getElementById('mrViewCars');
   if (btnD && btnC) {
@@ -13247,8 +13248,12 @@ function setMrView(view) {
 }
 
 function filterMrTable() {
+  window._mrPage = 1;
   if (window._mrData) renderMrTable(window._mrData);
 }
+
+window._mrPage     = 1;
+window._mrPageSize = 10;
 
 function _sortMrRows(rows, sortVal, view) {
   const sorted = [...rows];
@@ -13294,12 +13299,17 @@ function renderMrTable(data) {
     if (!rows.length) {
       tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
     } else {
+      const pageSize   = window._mrPageSize || 10;
+      const page       = window._mrPage || 1;
+      const totalPages = Math.ceil(rows.length / pageSize);
+      const pageRows   = rows.slice((page-1)*pageSize, page*pageSize);
       const maxKm = Math.max(...rows.map(r=>r.km||0));
-      tbody.innerHTML = rows.map((d,i) => {
+      tbody.innerHTML = pageRows.map((d,i) => {
+        const globalIdx = (page-1)*pageSize + i;
         const pct = maxKm>0 ? Math.round((d.km||0)/maxKm*100) : 0;
         const barColor = pct >= 80 ? '#10b981' : pct >= 50 ? '#3b82f6' : pct >= 25 ? '#f97316' : '#ef4444';
         return `<tr>
-          <td style="text-align:center;color:var(--muted);font-size:.78rem">${i+1}</td>
+          <td style="text-align:center;color:var(--muted);font-size:.78rem">${globalIdx+1}</td>
           <td>
             <strong>${d.name}</strong>
             ${d.fixed_number ? `<small style="color:var(--muted);margin-right:.3rem">#${d.fixed_number}</small>` : ''}
@@ -13318,7 +13328,7 @@ function renderMrTable(data) {
           <td style="text-align:center;color:#64748b">${Math.round(d.fuel_liters||0)}</td>
           <td style="text-align:center;color:#f97316;font-weight:700">${Math.round(d.fuel_cost||0).toLocaleString('ar-EG')}</td>
         </tr>`;
-      }).join('');
+      }).join('') + _mrPaginationRow(page, totalPages, rows.length, 8);
     }
     if (countEl) countEl.textContent = rows.length + ' سائق';
 
@@ -13363,14 +13373,19 @@ function renderMrTable(data) {
     if (!rows.length) {
       tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
     } else {
+      const pageSize   = window._mrPageSize || 10;
+      const page       = window._mrPage || 1;
+      const totalPages = Math.ceil(rows.length / pageSize);
+      const pageRows   = rows.slice((page-1)*pageSize, page*pageSize);
       const maxKm   = Math.max(...rows.map(r=>r.km||0));
       const maxCost = Math.max(...rows.map(r=>r.total_cost||0));
-      tbody.innerHTML = rows.map((car,i) => {
+      tbody.innerHTML = pageRows.map((car,i) => {
+        const globalIdx = (page-1)*pageSize + i;
         const pctKm   = maxKm>0   ? Math.round((car.km||0)/maxKm*100)         : 0;
         const pctCost = maxCost>0 ? Math.round((car.total_cost||0)/maxCost*100): 0;
         const barColor = pctKm>=80?'#10b981':pctKm>=50?'#3b82f6':pctKm>=25?'#f97316':'#ef4444';
         return `<tr>
-          <td style="text-align:center;color:var(--muted);font-size:.78rem">${i+1}</td>
+          <td style="text-align:center;color:var(--muted);font-size:.78rem">${globalIdx+1}</td>
           <td dir="ltr"><strong style="color:#1e3a5f">${car.plate}</strong></td>
           <td style="font-size:.82rem">${car.model||''} ${car.car_name?'<small style="color:var(--muted)">('+car.car_name+')</small>':''}</td>
           <td style="font-size:.82rem;color:var(--muted)">${car.branch||'—'}</td>
@@ -13393,7 +13408,7 @@ function renderMrTable(data) {
             </div>
           </td>
         </tr>`;
-      }).join('');
+      }).join('') + _mrPaginationRow(page, totalPages, rows.length, 10);
     }
     if (countEl) countEl.textContent = rows.length + ' مركبة';
 
@@ -13418,6 +13433,32 @@ function renderMrTable(data) {
   }
 }
 
+// Pagination helper for monthly report
+function _mrPaginationRow(page, totalPages, totalRows, colspan) {
+  if (totalPages <= 1) return '';
+  const ps = window._mrPageSize || 10;
+  const from = (page-1)*ps + 1;
+  const to   = Math.min(page*ps, totalRows);
+  const prevBtn = page > 1
+    ? `<button onclick="window._mrPage=${page-1};if(window._mrData)renderMrTable(window._mrData)"
+        style="padding:.3rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:.8rem;color:#475569;font-weight:600">← السابق</button>`
+    : `<button disabled style="padding:.3rem .75rem;border:1.5px solid #f1f5f9;border-radius:8px;background:#f8fafc;cursor:not-allowed;font-family:inherit;font-size:.8rem;color:#cbd5e1">← السابق</button>`;
+  const nextBtn = page < totalPages
+    ? `<button onclick="window._mrPage=${page+1};if(window._mrData)renderMrTable(window._mrData)"
+        style="padding:.3rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-family:inherit;font-size:.8rem;color:#475569;font-weight:600">التالي →</button>`
+    : `<button disabled style="padding:.3rem .75rem;border:1.5px solid #f1f5f9;border-radius:8px;background:#f8fafc;cursor:not-allowed;font-family:inherit;font-size:.8rem;color:#cbd5e1">التالي →</button>`;
+  return `<tr style="background:#f8fafc"><td colspan="${colspan}" style="padding:.65rem 1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+      <span style="font-size:.8rem;color:#64748b">${from}–${to} من ${totalRows}</span>
+      <div style="display:flex;align-items:center;gap:.4rem">
+        ${prevBtn}
+        <span style="font-size:.8rem;color:#475569;font-weight:700;padding:0 .4rem">صفحة ${page} / ${totalPages}</span>
+        ${nextBtn}
+      </div>
+    </div>
+  </td></tr>`;
+}
+
 // تبديل الترتيب بالضغط على العمود
 const _mrSortCycle = { km:['km_desc','km_asc'], trips:['trips_desc','trips_asc'], cost:['cost_desc'] };
 async function cycleMrSort(field) {
@@ -13427,6 +13468,7 @@ async function cycleMrSort(field) {
   const cur   = sel.value;
   const idx   = cycle.indexOf(cur);
   sel.value   = cycle[(idx+1) % cycle.length];
+  window._mrPage = 1;
   if (window._mrData) renderMrTable(window._mrData);
 }
 
@@ -13446,6 +13488,7 @@ async function loadMonthlyReport() {
     const data = await apiCall(url);
     _mrData = data;
     window._mrData = data;
+    window._mrPage = 1;
     const s = data.summary || {};
 
     if (sumEl) sumEl.innerHTML = [
@@ -14078,15 +14121,19 @@ async function confirmLinkUser() {
 
 let _permOpId = null;
 let _permOpName = '';
+let _permCurrentEqId   = '';
+let _permCurrentEqName = '';
 let _allEquipmentList = [];
 
-async function openPermissionsModal(opId, opName) {
+async function openPermissionsModal(opId, opName, currentEqId, currentEqName) {
   _permOpId = opId;
   _permOpName = opName;
+  _permCurrentEqId   = currentEqId   || '';
+  _permCurrentEqName = currentEqName || '';
   const modal = document.getElementById('opPermModal');
   if (!modal) return;
-  document.getElementById('opPermTitle').textContent = '\u{1F510} \u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0627\u0644\u0645\u0639\u062F\u0627\u062A \u2014 ' + opName;
-  document.getElementById('opPermBody').innerHTML = '<div style="text-align:center;padding:2rem;color:#94a3b8">\u062C\u0627\u0631\u064A \u0627\u0644\u062A\u062D\u0645\u064A\u0644...</div>';
+  document.getElementById('opPermTitle').textContent = '🔐 صلاحيات المعدات — ' + opName;
+  document.getElementById('opPermBody').innerHTML = '<div style="text-align:center;padding:2rem;color:#94a3b8">جاري التحميل...</div>';
   modal.style.display = 'flex';
   try {
     if (!_allEquipmentList.length) {
@@ -14104,35 +14151,55 @@ function closePermissionsModal() {
   const modal = document.getElementById('opPermModal');
   if (modal) modal.style.display = 'none';
   _permOpId = null;
+  _permCurrentEqId   = '';
+  _permCurrentEqName = '';
 }
 
 function _renderPermissionsBody(perms) {
   const body = document.getElementById('opPermBody');
   if (!body) return;
-  const granted = new Set(perms.map(p => p.equipment_id));
-  const available = _allEquipmentList.filter(e => !granted.has(e.car_code || e.equipment_id));
+
+  // اجمع الـ permissions + المعدة الحالية لو مش موجودة فيها
+  let allPerms = [...perms];
+  const currentId   = _permCurrentEqId   || '';
+  const currentName = _permCurrentEqName || '';
+  if (currentId && !allPerms.some(p => p.equipment_id === currentId)) {
+    allPerms = [{
+      id: '__current__',
+      equipment_id:   currentId,
+      equipment_name: currentName || currentId,
+      granted_by:     'تعيين مباشر',
+      granted_at:     '',
+      _isCurrent:     true,
+    }, ...allPerms];
+  }
+
+  const granted = new Set(allPerms.map(p => p.equipment_id));
+  const available = _allEquipmentList.filter(e => !granted.has(e.car_code) && !granted.has(e.equipment_id));
   const eqOptions = available.map(e =>
     '<option value="' + (e.car_code || '') + '" data-name="' + (e.equipment_name || '') + '">' +
     (e.equipment_name || '') + (e.car_code ? ' (' + e.car_code + ')' : '') + '</option>'
   ).join('');
-  const noPermsMsg = '<div style="text-align:center;padding:2rem;color:#94a3b8;font-size:.9rem">\u0644\u0627 \u062A\u0648\u062C\u062F \u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0645\u062D\u062F\u062F\u0629 \u2014 \u0627\u0644\u0645\u0634\u063A\u0644 \u064A\u0645\u0643\u0646\u0647 \u062A\u0634\u063A\u064A\u0644 \u0643\u0644 \u0627\u0644\u0645\u0639\u062F\u0627\u062A</div>';
+  const noPermsMsg = '<div style="text-align:center;padding:2rem;color:#94a3b8;font-size:.9rem">لا توجد صلاحيات محددة — المشغل يمكنه تشغيل كل المعدات</div>';
   body.innerHTML =
     '<div class="eq-add-row">' +
-      '<div style="flex:1"><div style="font-size:.75rem;font-weight:700;color:#475569;margin-bottom:.35rem">\u0625\u0636\u0627\u0641\u0629 \u0635\u0644\u0627\u062D\u064A\u0629 \u0645\u0639\u062F\u0629</div>' +
-      '<select id="newEqSelect"><option value="">\u0627\u062E\u062A\u0631 \u0645\u0639\u062F\u0629...</option>' + eqOptions + '</select></div>' +
+      '<div style="flex:1"><div style="font-size:.75rem;font-weight:700;color:#475569;margin-bottom:.35rem">إضافة صلاحية معدة</div>' +
+      '<select id="newEqSelect"><option value="">اختر معدة...</option>' + eqOptions + '</select></div>' +
       '<button class="btn btn-primary" onclick="addEquipmentPermission()" style="padding:.55rem 1.1rem;font-weight:700;display:flex;align-items:center;gap:.4rem;white-space:nowrap">' +
-      '<span>+</span> \u0645\u0646\u062D \u0635\u0644\u0627\u062D\u064A\u0629</button>' +
+      '<span>+</span> منح صلاحية</button>' +
     '</div>' +
-    '<div style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.6rem">\u0627\u0644\u0645\u0639\u062F\u0627\u062A \u0627\u0644\u0645\u0635\u0631\u062D \u0628\u0647\u0627 (' + perms.length + ')</div>' +
+    '<div style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.6rem">المعدات المصرح بها (' + allPerms.length + ')</div>' +
     '<div id="permsList">' +
-      (perms.length === 0 ? noPermsMsg :
-        perms.map(p =>
-          '<div class="perm-eq-item" id="perm-item-' + p.id + '">' +
+      (allPerms.length === 0 ? noPermsMsg :
+        allPerms.map(p =>
+          '<div class="perm-eq-item" id="perm-item-' + p.id + '" style="' + (p._isCurrent ? 'border-color:#f59e0b;background:#fffbeb' : '') + '">' +
             '<div class="perm-eq-info">' +
-              '<div class="perm-eq-name">\uD83C\uDFD7\uFE0F ' + (p.equipment_name || p.equipment_id) + '</div>' +
-              '<div class="perm-eq-meta">\u0643\u0648\u062F: ' + (p.equipment_id || '\u2014') + ' &nbsp;|\u00A0 \u0645\u064F\u0645\u0646\u062D\u0629 \u0628\u0648\u0627\u0633\u0637\u0629: ' + (p.granted_by || '\u2014') + ' &nbsp;|\u00A0 ' + (p.granted_at || '').slice(0,10) + '</div>' +
+              '<div class="perm-eq-name">🏗️ ' + (p.equipment_name || p.equipment_id) +
+                (p._isCurrent ? ' <span style="font-size:.68rem;background:#fef3c7;color:#92400e;border-radius:8px;padding:.1rem .45rem;font-weight:700;margin-right:.3rem">معدة حالية</span>' : '') +
+              '</div>' +
+              '<div class="perm-eq-meta">كود: ' + (p.equipment_id || '—') + ' &nbsp;|&nbsp; ممنوحة بواسطة: ' + (p.granted_by || '—') + (p.granted_at ? ' &nbsp;|&nbsp; ' + (p.granted_at || '').slice(0,10) : '') + '</div>' +
             '</div>' +
-            '<button class="perm-eq-revoke" title="\u0633\u062D\u0628 \u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0629" onclick="revokePermission(' + p.id + ')">\uD83D\uDDD1\uFE0F</button>' +
+            (!p._isCurrent ? '<button class="perm-eq-revoke" title="سحب الصلاحية" onclick="revokePermission(' + p.id + ')">🗑️</button>' : '') +
           '</div>'
         ).join('')) +
     '</div>';
