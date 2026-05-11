@@ -5399,166 +5399,353 @@ async function downloadOpPDF() {
 }
 
 /* ── REQUESTS SECTION (Admin) ── */
-async function renderRequestsSection() {
-  const c = document.getElementById('pageContent');
-  let reqs = [];
-  try { reqs = await loadRequests(); } catch(e) { reqs = []; }
-  window._pendingRequestsCount = reqs.filter(r=>r.status==='pending').length;
+// ══════════════════════════════════════════════════════════════════
+// REQUESTS SECTION — Unified Driver + Operator
+// ══════════════════════════════════════════════════════════════════
 
-  const isSuper = currentUser?.role === 'superuser';
+/* ── Global state ── */
+window._reqUserType   = 'driver';   // 'driver' | 'operator'
+window._reqStatusFilt = 'all';
+window._reqTypeFilt   = 'all';
+window._reqSearch     = '';
+window._reqData       = { driver: [], operator: [] };
+
+const REQ_TYPE_LABELS = {
+  odometer_change: '🔢 تغيير عداد',
+  permission:      '🙋 طلب إذن',
+  leave:           '🏖️ إجازة',
+  license_renew:   '📄 تجديد رخصة',
+  other:           '📝 طلب آخر',
+};
+
+const REQ_STATUS = {
+  pending:       { bg:'#fffbeb', border:'#fde68a', dot:'#f59e0b', label:'⏳ قيد الانتظار' },
+  pending_super: { bg:'#eff6ff', border:'#bfdbfe', dot:'#3b82f6', label:'📤 محال للسوبر' },
+  approved:      { bg:'#f0fdf4', border:'#bbf7d0', dot:'#16a34a', label:'✅ مقبول' },
+  rejected:      { bg:'#fef2f2', border:'#fecaca', dot:'#dc2626', label:'❌ مرفوض' },
+};
+
+const REQ_PRIORITY = {
+  urgent:     { color:'#dc2626', bg:'#fef2f2', label:'🔴 عاجل' },
+  medium:     { color:'#d97706', bg:'#fffbeb', label:'🟡 متوسط' },
+  deferrable: { color:'#16a34a', bg:'#f0fdf4', label:'🟢 قابل للتأجيل' },
+};
+
+/* ── Main render ── */
+async function renderRequestsSection() {
+  const el = document.getElementById('pageContent');
+  if (!el) return;
+
+  const isSuper     = currentUser?.role === 'superuser';
   const isAdminRole = currentUser?.role === 'admin';
 
-  const TYPE_LABELS = {
-    odometer_change:'🔢 ادخال خاطئ', permission:'🙋 طلب إذن',
-    leave:'🏖️ طلب إجازة', other:'📝 طلب آخر',
-  };
-  const STATUS_STYLE = {
-    pending:      {bg:'#fff7ed',border:'#fde68a',badge:'#f59e0b',txt:'⏳ بانتظار الأدمن'},
-    pending_super:{bg:'#eff6ff',border:'#93c5fd',badge:'#3b82f6',txt:'📤 محال للسوبر'},
-    approved:     {bg:'#f0fdf9',border:'#6ee7b7',badge:'#10b981',txt:'✅ مقبول'},
-    rejected:     {bg:'#fef2f2',border:'#fca5a5',badge:'#ef4444',txt:'❌ مرفوض'},
-  };
-  const PRIORITY_LABELS = {urgent:'🔴 عاجل',medium:'🟡 متوسط',deferrable:'🟢 قابل للتأجيل'};
-  const PRIORITY_COLORS = {urgent:'#ef4444',medium:'#f59e0b',deferrable:'#10b981'};
+  el.innerHTML = _reqSkeleton();
 
-  // الفلاتر
-  const filterOpts = [
-    {v:'all', l:`الكل (${reqs.length})`},
-    {v:'pending', l:`⏳ بانتظار الرد (${reqs.filter(r=>r.status==='pending').length})`},
-    ...(isSuper?[{v:'pending_super', l:`📤 محال للسوبر (${reqs.filter(r=>r.status==='pending_super').length})`}]:[]),
-    {v:'approved', l:'✅ مقبولة'},
-    {v:'rejected', l:'❌ مرفوضة'},
-    ...(isSuper?[
-      {v:'urgent', l:'🔴 عاجلة'},
-      {v:'medium', l:'🟡 متوسطة'},
-      {v:'deferrable', l:'🟢 قابل للتأجيل'},
-    ]:[]),
-  ];
+  // Load both in parallel
+  const [driverReqs, opReqs] = await Promise.all([
+    apiCall('/requests?user_type=driver').catch(() => []),
+    apiCall('/requests?user_type=operator').catch(() => []),
+  ]);
 
-  const filterBtns = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
-    ${filterOpts.map(o=>`<button class="btn btn-ghost btn-sm req-filter-btn ${o.v==='all'?'active':''}"
-      data-filter="${o.v}" onclick="filterRequests('${o.v}',this)">${o.l}</button>`).join('')}
-  </div>`;
+  window._reqData.driver   = Array.isArray(driverReqs) ? driverReqs : (driverReqs?.items || []);
+  window._reqData.operator = Array.isArray(opReqs)     ? opReqs     : (opReqs?.items     || []);
 
-  const rows = reqs.map(r => {
-    const st = STATUS_STYLE[r.status] || STATUS_STYLE.pending;
-    const tl = TYPE_LABELS[r.type] || r.type;
-    const isPending = r.status === 'pending';
-    const isPendingSuper = r.status === 'pending_super';
-    const priority = r.priority || 'medium';
-    const priorityTag = `<span style="background:${PRIORITY_COLORS[priority]};color:white;border-radius:20px;
-      font-size:.65rem;font-weight:700;padding:.12rem .45rem">${PRIORITY_LABELS[priority]||priority}</span>`;
-    return `
-      <div class="req-card" data-status="${r.status}" data-priority="${priority}"
-           style="border:1.5px solid ${st.border};border-radius:14px;background:${st.bg};
-                  margin-bottom:.8rem;overflow:hidden">
-        <div style="padding:.7rem 1rem;display:flex;justify-content:space-between;align-items:center;
-                    border-bottom:1px solid ${st.border}">
-          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-            <span style="font-weight:800;font-size:.9rem;color:#1e293b">${tl}</span>
-            <span style="background:${st.badge};color:white;border-radius:20px;
-                         font-size:.68rem;font-weight:700;padding:.15rem .55rem">${st.txt}</span>
-            ${(isPendingSuper||r.forwarded_to_super)?priorityTag:''}
-          </div>
-          <span style="font-size:.72rem;color:#64748b">${fmtDT(r.created_at)}</span>
-        </div>
-        <div style="padding:.8rem 1rem">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.6rem">
-            <div style="font-size:.82rem"><span style="color:#64748b">السائق: </span><strong>${r.driver_name||'—'}</strong></div>
-            ${r.type==='odometer_change'&&r.new_odometer?`<div style="font-size:.82rem"><span style="color:#64748b">العداد المطلوب: </span><strong style="color:#3b82f6">${r.new_odometer} كم</strong></div>`:'<div></div>'}
-          </div>
-          ${r.notes?`<div style="font-size:.82rem;color:#475569;background:white;border-radius:8px;
-                                padding:.45rem .7rem;margin-bottom:.6rem;border:1px solid #e2e8f0">📝 ${r.notes}</div>`:''}
-          ${r.admin_notes?`<div style="font-size:.82rem;color:#475569;background:#f8fafc;border-radius:8px;
-                                      padding:.45rem .7rem;margin-bottom:.4rem;border:1px solid #e2e8f0">
-            🗒️ ملاحظات الأدمن: ${r.admin_notes}<br>
-            <span style="font-size:.72rem;color:#94a3b8">بواسطة: ${r.handled_by||'—'}</span></div>`:'' }
-          ${r.admin_message?`<div style="font-size:.82rem;background:#f0fdf9;border-radius:8px;
-                                        padding:.45rem .7rem;margin-bottom:.4rem;border:1.5px solid #6ee7b7">
-            💬 رسالة للسائق: ${r.admin_message}</div>`:''}
-          ${r.super_notes?`<div style="font-size:.82rem;background:#eff6ff;border-radius:8px;
-                                      padding:.45rem .7rem;margin-bottom:.4rem;border:1.5px solid #93c5fd">
-            🏛️ قرار السوبر: ${r.super_notes}<br>
-            <span style="font-size:.72rem;color:#94a3b8">بواسطة: ${r.super_handled_by||'—'} — ${fmtDT(r.super_handled_at)}</span></div>`:''}
-
-          <!-- أزرار الأدمن -->
-          ${isPending&&isAdminRole&&!isReporter()?`
-          <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
-            ${(['leave','permission','license_renew'].includes(r.type))?`
-              <button class="btn btn-sm" onclick="adminDirectDecision(${r.id},'approved','${r.type}')"
-                style="background:#10b981;color:white;border:none">✅ قبول مباشر</button>
-              <button class="btn btn-sm" onclick="adminDirectDecision(${r.id},'rejected','${r.type}')"
-                style="background:#ef4444;color:white;border:none">❌ رفض مباشر</button>
-            `:''}
-            <button class="btn btn-primary btn-sm" onclick="openAdminRequestModal(${r.id})"
-                    style="background:#3b82f6;border-color:#3b82f6">📤 إحالة للسوبر</button>
-          </div>`:''}
-
-          <!-- أزرار السوبر — اتخاذ القرار النهائي -->
-          ${isPendingSuper&&isSuper?`
-          <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
-            <button class="btn btn-sm" onclick="openSuperDecisionModal(${r.id},'approved')"
-                    style="background:#10b981;color:white;border:none">✅ قبول نهائي</button>
-            <button class="btn btn-sm" onclick="openSuperDecisionModal(${r.id},'rejected')"
-                    style="background:#ef4444;color:white;border:none">❌ رفض نهائي</button>
-          </div>`:''}
-        </div>
-      </div>`;
-  }).join('');
-
-  c.innerHTML = `
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">📋 طلبات السائقين</div>
-        <button class="btn btn-ghost btn-sm" onclick="renderRequestsSection()">🔄 تحديث</button>
+  el.innerHTML = `
+    <!-- ══ PAGE HEADER ══ -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem">
+      <div>
+        <h2 style="margin:0;font-size:1.55rem;font-weight:900;color:#0f172a">📋 الطلبات</h2>
+        <p style="margin:.2rem 0 0;font-size:.85rem;color:#64748b">إدارة طلبات السائقين والمشغلين</p>
       </div>
-      <div class="srch-bar" style="border-radius:0;border-right:none;border-left:none">
-        <input placeholder="🔍 بحث بالسائق أو نوع الطلب..." style="flex:1"
-          oninput="filterReqCards(this.value)" id="reqSearchInput">
-        <span class="srch-count" id="reqCount">${reqs.length}</span>
-        <button class="srch-reset" onclick="document.getElementById('reqSearchInput').value='';filterReqCards('')">✕ مسح</button>
+      <button onclick="renderRequestsSection()"
+        style="display:flex;align-items:center;gap:.4rem;padding:.55rem 1rem;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:.84rem;color:#475569">
+        🔄 تحديث
+      </button>
+    </div>
+
+    <!-- ══ STATS ROW ══ -->
+    <div id="reqStatsRow" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;margin-bottom:1.25rem">
+    </div>
+
+    <!-- ══ MAIN CARD ══ -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
+
+      <!-- Driver / Operator switcher -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9">
+        <div style="display:flex;background:#f1f5f9;border-radius:10px;padding:3px;gap:2px">
+          <button id="reqTabDriver" onclick="_reqSetType('driver')"
+            style="padding:.45rem 1.1rem;border-radius:8px;border:none;font-family:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:all .15s;background:#6366f1;color:#fff">
+            🚗 السائقون
+          </button>
+          <button id="reqTabOperator" onclick="_reqSetType('operator')"
+            style="padding:.45rem 1.1rem;border-radius:8px;border:none;font-family:inherit;font-size:.86rem;font-weight:700;cursor:pointer;transition:all .15s;background:transparent;color:#64748b">
+            ⚙️ المشغلون
+          </button>
+        </div>
+
+        <!-- Search -->
+        <div style="position:relative;flex:1;max-width:300px">
+          <span style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🔍</span>
+          <input id="reqSearchInput" type="text" placeholder="بحث بالاسم أو نوع الطلب..."
+            oninput="_reqApplyFilters()"
+            style="width:100%;padding:.5rem .75rem .5rem 2.25rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.84rem;outline:none;box-sizing:border-box;direction:rtl"
+            onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#e2e8f0'">
+        </div>
       </div>
-      <div style="padding:0 1.2rem 1rem">
-        ${filterBtns}
-        ${reqs.length===0
-          ? '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد طلبات بعد</p></div>'
-          : `<div id="reqCardsList">${rows}</div>`}
+
+      <!-- Status filter pills -->
+      <div style="padding:.75rem 1.25rem;border-bottom:1px solid #f1f5f9;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <span style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-left:.25rem">الحالة:</span>
+        ${_reqStatusPills(isSuper)}
+        <div style="flex:1"></div>
+        <!-- Type filter -->
+        <select id="reqTypeFilter" onchange="_reqApplyFilters()"
+          style="padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.78rem;background:#fff;outline:none;cursor:pointer;color:#475569">
+          <option value="all">كل الأنواع</option>
+          ${Object.entries(REQ_TYPE_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
+        </select>
+      </div>
+
+      <!-- Table area -->
+      <div id="reqTableWrap" style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:.65rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem;white-space:nowrap">المستخدم</th>
+              <th style="padding:.65rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">نوع الطلب</th>
+              <th style="padding:.65rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">التفاصيل</th>
+              <th style="padding:.65rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">الأولوية</th>
+              <th style="padding:.65rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">الحالة</th>
+              <th style="padding:.65rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">التاريخ</th>
+              ${isAdminRole || isSuper ? '<th style="padding:.65rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">إجراء</th>' : ''}
+            </tr>
+          </thead>
+          <tbody id="reqTableBody">
+            <tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Footer: count + pagination -->
+      <div id="reqFooter" style="padding:.75rem 1.25rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
       </div>
     </div>`;
+
+  _reqRenderStats();
+  _reqApplyFilters();
 }
 
-function filterReqCards(q) {
-  q = (q||'').toLowerCase().trim();
-  const cnt = document.getElementById('reqCount');
-  let vis = 0, total = 0;
-  document.querySelectorAll('.req-card').forEach(card=>{
-    total++;
-    const hidden = card.style.display==='none';
-    if(hidden){ total--; return; } // already hidden by status filter
-    const hay = card.textContent.toLowerCase();
-    const show = !q || hay.includes(q);
-    card.style.opacity = show ? '1' : '0.2';
-    card.style.pointerEvents = show ? 'auto' : 'none';
-    card.dataset.textHidden = show ? '' : '1';
-    if(show) vis++;
-    total++;
+function _reqSkeleton() {
+  return `<div style="animation:pulse 1.5s infinite">
+    <div style="height:2rem;background:#f1f5f9;border-radius:8px;width:200px;margin-bottom:1.5rem"></div>
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden">
+      <div style="height:60px;background:#f8fafc;border-bottom:1px solid #f1f5f9"></div>
+      ${[1,2,3,4,5].map(()=>`<div style="height:56px;border-bottom:1px solid #f9fafb;padding:1rem 1.25rem">
+        <div style="height:14px;background:#f1f5f9;border-radius:4px;width:60%;margin-bottom:.5rem"></div>
+        <div style="height:12px;background:#f1f5f9;border-radius:4px;width:40%"></div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function _reqStatusPills(isSuper) {
+  const all = window._reqData[window._reqUserType] || [];
+  const pills = [
+    { v:'all',           l:'الكل', count: all.length },
+    { v:'pending',       l:'⏳ انتظار', count: all.filter(r=>r.status==='pending').length },
+    { v:'approved',      l:'✅ مقبول',  count: all.filter(r=>r.status==='approved').length },
+    { v:'rejected',      l:'❌ مرفوض',  count: all.filter(r=>r.status==='rejected').length },
+    ...(isSuper ? [{ v:'pending_super', l:'📤 محال', count: all.filter(r=>r.status==='pending_super').length }] : []),
+  ];
+  return pills.map(p => {
+    const active = window._reqStatusFilt === p.v;
+    return `<button onclick="_reqSetStatus('${p.v}')"
+      style="display:inline-flex;align-items:center;gap:.3rem;padding:.3rem .75rem;border-radius:20px;border:1.5px solid ${active?'#6366f1':'#e2e8f0'};background:${active?'#6366f1':'#fff'};color:${active?'#fff':'#64748b'};font-size:.76rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s">
+      ${p.l} <span style="background:${active?'rgba(255,255,255,.25)':'#f1f5f9'};border-radius:10px;padding:0 .4rem;font-size:.72rem">${p.count}</span>
+    </button>`;
+  }).join('');
+}
+
+function _reqRenderStats() {
+  const el = document.getElementById('reqStatsRow');
+  if (!el) return;
+  const all = [...(window._reqData.driver||[]), ...(window._reqData.operator||[])];
+  const total   = all.length;
+  const pending = all.filter(r=>r.status==='pending').length;
+  const approved= all.filter(r=>r.status==='approved').length;
+  const urgent  = all.filter(r=>r.priority==='urgent'&&r.status==='pending').length;
+  const cards = [
+    { label:'إجمالي الطلبات', value: total,   icon:'📋', color:'#0f172a', bg:'#f8fafc' },
+    { label:'في الانتظار',    value: pending,  icon:'⏳', color:'#d97706', bg:'#fffbeb' },
+    { label:'تمت الموافقة',   value: approved, icon:'✅', color:'#16a34a', bg:'#f0fdf4' },
+    { label:'عاجلة',          value: urgent,   icon:'🔴', color:'#dc2626', bg:'#fef2f2' },
+  ];
+  el.innerHTML = cards.map(c => `
+    <div style="background:${c.bg};border:1.5px solid #e2e8f0;border-radius:14px;padding:.85rem 1.1rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.2rem">
+        <span style="font-size:.73rem;font-weight:700;color:#64748b">${c.label}</span>
+        <span style="font-size:1.1rem">${c.icon}</span>
+      </div>
+      <div style="font-size:1.6rem;font-weight:900;color:${c.color}">${c.value}</div>
+    </div>`).join('');
+}
+
+function _reqSetType(type) {
+  window._reqUserType = type;
+  const btnD = document.getElementById('reqTabDriver');
+  const btnO = document.getElementById('reqTabOperator');
+  if (btnD) {
+    btnD.style.background = type==='driver' ? '#6366f1' : 'transparent';
+    btnD.style.color      = type==='driver' ? '#fff'    : '#64748b';
+  }
+  if (btnO) {
+    btnO.style.background = type==='operator' ? '#6366f1' : 'transparent';
+    btnO.style.color      = type==='operator' ? '#fff'    : '#64748b';
+  }
+  // refresh status pills
+  const pWrapper = document.querySelector('[id^="reqTabDriver"]')?.parentElement?.parentElement;
+  _reqApplyFilters();
+  // re-render pills
+  const pillsEl = document.querySelector('#reqTableWrap')?.previousElementSibling?.previousElementSibling;
+  if (pillsEl) {
+    const isSuper = currentUser?.role === 'superuser';
+    const firstChild = pillsEl.firstElementChild;
+    if (firstChild) firstChild.nextSibling && (pillsEl.innerHTML = '<span style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-left:.25rem">الحالة:</span>' + _reqStatusPills(isSuper) + '<div style="flex:1"></div><select id="reqTypeFilter" onchange="_reqApplyFilters()" style="padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.78rem;background:#fff;outline:none;cursor:pointer;color:#475569"><option value="all">كل الأنواع</option>' + Object.entries(REQ_TYPE_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('') + '</select>');
+  }
+}
+
+function _reqSetStatus(status) {
+  window._reqStatusFilt = status;
+  _reqApplyFilters();
+  // update pill styles
+  document.querySelectorAll('[onclick^="_reqSetStatus"]').forEach(btn => {
+    const v = btn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+    const active = v === status;
+    btn.style.background   = active ? '#6366f1' : '#fff';
+    btn.style.color        = active ? '#fff'    : '#64748b';
+    btn.style.borderColor  = active ? '#6366f1' : '#e2e8f0';
   });
-  // re-count only visible + not text-hidden
-  vis = document.querySelectorAll('.req-card:not([data-text-hidden="1"])').length;
-  total = document.querySelectorAll('.req-card').length;
-  if(cnt) cnt.textContent = `${vis} / ${total}`;
 }
 
-async function filterRequests(status, btn) {
-  document.querySelectorAll('.req-filter-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.querySelectorAll('.req-card').forEach(card=>{
-    const match = status==='all' || card.dataset.status===status || card.dataset.priority===status;
-    card.style.display = match ? 'block' : 'none';
+function _reqApplyFilters() {
+  const isAdminRole = currentUser?.role === 'admin';
+  const isSuper     = currentUser?.role === 'superuser';
+  const search    = (document.getElementById('reqSearchInput')?.value  || '').toLowerCase().trim();
+  const typeFilt  = document.getElementById('reqTypeFilter')?.value   || 'all';
+  const statusFilt= window._reqStatusFilt;
+  const userType  = window._reqUserType;
+
+  let rows = (window._reqData[userType] || []).filter(r => {
+    if (statusFilt !== 'all' && r.status !== statusFilt && r.priority !== statusFilt) return false;
+    if (typeFilt   !== 'all' && r.type   !== typeFilt)   return false;
+    if (search) {
+      const hay = `${r.driver_name||''} ${r.type||''} ${r.notes||''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
   });
+
+  const tbody  = document.getElementById('reqTableBody');
+  const footer = document.getElementById('reqFooter');
+  const isOp   = userType === 'operator';
+
+  if (!rows.length) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:3rem">
+      <div style="font-size:2rem;margin-bottom:.5rem">📭</div>
+      <div style="color:#94a3b8;font-size:.9rem">لا توجد طلبات مطابقة</div>
+    </td></tr>`;
+    if (footer) footer.innerHTML = '<span style="font-size:.82rem;color:#94a3b8">0 نتيجة</span>';
+    return;
+  }
+
+  if (tbody) tbody.innerHTML = rows.map(r => {
+    const st  = REQ_STATUS[r.status] || REQ_STATUS.pending;
+    const pr  = REQ_PRIORITY[r.priority || 'medium'];
+    const tl  = REQ_TYPE_LABELS[r.type] || r.type;
+    const name= r.driver_name || r.operator_name || '—';
+    const isPending      = r.status === 'pending';
+    const isPendingSuper = r.status === 'pending_super';
+    const hasExtra = r.notes || r.admin_notes || r.admin_message || r.super_notes;
+    const rowId = `req-row-${r.id}`;
+    const detId = `req-det-${r.id}`;
+
+    const actionBtns = (isAdminRole || isSuper) ? `
+      <td style="padding:.65rem .75rem;text-align:center;white-space:nowrap">
+        ${isPending && isAdminRole && !isReporter() ? `
+          <button onclick="adminDirectDecision(${r.id},'approved','${r.type}')"
+            style="padding:.3rem .6rem;border:none;border-radius:6px;background:#dcfce7;color:#16a34a;cursor:pointer;font-size:.75rem;font-weight:700;font-family:inherit;margin-left:.25rem">✅</button>
+          <button onclick="adminDirectDecision(${r.id},'rejected','${r.type}')"
+            style="padding:.3rem .6rem;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;cursor:pointer;font-size:.75rem;font-weight:700;font-family:inherit;margin-left:.25rem">❌</button>
+          <button onclick="openAdminRequestModal(${r.id})"
+            style="padding:.3rem .6rem;border:none;border-radius:6px;background:#eff6ff;color:#2563eb;cursor:pointer;font-size:.75rem;font-weight:700;font-family:inherit">📤</button>
+        ` : ''}
+        ${isPendingSuper && isSuper ? `
+          <button onclick="openSuperDecisionModal(${r.id},'approved')"
+            style="padding:.3rem .6rem;border:none;border-radius:6px;background:#dcfce7;color:#16a34a;cursor:pointer;font-size:.75rem;font-weight:700;font-family:inherit;margin-left:.25rem">✅ قبول</button>
+          <button onclick="openSuperDecisionModal(${r.id},'rejected')"
+            style="padding:.3rem .6rem;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;cursor:pointer;font-size:.75rem;font-weight:700;font-family:inherit">❌ رفض</button>
+        ` : ''}
+        ${r.status === 'approved' || r.status === 'rejected' ? '<span style="color:#94a3b8;font-size:.78rem">—</span>' : ''}
+      </td>` : '';
+
+    return `<tr id="${rowId}" style="border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .1s"
+      onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''"
+      onclick="_reqToggleDetail('${detId}')">
+      <td style="padding:.7rem 1rem">
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span style="width:32px;height:32px;border-radius:50%;background:${isOp?'#eff6ff':'#f0fdf4'};display:flex;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0">${isOp?'⚙️':'🚗'}</span>
+          <div>
+            <div style="font-weight:700;color:#0f172a;font-size:.86rem">${name}</div>
+            <div style="font-size:.73rem;color:#94a3b8">${isOp?'مشغل':'سائق'}</div>
+          </div>
+        </div>
+      </td>
+      <td style="padding:.7rem 1rem">
+        <span style="font-size:.84rem;font-weight:600;color:#334155">${tl}</span>
+      </td>
+      <td style="padding:.7rem 1rem">
+        ${r.new_odometer ? `<span style="font-size:.8rem;color:#2563eb;font-weight:600">${r.new_odometer} ${isOp?'ساعة':'كم'}</span>` : ''}
+        ${r.notes ? `<span style="font-size:.78rem;color:#64748b">${r.notes.slice(0,40)}${r.notes.length>40?'...':''}</span>` : '<span style="color:#cbd5e1;font-size:.78rem">—</span>'}
+      </td>
+      <td style="padding:.7rem .75rem;text-align:center">
+        <span style="display:inline-block;padding:.2rem .55rem;border-radius:20px;background:${pr.bg};color:${pr.color};font-size:.72rem;font-weight:700">${pr.label}</span>
+      </td>
+      <td style="padding:.7rem .75rem;text-align:center">
+        <span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .6rem;border-radius:20px;background:${st.bg};border:1px solid ${st.border};font-size:.73rem;font-weight:700;color:${st.dot}">
+          <span style="width:6px;height:6px;border-radius:50%;background:${st.dot};display:inline-block"></span>
+          ${st.label}
+        </span>
+      </td>
+      <td style="padding:.7rem 1rem;font-size:.78rem;color:#64748b;white-space:nowrap">${fmtDT(r.created_at)}</td>
+      ${actionBtns}
+    </tr>
+    ${hasExtra ? `<tr id="${detId}" style="display:none;background:#f9fafb">
+      <td colspan="7" style="padding:.75rem 1.25rem 1rem">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.6rem">
+          ${r.notes        ? `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem"><div style="font-size:.71rem;font-weight:700;color:#94a3b8;margin-bottom:.2rem">📝 الطلب</div><div style="font-size:.82rem;color:#334155">${r.notes}</div></div>` : ''}
+          ${r.admin_notes  ? `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem"><div style="font-size:.71rem;font-weight:700;color:#94a3b8;margin-bottom:.2rem">🗒️ ملاحظات الأدمن</div><div style="font-size:.82rem;color:#334155">${r.admin_notes}</div><div style="font-size:.71rem;color:#94a3b8;margin-top:.25rem">بواسطة: ${r.handled_by||'—'}</div></div>` : ''}
+          ${r.admin_message? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.6rem .8rem"><div style="font-size:.71rem;font-weight:700;color:#16a34a;margin-bottom:.2rem">💬 رسالة للمستخدم</div><div style="font-size:.82rem;color:#166534">${r.admin_message}</div></div>` : ''}
+          ${r.super_notes  ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.6rem .8rem"><div style="font-size:.71rem;font-weight:700;color:#2563eb;margin-bottom:.2rem">🏛️ قرار السوبر</div><div style="font-size:.82rem;color:#1e40af">${r.super_notes}</div><div style="font-size:.71rem;color:#94a3b8;margin-top:.25rem">${fmtDT(r.super_handled_at)}</div></div>` : ''}
+        </div>
+      </td>
+    </tr>` : ''}`;
+  }).join('');
+
+  if (footer) footer.innerHTML = `<span style="font-size:.82rem;color:#475569">${rows.length} طلب</span>`;
 }
 
-// الأدمن: قرار مباشر في الإجازات والأذونات وتجديد الرخصة
+function _reqToggleDetail(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const showing = el.style.display !== 'none';
+  el.style.display = showing ? 'none' : 'table-row';
+}
+
+/* ── Keep existing modal functions — just re-render using new function ── */
+function filterReqCards(q) { /* legacy stub — handled by _reqApplyFilters */ }
+async function filterRequests(status) { _reqSetStatus(status); }
+
+// الأدمن: قرار مباشر
 async function adminDirectDecision(rid, status, reqType) {
   const label = status === 'approved' ? 'قبول' : 'رفض';
   openModal(`
@@ -5566,32 +5753,28 @@ async function adminDirectDecision(rid, status, reqType) {
       <div class="modal-title">${status==='approved'?'✅':'❌'} ${label} مباشر</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    <div style="background:${status==='approved'?'#f0fdf9':'#fef2f2'};border:1.5px solid ${status==='approved'?'#86efac':'#fca5a5'};border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.88rem">
-      ${status==='approved'?'✅ موافقة مباشرة من الأدمن — لا تحتاج موافقة السوبر':'❌ رفض مباشر من الأدمن'}
+    <div style="background:${status==='approved'?'#f0fdf4':'#fef2f2'};border:1.5px solid ${status==='approved'?'#bbf7d0':'#fecaca'};border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.88rem;color:${status==='approved'?'#166534':'#991b1b'}">
+      ${status==='approved'?'✅ موافقة مباشرة من الأدمن':'❌ رفض مباشر من الأدمن'}
     </div>
     <div class="form-group">
-      <label>رسالة للسائق (اختياري)</label>
-      <textarea id="directMsg" rows="2" placeholder="مثال: تمت الموافقة على طلبك، يمكنك المتابعة"
+      <label>رسالة للمستخدم (اختياري)</label>
+      <textarea id="directMsg" rows="2" placeholder="مثال: تمت الموافقة على طلبك"
         style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn" style="background:${status==='approved'?'#10b981':'#ef4444'};color:white;border:none" id="directDecBtn">
+      <button class="btn" style="background:${status==='approved'?'#16a34a':'#dc2626'};color:white;border:none" id="directDecBtn">
         ${status==='approved'?'✅ تأكيد القبول':'❌ تأكيد الرفض'}
       </button>
     </div>`);
-
   document.getElementById('directDecBtn').onclick = async () => {
     const msg = document.getElementById('directMsg').value.trim();
     const btn = document.getElementById('directDecBtn');
     btn.disabled=true; btn.textContent='جاري...';
     try {
-      await apiCall(`/requests/${rid}`,'PUT',{
-        status, admin_message: msg
-      });
+      await apiCall(`/requests/${rid}`,'PUT',{ status, admin_message: msg });
       showNotification(`✅ تم ${label} الطلب`, 'success');
-      closeModal();
-      await renderRequestsSection();
+      closeModal(); await renderRequestsSection();
     } catch(e) {
       showNotification(e.message,'error');
       btn.disabled=false; btn.textContent=`${status==='approved'?'✅':'❌'} تأكيد ${label}`;
@@ -5599,11 +5782,11 @@ async function adminDirectDecision(rid, status, reqType) {
   };
 }
 
-// الأدمن: إضافة ملاحظة وتحديد الأولوية والإحالة للسوبر
+// الأدمن: إحالة للسوبر
 async function openAdminRequestModal(rid) {
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">📤 إحالة الطلب للسوبر يوزر</div>
+      <div class="modal-title">📤 إحالة للسوبر يوزر</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="form-group">
@@ -5615,31 +5798,29 @@ async function openAdminRequestModal(rid) {
       </select>
     </div>
     <div class="form-group">
-      <label>ملاحظات الأدمن (ستُرسل للسوبر)</label>
-      <textarea id="hReqNotes" rows="3" placeholder="اكتب توصيتك وملاحظاتك هنا..."
-                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+      <label>ملاحظات الأدمن</label>
+      <textarea id="hReqNotes" rows="3" placeholder="توصيتك وملاحظاتك..."
+        style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
     </div>
     <div class="form-group">
-      <label>رسالة للسائق (اختياري)</label>
-      <textarea id="hReqMsg" rows="2" placeholder="رسالة توضيحية للسائق..."
-                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+      <label>رسالة للمستخدم (اختياري)</label>
+      <textarea id="hReqMsg" rows="2" placeholder="رسالة توضيحية..."
+        style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="hAdminSave">📤 إحالة للسوبر</button>
     </div>`);
-
   document.getElementById('hAdminSave').onclick = async () => {
-    const priority = document.getElementById('hReqPriority').value;
-    const admin_notes = document.getElementById('hReqNotes').value.trim();
+    const priority      = document.getElementById('hReqPriority').value;
+    const admin_notes   = document.getElementById('hReqNotes').value.trim();
     const admin_message = document.getElementById('hReqMsg').value.trim();
     const btn = document.getElementById('hAdminSave');
     btn.disabled=true; btn.textContent='جاري...';
     try {
       await apiCall(`/requests/${rid}`,'PUT',{admin_notes,admin_message,priority,forward_to_super:true});
       showNotification('✅ تم إحالة الطلب للسوبر','success');
-      closeModal();
-      await renderRequestsSection();
+      closeModal(); await renderRequestsSection();
     } catch(e) {
       showNotification(e.message,'error');
       btn.disabled=false; btn.textContent='📤 إحالة للسوبر';
@@ -5647,7 +5828,7 @@ async function openAdminRequestModal(rid) {
   };
 }
 
-// السوبر: اتخاذ القرار النهائي
+// السوبر: القرار النهائي
 async function openSuperDecisionModal(rid, defaultStatus) {
   openModal(`
     <div class="modal-header">
@@ -5662,25 +5843,23 @@ async function openSuperDecisionModal(rid, defaultStatus) {
       </select>
     </div>
     <div class="form-group">
-      <label>ملاحظات القرار (ستظهر للجميع)</label>
-      <textarea id="hSuperNotes" rows="3" placeholder="سبب القرار أو ملاحظات إضافية..."
-                style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
+      <label>ملاحظات القرار</label>
+      <textarea id="hSuperNotes" rows="3" placeholder="سبب القرار أو ملاحظات..."
+        style="width:100%;resize:vertical;padding:.6rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.88rem"></textarea>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="hSuperSave">🏛️ تأكيد القرار</button>
     </div>`);
-
   document.getElementById('hSuperSave').onclick = async () => {
-    const status = document.getElementById('hSuperStatus').value;
+    const status      = document.getElementById('hSuperStatus').value;
     const super_notes = document.getElementById('hSuperNotes').value.trim();
     const btn = document.getElementById('hSuperSave');
     btn.disabled=true; btn.textContent='جاري...';
     try {
       await apiCall(`/requests/${rid}`,'PUT',{status,super_notes});
       showNotification('✅ تم تسجيل القرار النهائي','success');
-      closeModal();
-      await renderRequestsSection();
+      closeModal(); await renderRequestsSection();
     } catch(e) {
       showNotification(e.message,'error');
       btn.disabled=false; btn.textContent='🏛️ تأكيد القرار';
