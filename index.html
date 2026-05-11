@@ -3217,19 +3217,7 @@ async function renderTripsSection() {
   document.getElementById('pageContent').innerHTML=`
     <div class="card">
       <div class="card-header">
-        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-          <div class="card-title">🗺️ الرحلات والورديات</div>
-          <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-            <button onclick="_gesSetTripsType('driver')" id="tripsTabD"
-              style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:#6366f1;color:#fff">
-              🚗 رحلات السائقين (<span id="tripCount">${trips.length}</span>)
-            </button>
-            <button onclick="_gesSetTripsType('operator')" id="tripsTabO"
-              style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:transparent;color:#64748b">
-              ⚙️ ورديات المشغلين
-            </button>
-          </div>
-        </div>
+        <div class="card-title">🗺️ جميع الرحلات (<span id="tripCount">${trips.length}</span>)</div>
         <button class="btn btn-success btn-sm" onclick="exportCSV()" ${isReporter()?'style="display:none"':''}>⬇️ تصدير CSV</button>
       </div>
 
@@ -3779,7 +3767,7 @@ function buildWSTable(records) {
     else if(r.operation_type) detail=`<span class="badge badge-navy">${r.operation_type==='maintenance'?'صيانة':'استبدال'}</span>`;
     return `<tr>
       <td>${r.id}</td>
-      <td>${r.driver_name||'—'}</td>
+      <td>${r.driver_name||r.operator_name||(r.is_operator?'مشغل ▪️':'—')}</td>
       <td><span class="badge badge-purple">${wt.icon} ${wt.label}</span></td>
       <td>${detail}</td>
       <td dir="ltr">${r.vehicle_plate||'—'}</td>
@@ -3835,7 +3823,7 @@ async function filterWS(){
   const txt  = (document.getElementById('wsSearchText')?.value||'').trim().toLowerCase();
   let f = (window._wsRecords||[]).filter(r=>{
     if(txt){
-      const hay = [r.driver_name||'',r.vehicle_plate||'',r.notes||'',r.description||'',r.location||''].join(' ').toLowerCase();
+      const hay = [r.driver_name||'',r.operator_name||'',r.vehicle_plate||'',r.notes||'',r.description||'',r.location||''].join(' ').toLowerCase();
       if(!hay.includes(txt)) return false;
     }
     if(car  && String(r.vehicle_id) !== car)          return false;
@@ -5597,12 +5585,13 @@ async function renderRequestsSection() {
 
       <!-- Status filter pills -->
       <div style="padding:.75rem 1.25rem;border-bottom:1px solid #f1f5f9;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-        <span style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-left:.25rem">الحالة:</span>
-        ${_reqStatusPills(isSuper)}
-        <div style="flex:1"></div>
+        <span style="font-size:.75rem;font-weight:700;color:#94a3b8;flex-shrink:0">الحالة:</span>
+        <div id="reqPillsBar" style="display:flex;gap:.4rem;flex-wrap:wrap;flex:1">
+          ${_reqStatusPills(isSuper)}
+        </div>
         <!-- Type filter -->
         <select id="reqTypeFilter" onchange="_reqApplyFilters()"
-          style="padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.78rem;background:#fff;outline:none;cursor:pointer;color:#475569">
+          style="padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.78rem;background:#fff;outline:none;cursor:pointer;color:#475569;flex-shrink:0">
           <option value="all">كل الأنواع</option>
           ${Object.entries(REQ_TYPE_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('')}
         </select>
@@ -5661,7 +5650,7 @@ function _reqStatusPills(isSuper) {
   ];
   return pills.map(p => {
     const active = window._reqStatusFilt === p.v;
-    return `<button onclick="_reqSetStatus('${p.v}')"
+    return `<button data-req-status="${p.v}" onclick="_reqSetStatus('${p.v}')"
       style="display:inline-flex;align-items:center;gap:.3rem;padding:.3rem .75rem;border-radius:20px;border:1.5px solid ${active?'#6366f1':'#e2e8f0'};background:${active?'#6366f1':'#fff'};color:${active?'#fff':'#64748b'};font-size:.76rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s">
       ${p.l} <span style="background:${active?'rgba(255,255,255,.25)':'#f1f5f9'};border-radius:10px;padding:0 .4rem;font-size:.72rem">${p.count}</span>
     </button>`;
@@ -5693,40 +5682,41 @@ function _reqRenderStats() {
 }
 
 function _reqSetType(type) {
-  window._reqUserType = type;
+  window._reqUserType  = type;
+  window._gesType      = type;  // sync global state
+  window._reqStatusFilt = 'all'; // reset status filter when switching type
+
+  // Update tab buttons
   const btnD = document.getElementById('reqTabDriver');
   const btnO = document.getElementById('reqTabOperator');
-  if (btnD) {
-    btnD.style.background = type==='driver' ? '#6366f1' : 'transparent';
-    btnD.style.color      = type==='driver' ? '#fff'    : '#64748b';
-  }
-  if (btnO) {
-    btnO.style.background = type==='operator' ? '#6366f1' : 'transparent';
-    btnO.style.color      = type==='operator' ? '#fff'    : '#64748b';
-  }
-  // refresh status pills
-  const pWrapper = document.querySelector('[id^="reqTabDriver"]')?.parentElement?.parentElement;
+  if (btnD) { btnD.style.background = type==='driver'?'#6366f1':'transparent'; btnD.style.color = type==='driver'?'#fff':'#64748b'; }
+  if (btnO) { btnO.style.background = type==='operator'?'#6366f1':'transparent'; btnO.style.color = type==='operator'?'#fff':'#64748b'; }
+
+  // Update global switcher buttons
+  const gbD = document.getElementById('gesBtnDriver');
+  const gbO = document.getElementById('gesBtnOperator');
+  if (gbD) gbD.classList.toggle('active', type==='driver');
+  if (gbO) gbO.classList.toggle('active', type==='operator');
+
+  // Refresh pills counts (replace innerHTML of pills container only)
+  const isSuper = currentUser?.role === 'superuser';
+  const pillsBar = document.getElementById('reqPillsBar');
+  if (pillsBar) pillsBar.innerHTML = _reqStatusPills(isSuper);
+
   _reqApplyFilters();
-  // re-render pills
-  const pillsEl = document.querySelector('#reqTableWrap')?.previousElementSibling?.previousElementSibling;
-  if (pillsEl) {
-    const isSuper = currentUser?.role === 'superuser';
-    const firstChild = pillsEl.firstElementChild;
-    if (firstChild) firstChild.nextSibling && (pillsEl.innerHTML = '<span style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-left:.25rem">الحالة:</span>' + _reqStatusPills(isSuper) + '<div style="flex:1"></div><select id="reqTypeFilter" onchange="_reqApplyFilters()" style="padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;font-size:.78rem;background:#fff;outline:none;cursor:pointer;color:#475569"><option value="all">كل الأنواع</option>' + Object.entries(REQ_TYPE_LABELS).map(([k,v]) => `<option value="${k}">${v}</option>`).join('') + '</select>');
-  }
 }
 
 function _reqSetStatus(status) {
   window._reqStatusFilt = status;
-  _reqApplyFilters();
-  // update pill styles
-  document.querySelectorAll('[onclick^="_reqSetStatus"]').forEach(btn => {
-    const v = btn.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+  // update pill styles immediately
+  document.querySelectorAll('[data-req-status]').forEach(btn => {
+    const v = btn.dataset.reqStatus;
     const active = v === status;
-    btn.style.background   = active ? '#6366f1' : '#fff';
-    btn.style.color        = active ? '#fff'    : '#64748b';
-    btn.style.borderColor  = active ? '#6366f1' : '#e2e8f0';
+    btn.style.background  = active ? '#6366f1' : '#fff';
+    btn.style.color       = active ? '#fff'    : '#64748b';
+    btn.style.borderColor = active ? '#6366f1' : '#e2e8f0';
   });
+  _reqApplyFilters();
 }
 
 function _reqApplyFilters() {
@@ -5973,14 +5963,22 @@ async function openSuperDecisionModal(rid, defaultStatus) {
 
 /* ── EMERGENCIES SECTION (Admin) ── */
 async function renderEmergenciesSection(entityType) {
-  if (entityType) window._gesType = entityType;
+  if (entityType) { window._gesType = entityType; window._gesType = entityType; }
   const type = window._gesType || 'driver';
   const reports = await loadEmergencies();
-  // Filter by type: driver=is_operator falsy, operator=is_operator=1
   const filtered = reports.filter(r =>
-    type === 'operator' ? r.is_operator == 1 : !r.is_operator || r.is_operator == 0
+    type === 'operator' ? r.is_operator == 1 : (!r.is_operator || r.is_operator == 0)
   );
-  const _reportsForRender = filtered;  // used below
+  // Update button states after render
+  setTimeout(() => {
+    const bd = document.getElementById('emgBtnD');
+    const bo = document.getElementById('emgBtnO');
+    if (bd) { bd.style.background = type==='driver'?'#6366f1':'transparent'; bd.style.color = type==='driver'?'#fff':'#64748b'; }
+    if (bo) { bo.style.background = type==='operator'?'#6366f1':'transparent'; bo.style.color = type==='operator'?'#fff':'#64748b'; }
+    const cnt = document.getElementById('emgCount');
+    if (cnt) cnt.textContent = filtered.length;
+  }, 50);
+  const _reportsForRender = filtered;
   window._emergencyReports = reports;
   const unread=reports.filter(r=>!r.is_read).length;
   // Mark all as read
@@ -5996,18 +5994,16 @@ async function renderEmergenciesSection(entityType) {
     </div>
     <div class="card">
       <div class="card-header">
-        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;width:100%;justify-content:space-between">
-          <div class="card-title">🚨 البلاغات (<span id="emgCount">${filtered.length}</span> / ${reports.length} إجمالي)</div>
+        <div class="card-title">🚨 البلاغات (<span id="emgCount">0</span>)</div>
           <div style="display:flex;align-items:center;gap:.5rem">
             <div style="display:flex;background:#f1f5f9;border-radius:8px;padding:2px;gap:1px">
-              <button onclick="renderEmergenciesSection('driver')"
-                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${type==='driver'?'#6366f1':'transparent'};color:${type==='driver'?'#fff':'#64748b'}">🚗 السائقون</button>
-              <button onclick="renderEmergenciesSection('operator')"
-                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:${type==='operator'?'#6366f1':'transparent'};color:${type==='operator'?'#fff':'#64748b'}">⚙️ المشغلون</button>
+              <button id="emgBtnD" onclick="renderEmergenciesSection('driver')"
+                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:#6366f1;color:#fff">🚗 السائقون</button>
+              <button id="emgBtnO" onclick="renderEmergenciesSection('operator')"
+                style="padding:.3rem .8rem;border-radius:6px;border:none;font-family:inherit;font-size:.78rem;font-weight:700;cursor:pointer;background:transparent;color:#64748b">⚙️ المشغلون</button>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="renderEmergenciesSection()">🔄 تحديث</button>
           </div>
-        </div>
       </div>
       <div class="srch-bar">
         <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الموقع..."
@@ -14490,10 +14486,7 @@ window._gesType = 'driver';  // global: 'driver' | 'operator'
 
 // الصفحات اللي بيظهر فيها السويتشر
 const GES_SECTIONS = new Set([
-  'trips', 'requests', 'emergencies', 'workshops',
-  'permissions', 'driver-kpi', 'op-card',
-  'equipment-trips', 'shifts-table', 'equipment-operators',
-  'monthly-report', 'overview',
+  'requests', 'emergencies',
 ]);
 
 function gesShow(sectionId) {
@@ -14576,26 +14569,7 @@ switchSection = async function(id) {
 };
 
 
-// ── Trips section: switch between driver trips and operator shifts ──
-function _gesSetTripsType(type) {
-  window._gesType = type;
-  const btnD = document.getElementById('tripsTabD');
-  const btnO = document.getElementById('tripsTabO');
-  if (btnD) { btnD.style.background = type==='driver'?'#6366f1':'transparent'; btnD.style.color = type==='driver'?'#fff':'#64748b'; }
-  if (btnO) { btnO.style.background = type==='operator'?'#6366f1':'transparent'; btnO.style.color = type==='operator'?'#fff':'#64748b'; }
-  // Also update global switcher
-  const gbD = document.getElementById('gesBtnDriver');
-  const gbO = document.getElementById('gesBtnOperator');
-  if (gbD) gbD.classList.toggle('active', type==='driver');
-  if (gbO) gbO.classList.toggle('active', type==='operator');
-
-  if (type === 'operator') {
-    // Show shifts table inline instead
-    renderShiftsTable();
-  } else {
-    renderTripsSection();
-  }
-}
+// _gesSetTripsType removed — trips and shifts are separate sections
 
 </script>
 
