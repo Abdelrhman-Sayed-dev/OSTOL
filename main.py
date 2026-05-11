@@ -3399,19 +3399,24 @@ async def get_requests(
         c = conn.cursor()
         if cu["role"] == "driver":
             driver_id = cu.get("driver_id")
-            c.execute("""SELECT r.*, d.name as driver_name, d.branch as driver_branch
+            c.execute("""SELECT r.*,
+                                d.name   as driver_name,
+                                d.branch as driver_branch
                          FROM driver_requests r
-                         LEFT JOIN drivers d ON r.driver_id=d.id
+                         LEFT JOIN drivers d ON d.id = r.driver_id
                          WHERE r.driver_id=?
                          ORDER BY r.id DESC""", (driver_id,))
         elif cu["role"] == "operator":
             op_id2 = cu.get("operator_id")
             if not op_id2: return []
-            c.execute("""SELECT r.*, op.name as driver_name, op.branch as driver_branch
+            c.execute("""SELECT r.*,
+                                op.name   as driver_name,
+                                op.branch as driver_branch
                          FROM driver_requests r
-                         LEFT JOIN equipment_operators op ON op.id=?
-                         WHERE (r.operator_id=? OR (r.driver_id=0 AND r.is_operator=1))
-                         ORDER BY r.id DESC""", (op_id2, op_id2))
+                         LEFT JOIN equipment_operators op ON op.id = r.operator_id
+                         WHERE r.is_operator=1
+                           AND (r.operator_id=? OR r.driver_id=0)
+                         ORDER BY r.id DESC""", (op_id2,))
         else:
             eff_branch = _effective_branch(cu, branch)
             # user_type filter: driver=is_operator=0, operator=is_operator=1
