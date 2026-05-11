@@ -2062,7 +2062,7 @@ async function renderOverview() {
         <div class="xdb-num-val" style="color:#8b5cf6">${activeDrivers}</div>
         <div class="xdb-num-sub">${topDrivers[0]?`أنشط: ${topDrivers[0][0].split(' ')[0]} (${topDrivers[0][1]})`:'&nbsp;'}</div>
       </div>
-      <div class="xdb-num" onclick="switchSection('emergency')">
+      <div class="xdb-num" onclick="switchSection('emergencies')">
         <div class="xdb-num-bar" style="background:${unread>0?'#dc2626':'#94a3b8'}"></div>
         <div class="xdb-num-label">بلاغات غير مقروءة</div>
         <div class="xdb-num-val" style="color:${unread>0?'#dc2626':'var(--text)'}">${unread}</div>
@@ -2157,7 +2157,7 @@ async function renderOverview() {
           <div onclick="switchSection('maintenance')" style="text-align:center;padding:.3rem;color:var(--primary);font-size:.72rem;font-weight:600;cursor:pointer;margin-top:.2rem">عرض الكل ←</div>
         </div>`:''}
         ${warningCount>0?`<div class="xdb-al" onclick="switchSection('maintenance')"><div class="xdb-al-dot" style="background:#f97316"></div><div class="xdb-al-txt">صيانة تقترب</div><div class="xdb-al-cnt" style="background:#fff7ed;color:#f97316">${warningCount}</div></div>`:''}
-        ${unread>0?`<div class="xdb-al" onclick="switchSection('emergency')"><div class="xdb-al-dot" style="background:#dc2626"></div><div class="xdb-al-txt">بلاغات غير مقروءة</div><div class="xdb-al-cnt" style="background:#fef2f2;color:#dc2626">${unread}</div></div>`:''}
+        ${unread>0?`<div class="xdb-al" onclick="switchSection('emergencies')"><div class="xdb-al-dot" style="background:#dc2626"></div><div class="xdb-al-txt">بلاغات غير مقروءة</div><div class="xdb-al-cnt" style="background:#fef2f2;color:#dc2626">${unread}</div></div>`:''}
         ${expiredLic>0?`<div class="xdb-al" onclick="switchSection('drivers')"><div class="xdb-al-dot" style="background:#7c3aed"></div><div class="xdb-al-txt">رخصة قيادة منتهية</div><div class="xdb-al-cnt" style="background:#f5f3ff;color:#7c3aed">${expiredLic}</div></div>`:''}
         ${nearLic>0?`<div class="xdb-al" onclick="switchSection('drivers')"><div class="xdb-al-dot" style="background:#0891b2"></div><div class="xdb-al-txt">رخصة تنتهي خلال 30 يوم</div><div class="xdb-al-cnt" style="background:#ecfeff;color:#0891b2">${nearLic}</div></div>`:''}
         ${maintenanceCars>0?`<div class="xdb-al" onclick="switchSection('cars')"><div class="xdb-al-dot" style="background:#f59e0b"></div><div class="xdb-al-txt">مركبات في صيانة / عطل</div><div class="xdb-al-cnt" style="background:#fffbeb;color:#f59e0b">${maintenanceCars}</div></div>`:''}
