@@ -524,21 +524,23 @@ def _safe_add_columns(c):
         super_handled_at    TEXT DEFAULT '',
         created_at          TEXT NOT NULL
     )""")
-    # ── Migration: إزالة CHECK + NOT NULL + FK من driver_requests + إضافة operator columns ──
+    # ── Migration: rebuild driver_requests — إزالة FK + NOT NULL + إضافة operator columns ──
     try:
         c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='driver_requests'")
         _dr_row = c.fetchone()
         _dr_sql = _dr_row["sql"] if _dr_row else ""
-        # نعيد البناء لو فيه CHECK constraint أو driver_id NOT NULL أو مفيش operator_id
         _needs_rebuild = (
-            ("CHECK" in _dr_sql and "license_renew" not in _dr_sql)
-            or ("driver_id           INTEGER NOT NULL" in _dr_sql)
-            or ("operator_id" not in _dr_sql)
+            "NOT NULL" in _dr_sql
+            or "FOREIGN KEY" in _dr_sql
+            or "CHECK" in _dr_sql
+            or "operator_id" not in _dr_sql
         )
         if _needs_rebuild:
-            log.info("🔄 Rebuilding driver_requests table for operator support...")
+            log.info("🔄 Rebuilding driver_requests — removing FK/NOT NULL, adding operator support...")
             c.execute("PRAGMA foreign_keys=OFF")
-            c.execute("""CREATE TABLE IF NOT EXISTS driver_requests_v2 (
+            # جيب كل الأعمدة الموجودة
+            _existing = [r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()]
+            c.execute("""CREATE TABLE driver_requests_new (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                 driver_id           INTEGER,
                 operator_id         INTEGER,
@@ -560,28 +562,35 @@ def _safe_add_columns(c):
                 super_handled_at    TEXT DEFAULT '',
                 created_at          TEXT NOT NULL
             )""")
-            c.execute("""INSERT OR IGNORE INTO driver_requests_v2
-                (id,driver_id,type,notes,new_odometer,trip_id,status,
-                 priority,admin_notes,admin_message,handled_by,handled_at,
-                 forwarded_to_super,super_decision,super_notes,super_handled_by,
-                 super_handled_at,created_at,is_operator)
-                SELECT id,driver_id,type,notes,new_odometer,trip_id,status,
-                       COALESCE(priority,'medium'),
-                       COALESCE(admin_notes,''),COALESCE(admin_message,''),
-                       COALESCE(handled_by,''),COALESCE(handled_at,''),
-                       COALESCE(forwarded_to_super,0),COALESCE(super_decision,''),
-                       COALESCE(super_notes,''),COALESCE(super_handled_by,''),
-                       COALESCE(super_handled_at,''),created_at,0
-                FROM driver_requests""")
+            # انقل البيانات — فقط الأعمدة المشتركة
+            _target_cols = ["id","driver_id","type","notes","new_odometer","trip_id",
+                            "status","priority","admin_notes","admin_message","handled_by",
+                            "handled_at","forwarded_to_super","super_decision","super_notes",
+                            "super_handled_by","super_handled_at","created_at"]
+            _copy_cols = [col for col in _target_cols if col in _existing]
+            _col_str = ",".join(_copy_cols)
+            _coalesce = []
+            for col in _copy_cols:
+                if col in ("priority",):
+                    _coalesce.append(f"COALESCE({col},'medium')")
+                elif col in ("admin_notes","admin_message","handled_by","handled_at",
+                             "super_decision","super_notes","super_handled_by","super_handled_at"):
+                    _coalesce.append(f"COALESCE({col},'')")
+                elif col in ("forwarded_to_super",):
+                    _coalesce.append(f"COALESCE({col},0)")
+                else:
+                    _coalesce.append(col)
+            _coalesce_str = ",".join(_coalesce)
+            c.execute(f"INSERT OR IGNORE INTO driver_requests_new ({_col_str}) SELECT {_coalesce_str} FROM driver_requests")
             c.execute("DROP TABLE driver_requests")
-            c.execute("ALTER TABLE driver_requests_v2 RENAME TO driver_requests")
-            c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
+            c.execute("ALTER TABLE driver_requests_new RENAME TO driver_requests")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver   ON driver_requests(driver_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_req_operator ON driver_requests(operator_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_status   ON driver_requests(status)")
             c.execute("PRAGMA foreign_keys=ON")
-            log.info("✅ driver_requests: rebuilt with operator support (removed NOT NULL + FK)")
+            log.info("✅ driver_requests rebuilt successfully")
     except Exception as _e:
-        log.warning(f"driver_requests migration (rebuild): {_e}")
+        log.warning(f"driver_requests rebuild migration: {_e}")
 
     # Migrate driver_requests new columns
     try:
@@ -3270,6 +3279,7 @@ REQUEST_TYPES = {
 
 @app.post("/requests", status_code=201)
 async def create_request(body: dict, cu: dict = Depends(get_user)):
+    log.info(f"[REQUEST] role={cu.get('role')} op_id={cu.get('operator_id')} drv_id={cu.get('driver_id')} body={body}")
     req_type       = (body.get("type") or "").strip()
     notes          = (body.get("notes") or "").strip()
     new_odometer   = body.get("new_odometer")
@@ -3301,19 +3311,48 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
     with get_db() as conn:
         c = conn.cursor()
 
-        # ── تأكد من وجود columns الجديدة — inline migration ──
-        existing_cols = {row[1] for row in c.execute("PRAGMA table_info(driver_requests)").fetchall()}
-        for col, definition in [("operator_id","INTEGER"), ("is_operator","INTEGER DEFAULT 0")]:
-            if col not in existing_cols:
-                try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {col} {definition}")
-                except Exception: pass
+        # ── inline schema check + migration ──
+        _cols = {r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()}
+        _tbl_sql = (c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='driver_requests'").fetchone() or [""])[0]
+
+        # لو الجدول لسه بالـ schema القديم (FK أو NOT NULL) — rebuild فوري
+        if "FOREIGN KEY" in (_tbl_sql or "") or "NOT NULL" in (_tbl_sql or "") or "operator_id" not in _cols:
+            log.warning("driver_requests: old schema detected — running inline rebuild...")
+            c.execute("PRAGMA foreign_keys=OFF")
+            c.execute("""CREATE TABLE IF NOT EXISTS driver_requests_inline (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                driver_id INTEGER, operator_id INTEGER, is_operator INTEGER DEFAULT 0,
+                type TEXT NOT NULL, notes TEXT DEFAULT '', new_odometer REAL,
+                trip_id INTEGER, status TEXT DEFAULT 'pending', priority TEXT DEFAULT 'medium',
+                admin_notes TEXT DEFAULT '', admin_message TEXT DEFAULT '',
+                handled_by TEXT DEFAULT '', handled_at TEXT DEFAULT '',
+                forwarded_to_super INTEGER DEFAULT 0, super_decision TEXT DEFAULT '',
+                super_notes TEXT DEFAULT '', super_handled_by TEXT DEFAULT '',
+                super_handled_at TEXT DEFAULT '', created_at TEXT NOT NULL
+            )""")
+            c.execute("""INSERT OR IGNORE INTO driver_requests_inline
+                (id,driver_id,type,notes,new_odometer,trip_id,status,created_at)
+                SELECT id,driver_id,type,notes,new_odometer,trip_id,
+                       COALESCE(status,'pending'),created_at FROM driver_requests""")
+            c.execute("DROP TABLE driver_requests")
+            c.execute("ALTER TABLE driver_requests_inline RENAME TO driver_requests")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver ON driver_requests(driver_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_operator ON driver_requests(operator_id)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_req_status ON driver_requests(status)")
+            c.execute("PRAGMA foreign_keys=ON")
+            log.info("✅ driver_requests inline rebuild done")
+        else:
+            # أضف columns لو ناقصة فقط
+            for col, definition in [("operator_id","INTEGER"), ("is_operator","INTEGER DEFAULT 0")]:
+                if col not in _cols:
+                    try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {col} {definition}")
+                    except Exception: pass
 
         if is_op:
-            # المشغل: نستخدم driver_id=0 لتجنب NOT NULL، operator_id للتتبع الصحيح
             c.execute(
                 """INSERT INTO driver_requests
                    (driver_id,operator_id,is_operator,type,notes,new_odometer,trip_id,status,created_at)
-                   VALUES(0,?,1,?,?,?,?,'pending',?)""",
+                   VALUES(NULL,?,1,?,?,?,?,'pending',?)""",
                 (op_id or 0, req_type, notes, odo, tid, now)
             )
         else:
@@ -3325,6 +3364,7 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
             )
         rid = c.lastrowid
 
+    log.info(f"[REQUEST] created id={rid} type={req_type} is_op={is_op}")
     log_event("request_created",
               driver_id=op_id if is_op else driver_id,
               request_id=rid, type=req_type)
