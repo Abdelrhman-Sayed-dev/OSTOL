@@ -9072,7 +9072,9 @@ async function openMyRequestsModal() {
     </div>`);
 
   try {
-    const reqs = await apiCall('/requests');
+    // المشغل يجيب طلباته بـ user_type=operator، السائق بدون param
+    const endpoint = currentUser?.role === 'operator' ? '/requests?user_type=operator' : '/requests';
+    const reqs = await apiCall(endpoint);
     const el   = document.getElementById('myReqBody');
     if(!el) return;
     if(!reqs || reqs.length === 0) {
