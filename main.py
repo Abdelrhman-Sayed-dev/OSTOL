@@ -3525,11 +3525,15 @@ async def handle_request(rid: int, body: dict, cu: dict = Depends(get_user)):
             if status not in ("approved", "rejected"):
                 raise HTTPException(400, "الحالة يجب أن تكون approved أو rejected")
             super_notes = (body.get("super_notes") or "").strip()
+            # تحديث admin_message عشان السائق يشوف الرسالة
+            eff_msg = super_notes or (body.get("admin_message") or "").strip()
             c.execute("""UPDATE driver_requests
                          SET status=?, super_decision=?, super_notes=?,
-                             super_handled_by=?, super_handled_at=?
+                             super_handled_by=?, super_handled_at=?,
+                             admin_message=CASE WHEN ? != '' THEN ? ELSE admin_message END
                          WHERE id=?""",
-                      (status, status, super_notes, cu["username"], now, rid))
+                      (status, status, super_notes, cu["username"], now,
+                       eff_msg, eff_msg, rid))
             log_event("request_decided_by_super", request_id=rid,
                       status=status, superuser=cu["username"])
             return {"ok": True, "status": status}
