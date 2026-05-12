@@ -2348,32 +2348,52 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
+        # ضمان وجود الأعمدة الجديدة في الجدول (ميجريشن دفاعي)
+        _ws_extra_cols = [
+            ("doc_number", "TEXT DEFAULT ''"),
+            ("engine_hours", "REAL"),
+            ("supply_source", "TEXT DEFAULT ''"),
+            ("item_name", "TEXT DEFAULT ''"),
+            ("item_spec", "TEXT DEFAULT ''"),
+            ("receiver_name", "TEXT DEFAULT ''"),
+            ("operator_id", "INTEGER"),
+            ("is_operator", "INTEGER DEFAULT 0"),
+        ]
+        _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
+        for _wc, _wd in _ws_extra_cols:
+            if _wc not in _ws_existing:
+                try: c.execute(f"ALTER TABLE workshop_records ADD COLUMN {_wc} {_wd}")
+                except Exception: pass
         # المشغل: driver_id يبقى NULL، نحفظ operator_id بشكل منفصل
-        if cu["role"] == "operator":
-            op_id_ws = cu.get("operator_id") or 0
-            log.info(f"[WORKSHOP] operator insert: operator_id={op_id_ws} type={rec.type}")
-            c.execute("""INSERT INTO workshop_records
-                         (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
-                          operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                          doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                         VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                      (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
-                       rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
-                       rec.description or "", rec.tire_action or "", rec.location or "",
-                       rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
-        else:
-            c.execute("""INSERT INTO workshop_records
-                         (driver_id,is_operator,type,quantity,price,notes,created_at,
-                          operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                          doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                         VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        try:
+            if cu["role"] == "operator":
+                op_id_ws = cu.get("operator_id") or 0
+                log.info(f"[WORKSHOP] operator insert: operator_id={op_id_ws} type={rec.type}")
+                c.execute("""INSERT INTO workshop_records
+                             (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
+                              operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                             VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
+                           rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
+                           rec.description or "", rec.tire_action or "", rec.location or "",
+                           rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
+                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+            else:
+                c.execute("""INSERT INTO workshop_records
+                             (driver_id,is_operator,type,quantity,price,notes,created_at,
+                              operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
                        rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                        rec.description or "", rec.tire_action or "", rec.location or "",
                        rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
                        rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
-        rid = c.lastrowid
+            rid = c.lastrowid
+        except Exception as _ws_err:
+            log.error(f"[WORKSHOP] INSERT failed: {_ws_err}")
+            raise HTTPException(500, f"خطأ في حفظ سجل الورشة: {str(_ws_err)}")
         vp = None
         if rec.vehicle_id:
             c.execute("SELECT plate FROM cars WHERE id=?", (rec.vehicle_id,))
