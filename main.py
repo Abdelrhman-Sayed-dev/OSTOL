@@ -2373,8 +2373,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                              (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
                               doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                             VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                          (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
+                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                          (op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
                            rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                            rec.description or "", rec.tire_action or "", rec.location or "",
                            rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
