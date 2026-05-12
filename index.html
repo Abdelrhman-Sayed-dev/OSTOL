@@ -3682,10 +3682,26 @@ function filterCarsTable() {
   const status = document.getElementById('carsFilterStatus')?.value||'';
   const tbody  = document.getElementById('carsBody');
   if(!tbody) return;
+
+  // Map filter values to all equivalent DB values (legacy + current)
+  const STATUS_GROUPS = {
+    'available':      ['available'],
+    'maintenance':    ['maintenance'],
+    'minor_fault':    ['minor_fault','minor_breakdown','tire_issue'],
+    'major_fault':    ['major_fault','major_breakdown','breakdown'],
+    'scrap':          ['scrap'],
+    'scrapped':       ['scrapped'],
+    'sale_committee': ['sale_committee'],
+    'sold':           ['sold'],
+  };
+  const matchValues = status ? (STATUS_GROUPS[status] || [status]) : null;
+
   let vis=0;
   tbody.querySelectorAll('tr').forEach(tr=>{
-    const matchCat    = !cat    || (tr.dataset.cat||'').includes(cat);
-    const matchStatus = !status || (tr.dataset.status||'')=== status;
+    const rowCat    = tr.dataset.cat    || '';
+    const rowStatus = tr.dataset.status || '';
+    const matchCat    = !cat    || rowCat.includes(cat);
+    const matchStatus = !matchValues || matchValues.includes(rowStatus);
     const matchTxt    = !txt    || tr.textContent.toLowerCase().includes(txt);
     const show = matchCat && matchStatus && matchTxt;
     tr.classList.toggle('row-hidden', !show);
