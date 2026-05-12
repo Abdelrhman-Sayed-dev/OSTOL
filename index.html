@@ -6766,26 +6766,26 @@ async function renderEmergenciesSection() {
       </div>
       <div class="srch-bar">
         <input data-tsearch placeholder="🔍 بحث بالسائق أو المركبة أو الموقع..."
-          oninput="liveSearch(this,'emgBody')" style="flex:1">
-        <select onchange="liveFilter(this,'emgBody',2)">
+          oninput="filterEmgTable()" style="flex:1">
+        <select id="emgTypeFilter" onchange="filterEmgTable()">
           <option value="">كل الأنواع</option>
-          <option value="طارئ">🚨 طارئ</option>
-          <option value="حادث">💥 حادث</option>
+          <option value="emergency">🚨 طارئ</option>
+          <option value="accident">💥 حادث</option>
         </select>
-        <select onchange="liveFilter(this,'emgBody',7)">
+        <select id="emgStatusFilter" onchange="filterEmgTable()">
           <option value="">كل الحالات</option>
-          <option value="لم يُتخذ">⏳ لم يُعالج</option>
-          <option value="تمت">✅ تمت المعالجة</option>
+          <option value="0">⏳ لم يُعالج</option>
+          <option value="1">✅ تمت المعالجة</option>
         </select>
         <span class="srch-count"></span>
-        <button class="srch-reset" onclick="resetSearch(this)">✕ مسح</button>
+        <button class="srch-reset" onclick="resetEmgFilter()">✕ مسح</button>
       </div>
       ${reports.length ? `<div class="table-wrap"><table><thead><tr>
         <th>#</th><th>النوع</th><th>السائق</th><th>المركبة</th><th>الوقت</th>
         <th>الموقع</th><th>ملاحظات</th><th>التسجيل الصوتي</th>
         <th>الحالة</th><th>الإجراء المتخذ</th><th>رسالة للسائق</th><th>بواسطة</th><th>وقت الإجراء</th><th>إجراء</th>
       </tr></thead><tbody id="emgBody">
-      ${reports.map(r=>{const isOpRpt = r.is_operator==1; return `<tr class="report-row-${r.type}">
+      ${reports.map(r=>{const isOpRpt = r.is_operator==1; return `<tr class="report-row-${r.type}" data-type="${r.type}" data-handled="${r.is_handled?'1':'0'}">
         <td>${r.id}</td>
         <td>${r.type==='emergency'?'<span class="badge badge-emg">🚨 طارئ</span>':'<span class="badge badge-acc">🚗 حادث</span>'}</td>
         <td><strong>${r.driver_name||'—'}</strong> <span style="display:inline-block;padding:.12rem .45rem;border-radius:20px;font-size:.66rem;font-weight:700;background:${isOpRpt?'#eff6ff':'#f0fdf4'};color:${isOpRpt?'#2563eb':'#16a34a'};margin-right:.2rem">${isOpRpt?'مشغل':'سائق'}</span></td>
@@ -6812,6 +6812,34 @@ async function renderEmergenciesSection() {
 
   window.__emergAll = reports;
   // ── Pagination ──
+}
+
+function filterEmgTable() {
+  const txt     = (document.querySelector('#emgBody')?.closest('.card')?.querySelector('[data-tsearch]')?.value || '').toLowerCase();
+  const type    = document.getElementById('emgTypeFilter')?.value || '';
+  const handled = document.getElementById('emgStatusFilter')?.value ?? '';
+  const tbody   = document.getElementById('emgBody');
+  if (!tbody) return;
+  let vis = 0;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const matchType    = !type    || tr.dataset.type === type;
+    const matchHandled = handled === '' || tr.dataset.handled === handled;
+    const matchTxt     = !txt    || tr.textContent.toLowerCase().includes(txt);
+    const show = matchType && matchHandled && matchTxt;
+    tr.classList.toggle('row-hidden', !show);
+    if (show) vis++;
+  });
+  const cnt = tbody.closest('.card')?.querySelector('.srch-count');
+  if (cnt) cnt.textContent = `${vis} / ${tbody.querySelectorAll('tr').length}`;
+}
+
+function resetEmgFilter() {
+  ['emgTypeFilter','emgStatusFilter'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const bar = document.querySelector('#emgBody')?.closest('.card')?.querySelector('[data-tsearch]');
+  if (bar) bar.value = '';
+  filterEmgTable();
 }
 
 
@@ -10365,6 +10393,19 @@ async function renderImportSection() {
             </a>
           </div>
         </div>
+        <div class="card" style="border-top:3px solid #f59e0b">
+          <div class="card-header" style="border-bottom:none;padding-bottom:.5rem">
+            <div class="card-title">👷 استيراد المشغلين</div>
+          </div>
+          <div style="padding:0 1.25rem 1.25rem;color:var(--muted);font-size:.85rem">
+            ارفع ملف CSV أو Excel لاستيراد مشغلي المعدات دفعة واحدة بأمان
+          </div>
+          <div style="padding:0 1.25rem 1.25rem">
+            <a href="/import/template/operators" class="btn btn-outline btn-sm" download>
+              ⬇️ تحميل قالب CSV
+            </a>
+          </div>
+        </div>
       </div>
 
       <!-- Upload Card -->
@@ -10381,6 +10422,7 @@ async function renderImportSection() {
                 <option value="cars">🚙 مركبات</option>
                 <option value="permissions">🔗 صلاحيات</option>
                 <option value="maintenance">🔧 صيانة دورية</option>
+                <option value="operators">👷 مشغلو المعدات</option>
               </select>
             </div>
             <div class="form-group" style="margin:0">
@@ -10421,6 +10463,8 @@ async function doImportPreview() {
     ? `/import/permissions/preview`
     : importType === 'maintenance'
     ? `/import/maintenance/preview`
+    : importType === 'operators'
+    ? `/import/operators/preview`
     : `/import/preview?import_type=${importType}`;
   try {
     const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
@@ -10544,6 +10588,8 @@ async function doImportConfirm() {
     ? `/import/permissions/confirm?skip_errors=${skipErrors}`
     : importType === 'maintenance'
     ? `/import/maintenance/confirm?skip_errors=${skipErrors}`
+    : importType === 'operators'
+    ? `/import/operators/confirm?skip_errors=${skipErrors}`
     : `/import/confirm?import_type=${importType}&skip_errors=${skipErrors}`;
   try {
     const res = await fetch(url, { method:'POST', headers:{ Authorization:`Bearer ${token}` }, body: fd });
@@ -13171,91 +13217,56 @@ async function renderEquipmentOperators() {
   const el = document.getElementById('pageContent');
   el.innerHTML = `
     <!-- Header -->
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem">
       <div>
-        <h2 style="margin:0;font-size:1.6rem;font-weight:900;color:#0f172a">مشغلو المعدات</h2>
-        <p style="margin:.25rem 0 0;font-size:.88rem;color:#64748b">إدارة بيانات المشغلين وتاريخ الورديات</p>
+        <h2 style="margin:0;font-size:1.35rem;font-weight:900;color:#0f172a">👷 مشغلو المعدات</h2>
+        <p style="margin:.2rem 0 0;font-size:.82rem;color:#64748b">إدارة بيانات المشغلين وتاريخ الورديات</p>
       </div>
-      ${!isReporter()?`<button class="btn btn-primary" onclick="openOpForm()" style="display:flex;align-items:center;gap:.5rem;padding:.6rem 1.25rem;font-weight:700">
-        <span style="font-size:1.1rem">+</span> إضافة مشغل
+      ${!isReporter()?`<button class="btn btn-primary btn-sm" onclick="openOpForm()" style="display:flex;align-items:center;gap:.4rem">
+        <span>+</span> إضافة مشغل
       </button>`:''}
     </div>
 
-    <!-- فلاتر -->
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap">
-      <div style="flex:1;min-width:180px">
-        <div style="font-size:.75rem;font-weight:700;color:#64748b;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">
-          <span>🔍</span> الاسم أو الرقم...
-        </div>
-        <div style="position:relative">
-          <input type="text" id="opSearch" placeholder="الاسم أو الرقم..." autocomplete="off"
-            style="width:100%;padding:.6rem .9rem .6rem 2.5rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;box-sizing:border-box"
-            oninput="clearTimeout(window._opDeb);window._opDeb=setTimeout(()=>typeof loadOperators==='function'&&loadOperators(),300)"
-            onfocus="this.style.borderColor='#1a2942';this.style.background='#fff'"
-            onblur="this.style.borderColor='#e2e8f0';this.style.background='#f8fafc'">
-          <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🔍</span>
-        </div>
-      </div>
-      <div style="min-width:220px">
-        <div style="font-size:.75rem;font-weight:700;color:#64748b;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">
-          <span>🏢</span> الفرع
-        </div>
-        <div style="position:relative">
-          <select id="opBranch" autocomplete="off" onchange="typeof loadOperators==='function'&&loadOperators()"
-            style="width:100%;padding:.6rem 2.5rem .6rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;appearance:none;cursor:pointer">
-            <option value="">كل الفروع</option>
-          </select>
-          <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🏢</span>
-        </div>
-      </div>
-      <div style="min-width:160px">
-        <div style="font-size:.75rem;font-weight:700;color:#64748b;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">
-          <span>⚙️</span> الحالة
-        </div>
-        <div style="position:relative">
-          <select id="opStatus" onchange="typeof loadOperators==='function'&&loadOperators()"
-            style="width:100%;padding:.6rem 2.5rem .6rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;appearance:none;cursor:pointer">
-            <option value="">الكل</option>
-            <option value="active">نشط</option>
-            <option value="inactive">غير نشط</option>
-          </select>
-          <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">⚙️</span>
-        </div>
-      </div>
-      <div style="display:flex;gap:.5rem">
-        <button onclick="document.getElementById('opSearch').value='';document.getElementById('opBranch').value='';document.getElementById('opStatus').value='';loadOperators()"
-          style="padding:.6rem 1rem;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:.85rem;color:#64748b;display:flex;align-items:center;gap:.35rem">
-          <span>✕</span> مسح
-        </button>
-      </div>
+    <!-- إحصائيات — فوق الفلاتر -->
+    <div id="opStats" class="stats-row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card"><div class="stat-icon">👷</div><div class="stat-value" id="opStatTotal">—</div><div class="stat-label">إجمالي المشغلين</div></div>
+      <div class="stat-card" style="--ds-stat-color:#16a34a"><div class="stat-icon">🟢</div><div class="stat-value" id="opStatActive">—</div><div class="stat-label">نشط</div></div>
+      <div class="stat-card" style="--ds-stat-color:#7c3aed"><div class="stat-icon">⚙️</div><div class="stat-value" id="opStatWithEq">—</div><div class="stat-label">مع معدة مخصصة</div></div>
     </div>
 
-    <!-- إحصائيات -->
-    <div id="opStats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.25rem"></div>
-
-    <!-- جدول -->
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">
-      <div style="padding:1rem 1.25rem;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:.95rem;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:.5rem">
-          <span>👷</span> قائمة المشغلين
-        </div>
-        <div id="opCount" style="font-size:.8rem;color:#64748b"></div>
+    <!-- فلاتر real-time -->
+    <div class="card" style="overflow:visible">
+      <div class="srch-bar">
+        <input type="text" id="opSearch" placeholder="🔍 الاسم أو الرقم..." autocomplete="off" style="flex:2;min-width:180px"
+          oninput="clearTimeout(window._opDeb);window._opDeb=setTimeout(()=>typeof loadOperators==='function'&&loadOperators(),300)">
+        <select id="opBranch" onchange="typeof loadOperators==='function'&&loadOperators()" style="min-width:160px">
+          <option value="">كل الفروع</option>
+        </select>
+        <select id="opStatus" onchange="typeof loadOperators==='function'&&loadOperators()" style="min-width:130px">
+          <option value="">الكل</option>
+          <option value="active">🟢 نشط</option>
+          <option value="inactive">⭕ غير نشط</option>
+        </select>
+        <span class="srch-count" id="opCount"></span>
+        <button class="srch-reset" onclick="document.getElementById('opSearch').value='';document.getElementById('opBranch').value='';document.getElementById('opStatus').value='';loadOperators()">✕ مسح</button>
       </div>
+
+      <!-- جدول -->
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:.88rem">
           <thead>
-            <tr style="background:#f8fafc">
-              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem;white-space:nowrap">#</th>
-              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">الاسم</th>
-              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">رقم الهاتف</th>
-              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">الفرع</th>
-              <th style="padding:.75rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.78rem">الوردية الحالية</th>
-              <th style="padding:.75rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.78rem">الحالة</th>
-              ${!isReporter()?'<th style="padding:.75rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.78rem">إجراءات</th>':''}
+            <tr style="background:var(--tbl-th-bg)">
+              <th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">#</th>
+              <th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الاسم</th>
+              <th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">رقم الهاتف</th>
+              <th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الفرع</th>
+              <th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الوردية الحالية</th>
+              <th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الحالة</th>
+              ${!isReporter()?'<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">إجراءات</th>':''}
             </tr>
           </thead>
           <tbody id="opTableBody">
-            <tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8">اضغط عرض لتحميل البيانات</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr>
           </tbody>
         </table>
       </div>
@@ -13302,44 +13313,17 @@ async function loadOperators(){
 
     // إحصائيات بالستايل الجديد
     const activeC   = _operatorsData.filter(o=>o.status==='active').length;
-    const inactiveC = _operatorsData.filter(o=>o.status!=='active').length;
     const withShiftC = _operatorsData.filter(o=>o.current_equipment_name).length;
 
-    const statsEl = document.getElementById('opStats');
-    if(statsEl) statsEl.innerHTML = `
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:.8rem;color:#64748b;margin-bottom:.3rem">إجمالي المشغلين</div>
-          <div style="font-size:1.8rem;font-weight:900;color:#0f172a">${_operatorsData.length}</div>
-          <div style="font-size:.75rem;color:#94a3b8">مشغل مسجّل</div>
-        </div>
-        <div style="width:52px;height:52px;border-radius:50%;background:#f1f0ff;display:flex;align-items:center;justify-content:center;font-size:1.5rem">👥</div>
-      </div>
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:.8rem;color:#64748b;margin-bottom:.3rem">نشط</div>
-          <div style="font-size:1.8rem;font-weight:900;color:#16a34a">${activeC}</div>
-          <div style="font-size:.75rem;color:#94a3b8">مشغل</div>
-        </div>
-        <div style="width:52px;height:52px;border-radius:50%;background:#f0fdf4;display:flex;align-items:center;justify-content:center">
-          <div style="width:28px;height:28px;border-radius:50%;background:#16a34a;display:flex;align-items:center;justify-content:center">
-            <div style="width:10px;height:10px;border-radius:50%;background:#fff"></div>
-          </div>
-        </div>
-      </div>
-      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1.25rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer"
-           onclick="navigateTo('shifts-table')">
-        <div>
-          <div style="font-size:.8rem;color:#64748b;margin-bottom:.3rem">مع معدة مخصصة</div>
-          <div style="font-size:1.8rem;font-weight:900;color:#2563eb">${withShiftC}</div>
-          <div style="font-size:.75rem;color:#94a3b8">↗ عرض ورديات</div>
-        </div>
-        <div style="width:52px;height:52px;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;font-size:1.4rem">⚙️</div>
-      </div>
-    `;
+    const elTotal   = document.getElementById('opStatTotal');
+    const elActive  = document.getElementById('opStatActive');
+    const elWithEq  = document.getElementById('opStatWithEq');
+    if(elTotal)  elTotal.textContent  = _operatorsData.length;
+    if(elActive) elActive.textContent = activeC;
+    if(elWithEq) elWithEq.textContent = withShiftC;
 
     const countEl = document.getElementById('opCount');
-    if(countEl) countEl.textContent = `${_operatorsData.length} مشغل`;
+    if(countEl) countEl.textContent = `${_operatorsData.length} / ${_operatorsData.length} مشغل`;
 
     if(!_operatorsData.length){
       tbody.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:3rem;color:#94a3b8">لا يوجد مشغلون مطابقون</td></tr>`;
@@ -15120,51 +15104,61 @@ async function renderShiftsTable() {
   const el = document.getElementById('pageContent');
   if (!el) return;
   el.innerHTML =
-    '<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem">' +
-      '<div><h2 style="margin:0;font-size:1.6rem;font-weight:900;color:#0f172a">\u062C\u062F\u0648\u0644 \u0627\u0644\u0648\u0631\u062F\u064A\u0627\u062A</h2>' +
-      '<p style="margin:.25rem 0 0;font-size:.88rem;color:#64748b">\u0633\u062C\u0644 \u0643\u0627\u0645\u0644 \u0644\u062C\u0645\u064A\u0639 \u0648\u0631\u062F\u064A\u0627\u062A \u0627\u0644\u062A\u0634\u063A\u064A\u0644</p></div>' +
-      '<div style="display:flex;gap:.6rem">' +
-        '<button class="btn btn-primary" onclick="exportShiftsCSV()" style="display:flex;align-items:center;gap:.4rem;padding:.6rem 1.1rem;font-weight:700">\uD83D\uDCE5 \u062A\u0635\u062F\u064A\u0631 CSV</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="loadShiftsData()" style="display:flex;align-items:center;gap:.4rem;padding:.6rem 1rem">\uD83D\uDD04 \u062A\u062D\u062F\u064A\u062B</button>' +
+    /* ── Page Header ── */
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">' +
+      '<div>' +
+        '<h2 style="margin:0;font-size:1.35rem;font-weight:900;color:#0f172a">📋 جدول الورديات</h2>' +
+        '<p style="margin:.2rem 0 0;font-size:.82rem;color:#64748b">سجل كامل لجميع ورديات التشغيل</p>' +
       '</div>' +
-    '</div>' +
-    '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1rem 1.25rem;margin-bottom:1.25rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">' +
-      '<div style="flex:1;min-width:150px"><div style="font-size:.73rem;font-weight:700;color:#64748b;margin-bottom:.3rem">\uD83D\uDD0D \u0628\u062D\u062B</div>' +
-        '<input type="text" id="sfSearch" placeholder="\u0627\u0644\u0645\u0634\u063A\u0644 / \u0627\u0644\u0645\u0639\u062F\u0629 / \u0627\u0644\u0645\u0634\u0631\u0648\u0639..." style="width:100%;padding:.55rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.86rem;outline:none;box-sizing:border-box" onfocus="this.style.borderColor=\'#6366f1\'" onblur="this.style.borderColor=\'#e2e8f0\'"></div>' +
-      '<div style="min-width:130px"><div style="font-size:.73rem;font-weight:700;color:#64748b;margin-bottom:.3rem">\u2699\uFE0F \u0627\u0644\u062D\u0627\u0644\u0629</div>' +
-        '<select id="sfStatus" style="width:100%;padding:.55rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.86rem;outline:none;background:#fff"><option value="">\u0627\u0644\u0643\u0644</option><option value="active">\u0646\u0634\u0637\u0629</option><option value="ended">\u0645\u0646\u062A\u0647\u064A\u0629</option></select></div>' +
-      '<div style="min-width:150px"><div style="font-size:.73rem;font-weight:700;color:#64748b;margin-bottom:.3rem">\uD83D\uDCC5 \u0645\u0646 \u062A\u0627\u0631\u064A\u062E</div><input type="date" id="sfFrom" style="width:100%;padding:.55rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.86rem;outline:none"></div>' +
-      '<div style="min-width:150px"><div style="font-size:.73rem;font-weight:700;color:#64748b;margin-bottom:.3rem">\uD83D\uDCC5 \u0625\u0644\u0649 \u062A\u0627\u0631\u064A\u062E</div><input type="date" id="sfTo" style="width:100%;padding:.55rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.86rem;outline:none"></div>' +
       '<div style="display:flex;gap:.5rem">' +
-        '<button class="btn btn-primary" onclick="_shiftsPage=1;loadShiftsData()" style="padding:.55rem 1.1rem;font-weight:700;display:flex;align-items:center;gap:.4rem">\uD83D\uDD0D \u0639\u0631\u0636</button>' +
-        '<button onclick="_resetShiftFilters()" style="padding:.55rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:.84rem;color:#64748b">\u2715 \u0645\u0633\u062D</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="exportShiftsCSV()" style="display:flex;align-items:center;gap:.4rem">📥 تصدير CSV</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="loadShiftsData()" style="display:flex;align-items:center;gap:.4rem">🔄 تحديث</button>' +
       '</div>' +
     '</div>' +
-    '<div id="sfStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.85rem;margin-bottom:1.25rem"></div>' +
-    '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">' +
-      '<div style="padding:.9rem 1.25rem;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between">' +
-        '<div style="font-size:.93rem;font-weight:800;color:#0f172a">\u23F1\uFE0F \u0633\u062C\u0644 \u0627\u0644\u0648\u0631\u062F\u064A\u0627\u062A</div>' +
-        '<div id="sfCount" style="font-size:.8rem;color:#64748b"></div>' +
+
+    /* ── Stat Cards (on top) ── */
+    '<div id="sfStats" class="stats-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:1rem">' +
+      '<div class="stat-card" style="--ds-stat-color:#1a2942"><div class="stat-icon">📋</div><div class="stat-value" id="sfStatTotal">—</div><div class="stat-label">إجمالي النتائج</div></div>' +
+      '<div class="stat-card" style="--ds-stat-color:#16a34a"><div class="stat-icon">🟢</div><div class="stat-value" id="sfStatActive">—</div><div class="stat-label">نشطة الآن</div></div>' +
+      '<div class="stat-card" style="--ds-stat-color:#475569"><div class="stat-icon">⏹️</div><div class="stat-value" id="sfStatEnded">—</div><div class="stat-label">منتهية</div></div>' +
+      '<div class="stat-card" style="--ds-stat-color:#2563eb"><div class="stat-icon">⏱️</div><div class="stat-value" id="sfStatHours">—</div><div class="stat-label">ساعات التشغيل</div></div>' +
+    '</div>' +
+
+    /* ── Filters (real-time, no عرض button) ── */
+    '<div class="card">' +
+      '<div class="srch-bar">' +
+        '<input type="text" id="sfSearch" placeholder="🔍 المشغل / المعدة / المشروع..." style="flex:2;min-width:200px"' +
+        ' oninput="clearTimeout(window._sfDeb);window._sfDeb=setTimeout(()=>{_shiftsPage=1;loadShiftsData();},320)">' +
+        '<select id="sfStatus" onchange="_shiftsPage=1;loadShiftsData()" style="min-width:120px">' +
+          '<option value="">الكل</option><option value="active">🟢 نشطة</option><option value="ended">⏹ منتهية</option>' +
+        '</select>' +
+        '<input type="date" id="sfFrom" onchange="_shiftsPage=1;loadShiftsData()" style="min-width:140px">' +
+        '<input type="date" id="sfTo"   onchange="_shiftsPage=1;loadShiftsData()" style="min-width:140px">' +
+        '<span class="srch-count" id="sfCount"></span>' +
+        '<button class="srch-reset" onclick="_resetShiftFilters()">✕ مسح</button>' +
       '</div>' +
+
+      /* ── Table ── */
       '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">' +
-        '<thead><tr style="background:#f8fafc">' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">#</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u0645\u0634\u063A\u0644</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u0645\u0639\u062F\u0629</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u0646\u0648\u0639</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u0628\u062F\u0627\u064A\u0629</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u0646\u0647\u0627\u064A\u0629</th>' +
-          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">\u0645\u062F\u0629 (\u0633\u0627\u0639\u0629)</th>' +
-          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">\u0648\u0642\u0648\u062F (\u0644)</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u0641\u0631\u0639</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0645\u0648\u0642\u0639 \u0627\u0644\u0628\u062F\u0627\u064A\u0629</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:#475569;font-size:.76rem">\u0645\u0648\u0642\u0639 \u0627\u0644\u0646\u0647\u0627\u064A\u0629</th>' +
-          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#475569;font-size:.76rem">\u0627\u0644\u062D\u0627\u0644\u0629</th>' +
+        '<thead><tr style="background:var(--tbl-th-bg)">' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">#</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المشغل</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المعدة</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">النوع</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">البداية</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">النهاية</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">مدة (ساعة)</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">وقود (ل)</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الفرع</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">موقع البداية</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">موقع النهاية</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الحالة</th>' +
         '</tr></thead>' +
-        '<tbody id="sfTableBody"><tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">\u0627\u0636\u063A\u0637 \u0639\u0631\u0636 \u0644\u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A</td></tr></tbody>' +
+        '<tbody id="sfTableBody"><tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
       '</table></div>' +
       '<div id="sfPagination" style="padding:.75rem 1.25rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem"></div>' +
     '</div>';
+
   await loadShiftsData();
 }
 
@@ -15190,19 +15184,21 @@ async function loadShiftsData(){
     const data=await apiCall(url);
     _shiftsData=data.shifts||[];
     _shiftsTotal=data.total||_shiftsData.length;
-    const statsEl=document.getElementById('sfStats');
-    if(statsEl){
-      const ac=_shiftsData.filter(s=>s.status==='active').length;
-      const ec=_shiftsData.filter(s=>s.status==='ended').length;
-      const th=_shiftsData.reduce((s,r)=>r.working_hours>0?s+r.working_hours:s,0);
-      statsEl.innerHTML=
-        _sfStat('\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0646\u062A\u0627\u0626\u062C',_shiftsTotal,'\u0648\u0631\u062F\u064A\u0629','\uD83D\uDCCB')+
-        _sfStat('\u0646\u0634\u0637\u0629 \u0627\u0644\u0622\u0646',ac,'\u0648\u0631\u062F\u064A\u0629','\uD83D\uDFE2','#dcfce7','#16a34a')+
-        _sfStat('\u0645\u0646\u062A\u0647\u064A\u0629',ec,'\u0648\u0631\u062F\u064A\u0629','\u23F9\uFE0F','#f1f5f9','#475569')+
-        _sfStat('\u0633\u0627\u0639\u0627\u062A \u0627\u0644\u062A\u0634\u063A\u064A\u0644',th.toFixed(1),'\u0633\u0627\u0639\u0629','\u23F1\uFE0F','#eff6ff','#2563eb');
-    }
+    /* ── تحديث الكروت الإحصائية ── */
+    const ac=_shiftsData.filter(s=>s.status==='active').length;
+    const ec=_shiftsData.filter(s=>s.status==='ended').length;
+    const th=_shiftsData.reduce((s,r)=>r.working_hours>0?s+r.working_hours:s,0);
+    const elTotal  = document.getElementById('sfStatTotal');
+    const elActive = document.getElementById('sfStatActive');
+    const elEnded  = document.getElementById('sfStatEnded');
+    const elHours  = document.getElementById('sfStatHours');
+    if(elTotal)  elTotal.textContent  = _shiftsTotal;
+    if(elActive) elActive.textContent = ac;
+    if(elEnded)  elEnded.textContent  = ec;
+    if(elHours)  elHours.textContent  = th.toFixed(1);
+    /* ── counter ── */
     const countEl=document.getElementById('sfCount');
-    if(countEl)countEl.textContent=_shiftsTotal+' \u0648\u0631\u062F\u064A\u0629';
+    if(countEl)countEl.textContent=_shiftsTotal+' وردية';
     if(!_shiftsData.length){
       if(tbody)tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">\u0644\u0627 \u062A\u0648\u062C\u062F \u0628\u064A\u0627\u0646\u0627\u062A</td></tr>';
       if(document.getElementById('sfPagination'))document.getElementById('sfPagination').innerHTML='';
@@ -15326,14 +15322,21 @@ function gesSetType(type) {
 async function gesUpdateStats() { /* no-op: switcher bar removed */ }
 
 // Hook into switchSection — no visual switcher, just keep internal state
-const _origSwitchSection = switchSection;
-switchSection = async function(id) {
-  await _origSwitchSection(id);
-  // sync _reqUserType when entering requests (internal only)
-  if (id === 'requests' && typeof _reqSetType === 'function') {
-    window._reqUserType = 'driver'; // reset to show all unified
-  }
-};
+(function() {
+  var _origSwitchSection = switchSection;
+  switchSection = function(id) {
+    var result = _origSwitchSection(id);
+    // sync _reqUserType when entering requests (internal only)
+    if (id === 'requests' && typeof _reqSetType === 'function') {
+      if (result && typeof result.then === 'function') {
+        result.then(function() { window._reqUserType = 'driver'; });
+      } else {
+        window._reqUserType = 'driver';
+      }
+    }
+    return result;
+  };
+})();
 
 
 // Trips unified view — type is internal only, no tab buttons
@@ -15501,25 +15504,27 @@ function _gesSetTripsType(type) {
    ═══════════════════════════════════════════════════════════ */
 
 /* ─── Universal Debounce ─── */
-window.dsDebounce = function(fn, delay = 280) {
-  let timer;
-  return function(...args) {
+window.dsDebounce = function(fn, delay) {
+  delay = delay || 280;
+  var timer;
+  return function() {
+    var args = arguments;
     clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), delay);
+    timer = setTimeout(function() { fn.apply(this, args); }, delay);
   };
 };
 
-/* ─── KPI: add debounced oninput to branch filter ─── */
+/* ─── KPI: debounced oninput ─── */
 document.addEventListener('input', function(e) {
   if (e.target.id === 'kpiBranch' || e.target.id === 'kpiMonth') {
     clearTimeout(window._kpiDebounce);
-    window._kpiDebounce = setTimeout(() => {
+    window._kpiDebounce = setTimeout(function() {
       if (typeof loadKpiData === 'function') loadKpiData();
     }, 320);
   }
   if (e.target.id === 'rentalBranch' || e.target.id === 'rentalSource') {
     clearTimeout(window._rentalDebounce);
-    window._rentalDebounce = setTimeout(() => {
+    window._rentalDebounce = setTimeout(function() {
       if (typeof loadRentalData === 'function') loadRentalData();
     }, 320);
   }
@@ -15540,89 +15545,53 @@ document.addEventListener('change', function(e) {
   }
 });
 
-/* ─── Equipment list: auto-load on section render ─── */
-// Override renderEquipmentSection to always load data
-const _origRenderEq = window.renderEquipmentSection;
-if (typeof _origRenderEq === 'function') {
-  window.renderEquipmentSection = async function() {
-    await _origRenderEq();
-    // auto-load if button exists
-    const btn = document.querySelector('[onclick="loadEquipmentData()"]');
-    if (btn && typeof loadEquipmentData === 'function') loadEquipmentData();
-  };
-}
-
-/* ─── Global: remove any standalone "عرض" button that's just a load trigger ─── */
-// We patch renderDriverKpiSection and renderRentalEquipment to remove the button post-render
-const _patchRender = (fnName, btnSelector) => {
-  const orig = window[fnName];
-  if (typeof orig !== 'function') return;
-  window[fnName] = async function() {
-    await orig.apply(this, arguments);
-    document.querySelectorAll(btnSelector).forEach(btn => {
-      // Only remove the "عرض" load button, not export or other buttons
-      if (btn.textContent.trim() === '🔍 عرض') btn.remove();
-    });
-  };
-};
-// These are patched just in case the remove above missed edge cases
-_patchRender('renderDriverKpiSection', '.btn-primary');
-_patchRender('renderRentalEquipment', '.btn-primary');
-
-/* ─── Page Content: ensure gap between sections ─── */
-const _origRenderSection = window.renderSection;
-if (typeof _origRenderSection === 'function') {
-  window.renderSection = async function(id) {
-    await _origRenderSection.apply(this, arguments);
-    // ensure page-content has proper flex-column gap
-    const pc = document.getElementById('pageContent');
-    if (pc) {
-      pc.style.display = 'flex';
-      pc.style.flexDirection = 'column';
-      pc.style.gap = '1.1rem';
-    }
-  };
-}
-
-/* ─── Legacy .filters-bar "عرض" button removal ─── */
-// Remove any old "عرض" submit buttons inside filter bars after page render
-const _removeShowBtns = () => {
-  document.querySelectorAll('.filters-bar button, .srch-bar button').forEach(btn => {
-    const t = btn.textContent.trim();
-    if (t === '🔍 عرض' || t === 'عرض' || t === '🔍عرض') {
-      btn.remove();
-    }
+/* ─── Remove leftover "عرض" buttons after render ─── */
+function _removeShowBtns() {
+  document.querySelectorAll('.filters-bar button, .srch-bar button').forEach(function(btn) {
+    var t = btn.textContent.trim();
+    if (t === '🔍 عرض' || t === 'عرض' || t === '🔍عرض') btn.remove();
   });
-};
-
-// Apply after any section switch
-const _patchSwitchSection = window.switchSection;
-if (typeof _patchSwitchSection === 'function') {
-  window.switchSection = async function(id) {
-    await _patchSwitchSection.apply(this, arguments);
-    setTimeout(_removeShowBtns, 300);
-  };
 }
 
-/* ─── Auto scroll to top on section switch ─── */
-const _patchSwitch2 = window.switchSection;
-if (typeof _patchSwitch2 === 'function') {
-  const _inner = _patchSwitch2;
-  window.switchSection = async function(id) {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    return _inner.apply(this, arguments);
-  };
-}
-
-/* ─── Stat card auto color based on value context ─── */
-// Make stat-icon containers use round backgrounds
-document.addEventListener('click', () => {
-  document.querySelectorAll('.stat-card .stat-icon').forEach(icon => {
+/* ─── Stat card icon styling ─── */
+document.addEventListener('click', function() {
+  document.querySelectorAll('.stat-card .stat-icon').forEach(function(icon) {
     if (!icon.style.background) {
       icon.style.cssText += 'background:rgba(6,182,212,.08);border-radius:10px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;';
     }
   });
 }, { passive: true });
+
+/* ─── Page content flex gap ─── */
+function _ensurePageGap() {
+  var pc = document.getElementById('pageContent');
+  if (pc) {
+    pc.style.display = 'flex';
+    pc.style.flexDirection = 'column';
+    pc.style.gap = '1.1rem';
+  }
+}
+
+/* ─── Safe switchSection wrapper — runs AFTER all scripts loaded ─── */
+window.addEventListener('load', function() {
+  var _orig = window.switchSection;
+  if (typeof _orig !== 'function') return;
+  window.switchSection = function(id) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    var result = _orig.call(this, id);
+    // result may be a Promise (original is async)
+    if (result && typeof result.then === 'function') {
+      result.then(function() {
+        _ensurePageGap();
+        setTimeout(_removeShowBtns, 350);
+      });
+    } else {
+      _ensurePageGap();
+      setTimeout(_removeShowBtns, 350);
+    }
+    return result;
+  };
+});
 
 console.log('✅ FleetSync Design System v3 — Runtime loaded');
 </script>
