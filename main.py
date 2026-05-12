@@ -7117,6 +7117,35 @@ async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
     return {"message": "انتهت الوردية"}
 
 
+@app.put("/shifts/{sid}/hours")
+async def edit_shift_hours(sid: int, body: dict, cu: dict = Depends(require_admin)):
+    """تعديل ساعات عداد بداية/نهاية الوردية — أدمن / سوبر يوزر فقط."""
+    start_hours = body.get("start_hours")
+    end_hours   = body.get("end_hours")
+    if start_hours is None:
+        raise HTTPException(400, "ساعات البداية مطلوبة")
+    start_hours = float(start_hours)
+    if start_hours < 0:
+        raise HTTPException(400, "ساعات البداية يجب أن تكون موجبة")
+    if end_hours is not None:
+        end_hours = float(end_hours)
+        if end_hours > 0 and end_hours <= start_hours:
+            raise HTTPException(400, "ساعات النهاية يجب أن تكون أكبر من البداية")
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        row = conn.execute("SELECT id, start_hours, end_hours, status FROM operator_shifts WHERE id=?", (sid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "الوردية غير موجودة")
+        eff_end = end_hours if end_hours is not None else row["end_hours"]
+        conn.execute(
+            "UPDATE operator_shifts SET start_hours=?, end_hours=? WHERE id=?",
+            (start_hours, eff_end, sid)
+        )
+        log_event("shift_hours_edited", admin=cu["username"], shift_id=sid,
+                  start_hours=start_hours, end_hours=eff_end)
+    return {"ok": True, "shift_id": sid, "start_hours": start_hours, "end_hours": eff_end}
+
+
 @app.get("/shifts/active")
 async def all_active_shifts(cu: dict = Depends(require_admin_or_reporter)):
     """كل الورديات النشطة الآن"""
