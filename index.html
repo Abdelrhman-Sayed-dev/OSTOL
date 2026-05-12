@@ -7630,7 +7630,16 @@ function openWsModal(type) {
     <div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label>
       <input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>`;
   else if(type==='oil') specific=`
-    <div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label>
+    <div class="form-group"><label>نوع الزيت <span class="req">*</span></label>
+      <select id="wOilType" onchange="document.getElementById('wOilUnit').textContent=this.value==='oil_grease'?'كجم':'لتر'" style="font-size:.88rem">
+        <option value="">-- اختر نوع الزيت --</option>
+        <option value="oil_motor">🔴 زيت المحرك</option>
+        <option value="oil_gear">🟠 زيت التروس</option>
+        <option value="oil_brake">🟡 زيت الفرامل</option>
+        <option value="oil_hydro">🔵 زيت الهيدروليك</option>
+        <option value="oil_grease">⚫ شحم</option>
+      </select></div>
+    <div class="form-group"><label>الكمية (<span id="wOilUnit">لتر</span>) <span class="req">*</span></label>
       <input type="number" id="wQty" placeholder="4" min="0.1" step="0.1"></div>`;
   else if(type==='tire') specific=`
     <div class="form-group"><label>عدد الإطارات <span class="req">*</span></label>
@@ -7714,7 +7723,19 @@ function openWsModal(type) {
       price, notes, vehicle_id:_finalVehicleId, odometer_reading, location:''
     };
 
-    if(selWsType.startsWith('fuel_')||['oil','tire'].includes(selWsType)){
+    // زيت: تحويل النوع للسبتروك المحدد
+    if(selWsType==='oil'){
+      const oilType=document.getElementById('wOilType')?.value;
+      if(!oilType) return showNotification('اختر نوع الزيت','خطأ');
+      const qty=parseFloat(document.getElementById('wQty')?.value)||0;
+      if(!qty||qty<=0) return showNotification('أدخل الكمية','error');
+      payload.type=oilType;
+      payload.quantity=qty;
+      const prices=window._typePrices||{};
+      const unitPrice=prices[oilType]||prices['oil']||0;
+      payload.price=unitPrice*qty;
+    }
+    if(selWsType.startsWith('fuel_')||selWsType==='tire'){
       const qty=parseFloat(document.getElementById('wQty')?.value);
       if(!qty||qty<=0) return showNotification('أدخل الكمية','error');
       payload.quantity=qty;
@@ -15121,6 +15142,7 @@ let _shiftsData = [], _shiftsPage = 1, _shiftsPageSize = 20, _shiftsTotal = 0;
 async function renderShiftsTable() {
   const el = document.getElementById('pageContent');
   if (!el) return;
+  const isSuperOrAdmin = ['superuser','admin'].includes(currentUser?.role);
   el.innerHTML =
     /* ── Page Header ── */
     '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">' +
@@ -15165,14 +15187,17 @@ async function renderShiftsTable() {
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">النوع</th>' +
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">البداية</th>' +
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">النهاية</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">عداد البداية</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">عداد النهاية</th>' +
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">مدة (ساعة)</th>' +
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">وقود (ل)</th>' +
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الفرع</th>' +
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">موقع البداية</th>' +
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">موقع النهاية</th>' +
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الحالة</th>' +
+          (isSuperOrAdmin ? '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">تعديل</th>' : '') +
         '</tr></thead>' +
-        '<tbody id="sfTableBody"><tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
+        '<tbody id="sfTableBody"><tr><td colspan="14" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
       '</table></div>' +
       '<div id="sfPagination" style="padding:.75rem 1.25rem;border-top:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem"></div>' +
     '</div>';
@@ -15186,8 +15211,9 @@ function _resetShiftFilters(){
 }
 
 async function loadShiftsData(){
+  const isSuperOrAdmin = ['superuser','admin'].includes(currentUser?.role);
   const tbody=document.getElementById('sfTableBody');
-  if(tbody)tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">\u23F3 \u062C\u0627\u0631\u064A \u0627\u0644\u062A\u062D\u0645\u064A\u0644...</td></tr>';
+  if(tbody)tbody.innerHTML='<tr><td colspan="14" style="text-align:center;padding:3rem;color:#94a3b8">\u23F3 \u062C\u0627\u0631\u064A \u0627\u0644\u062A\u062D\u0645\u064A\u0644...</td></tr>';
   const search=document.getElementById('sfSearch')?.value||'';
   const status=document.getElementById('sfStatus')?.value||'';
   const from=document.getElementById('sfFrom')?.value||'';
@@ -15218,7 +15244,7 @@ async function loadShiftsData(){
     const countEl=document.getElementById('sfCount');
     if(countEl)countEl.textContent=_shiftsTotal+' وردية';
     if(!_shiftsData.length){
-      if(tbody)tbody.innerHTML='<tr><td colspan="12" style="text-align:center;padding:3rem;color:#94a3b8">\u0644\u0627 \u062A\u0648\u062C\u062F \u0628\u064A\u0627\u0646\u0627\u062A</td></tr>';
+      if(tbody)tbody.innerHTML='<tr><td colspan="14" style="text-align:center;padding:3rem;color:#94a3b8">\u0644\u0627 \u062A\u0648\u062C\u062F \u0628\u064A\u0627\u0646\u0627\u062A</td></tr>';
       if(document.getElementById('sfPagination'))document.getElementById('sfPagination').innerHTML='';
       return;
     }
@@ -15235,16 +15261,20 @@ async function loadShiftsData(){
         '</td><td style="padding:.7rem 1rem">'+(tl[s.shift_type]||s.shift_type||'\u2014')+
         '</td><td style="padding:.7rem 1rem;white-space:nowrap;font-size:.83rem">'+sT+
         '</td><td style="padding:.7rem 1rem;white-space:nowrap;font-size:.83rem">'+eT+
+        '</td><td style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#0369a1">'+(s.start_hours>0?s.start_hours.toFixed(1):'\u2014')+
+        '</td><td style="padding:.7rem 1rem;text-align:center;font-weight:700;color:#dc2626">'+(s.end_hours>0?s.end_hours.toFixed(1):'\u2014')+
         '</td><td style="padding:.7rem 1rem;text-align:center;font-weight:700;color:'+(wh!=='\u2014'?'#0f172a':'#94a3b8')+'">'+wh+
         '</td><td style="padding:.7rem 1rem;text-align:center">'+(s.fuel_liters>0?s.fuel_liters:'\u2014')+
         '</td><td style="padding:.7rem 1rem;font-size:.82rem;color:#475569">'+(s.branch||s.operator_branch||'\u2014')+
         '</td><td style="padding:.7rem 1rem;font-size:.78rem">'+(s.start_location?'<a href="https://maps.google.com/?q='+s.start_location+'" target="_blank" style="color:#2563eb;text-decoration:none">\uD83D\uDCCD '+s.start_location+'</a>':'\u2014')+
         '</td><td style="padding:.7rem 1rem;font-size:.78rem">'+(s.end_location?'<a href="https://maps.google.com/?q='+s.end_location+'" target="_blank" style="color:#dc2626;text-decoration:none">\uD83D\uDCCD '+s.end_location+'</a>':'\u2014')+
-        '</td><td style="padding:.7rem 1rem;text-align:center">'+st+'</td></tr>';
+        '</td><td style="padding:.7rem 1rem;text-align:center">'+st+'</td>'+
+        (isSuperOrAdmin ? '<td style="padding:.7rem 1rem;text-align:center"><button onclick="openShiftHoursEdit('+s.id+','+s.start_hours+','+(s.end_hours||0)+')" style="padding:.3rem .6rem;font-size:.75rem;border:1.5px solid #6366f1;border-radius:7px;background:#f5f3ff;color:#6366f1;cursor:pointer;font-family:inherit;font-weight:700">\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644</button></td>' : '')+
+        '</tr>';
     }).join('');
     _renderShiftPagination();
   }catch(e){
-    if(tbody)tbody.innerHTML='<tr><td colspan="12" style="text-align:center;color:#ef4444;padding:3rem">&#x274C; '+e.message+'</td></tr>';
+    if(tbody)tbody.innerHTML='<tr><td colspan="14" style="text-align:center;color:#ef4444;padding:3rem">&#x274C; '+e.message+'</td></tr>';
   }
 }
 
@@ -15273,6 +15303,36 @@ function _sfChangePage(p){
   const tp=Math.ceil(_shiftsTotal/_shiftsPageSize);
   if(p<1||p>tp)return;
   _shiftsPage=p; loadShiftsData();
+}
+
+// تعديل ساعات الوردية (سوبر يوزر / أدمن فقط)
+async function openShiftHoursEdit(shiftId, startHours, endHours) {
+  openModal(
+    '<div class="modal-header"><div class="modal-title">⏱️ تعديل ساعات الوردية</div><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+    '<div style="background:#f0f9ff;border:1.5px solid #7dd3fc;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#0369a1">وردية #' + shiftId + ' — أدخل ساعات العداد المراد تعديلها</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">' +
+    '<div class="form-group"><label>ساعات عداد البداية <span class="req">*</span></label><input type="number" id="shEditStart" value="' + (startHours||0) + '" min="0" step="0.1" placeholder="مثال: 1250.5"></div>' +
+    '<div class="form-group"><label>ساعات عداد النهاية</label><input type="number" id="shEditEnd" value="' + (endHours||0) + '" min="0" step="0.1" placeholder="مثال: 1300.0"></div>' +
+    '</div>' +
+    '<div style="font-size:.78rem;color:#64748b;margin-bottom:.5rem">⚠️ هذه العملية ستسجل في سجل التدقيق</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" id="shEditSaveBtn">حفظ التعديل</button></div>'
+  );
+  document.getElementById('shEditSaveBtn').onclick = async () => {
+    const newStart = parseFloat(document.getElementById('shEditStart').value);
+    const newEnd   = parseFloat(document.getElementById('shEditEnd').value)||null;
+    if(isNaN(newStart)||newStart<0) return showNotification('أدخل ساعات صحيحة','error');
+    if(newEnd!==null && newEnd<=newStart) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية','error');
+    const btn = document.getElementById('shEditSaveBtn');
+    btn.disabled=true; btn.textContent='جاري...';
+    try{
+      await apiCall('/shifts/'+shiftId+'/hours','PUT',{start_hours:newStart,end_hours:newEnd});
+      showNotification('✅ تم تعديل ساعات الوردية','success');
+      closeModal(); loadShiftsData();
+    }catch(e){
+      showNotification(e.message,'error');
+      btn.disabled=false; btn.textContent='حفظ التعديل';
+    }
+  };
 }
 
 async function exportShiftsCSV(){
