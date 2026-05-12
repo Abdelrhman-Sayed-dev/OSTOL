@@ -2,6 +2,7 @@
 Fleet Management System — Production-Ready Backend
 Author: Refactored for enterprise use
 """
+
 import base64
 import csv
 import io
@@ -562,7 +563,9 @@ def _safe_add_columns(c):
                 created_at          TEXT NOT NULL
             )""")
             # انقل البيانات — فقط الأعمدة المشتركة
-            _target_cols = ["id","driver_id","type","notes","new_odometer","trip_id",
+            # ⚠️ operator_id و is_operator يجب أن يكونا هنا دائماً لمنع data loss
+            _target_cols = ["id","driver_id","operator_id","is_operator",
+                            "type","notes","new_odometer","trip_id",
                             "status","priority","admin_notes","admin_message","handled_by",
                             "handled_at","forwarded_to_super","super_decision","super_notes",
                             "super_handled_by","super_handled_at","created_at"]
@@ -587,7 +590,15 @@ def _safe_add_columns(c):
             c.execute("CREATE INDEX IF NOT EXISTS idx_req_operator ON driver_requests(operator_id)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_req_status   ON driver_requests(status)")
             c.execute("PRAGMA foreign_keys=ON")
-            log.info("✅ driver_requests rebuilt successfully")
+            # ── Verification: تحقق من سلامة البيانات بعد الـ rebuild ──
+            _v = c.execute("""SELECT
+                COUNT(*) as total,
+                COUNT(CASE WHEN is_operator=1 THEN 1 END) as op_count,
+                COUNT(CASE WHEN is_operator=1 AND operator_id IS NOT NULL THEN 1 END) as op_with_id
+            FROM driver_requests""").fetchone()
+            log.info(f"✅ driver_requests rebuilt: total={_v['total']}, operator_requests={_v['op_count']}, with_operator_id={_v['op_with_id']}")
+            if _v["op_count"] > 0 and _v["op_with_id"] < _v["op_count"]:
+                log.error(f"⚠️  DATA INTEGRITY WARNING: {_v['op_count'] - _v['op_with_id']} operator requests lost their operator_id after rebuild!")
     except Exception as _e:
         log.warning(f"driver_requests rebuild migration: {_e}")
 
@@ -2302,12 +2313,6 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
 
     with get_db() as conn:
         c = conn.cursor()
-        # ── inline migration: تأكد من operator columns في workshop_records ──
-        _ws_cols = {r[1] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
-        for _wc, _wd in [("operator_id","INTEGER"),("is_operator","INTEGER DEFAULT 0")]:
-            if _wc not in _ws_cols:
-                try: c.execute(f"ALTER TABLE workshop_records ADD COLUMN {_wc} {_wd}")
-                except Exception: pass
         # جيب الفرع لتحديد السعر — المشغل من equipment_operators بالـ token operator_id
         if cu["role"] == "operator":
             c.execute("SELECT branch FROM equipment_operators WHERE id=?", (cu.get("operator_id"),))
@@ -2345,33 +2350,17 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
         # المشغل: driver_id يبقى NULL، نحفظ operator_id بشكل منفصل
         if cu["role"] == "operator":
             op_id_ws = cu.get("operator_id") or 0
-            try:
-                c.execute("""INSERT INTO workshop_records
-                             (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
-                              operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                             VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                          (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
-                           rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
-                           rec.description or "", rec.tire_action or "", rec.location or "",
-                           rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
-            except Exception:
-                # fallback: operator_id column لسه مش موجود
-                try: c.execute("ALTER TABLE workshop_records ADD COLUMN operator_id INTEGER")
-                except Exception: pass
-                try: c.execute("ALTER TABLE workshop_records ADD COLUMN is_operator INTEGER DEFAULT 0")
-                except Exception: pass
-                c.execute("""INSERT INTO workshop_records
-                             (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
-                              operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                             VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                          (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
-                           rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
-                           rec.description or "", rec.tire_action or "", rec.location or "",
-                           rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+            log.info(f"[WORKSHOP] operator insert: operator_id={op_id_ws} type={rec.type}")
+            c.execute("""INSERT INTO workshop_records
+                         (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
+                          operation_type,vehicle_id,odometer_reading,description,tire_action,location,
+                          doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
+                         VALUES(?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (0, op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
+                       rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
+                       rec.description or "", rec.tire_action or "", rec.location or "",
+                       rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
+                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
         else:
             c.execute("""INSERT INTO workshop_records
                          (driver_id,is_operator,type,quantity,price,notes,created_at,
@@ -2774,30 +2763,14 @@ async def create_emergency(request: Request, rep: EmergencyCreate, cu: dict = De
                 audio_url = f"/uploads/{fname}"
             except Exception as e:
                 log.warning(f"Audio save failed: {e}")
-        # ── inline migration: تأكد من operator columns في emergency_reports ──
-        _emg_cols = {r[1] for r in c.execute("PRAGMA table_info(emergency_reports)").fetchall()}
-        for _ec, _ed in [("operator_id","INTEGER"),("is_operator","INTEGER DEFAULT 0")]:
-            if _ec not in _emg_cols:
-                try: c.execute(f"ALTER TABLE emergency_reports ADD COLUMN {_ec} {_ed}")
-                except Exception: pass
         # المشغل: نحفظ بيانات البلاغ بدون driver_id (FK على drivers) — نستخدم operator_id
         if cu["role"] == "operator":
             op_id_emg = cu.get("operator_id") or 0
-            try:
-                c.execute("""INSERT INTO emergency_reports
-                             (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,operator_id,is_operator)
-                             VALUES(NULL,NULL,?,?,?,?,0,?,?,1)""",
-                          (rep.type, audio_url, rep.notes or "", now, rep.location or "", op_id_emg))
-            except Exception:
-                # driver_id NOT NULL — نستخدم 0 كـ sentinel
-                try: c.execute("ALTER TABLE emergency_reports ADD COLUMN operator_id INTEGER")
-                except Exception: pass
-                try: c.execute("ALTER TABLE emergency_reports ADD COLUMN is_operator INTEGER DEFAULT 0")
-                except Exception: pass
-                c.execute("""INSERT INTO emergency_reports
-                             (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,operator_id,is_operator)
-                             VALUES(0,NULL,?,?,?,?,0,?,?,1)""",
-                          (rep.type, audio_url, rep.notes or "", now, rep.location or "", op_id_emg))
+            log.info(f"[EMERGENCY] operator insert: operator_id={op_id_emg} type={rep.type}")
+            c.execute("""INSERT INTO emergency_reports
+                         (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,operator_id,is_operator)
+                         VALUES(NULL,NULL,?,?,?,?,0,?,?,1)""",
+                      (rep.type, audio_url, rep.notes or "", now, rep.location or "", op_id_emg))
         else:
             c.execute("""INSERT INTO emergency_reports
                          (driver_id,car_id,type,audio_url,notes,created_at,is_read,location,is_operator)
@@ -3318,49 +3291,23 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
         with get_db() as conn:
             c = conn.cursor()
 
-            # ── inline schema fix: شيل FK + NOT NULL لو لسه موجودين ──
-            _tbl = (c.execute(
-                "SELECT sql FROM sqlite_master WHERE type='table' AND name='driver_requests'"
-            ).fetchone() or {})
-            _tbl_sql = _tbl["sql"] if _tbl else ""
-            _cols    = {r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()}
+            # ── guard: لو operator columns ناقصة لسبب ما أضفها فقط (ALTER آمن) ──
+            # هذا السيناريو لا يجب أن يحدث أبداً بعد migrate_db() في startup
+            # لكن كـ safety net نضيف فقط ولا نعمل rebuild أبداً
+            _cols = {r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()}
+            for _mc, _md in [("operator_id","INTEGER"), ("is_operator","INTEGER DEFAULT 0")]:
+                if _mc not in _cols:
+                    log.error(f"[REQUEST] UNEXPECTED: column '{_mc}' missing from driver_requests after startup migration!")
+                    try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {_mc} {_md}")
+                    except Exception: pass
 
-            if "FOREIGN KEY" in _tbl_sql or "NOT NULL" in _tbl_sql or "operator_id" not in _cols:
-                log.warning("[REQUEST] Rebuilding driver_requests schema inline...")
-                c.execute("PRAGMA foreign_keys=OFF")
-                c.execute("""CREATE TABLE IF NOT EXISTS _dr_tmp (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    driver_id INTEGER, operator_id INTEGER, is_operator INTEGER DEFAULT 0,
-                    type TEXT NOT NULL, notes TEXT DEFAULT '', new_odometer REAL,
-                    trip_id INTEGER, status TEXT DEFAULT 'pending',
-                    priority TEXT DEFAULT 'medium', admin_notes TEXT DEFAULT '',
-                    admin_message TEXT DEFAULT '', handled_by TEXT DEFAULT '',
-                    handled_at TEXT DEFAULT '', forwarded_to_super INTEGER DEFAULT 0,
-                    super_decision TEXT DEFAULT '', super_notes TEXT DEFAULT '',
-                    super_handled_by TEXT DEFAULT '', super_handled_at TEXT DEFAULT '',
-                    created_at TEXT NOT NULL
-                )""")
-                _safe_cols = [r[1] for r in c.execute("PRAGMA table_info(driver_requests)").fetchall()
-                              if r[1] in ("id","driver_id","type","notes","new_odometer",
-                                          "trip_id","status","priority","admin_notes",
-                                          "admin_message","handled_by","handled_at",
-                                          "forwarded_to_super","super_decision","super_notes",
-                                          "super_handled_by","super_handled_at","created_at")]
-                _col_str = ",".join(_safe_cols)
-                c.execute(f"INSERT OR IGNORE INTO _dr_tmp ({_col_str}) SELECT {_col_str} FROM driver_requests")
-                c.execute("DROP TABLE driver_requests")
-                c.execute("ALTER TABLE _dr_tmp RENAME TO driver_requests")
-                c.execute("CREATE INDEX IF NOT EXISTS idx_req_driver   ON driver_requests(driver_id)")
-                c.execute("CREATE INDEX IF NOT EXISTS idx_req_operator ON driver_requests(operator_id)")
-                c.execute("CREATE INDEX IF NOT EXISTS idx_req_status   ON driver_requests(status)")
-                c.execute("PRAGMA foreign_keys=ON")
-                log.info("[REQUEST] Schema rebuild done ✅")
-            else:
-                # أضف operator columns لو ناقصة فقط
-                for _c, _d in [("operator_id","INTEGER"),("is_operator","INTEGER DEFAULT 0")]:
-                    if _c not in _cols:
-                        try: c.execute(f"ALTER TABLE driver_requests ADD COLUMN {_c} {_d}")
-                        except Exception: pass
+            # ── Safeguard: تحقق من consistency قبل INSERT ──
+            if is_op and not op_id:
+                log.error(f"[REQUEST] SAFEGUARD: is_operator=1 but operator_id=None — user_id={cu['user_id']}")
+            if not is_op and not driver_id:
+                raise HTTPException(403, "driver_id مطلوب للسائق")
+
+            log.info(f"[REQUEST] pre-insert: role={cu['role']} is_op={is_op} op_id={op_id} drv_id={driver_id} type={req_type}")
 
             # ── INSERT ──
             if is_op:
@@ -3378,6 +3325,7 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
                     (driver_id, req_type, notes, odo, tid, now)
                 )
             rid = c.lastrowid
+            log.info(f"[REQUEST] post-insert: id={rid} is_operator={1 if is_op else 0} operator_id={op_id} driver_id={driver_id}")
 
         log.info(f"[REQUEST] ✅ created id={rid} type={req_type} is_op={is_op} op_id={op_id}")
         log_event("request_created",
@@ -4791,24 +4739,11 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
         tg = 'admins'
     with get_db() as conn:
         c = conn.cursor()
-        # جرب INSERT مع target_user_id أولاً، لو فشل جرب بدونه (جدول قديم)
-        try:
-            c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
+        c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
                          duration_sec,created_at,expires_at,max_plays)
                          VALUES(?,?,?,?,?,?,?,?)""",
                       (cu["user_id"], tg, body.target_user_id, body.audio_data,
                        body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
-        except Exception as e:
-            if 'target_user_id' in str(e):
-                # عمود target_user_id مش موجود بعد — اعمل migration وإعادة المحاولة
-                c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
-                c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
-                             duration_sec,created_at,expires_at,max_plays)
-                             VALUES(?,?,?,?,?,?,?,?)""",
-                          (cu["user_id"], tg, body.target_user_id, body.audio_data,
-                           body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
-            else:
-                raise
         note_id = c.lastrowid
     return {"id": note_id, "expires_at": expires}
 
