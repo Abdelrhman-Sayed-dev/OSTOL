@@ -9072,9 +9072,10 @@ const REQUEST_TYPE_LABELS = {
   other:           '📝 طلب آخر',
 };
 const REQUEST_STATUS_MAP = {
-  pending:  { label:'تم إرسال طلبك للإدارة', color:'#f59e0b', icon:'⏳' },
-  approved: { label:'تم قبول طلبك',           color:'#10b981', icon:'✅' },
-  rejected: { label:'تم رفض الطلب',           color:'#ef4444', icon:'❌' },
+  pending:       { label:'تم إرسال طلبك للإدارة',       color:'#f59e0b', icon:'⏳' },
+  pending_super: { label:'قيد المراجعة من الإدارة العليا', color:'#6366f1', icon:'🔄' },
+  approved:      { label:'تم قبول طلبك',               color:'#10b981', icon:'✅' },
+  rejected:      { label:'تم رفض الطلب',               color:'#ef4444', icon:'❌' },
 };
 
 async function openMyRequestsModal() {
@@ -9115,7 +9116,10 @@ async function openMyRequestsModal() {
 function buildDriverRequestCard(r) {
   const st = REQUEST_STATUS_MAP[r.status] || REQUEST_STATUS_MAP.pending;
   const typeLabel = REQUEST_TYPE_LABELS[r.type] || r.type;
-  const hasMsg = !!(r.admin_message && r.admin_message.trim());
+  const displayMsg = (r.admin_message||'').trim() || (r.super_notes||'').trim();
+  const hasMsg = !!displayMsg;
+  const isDecided = ['approved','rejected'].includes(r.status);
+  const isFwdSuper = r.status === 'pending_super';
   return `
     <div style="border:1.5px solid ${st.color}33;border-radius:14px;background:#fff;
                 margin-bottom:.7rem;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05)">
@@ -9141,7 +9145,7 @@ function buildDriverRequestCard(r) {
                       justify-content:center;flex-shrink:0">${st.icon}</div>
           <div style="padding-top:.1rem">
             <div style="font-weight:700;font-size:.85rem;color:${r.status!=='pending'?st.color:'#94a3b8'}">${st.label}</div>
-            ${r.handled_by&&r.status!=='pending'?`<div style="font-size:.72rem;color:#94a3b8">بواسطة: ${r.handled_by}</div>`:''}
+            ${(r.handled_by||r.super_handled_by)&&r.status!=='pending'?`<div style="font-size:.72rem;color:#94a3b8">بواسطة: ${r.super_handled_by||r.handled_by}</div>`:''}
           </div>
         </div>
         ${r.notes?`<div style="margin-top:.6rem;font-size:.8rem;color:#64748b;
@@ -9158,7 +9162,7 @@ function buildDriverRequestCard(r) {
             <div style="font-weight:700;font-size:.82rem;color:#059669;margin-bottom:.3rem">رسالة من الإدارة</div>
             <div style="background:#f0fdf9;border:1.5px solid #6ee7b7;border-radius:10px;
                         padding:.5rem .8rem;font-size:.83rem;color:#1e293b;line-height:1.6">
-              ${r.admin_message}
+              ${displayMsg}
             </div>
           </div>
         </div>`:''}
