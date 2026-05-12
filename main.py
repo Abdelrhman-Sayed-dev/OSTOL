@@ -1829,7 +1829,7 @@ async def delete_permission(pid: int, cu: dict = Depends(require_admin)):
         return {"ok": True}
 
 @app.post("/permissions/reassign")
-async def reassign_permission(body: dict, cu: dict = Depends(require_superuser)):
+async def reassign_permission(body: dict, cu: dict = Depends(require_admin)):
     """
     إعادة تخصيص مركبة من سائق لآخر.
     Input: { fixed_number: str, plate: str }
@@ -1850,12 +1850,18 @@ async def reassign_permission(body: dict, cu: dict = Depends(require_superuser))
         new_driver = c.fetchone()
         if not new_driver:
             raise HTTPException(404, f"لا يوجد سائق بالرقم الثابت '{fixed_number}'")
+        if cu["role"] == "admin" and cu.get("branch"):
+            if new_driver["branch"] != cu["branch"]:
+                raise HTTPException(403, "السائق ليس من فرعك — يمكنك فقط إدارة سائقي فرعك")
 
         # جيب المركبة
-        c.execute("SELECT id, plate, model, car_name FROM cars WHERE plate=?", (plate,))
+        c.execute("SELECT id, plate, model, car_name, branch FROM cars WHERE plate=?", (plate,))
         car = c.fetchone()
         if not car:
             raise HTTPException(404, f"لا توجد مركبة بلوحة '{plate}'")
+        if cu["role"] == "admin" and cu.get("branch"):
+            if car["branch"] and car["branch"] != cu["branch"]:
+                raise HTTPException(403, "المركبة ليست من فرعك — يمكنك فقط إدارة مركبات فرعك")
 
         # جيب السائق الحالي المرتبط بالمركبة
         c.execute("""SELECT p.id as perm_id, d.id as driver_id, d.name as driver_name,
