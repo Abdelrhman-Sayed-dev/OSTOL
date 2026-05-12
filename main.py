@@ -3301,6 +3301,10 @@ async def create_request(body: dict, cu: dict = Depends(get_user)):
         if not is_op and not driver_id:
             raise HTTPException(403, "فقط السائقون والمشغلون يمكنهم تقديم الطلبات")
 
+        # تحذير لو المشغل غير مربوط بـ equipment_operators
+        if is_op and not op_id:
+            log.warning(f"[REQUEST] Operator user_id={cu['user_id']} has no equipment_operators record — request will be stored without operator_id")
+
         if req_type == "license_renew":
             if not renewal_date:    raise HTTPException(400, "تاريخ التجديد مطلوب")
             if not new_expiry_date: raise HTTPException(400, "تاريخ انتهاء الرخصة الجديد مطلوب")
@@ -3408,15 +3412,21 @@ async def get_requests(
                          ORDER BY r.id DESC""", (driver_id,))
         elif cu["role"] == "operator":
             op_id2 = cu.get("operator_id")
-            if not op_id2: return []
-            c.execute("""SELECT r.*,
-                                op.name   as driver_name,
-                                op.branch as driver_branch
-                         FROM driver_requests r
-                         LEFT JOIN equipment_operators op ON op.id = r.operator_id
-                         WHERE r.is_operator=1
-                           AND (r.operator_id=? OR r.driver_id=0)
-                         ORDER BY r.id DESC""", (op_id2,))
+            if op_id2:
+                # مشغل مرتبط بـ equipment_operators → جيب طلباته بالـ operator_id
+                c.execute("""SELECT r.*,
+                                    op.name   as operator_name,
+                                    op.name   as driver_name,
+                                    op.branch as driver_branch
+                             FROM driver_requests r
+                             LEFT JOIN equipment_operators op ON op.id = r.operator_id
+                             WHERE r.is_operator=1
+                               AND r.operator_id=?
+                             ORDER BY r.id DESC""", (op_id2,))
+            else:
+                # مشغل غير مرتبط بـ equipment_operators بعد
+                # نرجع فارغ لأننا مش عارفين هو مين
+                return []
         else:
             eff_branch = _effective_branch(cu, branch)
             # user_type filter: driver=is_operator=0, operator=is_operator=1
@@ -3424,7 +3434,9 @@ async def get_requests(
             if user_type == "driver":   ut_cond = " AND (r.is_operator=0 OR r.is_operator IS NULL)"
             elif user_type == "operator": ut_cond = " AND r.is_operator=1"
             if eff_branch:
-                c.execute(f"""SELECT r.*, COALESCE(d.name,op.name) as driver_name,
+                c.execute(f"""SELECT r.*,
+                                    COALESCE(d.name, op.name)   as driver_name,
+                                    COALESCE(op.name, d.name)   as operator_name,
                                     COALESCE(d.branch,op.branch) as driver_branch
                              FROM driver_requests r
                              LEFT JOIN drivers d ON r.driver_id=d.id AND (r.is_operator IS NULL OR r.is_operator=0)
@@ -3432,7 +3444,9 @@ async def get_requests(
                              WHERE COALESCE(d.branch,op.branch)=? {ut_cond}
                              ORDER BY r.id DESC""", (eff_branch,))
             else:
-                c.execute(f"""SELECT r.*, COALESCE(d.name,op.name) as driver_name,
+                c.execute(f"""SELECT r.*,
+                                    COALESCE(d.name, op.name)   as driver_name,
+                                    COALESCE(op.name, d.name)   as operator_name,
                                     COALESCE(d.branch,op.branch) as driver_branch
                              FROM driver_requests r
                              LEFT JOIN drivers d ON r.driver_id=d.id AND (r.is_operator IS NULL OR r.is_operator=0)
@@ -3449,8 +3463,10 @@ async def requests_pending_count(cu: dict = Depends(require_admin_or_reporter)):
         eff_branch = _branch_filter(cu)
         if eff_branch:
             c.execute("""SELECT COUNT(*) as cnt FROM driver_requests r
-                         LEFT JOIN drivers d ON r.driver_id=d.id
-                         WHERE r.status='pending' AND d.branch=?""", (eff_branch,))
+                         LEFT JOIN drivers d ON r.driver_id=d.id AND (r.is_operator IS NULL OR r.is_operator=0)
+                         LEFT JOIN equipment_operators op ON r.operator_id=op.id
+                         WHERE r.status='pending'
+                           AND COALESCE(d.branch, op.branch)=?""", (eff_branch,))
         else:
             c.execute("SELECT COUNT(*) as cnt FROM driver_requests WHERE status='pending'")
         row = c.fetchone()
@@ -4170,32 +4186,6 @@ async def import_preview(
 
     if import_type == "drivers":
         rows = [_validate_driver_row(r, i+1, admin_branch) for i, r in enumerate(raw_rows)]
-        # ── تحقق إضافي: الرقم الثابت لا يكون موجوداً في equipment_operators ──
-        with get_db() as conn:
-            c = conn.cursor()
-            c.execute("SELECT fixed_number, id, name FROM equipment_operators WHERE fixed_number IS NOT NULL AND fixed_number != ''")
-            op_fixed_map = {r["fixed_number"]: (r["id"], r["name"]) for r in c.fetchall()}
-            c.execute("SELECT fixed_number FROM drivers WHERE fixed_number IS NOT NULL AND fixed_number != ''")
-            existing_drivers_fixed = {r["fixed_number"] for r in c.fetchall()}
-            c.execute("SELECT username, role FROM users")
-            existing_usernames = {r["username"]: r["role"] for r in c.fetchall()}
-
-        for row in rows:
-            if not row["valid"]:
-                continue
-            fn    = row.get("fixed_number", "")
-            uname = row.get("username", "")
-            if fn and fn in existing_drivers_fixed:
-                row["valid"] = False
-                row["errors"].append(f"الرقم الثابت '{fn}' موجود مسبقاً في قاعدة السائقين")
-            if fn and fn in op_fixed_map:
-                op_id, op_name = op_fixed_map[fn]
-                row["valid"] = False
-                row["errors"].append(f"⚠️ الرقم الثابت '{fn}' مسجّل كمشغل معدات: '{op_name}' (ID={op_id}) — لا يمكن إضافته كسائق")
-            if uname and uname in existing_usernames:
-                row["valid"] = False
-                r_role = existing_usernames[uname]
-                row["errors"].append(f"اسم المستخدم '{uname}' موجود مسبقاً ({r_role})")
     else:
         rows = [_validate_car_row(r, i+1, admin_branch) for i, r in enumerate(raw_rows)]
 
@@ -4256,30 +4246,13 @@ async def import_confirm(
         if import_type == "drivers":
             for row in valid_rows:
                 try:
-                    # ── تحقق من الرقم الثابت في جدول السائقين ──
+                    # اللي مش ممكن يتكرر هو الرقم الثابت — مش اسم المستخدم
                     if row["fixed_number"]:
                         c.execute("SELECT id FROM drivers WHERE fixed_number=?", (row["fixed_number"],))
                         if c.fetchone():
-                            row["errors"] = [f"الرقم الثابت '{row['fixed_number']}' موجود مسبقاً كسائق"]
+                            row["errors"] = [f"الرقم الثابت '{row['fixed_number']}' موجود مسبقاً"]
                             skipped_rows.append(row)
                             continue
-                        # ── تحقق من الرقم الثابت في جدول المشغلين ──
-                        c.execute("SELECT id, name FROM equipment_operators WHERE fixed_number=?", (row["fixed_number"],))
-                        op_conflict = c.fetchone()
-                        if op_conflict:
-                            row["errors"] = [f"الرقم الثابت '{row['fixed_number']}' مسجّل مسبقاً كمشغل معدات (ID={op_conflict['id']}, الاسم={op_conflict['name']}) — لا يمكن إضافته كسائق"]
-                            skipped_rows.append(row)
-                            continue
-                    # ── تحقق من اسم المستخدم في users ──
-                    c.execute("SELECT id, role FROM users WHERE username=?", (row["username"],))
-                    existing_user = c.fetchone()
-                    if existing_user:
-                        if existing_user["role"] == "operator":
-                            row["errors"] = [f"اسم المستخدم '{row['username']}' مسجّل كمشغل معدات — لا يمكن استخدامه لسائق"]
-                        else:
-                            row["errors"] = [f"اسم المستخدم '{row['username']}' موجود مسبقاً"]
-                        skipped_rows.append(row)
-                        continue
                     c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
                               (row["username"], _hash(row["password"]), "driver"))
                     uid = c.lastrowid
@@ -6697,293 +6670,6 @@ class ShiftEnd(BaseModel):
 async def _migrate_operators():
     with get_db() as conn:
         _ensure_operator_tables(conn)
-
-
-# ══════════════════════════════════════════════════════════════════
-# OPERATORS BULK IMPORT — استيراد المشغلين بالجملة
-# ══════════════════════════════════════════════════════════════════
-
-OPERATOR_IMPORT_ARABIC_MAP = {
-    "اسم المشغل":          "name",
-    "الاسم":               "name",
-    "name":                "name",
-    "رقم ثابت":            "fixed_number",
-    "الرقم الثابت":        "fixed_number",
-    "fixed_number":        "fixed_number",
-    "تليفون":              "phone",
-    "الهاتف":              "phone",
-    "phone":               "phone",
-    "الفرع":               "branch",
-    "branch":              "branch",
-    "القطاع":              "sector",
-    "sector":              "sector",
-    "الرقم التعريفي":      "national_id",
-    "national_id":         "national_id",
-    "تاريخ الميلاد":       "birth_date",
-    "birth_date":          "birth_date",
-    "نوع الرخصة":          "license_type",
-    "license_type":        "license_type",
-    "انتهاء الرخصة":       "license_expiry",
-    "license_expiry":      "license_expiry",
-    "الحالة":              "status",
-    "status":              "status",
-    "ملاحظات":             "notes",
-    "notes":               "notes",
-    "اسم المستخدم":        "username",
-    "username":            "username",
-    "كلمة المرور":         "password",
-    "password":            "password",
-}
-
-def _parse_operator_file(content: bytes, filename: str) -> list[dict]:
-    """Parse CSV/Excel for operators using Arabic/English column map."""
-    ext = Path(filename).suffix.lower()
-    if ext in (".xlsx", ".xls"):
-        if not OPENPYXL_AVAILABLE:
-            raise HTTPException(400, "ثبّت openpyxl أو استخدم CSV")
-        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
-        ws = wb.active
-        all_rows = list(ws.iter_rows(values_only=True))
-        header_row_idx = None
-        headers_raw = []
-        for i, row in enumerate(all_rows):
-            cells = [str(c).strip() if c is not None else "" for c in row]
-            mapped = sum(1 for c in cells if c in OPERATOR_IMPORT_ARABIC_MAP or c.lower() in OPERATOR_IMPORT_ARABIC_MAP)
-            if mapped >= 2:
-                header_row_idx = i; headers_raw = cells; break
-        if header_row_idx is None:
-            return []
-        headers_mapped = [OPERATOR_IMPORT_ARABIC_MAP.get(h, OPERATOR_IMPORT_ARABIC_MAP.get(h.lower(), h)) for h in headers_raw]
-        result = []
-        for row in all_rows[header_row_idx + 1:]:
-            cells = [str(v).strip() if v is not None else "" for v in row]
-            if not any(cells): continue
-            d = {headers_mapped[i]: cells[i] for i in range(min(len(headers_mapped), len(cells)))}
-            result.append(d)
-        return result
-    elif ext == ".csv":
-        text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        rows = []
-        for row in reader:
-            d = {}
-            for k, v in row.items():
-                k = (k or "").strip()
-                mapped = OPERATOR_IMPORT_ARABIC_MAP.get(k, OPERATOR_IMPORT_ARABIC_MAP.get(k.lower(), k))
-                d[mapped] = (v.strip() if v else "")
-            rows.append(d)
-        return rows
-    raise HTTPException(400, "نوع الملف غير مدعوم")
-
-
-@app.post("/import/operators/preview")
-async def import_operators_preview(
-    request: Request,
-    file: UploadFile = File(...),
-    cu: dict = Depends(require_admin)
-):
-    """استعراض ملف المشغلين قبل الرفع الفعلي."""
-    content = await file.read()
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(400, "حجم الملف يتجاوز 5 MB")
-    raw_rows = _parse_operator_file(content, file.filename or "file.csv")
-    if not raw_rows:
-        raise HTTPException(400, "الملف فارغ أو لا يحتوي على بيانات مشغلين")
-
-    admin_branch = _branch_filter(cu)
-
-    with get_db() as conn:
-        c = conn.cursor()
-        _ensure_operator_tables(conn)
-        c.execute("SELECT fixed_number FROM equipment_operators WHERE fixed_number IS NOT NULL AND fixed_number != ''")
-        existing_op_fixed = {r["fixed_number"] for r in c.fetchall()}
-        c.execute("SELECT fixed_number FROM drivers WHERE fixed_number IS NOT NULL AND fixed_number != ''")
-        existing_drv_fixed = {r["fixed_number"] for r in c.fetchall()}
-        c.execute("SELECT username FROM users")
-        existing_usernames = {r["username"] for r in c.fetchall()}
-
-    rows = []
-    for i, raw in enumerate(raw_rows):
-        errors = []
-        name         = raw.get("name", "").strip()
-        fixed_number = raw.get("fixed_number", "").strip()
-        phone        = raw.get("phone", "").strip()
-        branch       = admin_branch or raw.get("branch", "").strip()
-        username     = raw.get("username", "").strip()
-        password     = raw.get("password", "").strip()
-
-        # اشتقاق username وpassword تلقائياً لو مش موجودين
-        if not username and name:
-            username = "op_" + name.split()[0].lower()
-        if not password and fixed_number:
-            password = fixed_number
-
-        if not name:         errors.append("الاسم مطلوب")
-        if not fixed_number: errors.append("الرقم الثابت مطلوب")
-        if fixed_number and fixed_number in existing_op_fixed:
-            errors.append(f"الرقم الثابت '{fixed_number}' موجود مسبقاً في المشغلين")
-        if fixed_number and fixed_number in existing_drv_fixed:
-            errors.append(f"⚠️ الرقم الثابت '{fixed_number}' مسجّل كسائق — لا يمكن إضافته كمشغل")
-        if username and username in existing_usernames:
-            errors.append(f"اسم المستخدم '{username}' موجود مسبقاً")
-
-        rows.append({
-            "row_index":     i + 1,
-            "valid":         len(errors) == 0,
-            "errors":        errors,
-            "name":          name,
-            "fixed_number":  fixed_number,
-            "phone":         phone,
-            "branch":        branch,
-            "sector":        raw.get("sector", "").strip(),
-            "national_id":   raw.get("national_id", "").strip(),
-            "birth_date":    _normalize_date(raw.get("birth_date", "")),
-            "license_type":  raw.get("license_type", "").strip(),
-            "license_expiry": _normalize_date(raw.get("license_expiry", "")),
-            "status":        raw.get("status", "active").strip() or "active",
-            "notes":         raw.get("notes", "").strip(),
-            "username":      username,
-            "password":      password,
-        })
-
-    valid_count = sum(1 for r in rows if r["valid"])
-    return {
-        "import_type": "operators",
-        "rows": rows,
-        "summary": {"total": len(rows), "valid": valid_count, "invalid": len(rows) - valid_count},
-    }
-
-
-@app.post("/import/operators/confirm")
-async def import_operators_confirm(
-    request: Request,
-    file: UploadFile = File(...),
-    skip_errors: bool = False,
-    cu: dict = Depends(require_admin)
-):
-    """تأكيد استيراد المشغلين من ملف CSV/Excel."""
-    content = await file.read()
-    raw_rows = _parse_operator_file(content, file.filename or "file.csv")
-    if not raw_rows:
-        raise HTTPException(400, "الملف فارغ")
-
-    admin_branch = _branch_filter(cu)
-
-    with get_db() as conn:
-        c = conn.cursor()
-        _ensure_operator_tables(conn)
-        c.execute("SELECT fixed_number FROM equipment_operators WHERE fixed_number IS NOT NULL AND fixed_number != ''")
-        existing_op_fixed = {r["fixed_number"] for r in c.fetchall()}
-        c.execute("SELECT fixed_number FROM drivers WHERE fixed_number IS NOT NULL AND fixed_number != ''")
-        existing_drv_fixed = {r["fixed_number"] for r in c.fetchall()}
-        c.execute("SELECT username FROM users")
-        existing_usernames = {r["username"] for r in c.fetchall()}
-
-    # validate
-    rows = []
-    for i, raw in enumerate(raw_rows):
-        errors = []
-        name         = raw.get("name", "").strip()
-        fixed_number = raw.get("fixed_number", "").strip()
-        phone        = raw.get("phone", "").strip()
-        branch       = admin_branch or raw.get("branch", "").strip()
-        username     = raw.get("username", "").strip()
-        password     = raw.get("password", "").strip()
-        if not username and name:
-            username = "op_" + name.split()[0].lower()
-        if not password and fixed_number:
-            password = fixed_number
-
-        if not name:         errors.append("الاسم مطلوب")
-        if not fixed_number: errors.append("الرقم الثابت مطلوب")
-        if fixed_number and fixed_number in existing_op_fixed:
-            errors.append(f"الرقم الثابت '{fixed_number}' موجود مسبقاً")
-        if fixed_number and fixed_number in existing_drv_fixed:
-            errors.append(f"⚠️ الرقم الثابت '{fixed_number}' مسجّل كسائق")
-        if username and username in existing_usernames:
-            errors.append(f"اسم المستخدم '{username}' موجود مسبقاً")
-
-        rows.append({
-            "valid": len(errors) == 0, "errors": errors,
-            "name": name, "fixed_number": fixed_number, "phone": phone,
-            "branch": branch,
-            "sector":         raw.get("sector", "").strip(),
-            "national_id":    raw.get("national_id", "").strip(),
-            "birth_date":     _normalize_date(raw.get("birth_date", "")),
-            "license_type":   raw.get("license_type", "").strip(),
-            "license_expiry": _normalize_date(raw.get("license_expiry", "")),
-            "status":         raw.get("status", "active").strip() or "active",
-            "notes":          raw.get("notes", "").strip(),
-            "username": username, "password": password,
-        })
-
-    invalid = [r for r in rows if not r["valid"]]
-    if invalid and not skip_errors:
-        raise HTTPException(422, {
-            "message": f"يوجد {len(invalid)} صف بأخطاء",
-            "invalid_rows": invalid
-        })
-
-    inserted, skipped_rows = [], []
-    now = datetime.utcnow().isoformat() + "Z"
-
-    with get_db() as conn:
-        c = conn.cursor()
-        _ensure_operator_tables(conn)
-        for row in rows:
-            if not row["valid"]:
-                if skip_errors: skipped_rows.append(row)
-                continue
-            try:
-                # إنشاء user لو username وpassword موجودين
-                user_id = None
-                if row["username"] and row["password"]:
-                    try:
-                        c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
-                                  (row["username"], _hash(row["password"]), "operator"))
-                        user_id = c.lastrowid
-                    except Exception:
-                        pass  # username موجود — نضيف بدون user
-
-                c.execute("""INSERT INTO equipment_operators
-                    (name,phone,national_id,birth_date,branch,sector,fixed_number,
-                     license_type,license_expiry,status,notes,user_id)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (row["name"], row["phone"], row["national_id"], row["birth_date"],
-                     row["branch"], row["sector"], row["fixed_number"],
-                     row["license_type"], row["license_expiry"],
-                     row["status"], row["notes"], user_id))
-                inserted.append({"name": row["name"], "fixed_number": row["fixed_number"]})
-            except Exception as e:
-                row["errors"] = [str(e)]; skipped_rows.append(row)
-
-    write_audit_log(cu["user_id"], cu["username"], cu["role"],
-                    "bulk_import_operators", f"استيراد {len(inserted)} مشغل",
-                    request.client.host if request.client else "")
-    return {
-        "import_type": "operators",
-        "inserted": len(inserted),
-        "skipped":  len(skipped_rows),
-        "inserted_items": inserted,
-        "skipped_items":  skipped_rows,
-    }
-
-
-@app.get("/import/template/operators")
-async def operators_import_template(cu: dict = Depends(require_admin)):
-    """تحميل قالب CSV لاستيراد المشغلين"""
-    from fastapi.responses import Response
-    cols = ["اسم المشغل","رقم ثابت","تليفون","الفرع","القطاع","نوع الرخصة","انتهاء الرخصة","الحالة","اسم المستخدم","كلمة المرور"]
-    sample = ["محمد أحمد","206338","01012345678","صيانة القصور","قطاع القاهرة","A","2027-06-30","active","op_mohamed","206338"]
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(cols)
-    writer.writerow(sample)
-    return Response(
-        content=buf.getvalue().encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=operators_template.csv"}
-    )
 
 
 @app.get("/operators/me")
