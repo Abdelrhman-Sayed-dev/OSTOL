@@ -2923,6 +2923,20 @@ async function renderOverview() {
     .xdb-trip-dur{font-size:.68rem;font-weight:700;color:#3b82f6;white-space:nowrap}
     .xdb-two{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
     .xdb-charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:.9rem}
+    @media(max-width:500px){
+      .xdb-nums{grid-template-columns:1fr 1fr;gap:.5rem}
+      .xdb-num-val{font-size:1.7rem}
+      .xdb-num-sub{font-size:.62rem}
+      .xdb-charts-grid{grid-template-columns:1fr;gap:.6rem}
+      .xdb-two{grid-template-columns:1fr;gap:.6rem}
+      .xdb-grid{gap:.6rem}
+      .xdb-panel{padding:.7rem .8rem}
+      .xdb-panel-title{font-size:.68rem}
+    }
+    @media(max-width:370px){
+      .xdb-num-val{font-size:1.4rem}
+      .xdb-num-label{font-size:.6rem}
+    }
   </style>
 
   <div class="xdb">
@@ -2959,19 +2973,19 @@ async function renderOverview() {
     <div class="xdb-charts-grid">
       <div class="xdb-panel" style="padding:.75rem 1rem">
         <div class="xdb-panel-title"><span>رحلات آخر 7 أيام</span></div>
-        <div style="height:160px"><canvas id="chartTripsTime"></canvas></div>
+        <div style="height:clamp(110px,25vw,160px)"><canvas id="chartTripsTime"></canvas></div>
       </div>
       <div class="xdb-panel" style="padding:.75rem 1rem">
         <div class="xdb-panel-title"><span>تكلفة الوقود آخر 7 أيام (ج)</span></div>
-        <div style="height:160px"><canvas id="chartFuelCost"></canvas></div>
+        <div style="height:clamp(110px,25vw,160px)"><canvas id="chartFuelCost"></canvas></div>
       </div>
       <div class="xdb-panel" style="padding:.75rem 1rem">
         <div class="xdb-panel-title"><span>أنشط السائقين</span></div>
-        <div style="height:160px"><canvas id="chartTopDrivers"></canvas></div>
+        <div style="height:clamp(110px,25vw,160px)"><canvas id="chartTopDrivers"></canvas></div>
       </div>
       <div class="xdb-panel" style="padding:.75rem 1rem">
         <div class="xdb-panel-title"><span>أعلى مركبات (كم)</span></div>
-        <div style="height:160px"><canvas id="chartCarsKm"></canvas></div>
+        <div style="height:clamp(110px,25vw,160px)"><canvas id="chartCarsKm"></canvas></div>
       </div>
     </div>
 
@@ -3084,7 +3098,7 @@ async function renderOverview() {
     data:{labels:dayLabels,datasets:[{label:'عدد الرحلات',data:tripsPerDay,
       borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.12)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#3b82f6'}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true,ticks:{stepSize:1}}}}
+      scales:{x:{grid:{color:gc},ticks:{font:{size:9},maxRotation:0}},y:{grid:{color:gc},beginAtZero:true,ticks:{stepSize:1,font:{size:9}}}}}
   });
 
   new Chart(document.getElementById('chartTopDrivers'), {
