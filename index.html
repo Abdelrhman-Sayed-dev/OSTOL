@@ -1302,6 +1302,883 @@ tr.row-hidden { display:none; }
 /* ── Global Entity Switcher ── */
 /* Global entity switcher removed — unified view */
 
+/* ═══════════════════════════════════════════════════════════
+   ██████╗ ███████╗███████╗██╗ ██████╗ ███╗   ██╗
+   ██╔══██╗██╔════╝██╔════╝██║██╔════╝ ████╗  ██║
+   ██║  ██║█████╗  ███████╗██║██║  ███╗██╔██╗ ██║
+   ██║  ██║██╔══╝  ╚════██║██║██║   ██║██║╚██╗██║
+   ██████╔╝███████╗███████║██║╚██████╔╝██║ ╚████║
+   ╚═════╝ ╚══════╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+   FLEET SYNC — UNIFIED DESIGN SYSTEM v3
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── DESIGN TOKENS ─── */
+:root {
+  /* Spacing scale */
+  --ds-space-1: 4px;
+  --ds-space-2: 8px;
+  --ds-space-3: 12px;
+  --ds-space-4: 16px;
+  --ds-space-5: 20px;
+  --ds-space-6: 24px;
+
+  /* Typography scale */
+  --ds-text-xs:  .68rem;
+  --ds-text-sm:  .78rem;
+  --ds-text-md:  .88rem;
+  --ds-text-lg:  1rem;
+  --ds-text-xl:  1.15rem;
+
+  /* Radius scale */
+  --ds-r-sm:  8px;
+  --ds-r-md:  12px;
+  --ds-r-lg:  16px;
+  --ds-r-xl:  20px;
+
+  /* Filter/Input shared dimensions */
+  --filter-h: 38px;
+  --filter-radius: 10px;
+  --filter-border: 1.5px solid #d1d9e6;
+  --filter-bg: #F8FAFC;
+  --filter-focus-border: var(--primary);
+  --filter-focus-shadow: 0 0 0 3px rgba(26,41,66,0.10);
+
+  /* Stat Card tokens */
+  --stat-pad-y: 1.25rem;
+  --stat-pad-x: 1.3rem;
+  --stat-radius: 16px;
+  --stat-border: 1px solid #E2E8F0;
+  --stat-shadow-hover: 0 8px 28px rgba(15,23,42,0.10), 0 2px 8px rgba(15,23,42,0.05);
+
+  /* Table tokens */
+  --tbl-th-bg: #F1F5F9;
+  --tbl-th-color: #475569;
+  --tbl-th-size: .70rem;
+  --tbl-td-size: .84rem;
+  --tbl-row-hover: #F8FAFC;
+  --tbl-border: #E9EEF5;
+  --tbl-pad-y: .72rem;
+  --tbl-pad-x: 1rem;
+}
+
+/* ═══════════════════════════════════════════════
+   SECTION LAYOUT — Page Title → Stats → Filters → Table
+   ═══════════════════════════════════════════════ */
+.ds-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* ─── Page Header ─── */
+.ds-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .75rem;
+  padding: 0 0 .25rem;
+}
+.ds-page-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  line-height: 1;
+}
+.ds-page-title .ds-title-icon {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  background: var(--gold-pale, rgba(6,182,212,.08));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.ds-page-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+/* ═══════════════════════════════════════════════
+   STAT CARDS — Unified System
+   ═══════════════════════════════════════════════ */
+.ds-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .85rem;
+}
+@media(max-width:900px) { .ds-stats { grid-template-columns: repeat(2,1fr); } }
+@media(max-width:480px) { .ds-stats { grid-template-columns: 1fr 1fr; gap: .5rem; } }
+
+.ds-stat {
+  background: #ffffff;
+  border-radius: var(--stat-radius);
+  border: var(--stat-border);
+  padding: var(--stat-pad-y) var(--stat-pad-x);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow .2s, transform .2s;
+  cursor: default;
+}
+.ds-stat::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--ds-stat-color, var(--primary)), var(--ds-stat-color2, var(--gold)));
+  opacity: 0;
+  transition: opacity .2s;
+}
+.ds-stat:hover {
+  box-shadow: var(--stat-shadow-hover);
+  transform: translateY(-2px);
+}
+.ds-stat:hover::before { opacity: 1; }
+
+.ds-stat-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-bottom: .75rem;
+}
+.ds-stat-icon {
+  width: 42px; height: 42px;
+  border-radius: 11px;
+  background: var(--ds-stat-icon-bg, rgba(6,182,212,.10));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.ds-stat-label {
+  font-size: var(--ds-text-xs);
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.4;
+  flex: 1;
+  min-width: 0;
+}
+.ds-stat-value {
+  font-size: 1.65rem;
+  font-weight: 900;
+  color: var(--ds-stat-color, var(--primary));
+  line-height: 1;
+  letter-spacing: -.5px;
+  word-break: break-all;
+}
+.ds-stat-sub {
+  font-size: var(--ds-text-xs);
+  color: var(--muted);
+  margin-top: .25rem;
+}
+
+/* Color presets for stat cards */
+.ds-stat-blue   { --ds-stat-color:#1d4ed8; --ds-stat-color2:#3b82f6; --ds-stat-icon-bg:rgba(59,130,246,.10); }
+.ds-stat-green  { --ds-stat-color:#059669; --ds-stat-color2:#10b981; --ds-stat-icon-bg:rgba(16,185,129,.10); }
+.ds-stat-red    { --ds-stat-color:#dc2626; --ds-stat-color2:#ef4444; --ds-stat-icon-bg:rgba(239,68,68,.10); }
+.ds-stat-amber  { --ds-stat-color:#d97706; --ds-stat-color2:#f59e0b; --ds-stat-icon-bg:rgba(245,158,11,.10); }
+.ds-stat-purple { --ds-stat-color:#7c3aed; --ds-stat-color2:#a78bfa; --ds-stat-icon-bg:rgba(124,58,237,.10); }
+.ds-stat-teal   { --ds-stat-color:#0891b2; --ds-stat-color2:#06b6d4; --ds-stat-icon-bg:rgba(6,182,212,.10); }
+.ds-stat-navy   { --ds-stat-color:#1a2942; --ds-stat-color2:#2563eb; --ds-stat-icon-bg:rgba(26,41,66,.08); }
+
+/* ═══════════════════════════════════════════════
+   FILTERS BAR — Unified System
+   ═══════════════════════════════════════════════ */
+.ds-filters {
+  background: var(--surface-2, #F8FAFC);
+  border: 1px solid var(--border, #E2E8F0);
+  border-radius: var(--ds-r-md);
+  padding: .85rem 1.1rem;
+  display: flex;
+  gap: .65rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ds-filters-label {
+  font-size: var(--ds-text-xs);
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Unified input/select/date in filters */
+.ds-filters input,
+.ds-filters select,
+.ds-filters input[type="date"],
+.ds-filters input[type="month"] {
+  height: var(--filter-h);
+  padding: 0 .9rem;
+  border: var(--filter-border);
+  border-radius: var(--filter-radius);
+  background: var(--surface, #fff);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--ds-text-md);
+  transition: border-color .18s, box-shadow .18s;
+  outline: none;
+  flex: 1;
+  min-width: 140px;
+}
+.ds-filters input[type="text"],
+.ds-filters input:not([type]) {
+  min-width: 180px;
+}
+.ds-filters input:focus,
+.ds-filters select:focus {
+  border-color: var(--filter-focus-border);
+  box-shadow: var(--filter-focus-shadow);
+  background: #fff;
+}
+.ds-filters input:hover:not(:focus),
+.ds-filters select:hover:not(:focus) {
+  border-color: #b3bfd6;
+}
+.ds-filters select { cursor: pointer; }
+
+.ds-filters-count {
+  font-size: var(--ds-text-sm);
+  color: var(--muted);
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: .22rem .65rem;
+  font-weight: 600;
+}
+.ds-filters-reset {
+  height: var(--filter-h);
+  padding: 0 .85rem;
+  border: var(--filter-border);
+  border-radius: var(--filter-radius);
+  background: #fff;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: var(--ds-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ds-filters-reset:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* Search input with icon */
+.ds-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+.ds-search-wrap input {
+  width: 100%;
+  padding-right: 2.2rem !important;
+}
+.ds-search-icon {
+  position: absolute;
+  right: .75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: .85rem;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════
+   TABLES — Unified System
+   ═══════════════════════════════════════════════ */
+.ds-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--ds-r-md);
+  border: 1px solid var(--tbl-border);
+  background: #fff;
+  -webkit-overflow-scrolling: touch;
+}
+.ds-table-wrap table,
+.ds-table-wrap > table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--tbl-td-size);
+  direction: rtl;
+}
+.ds-table-wrap thead th,
+.ds-table-wrap table thead th {
+  background: var(--tbl-th-bg);
+  color: var(--tbl-th-color);
+  font-size: var(--tbl-th-size);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  padding: var(--tbl-pad-y) var(--tbl-pad-x);
+  text-align: right;
+  border-bottom: 2px solid var(--tbl-border);
+  white-space: nowrap;
+}
+.ds-table-wrap thead tr:first-child th:first-child { border-radius: 0 var(--ds-r-md) 0 0; }
+.ds-table-wrap thead tr:first-child th:last-child  { border-radius: var(--ds-r-md) 0 0 0; }
+.ds-table-wrap tbody td,
+.ds-table-wrap table tbody td {
+  padding: var(--tbl-pad-y) var(--tbl-pad-x);
+  border-bottom: 1px solid var(--tbl-border);
+  text-align: right;
+  color: var(--text);
+  vertical-align: middle;
+}
+.ds-table-wrap tbody tr:last-child td { border-bottom: none; }
+.ds-table-wrap tbody tr:hover td { background: var(--tbl-row-hover); }
+.ds-table-wrap tbody tr { transition: background .12s; }
+
+/* ─── CARD wrapping table sections ─── */
+.ds-card {
+  background: #fff;
+  border-radius: var(--ds-r-lg);
+  border: 1px solid #E2E8F0;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(15,23,42,.04);
+}
+.ds-card-header {
+  padding: 1.1rem 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #E9EEF5;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+.ds-card-title {
+  font-size: .92rem;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+.ds-card-body {
+  padding: 0;
+}
+.ds-card-filters {
+  padding: .85rem 1.1rem;
+  border-bottom: 1px solid #E9EEF5;
+  background: #FAFBFD;
+}
+
+/* ─── Empty State ─── */
+.ds-empty {
+  text-align: center;
+  padding: 3.5rem 1rem;
+  color: var(--muted);
+}
+.ds-empty-icon {
+  font-size: 2.6rem;
+  margin-bottom: .85rem;
+  display: block;
+  opacity: .7;
+}
+.ds-empty p {
+  font-size: .88rem;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════
+   OVERRIDE OLD .stat-card TO USE NEW DESIGN
+   ═══════════════════════════════════════════════ */
+.stat-card {
+  background: #ffffff;
+  border-radius: var(--stat-radius) !important;
+  padding: var(--stat-pad-y) var(--stat-pad-x) !important;
+  border: var(--stat-border) !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,.04);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow .2s, transform .2s;
+  cursor: default;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--gold));
+  opacity: 0;
+  transition: opacity .2s;
+}
+.stat-card::after { display: none !important; }
+.stat-card:hover {
+  box-shadow: var(--stat-shadow-hover) !important;
+  transform: translateY(-2px);
+}
+.stat-card:hover::before { opacity: 1; }
+.stat-icon {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: var(--gold-pale, rgba(6,182,212,.08));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem;
+  margin-bottom: .7rem;
+}
+.stat-value {
+  font-size: 1.65rem;
+  font-weight: 900;
+  color: var(--primary);
+  line-height: 1;
+  letter-spacing: -.5px;
+  word-break: break-all;
+}
+.stat-label {
+  font-size: var(--ds-text-xs);
+  color: var(--muted);
+  margin-top: .28rem;
+  font-weight: 600;
+}
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .85rem;
+  margin-bottom: 1.25rem;
+}
+
+/* ═══════════════════════════════════════════════
+   OVERRIDE OLD .srch-bar TO MATCH DESIGN SYSTEM
+   ═══════════════════════════════════════════════ */
+.srch-bar {
+  display: flex;
+  gap: .65rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: .85rem 1.1rem;
+  border-bottom: 1px solid #E9EEF5;
+  background: #FAFBFD;
+}
+.srch-bar input,
+.srch-bar select {
+  height: var(--filter-h) !important;
+  padding: 0 .9rem !important;
+  border: var(--filter-border) !important;
+  border-radius: var(--filter-radius) !important;
+  background: #fff !important;
+  color: var(--text) !important;
+  font-family: inherit !important;
+  font-size: var(--ds-text-md) !important;
+  transition: border-color .18s, box-shadow .18s !important;
+  outline: none !important;
+}
+.srch-bar input { flex: 1; min-width: 180px; }
+.srch-bar select { min-width: 130px; cursor: pointer; }
+.srch-bar input:focus,
+.srch-bar select:focus {
+  border-color: var(--primary) !important;
+  box-shadow: var(--filter-focus-shadow) !important;
+  background: #fff !important;
+}
+.srch-bar input:hover:not(:focus),
+.srch-bar select:hover:not(:focus) {
+  border-color: #b3bfd6 !important;
+}
+.srch-count {
+  font-size: var(--ds-text-sm);
+  color: var(--muted);
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: .22rem .65rem;
+  font-weight: 600;
+}
+.srch-reset {
+  height: var(--filter-h);
+  padding: 0 .85rem !important;
+  border: var(--filter-border) !important;
+  border-radius: var(--filter-radius) !important;
+  background: #fff !important;
+  color: var(--muted) !important;
+  font-family: inherit !important;
+  font-size: var(--ds-text-sm) !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: border-color .15s, color .15s !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.srch-reset:hover {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
+
+/* ═══════════════════════════════════════════════
+   OVERRIDE OLD .table-wrap TO MATCH DESIGN SYSTEM
+   ═══════════════════════════════════════════════ */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 0 0 var(--ds-r-md) var(--ds-r-md);
+  border: none !important;
+  background: var(--surface);
+  -webkit-overflow-scrolling: touch;
+}
+/* When table-wrap is inside .card, remove inner card border */
+.card > .table-wrap { border-radius: 0 !important; }
+.table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--tbl-td-size);
+  direction: rtl;
+}
+.table-wrap thead th,
+table thead th {
+  background: var(--tbl-th-bg) !important;
+  color: var(--tbl-th-color) !important;
+  font-size: var(--tbl-th-size) !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  padding: var(--tbl-pad-y) var(--tbl-pad-x) !important;
+  text-align: right;
+  border-bottom: 2px solid var(--tbl-border) !important;
+  white-space: nowrap;
+}
+.table-wrap tbody td,
+table tbody td {
+  padding: var(--tbl-pad-y) var(--tbl-pad-x) !important;
+  border-bottom: 1px solid var(--tbl-border) !important;
+  color: var(--text);
+  vertical-align: middle;
+}
+.table-wrap tbody tr:last-child td { border-bottom: none !important; }
+.table-wrap tbody tr:hover { background: var(--tbl-row-hover) !important; transition: background .12s; }
+
+/* ═══════════════════════════════════════════════
+   CARD HEADER IMPROVEMENT
+   ═══════════════════════════════════════════════ */
+.card {
+  background: #ffffff;
+  border-radius: var(--ds-r-lg) !important;
+  border: 1px solid #E2E8F0 !important;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(15,23,42,.04);
+  margin-bottom: 1.1rem;
+}
+.card:last-child { margin-bottom: 0; }
+.card:hover { box-shadow: 0 4px 16px rgba(15,23,42,.07); }
+.card-header {
+  padding: 1.1rem 1.4rem !important;
+  border-bottom: 1px solid #E9EEF5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+.card-title {
+  font-size: .92rem;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+
+/* ─── Workshop specific stat cards (wsg/wtc) override ─── */
+.wtc {
+  background: #fff;
+  border-radius: var(--stat-radius) !important;
+  border: var(--stat-border) !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,.04);
+  padding: 1.25rem !important;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  transition: box-shadow .2s, transform .2s;
+}
+.wtc:hover {
+  box-shadow: var(--stat-shadow-hover);
+  transform: translateY(-2px);
+}
+.wti {
+  width: 42px !important; height: 42px !important;
+  border-radius: 11px !important;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.wtv {
+  font-size: 1.5rem !important;
+  font-weight: 900 !important;
+  color: var(--primary) !important;
+  line-height: 1;
+  word-break: break-all;
+}
+.wtl { font-size: .8rem !important; color: var(--muted) !important; font-weight: 600; }
+.wts { font-size: .7rem !important; color: #94a3b8; margin-top: .2rem; }
+
+/* ═══════════════════════════════════════════════
+   TOPBAR / PAGE CONTENT PADDING
+   ═══════════════════════════════════════════════ */
+.page-content {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+@media(max-width:900px) { .page-content { padding: .85rem; gap: .85rem; } }
+@media(max-width:600px) { .page-content { padding: .55rem; gap: .65rem; } }
+
+/* Topbar polish */
+.topbar {
+  background: #fff;
+  border-bottom: 1px solid #E9EEF5;
+  height: var(--header-h);
+  display: flex;
+  align-items: center;
+  padding: 0 1.25rem;
+  gap: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 1px 3px rgba(15,23,42,.05);
+}
+.topbar-title {
+  font-size: .95rem;
+  font-weight: 800;
+  color: var(--text);
+  flex: 1;
+}
+
+/* ═══════════════════════════════════════════════
+   BADGE REFINEMENT
+   ═══════════════════════════════════════════════ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .22rem;
+  padding: .2rem .65rem;
+  border-radius: 50px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .15px;
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════
+   FILTERS-BAR OVERRIDE (old class)
+   ═══════════════════════════════════════════════ */
+.filters-bar {
+  display: flex;
+  gap: .65rem;
+  flex-wrap: wrap;
+  align-items: center;
+  background: #FAFBFD;
+  border: 1px solid #E9EEF5;
+  border-radius: var(--ds-r-md);
+  padding: .85rem 1.1rem;
+  margin-bottom: 1rem;
+}
+.filters-bar select,
+.filters-bar input {
+  flex: 1;
+  min-width: 140px;
+  height: var(--filter-h) !important;
+  padding: 0 .9rem !important;
+  border: var(--filter-border) !important;
+  border-radius: var(--filter-radius) !important;
+  background: #fff !important;
+  font-size: var(--ds-text-md) !important;
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color .18s, box-shadow .18s;
+  outline: none;
+}
+.filters-bar select:focus,
+.filters-bar input:focus {
+  border-color: var(--primary) !important;
+  box-shadow: var(--filter-focus-shadow) !important;
+}
+
+/* ═══════════════════════════════════════════════
+   TRIPS FILTER ROW - inline style override
+   ═══════════════════════════════════════════════ */
+/* Override trip filter inputs that use inline styles */
+#ftSearch, #ftDriverSearch, #ftCarSearch, #ftDate, #ftStatus {
+  height: var(--filter-h) !important;
+  padding: 0 .9rem !important;
+  border: var(--filter-border) !important;
+  border-radius: var(--filter-radius) !important;
+  background: #fff !important;
+  font-size: var(--ds-text-md) !important;
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color .18s, box-shadow .18s;
+  outline: none;
+}
+#ftSearch:focus, #ftDriverSearch:focus, #ftCarSearch:focus,
+#ftDate:focus, #ftStatus:focus {
+  border-color: var(--primary) !important;
+  box-shadow: var(--filter-focus-shadow) !important;
+}
+
+/* Workshop filter inputs inline override */
+#wsSearchText, #filterCar, #filterType, #filterDate, #filterMonth {
+  height: var(--filter-h) !important;
+  padding: 0 .9rem !important;
+  border: var(--filter-border) !important;
+  border-radius: var(--filter-radius) !important;
+  background: #fff !important;
+  font-size: var(--ds-text-md) !important;
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color .18s, box-shadow .18s;
+  outline: none;
+}
+#wsSearchText:focus, #filterCar:focus, #filterType:focus,
+#filterDate:focus, #filterMonth:focus {
+  border-color: var(--primary) !important;
+  box-shadow: var(--filter-focus-shadow) !important;
+}
+
+/* ─── Workshop filter row containers ─── */
+#wsTable ~ div, .card > div[style*="padding:.6rem .9rem"] {
+  background: #FAFBFD;
+  border-bottom: 1px solid #E9EEF5;
+  padding: .85rem 1.1rem !important;
+}
+
+/* ═══════════════════════════════════════════════
+   TRIPS FILTER ROW CONTAINER
+   ═══════════════════════════════════════════════ */
+/* Override the inline-styled trip filter container */
+.card > div:has(#ftSearch),
+.card > div:has(#ftDriverSearch) {
+  background: #FAFBFD;
+  border-bottom: 1px solid #E9EEF5;
+  padding: .85rem 1.1rem !important;
+  border-radius: 0;
+  display: flex;
+  gap: .65rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ═══════════════════════════════════════════════
+   PAGINATION
+   ═══════════════════════════════════════════════ */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .75rem 1.1rem;
+  border-top: 1px solid #E9EEF5;
+  background: #FAFBFD;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.pagination-info {
+  font-size: var(--ds-text-sm);
+  color: var(--muted);
+  font-weight: 600;
+}
+.pagination-controls {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+}
+.pagination-btn {
+  min-width: 34px; height: 34px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+.pagination-btn:hover { border-color: var(--primary); color: var(--primary); }
+.pagination-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.pagination-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE OVERRIDES
+   ═══════════════════════════════════════════════ */
+@media(max-width:900px) {
+  .srch-bar { padding: .65rem .75rem; gap: .5rem; }
+  .srch-bar input { min-width: 150px; }
+  .srch-bar select { min-width: 110px; }
+  .stats-row { grid-template-columns: repeat(2,1fr) !important; gap: .65rem; }
+  .stat-card { padding: .85rem !important; }
+  .stat-value { font-size: 1.35rem; }
+  .ds-stats { grid-template-columns: repeat(2,1fr); }
+}
+@media(max-width:600px) {
+  .srch-bar { padding: .5rem .65rem; gap: .4rem; }
+  .stats-row { grid-template-columns: 1fr 1fr !important; gap: .5rem; }
+  .stat-card { padding: .7rem .6rem !important; border-radius: 12px !important; }
+  .stat-value { font-size: 1.15rem; }
+  .stat-label { font-size: .62rem; }
+  .card-header { padding: .85rem 1rem !important; }
+  .ds-stats { grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .ds-stat-value { font-size: 1.3rem; }
+  .ds-stat-icon { width: 36px; height: 36px; font-size: 1rem; }
+  .ds-filters { padding: .65rem .75rem; gap: .4rem; }
+  .ds-filters input, .ds-filters select { min-width: 120px !important; font-size: .82rem !important; }
+  .table-wrap table { font-size: .76rem; }
+  .table-wrap thead th { padding: .5rem .65rem !important; }
+  .table-wrap tbody td { padding: .5rem .65rem !important; }
+}
+@media(max-width:400px) {
+  .stats-row { grid-template-columns: 1fr 1fr !important; gap: .4rem; }
+  .stat-value { font-size: .95rem; }
+  .stat-card { padding: .55rem .5rem !important; }
+}
+
+/* ═══════════════════════════════════════════════
+   SIDEBAR VISUAL POLISH
+   ═══════════════════════════════════════════════ */
+.sidebar {
+  background: #fff !important;
+  border-left: 1px solid #e9eef5 !important;
+  box-shadow: -4px 0 24px rgba(15,23,42,.07) !important;
+}
+.sidebar-header {
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%) !important;
+  border-bottom: 1px solid #e9eef5 !important;
+}
+.nav-item {
+  border-radius: 10px !important;
+  margin: 1px 0 !important;
+  transition: background .14s, color .14s !important;
+}
+.nav-item.active {
+  background: var(--primary) !important;
+  color: #fff !important;
+}
+.nav-item:hover:not(.active) {
+  background: rgba(26,41,66,.06) !important;
+}
+
+/* ═══════════════════════════════════════════════
+   REQUESTS SECTION override
+   ═══════════════════════════════════════════════ */
+/* Make requests page header match design system */
+#pageContent .card-header,
+#pageContent .ds-card-header {
+  border-bottom: 1px solid #E9EEF5;
+}
+
+/* ─── Smooth transitions everywhere ─── */
+* { -webkit-font-smoothing: antialiased; }
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
@@ -10736,14 +11613,15 @@ async function renderDriverKpiSection() {
           <div class="form-group" style="margin:0;min-width:140px">
             <label>الشهر</label>
             <input type="month" id="kpiMonth" value="${defaultMonth}"
+              onchange="typeof loadKpiData==='function'&&loadKpiData()"
               style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
           </div>
           <div class="form-group" style="margin:0;min-width:180px">
             <label>الفرع</label>
             <input type="text" id="kpiBranch" placeholder="الكل" value=""
+              oninput="clearTimeout(window._kpiDeb);window._kpiDeb=setTimeout(()=>typeof loadKpiData==='function'&&loadKpiData(),300)"
               style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
           </div>
-          <button class="btn btn-primary btn-sm" onclick="loadKpiData()">🔍 عرض</button>
           <button class="btn btn-outline btn-sm" onclick="exportKpiCSV()">📥 تصدير CSV</button>
         </div>
       </div>
@@ -11532,14 +12410,15 @@ async function renderRentalEquipment() {
           <div class="form-group" style="margin:0;min-width:150px">
             <label>الفرع</label>
             <input type="text" id="rentalBranch" placeholder="الكل"
+              oninput="clearTimeout(window._rentalDeb);window._rentalDeb=setTimeout(()=>typeof loadRentalData==='function'&&loadRentalData(),300)"
               style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
           </div>
           <div class="form-group" style="margin:0;min-width:180px">
             <label>جهة الإيجار</label>
             <input type="text" id="rentalSource" placeholder="الكل"
+              oninput="clearTimeout(window._rentalDeb);window._rentalDeb=setTimeout(()=>typeof loadRentalData==='function'&&loadRentalData(),300)"
               style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
           </div>
-          <button class="btn btn-primary btn-sm" onclick="loadRentalData()">🔍 عرض</button>
           <button class="btn btn-outline btn-sm" onclick="exportRentalCSV()">📥 تصدير</button>
         </div>
       </div>
@@ -12311,7 +13190,8 @@ async function renderEquipmentOperators() {
         <div style="position:relative">
           <input type="text" id="opSearch" placeholder="الاسم أو الرقم..." autocomplete="off"
             style="width:100%;padding:.6rem .9rem .6rem 2.5rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;box-sizing:border-box"
-            onfocus="this.style.borderColor='#6366f1';this.style.background='#fff'"
+            oninput="clearTimeout(window._opDeb);window._opDeb=setTimeout(()=>typeof loadOperators==='function'&&loadOperators(),300)"
+            onfocus="this.style.borderColor='#1a2942';this.style.background='#fff'"
             onblur="this.style.borderColor='#e2e8f0';this.style.background='#f8fafc'">
           <span style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:#94a3b8;pointer-events:none">🔍</span>
         </div>
@@ -12321,7 +13201,7 @@ async function renderEquipmentOperators() {
           <span>🏢</span> الفرع
         </div>
         <div style="position:relative">
-          <select id="opBranch" autocomplete="off"
+          <select id="opBranch" autocomplete="off" onchange="typeof loadOperators==='function'&&loadOperators()"
             style="width:100%;padding:.6rem 2.5rem .6rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;appearance:none;cursor:pointer">
             <option value="">كل الفروع</option>
           </select>
@@ -12333,7 +13213,7 @@ async function renderEquipmentOperators() {
           <span>⚙️</span> الحالة
         </div>
         <div style="position:relative">
-          <select id="opStatus"
+          <select id="opStatus" onchange="typeof loadOperators==='function'&&loadOperators()"
             style="width:100%;padding:.6rem 2.5rem .6rem .9rem;border:1.5px solid #e2e8f0;border-radius:10px;font-family:inherit;font-size:.88rem;background:#f8fafc;outline:none;appearance:none;cursor:pointer">
             <option value="">الكل</option>
             <option value="active">نشط</option>
@@ -12343,9 +13223,6 @@ async function renderEquipmentOperators() {
         </div>
       </div>
       <div style="display:flex;gap:.5rem">
-        <button class="btn btn-primary" onclick="loadOperators()" style="padding:.6rem 1.25rem;font-weight:700;display:flex;align-items:center;gap:.4rem">
-          <span>🔍</span> عرض
-        </button>
         <button onclick="document.getElementById('opSearch').value='';document.getElementById('opBranch').value='';document.getElementById('opStatus').value='';loadOperators()"
           style="padding:.6rem 1rem;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:.85rem;color:#64748b;display:flex;align-items:center;gap:.35rem">
           <span>✕</span> مسح
@@ -13156,11 +14033,12 @@ async function renderMonthlyReport() {
           <div class="form-group" style="margin:0">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.25rem">الشهر</label>
             <input type="month" id="mrMonth" value="${defaultMonth}"
+              onchange="typeof loadMonthlyReport==='function'&&loadMonthlyReport()"
               style="padding:.42rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem">
           </div>
           <div class="form-group" style="margin:0;min-width:170px">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.25rem">الفرع</label>
-            <select id="mrBranch"
+            <select id="mrBranch" onchange="typeof loadMonthlyReport==='function'&&loadMonthlyReport()"
               style="padding:.42rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.82rem;background:#fff;width:100%">
               <option value="">— الكل —</option>
               ${BRANCHES.map(b=>`<option value="${b}">${b}</option>`).join('')}
@@ -13183,7 +14061,7 @@ async function renderMonthlyReport() {
           </div>
           <div class="form-group" style="margin:0">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.25rem">ترتيب حسب</label>
-            <select id="mrSort"
+            <select id="mrSort" onchange="typeof filterMrTable==='function'&&filterMrTable()"
               style="padding:.42rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.82rem;background:#fff">
               <option value="km_desc">⬇️ أعلى كم</option>
               <option value="km_asc">⬆️ أقل كم</option>
@@ -13198,7 +14076,7 @@ async function renderMonthlyReport() {
               oninput="filterMrTable()"
               style="padding:.42rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.82rem;min-width:180px">
           </div>
-          <button class="btn btn-primary btn-sm" onclick="loadMonthlyReport()" style="height:36px">🔍 عرض</button>
+          <button class="btn btn-outline btn-sm" onclick="loadMonthlyReport()" style="height:36px">🔄 تحديث</button>
         </div>
       </div>
     </div>
@@ -14615,6 +15493,139 @@ function _gesSetTripsType(type) {
     </div>
   </div>
 </div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   DESIGN SYSTEM — RUNTIME ENHANCEMENTS
+   Real-time debounced filtering + UI polish
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Universal Debounce ─── */
+window.dsDebounce = function(fn, delay = 280) {
+  let timer;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+};
+
+/* ─── KPI: add debounced oninput to branch filter ─── */
+document.addEventListener('input', function(e) {
+  if (e.target.id === 'kpiBranch' || e.target.id === 'kpiMonth') {
+    clearTimeout(window._kpiDebounce);
+    window._kpiDebounce = setTimeout(() => {
+      if (typeof loadKpiData === 'function') loadKpiData();
+    }, 320);
+  }
+  if (e.target.id === 'rentalBranch' || e.target.id === 'rentalSource') {
+    clearTimeout(window._rentalDebounce);
+    window._rentalDebounce = setTimeout(() => {
+      if (typeof loadRentalData === 'function') loadRentalData();
+    }, 320);
+  }
+  if (e.target.id === 'mrSearch') {
+    if (typeof filterMrTable === 'function') filterMrTable();
+  }
+});
+
+document.addEventListener('change', function(e) {
+  if (e.target.id === 'rentalMonth') {
+    if (typeof onRentalMonthChange === 'function') onRentalMonthChange();
+  }
+  if (e.target.id === 'mrMonth' || e.target.id === 'mrBranch' || e.target.id === 'mrSort') {
+    if (typeof loadMonthlyReport === 'function') loadMonthlyReport();
+  }
+  if (e.target.id === 'kpiMonth') {
+    if (typeof loadKpiData === 'function') loadKpiData();
+  }
+});
+
+/* ─── Equipment list: auto-load on section render ─── */
+// Override renderEquipmentSection to always load data
+const _origRenderEq = window.renderEquipmentSection;
+if (typeof _origRenderEq === 'function') {
+  window.renderEquipmentSection = async function() {
+    await _origRenderEq();
+    // auto-load if button exists
+    const btn = document.querySelector('[onclick="loadEquipmentData()"]');
+    if (btn && typeof loadEquipmentData === 'function') loadEquipmentData();
+  };
+}
+
+/* ─── Global: remove any standalone "عرض" button that's just a load trigger ─── */
+// We patch renderDriverKpiSection and renderRentalEquipment to remove the button post-render
+const _patchRender = (fnName, btnSelector) => {
+  const orig = window[fnName];
+  if (typeof orig !== 'function') return;
+  window[fnName] = async function() {
+    await orig.apply(this, arguments);
+    document.querySelectorAll(btnSelector).forEach(btn => {
+      // Only remove the "عرض" load button, not export or other buttons
+      if (btn.textContent.trim() === '🔍 عرض') btn.remove();
+    });
+  };
+};
+// These are patched just in case the remove above missed edge cases
+_patchRender('renderDriverKpiSection', '.btn-primary');
+_patchRender('renderRentalEquipment', '.btn-primary');
+
+/* ─── Page Content: ensure gap between sections ─── */
+const _origRenderSection = window.renderSection;
+if (typeof _origRenderSection === 'function') {
+  window.renderSection = async function(id) {
+    await _origRenderSection.apply(this, arguments);
+    // ensure page-content has proper flex-column gap
+    const pc = document.getElementById('pageContent');
+    if (pc) {
+      pc.style.display = 'flex';
+      pc.style.flexDirection = 'column';
+      pc.style.gap = '1.1rem';
+    }
+  };
+}
+
+/* ─── Legacy .filters-bar "عرض" button removal ─── */
+// Remove any old "عرض" submit buttons inside filter bars after page render
+const _removeShowBtns = () => {
+  document.querySelectorAll('.filters-bar button, .srch-bar button').forEach(btn => {
+    const t = btn.textContent.trim();
+    if (t === '🔍 عرض' || t === 'عرض' || t === '🔍عرض') {
+      btn.remove();
+    }
+  });
+};
+
+// Apply after any section switch
+const _patchSwitchSection = window.switchSection;
+if (typeof _patchSwitchSection === 'function') {
+  window.switchSection = async function(id) {
+    await _patchSwitchSection.apply(this, arguments);
+    setTimeout(_removeShowBtns, 300);
+  };
+}
+
+/* ─── Auto scroll to top on section switch ─── */
+const _patchSwitch2 = window.switchSection;
+if (typeof _patchSwitch2 === 'function') {
+  const _inner = _patchSwitch2;
+  window.switchSection = async function(id) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return _inner.apply(this, arguments);
+  };
+}
+
+/* ─── Stat card auto color based on value context ─── */
+// Make stat-icon containers use round backgrounds
+document.addEventListener('click', () => {
+  document.querySelectorAll('.stat-card .stat-icon').forEach(icon => {
+    if (!icon.style.background) {
+      icon.style.cssText += 'background:rgba(6,182,212,.08);border-radius:10px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;';
+    }
+  });
+}, { passive: true });
+
+console.log('✅ FleetSync Design System v3 — Runtime loaded');
+</script>
 
 </body>
 </html>
