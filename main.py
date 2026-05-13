@@ -172,6 +172,7 @@ def migrate_db():
             serial_no      TEXT    DEFAULT '',
             capacity       TEXT    DEFAULT '',
             equipment_type TEXT    DEFAULT 'معدات تحريك تربة',
+            ownership_type TEXT    DEFAULT 'مملوكة',
             license_expiry TEXT    DEFAULT '',
             notes          TEXT    DEFAULT '',
             created_at     TEXT    DEFAULT (datetime('now'))
@@ -186,6 +187,7 @@ def migrate_db():
             ("capacity",        "TEXT DEFAULT ''"),
             ("notes",           "TEXT DEFAULT ''"),
             ("created_at",      "TEXT DEFAULT ''"),
+            ("ownership_type",  "TEXT DEFAULT 'مملوكة'"),
         ]
         for _col, _def in _equip_cols:
             try: c.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
@@ -2450,8 +2452,8 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
             conditions = []
             params = []
             if branch:
-                conditions.append("d.branch=?")
-                params.append(branch)
+                conditions.append("(d.branch=? OR (w.is_operator=1 AND op.branch=?))")
+                params.extend([branch, branch])
             if month:
                 conditions.append("w.created_at LIKE ?")
                 params.append(month + "%")
@@ -6323,6 +6325,7 @@ class EquipmentCreate(BaseModel):
     chassis:        str = ""
     engine_number:  str = ""
     equipment_type: str = "معدات تحريك تربة"
+    ownership_type: str = "مملوكة"
     branch:         str = ""
     sector:         str = ""
     project:        str = ""
@@ -6342,11 +6345,11 @@ async def create_equipment(body: EquipmentCreate, cu: dict = Depends(require_adm
             conn.execute("""
                 INSERT INTO equipment
                 (car_code,equipment_name,brand,model,year,chassis,engine_number,
-                 equipment_type,branch,sector,project,license_expiry,status,notes)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 equipment_type,ownership_type,branch,sector,project,license_expiry,status,notes)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (body.car_code.strip(), body.equipment_name.strip(),
                   body.brand, body.model, body.year, body.chassis, body.engine_number,
-                  body.equipment_type, body.branch, body.sector, body.project,
+                  body.equipment_type, body.ownership_type, body.branch, body.sector, body.project,
                   body.license_expiry, body.status, body.notes))
             eq_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {"id": eq_id, "message": "تم إضافة المعدة بنجاح"}
@@ -6365,12 +6368,12 @@ async def update_equipment(eq_id: int, body: EquipmentCreate, cu: dict = Depends
         conn.execute("""
             UPDATE equipment SET
                 car_code=?, equipment_name=?, brand=?, model=?, year=?, chassis=?,
-                engine_number=?, equipment_type=?, branch=?, sector=?, project=?,
+                engine_number=?, equipment_type=?, ownership_type=?, branch=?, sector=?, project=?,
                 license_expiry=?, status=?, notes=?
             WHERE id=?
         """, (body.car_code.strip(), body.equipment_name.strip(),
               body.brand, body.model, body.year, body.chassis, body.engine_number,
-              body.equipment_type, body.branch, body.sector, body.project,
+              body.equipment_type, body.ownership_type, body.branch, body.sector, body.project,
               body.license_expiry, body.status, body.notes, eq_id))
     return {"message": "تم التعديل بنجاح"}
 
