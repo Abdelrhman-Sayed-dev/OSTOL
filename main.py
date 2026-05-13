@@ -6573,6 +6573,8 @@ def _ensure_operator_tables(conn):
         start_hours     REAL DEFAULT 0,
         end_hours       REAL DEFAULT 0,
         fuel_liters     REAL DEFAULT 0,
+        fuel_type       TEXT DEFAULT '',
+        ownership_type  TEXT DEFAULT 'مملوكة',
         project         TEXT DEFAULT '',
         branch          TEXT DEFAULT '',
         notes           TEXT DEFAULT '',
@@ -6586,6 +6588,11 @@ def _ensure_operator_tables(conn):
     try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN start_location TEXT DEFAULT ''")
     except Exception: pass
     try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN end_location TEXT DEFAULT ''")
+    except Exception: pass
+    # Migration: أضف ownership_type و fuel_type لو مش موجودين
+    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN ownership_type TEXT DEFAULT 'مملوكة'")
+    except Exception: pass
+    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN fuel_type TEXT DEFAULT ''")
     except Exception: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_op ON operator_shifts(operator_id)")
     except: pass
@@ -6650,6 +6657,8 @@ class ShiftStart(BaseModel):
     shift_type:     str = "day"
     start_hours:    float = 0
     fuel_liters:    float = 0
+    fuel_type:      str = ""
+    ownership_type: str = "مملوكة"
     project:        str = ""
     branch:         str = ""
     notes:          str = ""
@@ -6659,6 +6668,7 @@ class ShiftStart(BaseModel):
 class ShiftEnd(BaseModel):
     end_hours:    float = 0
     fuel_liters:  float = 0
+    fuel_type:    str = ""
     notes:        str = ""
     end_location: str = ""
 
@@ -7014,9 +7024,12 @@ async def list_all_shifts(
     with get_db() as conn:
         _ensure_operator_tables(conn)
         q = """SELECT s.*, o.name as operator_name, o.phone as operator_phone,
-                      o.fixed_number as operator_fixed, o.branch as operator_branch
+                      o.fixed_number as operator_fixed, o.branch as operator_branch,
+                      e.ownership_type as eq_ownership_type,
+                      e.equipment_type as eq_type_label
                FROM operator_shifts s
                LEFT JOIN equipment_operators o ON o.id = s.operator_id
+               LEFT JOIN equipment e ON e.car_code = s.equipment_id
                WHERE 1=1"""
         params: list = []
         eff_branch = _branch_filter(cu) or branch
@@ -7044,6 +7057,10 @@ async def list_all_shifts(
                 r["working_hours"] = round(r["end_hours"] - r["start_hours"], 2)
             else:
                 r["working_hours"] = None
+            # الملكية: الأولوية للقيمة المخزنة في الوردية، ثم من جدول equipment
+            r["ownership_type"] = r.get("ownership_type") or r.get("eq_ownership_type") or "مملوكة"
+            # نوع المعدة من جدول equipment لو موجود
+            r["equipment_type_label"] = r.get("eq_type_label") or ""
     return {"total": total, "shifts": rows}
 
 
@@ -7079,8 +7096,10 @@ async def export_shifts_csv(
     w.writerow(["#","المشغل","الرقم الثابت","المعدة","كود المعدة",
                 "نوع الوردية","وقت البداية","وقت النهاية",
                 "ساعات البداية","ساعات النهاية","مدة التشغيل (ساعة)",
-                "الوقود (لتر)","المشروع","الفرع","موقع البداية","موقع النهاية","الحالة","ملاحظات"])
+                "نوع الوقود","الوقود (لتر)","الملكية","المشروع","الفرع",
+                "موقع البداية","موقع النهاية","الحالة","ملاحظات"])
     type_labels = {"day":"نهارية","night":"ليلية","extended":"ممتدة"}
+    fuel_labels = {"fuel_solar":"سولار","fuel_92":"بنزين 92","fuel_95":"بنزين 95","fuel_80":"بنزين 80","fuel_cng":"غاز طبيعي"}
     for i, r in enumerate(rows, 1):
         wh = None
         if r.get("start_hours") is not None and r.get("end_hours") is not None and r["end_hours"] > r["start_hours"]:
@@ -7091,7 +7110,10 @@ async def export_shifts_csv(
                     (r.get("start_time") or "")[:16].replace("T"," "),
                     (r.get("end_time") or "")[:16].replace("T"," "),
                     r.get("start_hours",""), r.get("end_hours",""), wh or "",
-                    r.get("fuel_liters",""), r.get("project",""), r.get("branch",""),
+                    fuel_labels.get(r.get("fuel_type",""), r.get("fuel_type","")),
+                    r.get("fuel_liters",""),
+                    r.get("ownership_type","مملوكة"),
+                    r.get("project",""), r.get("branch",""),
                     r.get("start_location",""), r.get("end_location",""),
                     "نشطة" if r.get("status")=="active" else "منتهية", r.get("notes","")])
     fname = f"shifts_{date_from or 'all'}_{date_to or 'all'}.csv"
@@ -7149,10 +7171,11 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
         conn.execute("""INSERT INTO operator_shifts
             (operator_id,equipment_id,equipment_name,shift_type,start_time,
-             start_hours,fuel_liters,project,branch,notes,start_location,status)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,'active')""",
+             start_hours,fuel_liters,fuel_type,ownership_type,project,branch,notes,start_location,status)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active')""",
             (body.operator_id, body.equipment_id, body.equipment_name, body.shift_type,
              datetime.utcnow().isoformat(), body.start_hours, body.fuel_liters,
+             body.fuel_type, body.ownership_type,
              body.project, body.branch, body.notes, body.start_location or ""))
         sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return {"id": sid, "message": "بدأت الوردية"}
@@ -7172,9 +7195,10 @@ async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
         elif cu["role"] not in ("admin", "superuser"):
             raise HTTPException(403, "صلاحيات غير كافية")
         conn.execute("""UPDATE operator_shifts SET
-            end_time=?, end_hours=?, fuel_liters=?, notes=?, end_location=?, status='ended'
+            end_time=?, end_hours=?, fuel_liters=?, fuel_type=?, notes=?, end_location=?, status='ended'
             WHERE id=?""",
             (datetime.utcnow().isoformat(), body.end_hours, body.fuel_liters,
+             body.fuel_type or shift["fuel_type"] or "",
              body.notes or shift["notes"], body.end_location or "", sid))
     return {"message": "انتهت الوردية"}
 
