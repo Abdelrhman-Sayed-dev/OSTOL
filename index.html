@@ -15264,7 +15264,7 @@ async function revokePermission(permId) {
 // SHIFTS TABLE — جدول الورديات الكامل
 // ══════════════════════════════════════════════════════════
 
-let _shiftsData = [], _shiftsPage = 1, _shiftsPageSize = 20, _shiftsTotal = 0;
+var _shiftsData = [], _shiftsPage = 1, _shiftsPageSize = 20, _shiftsTotal = 0;
 
 async function renderShiftsTable() {
   const el = document.getElementById('pageContent');
