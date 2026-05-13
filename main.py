@@ -172,7 +172,6 @@ def migrate_db():
             serial_no      TEXT    DEFAULT '',
             capacity       TEXT    DEFAULT '',
             equipment_type TEXT    DEFAULT 'معدات تحريك تربة',
-            ownership_type TEXT    DEFAULT 'مملوكة',
             license_expiry TEXT    DEFAULT '',
             notes          TEXT    DEFAULT '',
             created_at     TEXT    DEFAULT (datetime('now'))
@@ -187,7 +186,6 @@ def migrate_db():
             ("capacity",        "TEXT DEFAULT ''"),
             ("notes",           "TEXT DEFAULT ''"),
             ("created_at",      "TEXT DEFAULT ''"),
-            ("ownership_type",  "TEXT DEFAULT 'مملوكة'"),
         ]
         for _col, _def in _equip_cols:
             try: c.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
@@ -2452,8 +2450,8 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
             conditions = []
             params = []
             if branch:
-                conditions.append("(d.branch=? OR (w.is_operator=1 AND op.branch=?))")
-                params.extend([branch, branch])
+                conditions.append("d.branch=?")
+                params.append(branch)
             if month:
                 conditions.append("w.created_at LIKE ?")
                 params.append(month + "%")
@@ -6332,6 +6330,10 @@ class EquipmentCreate(BaseModel):
     license_expiry: str = ""
     status:         str = "active"
     notes:          str = ""
+    rental_source:  str = ""
+    monthly_rate:   float = 0.0
+    rental_start:   str = ""
+    rental_end:     str = ""
 
 
 @app.post("/equipment")
@@ -6342,15 +6344,28 @@ async def create_equipment(body: EquipmentCreate, cu: dict = Depends(require_adm
         raise HTTPException(400, "اسم المعدة مطلوب")
     try:
         with get_db() as conn:
+            # migration دفاعي — أضف الأعمدة الجديدة لو مش موجودة
+            for _col, _def in [
+                ("ownership_type", "TEXT DEFAULT 'مملوكة'"),
+                ("rental_source",  "TEXT DEFAULT ''"),
+                ("monthly_rate",   "REAL DEFAULT 0"),
+                ("rental_start",   "TEXT DEFAULT ''"),
+                ("rental_end",     "TEXT DEFAULT ''"),
+            ]:
+                try: conn.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
+                except Exception: pass
             conn.execute("""
                 INSERT INTO equipment
                 (car_code,equipment_name,brand,model,year,chassis,engine_number,
-                 equipment_type,ownership_type,branch,sector,project,license_expiry,status,notes)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 equipment_type,ownership_type,branch,sector,project,license_expiry,status,notes,
+                 rental_source,monthly_rate,rental_start,rental_end)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (body.car_code.strip(), body.equipment_name.strip(),
                   body.brand, body.model, body.year, body.chassis, body.engine_number,
-                  body.equipment_type, body.ownership_type, body.branch, body.sector, body.project,
-                  body.license_expiry, body.status, body.notes))
+                  body.equipment_type, body.ownership_type,
+                  body.branch, body.sector, body.project,
+                  body.license_expiry, body.status, body.notes,
+                  body.rental_source, body.monthly_rate, body.rental_start, body.rental_end))
             eq_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         return {"id": eq_id, "message": "تم إضافة المعدة بنجاح"}
     except Exception as e:
@@ -6365,16 +6380,30 @@ async def update_equipment(eq_id: int, body: EquipmentCreate, cu: dict = Depends
         row = conn.execute("SELECT id FROM equipment WHERE id=?", (eq_id,)).fetchone()
         if not row:
             raise HTTPException(404, "المعدة غير موجودة")
+        # migration دفاعي
+        for _col, _def in [
+            ("ownership_type", "TEXT DEFAULT 'مملوكة'"),
+            ("rental_source",  "TEXT DEFAULT ''"),
+            ("monthly_rate",   "REAL DEFAULT 0"),
+            ("rental_start",   "TEXT DEFAULT ''"),
+            ("rental_end",     "TEXT DEFAULT ''"),
+        ]:
+            try: conn.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
+            except Exception: pass
         conn.execute("""
             UPDATE equipment SET
                 car_code=?, equipment_name=?, brand=?, model=?, year=?, chassis=?,
-                engine_number=?, equipment_type=?, ownership_type=?, branch=?, sector=?, project=?,
-                license_expiry=?, status=?, notes=?
+                engine_number=?, equipment_type=?, ownership_type=?,
+                branch=?, sector=?, project=?, license_expiry=?, status=?, notes=?,
+                rental_source=?, monthly_rate=?, rental_start=?, rental_end=?
             WHERE id=?
         """, (body.car_code.strip(), body.equipment_name.strip(),
               body.brand, body.model, body.year, body.chassis, body.engine_number,
-              body.equipment_type, body.ownership_type, body.branch, body.sector, body.project,
-              body.license_expiry, body.status, body.notes, eq_id))
+              body.equipment_type, body.ownership_type,
+              body.branch, body.sector, body.project,
+              body.license_expiry, body.status, body.notes,
+              body.rental_source, body.monthly_rate, body.rental_start, body.rental_end,
+              eq_id))
     return {"message": "تم التعديل بنجاح"}
 
 
