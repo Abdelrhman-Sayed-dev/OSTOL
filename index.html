@@ -7058,7 +7058,7 @@ async function renderDriverTrip() {
     if(!isNaN(v) && v <= startOdo) {
       inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
     } else if(!isNaN(v) && (v - startOdo) > 1500) {
-      inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
+      inp.style.borderColor='#f59e0b'; inp.style.color='#d97706';
     } else {
       inp.style.borderColor='#f59e0b'; inp.style.color='#1e3a5f';
     }
@@ -9011,7 +9011,7 @@ async function renderDriverSinglePage() {
       const notes=document.getElementById('dpEndNotes').value.trim();
       if(isNaN(end_odo)||end_odo<=0) return showNotification('أدخل عداد النهاية','error');
       if(end_odo<=startOdo) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+startOdo+' كم)','error');
-      if((end_odo - startOdo) > 1500) return showNotification(`⚠️ الرقم المدخل (${Math.round(end_odo-startOdo)} كم) غير منطقي — تحقق من قراءة العداد`,'error');
+      if((end_odo - startOdo) > 1500) return showNotification(`المسافة المدخلة (${Math.round(end_odo-startOdo)} كم) تتجاوز الحد الأقصى 1500 كم للرحلة الواحدة — تحقق من القراءة`,'error');
       const btn=document.getElementById('dpEndOk');
       btn.disabled=true; btn.textContent='⏳ جاري...';
       const loc=await silentGetLocation();
@@ -12055,14 +12055,6 @@ async function renderEquipmentSection() {
             </select>
           </div>
           <div class="form-group" style="margin:0">
-            <select id="eqOwnershipFilter" onchange="filterEquipment()"
-              style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
-              <option value="">🏗️ كل الملكية</option>
-              <option value="مملوكة">🏗️ مملوكة</option>
-              <option value="مؤجرة">🔑 مؤجرة</option>
-            </select>
-          </div>
-          <div class="form-group" style="margin:0">
             <select id="eqStatusFilter" onchange="filterEquipment()"
               style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
               <option value="">كل الحالات</option>
@@ -12090,7 +12082,6 @@ async function renderEquipmentSection() {
               <th>اسم المعدة</th>
               <th>الماركة / الموديل</th>
               <th>النوع</th>
-              <th style="text-align:center">الملكية</th>
               <th>الفرع</th>
               <th>السنة</th>
               <th style="text-align:center">الحالة</th>
@@ -12098,7 +12089,7 @@ async function renderEquipmentSection() {
             </tr>
           </thead>
           <tbody id="eqTableBody">
-            <tr><td colspan="10" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
+            <tr><td colspan="9" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
           </tbody>
         </table>
 
@@ -12107,13 +12098,56 @@ async function renderEquipmentSection() {
     </div>
 
     <!-- نموذج الإضافة/التعديل -->
-    <div id="eqFormModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;width:min(700px,95vw);max-height:90vh;overflow-y:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-          <h3 id="eqFormTitle" style="margin:0;font-size:1.1rem">➕ إضافة معدة</h3>
-          <button onclick="closeEquipmentForm()" style="background:none;border:none;font-size:1.3rem;cursor:pointer">✕</button>
+    <!-- ── بوب اب اختيار نوع الملكية (خطوة أولى — للإضافة الجديدة فقط) ── -->
+    <div id="eqOwnershipPickModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1001;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:20px;padding:2rem 1.75rem;width:min(420px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.18)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+          <div>
+            <div style="font-size:1.05rem;font-weight:900;color:var(--text)">➕ إضافة معدة</div>
+            <div style="font-size:.78rem;color:var(--muted);margin-top:.15rem">اختر نوع ملكية المعدة أولاً</div>
+          </div>
+          <button onclick="closeEquipmentForm()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--muted)">✕</button>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
+          <button onclick="_openEqFormWithOwnership('مملوكة')" style="
+            background:linear-gradient(135deg,#f0fdf4,#dcfce7);
+            border:2px solid #86efac;border-radius:14px;
+            padding:1.4rem .75rem;cursor:pointer;
+            display:flex;flex-direction:column;align-items:center;gap:.5rem;
+            transition:.15s;font-family:inherit">
+            <span style="font-size:2.2rem">🏗️</span>
+            <span style="font-weight:800;font-size:.95rem;color:#15803d">مملوكة</span>
+            <span style="font-size:.72rem;color:#4ade80;font-weight:500">معدة مملوكة للشركة</span>
+          </button>
+          <button onclick="_openEqFormWithOwnership('مؤجرة')" style="
+            background:linear-gradient(135deg,#fffbeb,#fef3c7);
+            border:2px solid #fcd34d;border-radius:14px;
+            padding:1.4rem .75rem;cursor:pointer;
+            display:flex;flex-direction:column;align-items:center;gap:.5rem;
+            transition:.15s;font-family:inherit">
+            <span style="font-size:2.2rem">🔑</span>
+            <span style="font-weight:800;font-size:.95rem;color:#d97706">مؤجرة</span>
+            <span style="font-size:.72rem;color:#f59e0b;font-weight:500">معدة مستأجرة من خارج</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── فورم المعدة المملوكة ── -->
+    <div id="eqFormModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:16px;padding:1.5rem;width:min(680px,95vw);max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:.65rem">
+            <span id="eqFormOwnerBadge" style="font-size:.75rem;font-weight:700;padding:.25rem .65rem;border-radius:20px;background:#dcfce7;color:#15803d">🏗️ مملوكة</span>
+            <h3 id="eqFormTitle" style="margin:0;font-size:1rem;font-weight:800;color:var(--text)">➕ إضافة معدة مملوكة</h3>
+          </div>
+          <button onclick="closeEquipmentForm()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--muted)">✕</button>
+        </div>
+        <!-- حقل مخفي للملكية -->
+        <input type="hidden" id="eqOwnership" value="مملوكة">
+
+        <!-- ── حقول مشتركة ── -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.85rem" id="eqFormFields">
           <div class="form-group">
             <label>الكود <span class="req">*</span></label>
             <input id="eqCode" class="form-control" placeholder="مثال: 12/5/347">
@@ -12123,35 +12157,12 @@ async function renderEquipmentSection() {
             <input id="eqName" class="form-control" placeholder="مثال: اسكيد لودر">
           </div>
           <div class="form-group">
-            <label>الماركة</label>
-            <input id="eqBrand" class="form-control" placeholder="مثال: CATERPILLAR">
-          </div>
-          <div class="form-group">
-            <label>الموديل</label>
-            <input id="eqModel" class="form-control" placeholder="مثال: 246C">
-          </div>
-          <div class="form-group">
-            <label>سنة الصنع</label>
-            <input id="eqYear" class="form-control" placeholder="2018">
-          </div>
-          <div class="form-group">
-            <label>رقم الشاسيه</label>
-            <input id="eqChassis" class="form-control">
-          </div>
-          <div class="form-group">
             <label>نوع التصنيف</label>
             <select id="eqType" class="form-control">
               <option>معدات تحريك تربة</option>
               <option>معدات رفع</option>
               <option>معدات ثابتة</option>
               <option>معدات نقل ثقيل</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>نوع الملكية</label>
-            <select id="eqOwnership" class="form-control">
-              <option value="مملوكة">🏗️ مملوكة</option>
-              <option value="مؤجرة">🔑 مؤجرة</option>
             </select>
           </div>
           <div class="form-group">
@@ -12178,14 +12189,52 @@ async function renderEquipmentSection() {
             <label>انتهاء الرخصة</label>
             <input id="eqLicense" class="form-control" type="date">
           </div>
+
+          <!-- حقول المملوكة فقط -->
+          <div class="form-group owned-only">
+            <label>الماركة</label>
+            <input id="eqBrand" class="form-control" placeholder="مثال: CATERPILLAR">
+          </div>
+          <div class="form-group owned-only">
+            <label>الموديل</label>
+            <input id="eqModel" class="form-control" placeholder="مثال: 246C">
+          </div>
+          <div class="form-group owned-only">
+            <label>سنة الصنع</label>
+            <input id="eqYear" class="form-control" placeholder="2018">
+          </div>
+          <div class="form-group owned-only">
+            <label>رقم الشاسيه</label>
+            <input id="eqChassis" class="form-control">
+          </div>
+
+          <!-- حقول المؤجرة فقط -->
+          <div class="form-group rented-only" style="display:none">
+            <label>جهة الإيجار <span class="req">*</span></label>
+            <input id="eqRentalSource" class="form-control" placeholder="مثال: شركة المقاولون العرب">
+          </div>
+          <div class="form-group rented-only" style="display:none">
+            <label>القيمة الشهرية (ج)</label>
+            <input id="eqMonthlyRate" class="form-control" type="number" min="0" placeholder="مثال: 45000">
+          </div>
+          <div class="form-group rented-only" style="display:none">
+            <label>تاريخ بداية الإيجار</label>
+            <input id="eqRentalStart" class="form-control" type="date">
+          </div>
+          <div class="form-group rented-only" style="display:none">
+            <label>تاريخ نهاية الإيجار</label>
+            <input id="eqRentalEnd" class="form-control" type="date">
+          </div>
+
           <div class="form-group" style="grid-column:1/-1">
             <label>ملاحظات</label>
             <textarea id="eqNotes" class="form-control" rows="2"></textarea>
           </div>
         </div>
+
         <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
-          <button class="btn btn-outline" onclick="closeEquipmentForm()">إلغاء</button>
-          <button class="btn btn-primary" onclick="saveEquipment()">💾 حفظ</button>
+          <button class="btn btn-ghost" onclick="closeEquipmentForm()">إلغاء</button>
+          <button class="btn btn-primary" onclick="saveEquipment()" id="eqSaveBtn">💾 حفظ</button>
         </div>
       </div>
     </div>
@@ -12280,21 +12329,19 @@ async function loadEquipmentData() {
     filterEquipment();
   } catch(e) {
     const tb = document.getElementById('eqTableBody');
-    if(tb) tb.innerHTML = `<tr><td colspan="10" style="color:#ef4444;text-align:center;padding:1.5rem">❌ ${e.message}</td></tr>`;
+    if(tb) tb.innerHTML = `<tr><td colspan="9" style="color:#ef4444;text-align:center;padding:1.5rem">❌ ${e.message}</td></tr>`;
   }
 }
 
 function filterEquipment() {
   const q  = (document.getElementById('eqSearch')?.value||'').trim().toLowerCase();
   const t  = document.getElementById('eqTypeFilter')?.value||'';
-  const ow = document.getElementById('eqOwnershipFilter')?.value||'';
   const s  = document.getElementById('eqStatusFilter')?.value||'';
   const br = (document.getElementById('eqBranchFilter')?.value||'').trim().toLowerCase();
   const pr = (document.getElementById('eqProjectFilter')?.value||'').trim().toLowerCase();
   const filtered = _eqData.filter(e =>
     (!q  || e.equipment_name.toLowerCase().includes(q) || (e.car_code||'').toLowerCase().includes(q) || (e.brand||'').toLowerCase().includes(q)) &&
     (!t  || e.equipment_type === t) &&
-    (!ow || (e.ownership_type||'مملوكة') === ow) &&
     (!s  || e.status === s) &&
     (!br || (e.branch||'').toLowerCase().includes(br)) &&
     (!pr || (e.project||'').toLowerCase().includes(pr))
@@ -12309,24 +12356,19 @@ function renderEquipmentTable(rows) {
   const pgEl = document.getElementById('eqPagination');
   if(pgEl) pgEl.innerHTML = '';
   if(!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد معدات</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد معدات</td></tr>`;
     return;
   }
   const statusMap = {active:{label:'عاملة',color:'#10b981'}, inactive:{label:'عاطلة',color:'#ef4444'}, maintenance:{label:'صيانة',color:'#f97316'}};
   tbody.innerHTML = rows.map((e,i) => {
     const st = statusMap[e.status] || {label:e.status, color:'#94a3b8'};
     const typeColor = e.equipment_type==='معدات تحريك تربة'?'#3b82f6':e.equipment_type==='معدات رفع'?'#8b5cf6':e.equipment_type==='معدات ثابتة'?'#f59e0b':'#6b7280';
-    const isRented  = (e.ownership_type||'مملوكة') === 'مؤجرة';
-    const ownColor  = isRented ? '#d97706' : '#059669';
-    const ownBg     = isRented ? '#fef3c720' : '#d1fae520';
-    const ownLabel  = isRented ? '🔑 مؤجرة' : '🏗️ مملوكة';
     return `<tr>
       <td style="text-align:center;color:var(--muted)">${i+1}</td>
       <td><code style="background:var(--surface-2);padding:.15rem .4rem;border-radius:4px;font-size:.82rem">${e.car_code}</code></td>
       <td><strong>${e.equipment_name}</strong>${e.chassis?`<br><small style="color:var(--muted)">شاسيه: ${e.chassis}</small>`:''}</td>
       <td style="font-size:.85rem">${[e.brand,e.model].filter(Boolean).join(' / ')||'—'}</td>
       <td><span style="background:${typeColor}20;color:${typeColor};font-size:.72rem;padding:.2rem .55rem;border-radius:20px;font-weight:700;white-space:nowrap">${e.equipment_type}</span></td>
-      <td style="text-align:center"><span style="background:${ownBg};color:${ownColor};font-size:.72rem;padding:.2rem .55rem;border-radius:20px;font-weight:700;white-space:nowrap">${ownLabel}</span></td>
       <td style="font-size:.85rem">${e.branch||'—'}</td>
       <td style="text-align:center;color:var(--muted)">${e.year||'—'}</td>
       <td style="text-align:center"><span style="background:${st.color}20;color:${st.color};font-size:.75rem;padding:.2rem .6rem;border-radius:20px;font-weight:700">${st.label}</span></td>
@@ -12340,72 +12382,121 @@ function renderEquipmentTable(rows) {
 
 function showEquipmentForm(id=null) {
   _eqEditId = id;
-  document.getElementById('eqFormTitle').textContent = id ? '✏️ تعديل معدة' : '➕ إضافة معدة';
-  const fields = ['Code','Name','Brand','Model','Year','Chassis','Type','Ownership','Status','Branch','Sector','Project','License','Notes'];
-  fields.forEach(f => { const el = document.getElementById('eq'+f); if(el) el.value = ''; });
+  if(!id) {
+    // إضافة جديدة → بوب اب الاختيار أولاً
+    document.getElementById('eqFormModal').style.display = 'none';
+    document.getElementById('eqOwnershipPickModal').style.display = 'flex';
+    return;
+  }
+  // تعديل موجود → افتح الفورم مباشرة
+  const e = _eqData.find(x => x.id === id);
+  if(e) _openEqFormWithOwnership(e.ownership_type || 'مملوكة', e);
+}
+
+function _openEqFormWithOwnership(ownershipType, existingData=null) {
+  // أغلق بوب اب الاختيار
+  document.getElementById('eqOwnershipPickModal').style.display = 'none';
+
+  const isRented  = ownershipType === 'مؤجرة';
+  const badge     = document.getElementById('eqFormOwnerBadge');
+  const title     = document.getElementById('eqFormTitle');
+  const hiddenOwn = document.getElementById('eqOwnership');
+
+  // تحديث الـ badge والعنوان
+  badge.textContent = isRented ? '🔑 مؤجرة' : '🏗️ مملوكة';
+  badge.style.background = isRented ? '#fef3c7' : '#dcfce7';
+  badge.style.color = isRented ? '#d97706' : '#15803d';
+  title.textContent = _eqEditId
+    ? (isRented ? '✏️ تعديل معدة مؤجرة' : '✏️ تعديل معدة مملوكة')
+    : (isRented ? '➕ إضافة معدة مؤجرة' : '➕ إضافة معدة مملوكة');
+  hiddenOwn.value = ownershipType;
+
+  // إظهار/إخفاء الحقول حسب النوع
+  document.querySelectorAll('.owned-only').forEach(el => el.style.display = isRented ? 'none' : '');
+  document.querySelectorAll('.rented-only').forEach(el => el.style.display = isRented ? '' : 'none');
+
+  // مسح الحقول
+  ['eqCode','eqName','eqBrand','eqModel','eqYear','eqChassis',
+   'eqBranch','eqSector','eqProject','eqLicense','eqNotes',
+   'eqRentalSource','eqMonthlyRate','eqRentalStart','eqRentalEnd']
+    .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('eqType').value = 'معدات تحريك تربة';
-  document.getElementById('eqOwnership').value = 'مملوكة';
   document.getElementById('eqStatus').value = 'active';
 
-  if(id) {
-    const e = _eqData.find(x => x.id === id);
-    if(e) {
-      document.getElementById('eqCode').value      = e.car_code||'';
-      document.getElementById('eqName').value      = e.equipment_name||'';
-      document.getElementById('eqBrand').value     = e.brand||'';
-      document.getElementById('eqModel').value     = e.model||'';
-      document.getElementById('eqYear').value      = e.year||'';
-      document.getElementById('eqChassis').value   = e.chassis||'';
-      document.getElementById('eqType').value      = e.equipment_type||'معدات تحريك تربة';
-      document.getElementById('eqOwnership').value = e.ownership_type||'مملوكة';
-      document.getElementById('eqStatus').value    = e.status||'active';
-      document.getElementById('eqBranch').value    = e.branch||'';
-      document.getElementById('eqSector').value    = e.sector||'';
-      document.getElementById('eqProject').value   = e.project||'';
-      document.getElementById('eqLicense').value   = e.license_expiry||'';
-      document.getElementById('eqNotes').value     = e.notes||'';
-    }
+  // تعبئة البيانات الموجودة (تعديل)
+  if(existingData) {
+    const e = existingData;
+    const s = (id, v) => { const el = document.getElementById(id); if(el) el.value = v||''; };
+    s('eqCode',         e.car_code);
+    s('eqName',         e.equipment_name);
+    s('eqBrand',        e.brand);
+    s('eqModel',        e.model);
+    s('eqYear',         e.year);
+    s('eqChassis',      e.chassis);
+    s('eqBranch',       e.branch);
+    s('eqSector',       e.sector);
+    s('eqProject',      e.project);
+    s('eqLicense',      e.license_expiry);
+    s('eqNotes',        e.notes);
+    s('eqRentalSource', e.rental_source);
+    s('eqMonthlyRate',  e.monthly_rate);
+    s('eqRentalStart',  e.rental_start);
+    s('eqRentalEnd',    e.rental_end);
+    document.getElementById('eqType').value   = e.equipment_type || 'معدات تحريك تربة';
+    document.getElementById('eqStatus').value = e.status || 'active';
   }
-  const modal = document.getElementById('eqFormModal');
-  modal.style.display = 'flex';
+
+  document.getElementById('eqFormModal').style.display = 'flex';
 }
 
 async function closeEquipmentForm() {
   document.getElementById('eqFormModal').style.display = 'none';
+  document.getElementById('eqOwnershipPickModal').style.display = 'none';
   _eqEditId = null;
 }
 
 async function saveEquipment() {
+  const ownershipType = document.getElementById('eqOwnership').value || 'مملوكة';
+  const isRented = ownershipType === 'مؤجرة';
   const body = {
     car_code:       document.getElementById('eqCode').value.trim(),
     equipment_name: document.getElementById('eqName').value.trim(),
-    brand:          document.getElementById('eqBrand').value.trim(),
-    model:          document.getElementById('eqModel').value.trim(),
-    year:           document.getElementById('eqYear').value.trim(),
-    chassis:        document.getElementById('eqChassis').value.trim(),
+    brand:          !isRented ? (document.getElementById('eqBrand').value.trim()) : '',
+    model:          !isRented ? (document.getElementById('eqModel').value.trim()) : '',
+    year:           !isRented ? (document.getElementById('eqYear').value.trim()) : '',
+    chassis:        !isRented ? (document.getElementById('eqChassis').value.trim()) : '',
     equipment_type: document.getElementById('eqType').value,
-    ownership_type: document.getElementById('eqOwnership').value,
+    ownership_type: ownershipType,
     status:         document.getElementById('eqStatus').value,
     branch:         document.getElementById('eqBranch').value.trim(),
     sector:         document.getElementById('eqSector').value.trim(),
     project:        document.getElementById('eqProject').value.trim(),
     license_expiry: document.getElementById('eqLicense').value,
     notes:          document.getElementById('eqNotes').value.trim(),
+    rental_source:  isRented ? (document.getElementById('eqRentalSource')?.value.trim()||'') : '',
+    monthly_rate:   isRented ? (parseFloat(document.getElementById('eqMonthlyRate')?.value)||0) : 0,
+    rental_start:   isRented ? (document.getElementById('eqRentalStart')?.value||'') : '',
+    rental_end:     isRented ? (document.getElementById('eqRentalEnd')?.value||'') : '',
   };
   if(!body.car_code) return showNotification('الكود مطلوب','error');
   if(!body.equipment_name) return showNotification('اسم المعدة مطلوب','error');
+  if(isRented && !body.rental_source) return showNotification('جهة الإيجار مطلوبة للمعدة المؤجرة','error');
+  const btn = document.getElementById('eqSaveBtn');
+  btn.disabled = true; btn.textContent = '⏳ جاري...';
   try {
     if(_eqEditId) {
       await apiCall(`/equipment/${_eqEditId}`, 'PUT', body);
       showNotification('✅ تم التعديل بنجاح','success');
     } else {
       await apiCall('/equipment', 'POST', body);
-      showNotification('✅ تم الإضافة بنجاح','success');
+      showNotification('✅ تم إضافة المعدة بنجاح','success');
     }
     closeEquipmentForm();
     await loadEquipmentData();
   } catch(e) {
     showNotification(e.message||'خطأ في الحفظ','error');
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 حفظ';
   }
 }
 
