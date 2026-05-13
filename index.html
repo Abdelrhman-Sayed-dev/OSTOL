@@ -7058,7 +7058,7 @@ async function renderDriverTrip() {
     if(!isNaN(v) && v <= startOdo) {
       inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
     } else if(!isNaN(v) && (v - startOdo) > 1500) {
-      inp.style.borderColor='#f59e0b'; inp.style.color='#d97706';
+      inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
     } else {
       inp.style.borderColor='#f59e0b'; inp.style.color='#1e3a5f';
     }
@@ -9011,7 +9011,7 @@ async function renderDriverSinglePage() {
       const notes=document.getElementById('dpEndNotes').value.trim();
       if(isNaN(end_odo)||end_odo<=0) return showNotification('أدخل عداد النهاية','error');
       if(end_odo<=startOdo) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+startOdo+' كم)','error');
-      if((end_odo - startOdo) > 1500) return showNotification(`المسافة المدخلة (${Math.round(end_odo-startOdo)} كم) تتجاوز الحد الأقصى 1500 كم للرحلة الواحدة — تحقق من القراءة`,'error');
+      if((end_odo - startOdo) > 1500) return showNotification(`⚠️ الرقم المدخل (${Math.round(end_odo-startOdo)} كم) غير منطقي — تحقق من قراءة العداد`,'error');
       const btn=document.getElementById('dpEndOk');
       btn.disabled=true; btn.textContent='⏳ جاري...';
       const loc=await silentGetLocation();
@@ -12055,6 +12055,14 @@ async function renderEquipmentSection() {
             </select>
           </div>
           <div class="form-group" style="margin:0">
+            <select id="eqOwnershipFilter" onchange="filterEquipment()"
+              style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+              <option value="">🏗️ كل الملكية</option>
+              <option value="مملوكة">🏗️ مملوكة</option>
+              <option value="مؤجرة">🔑 مؤجرة</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
             <select id="eqStatusFilter" onchange="filterEquipment()"
               style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
               <option value="">كل الحالات</option>
@@ -12082,6 +12090,7 @@ async function renderEquipmentSection() {
               <th>اسم المعدة</th>
               <th>الماركة / الموديل</th>
               <th>النوع</th>
+              <th style="text-align:center">الملكية</th>
               <th>الفرع</th>
               <th>السنة</th>
               <th style="text-align:center">الحالة</th>
@@ -12089,7 +12098,7 @@ async function renderEquipmentSection() {
             </tr>
           </thead>
           <tbody id="eqTableBody">
-            <tr><td colspan="9" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
+            <tr><td colspan="10" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>
           </tbody>
         </table>
 
@@ -12136,6 +12145,13 @@ async function renderEquipmentSection() {
               <option>معدات رفع</option>
               <option>معدات ثابتة</option>
               <option>معدات نقل ثقيل</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>نوع الملكية</label>
+            <select id="eqOwnership" class="form-control">
+              <option value="مملوكة">🏗️ مملوكة</option>
+              <option value="مؤجرة">🔑 مؤجرة</option>
             </select>
           </div>
           <div class="form-group">
@@ -12264,19 +12280,21 @@ async function loadEquipmentData() {
     filterEquipment();
   } catch(e) {
     const tb = document.getElementById('eqTableBody');
-    if(tb) tb.innerHTML = `<tr><td colspan="9" style="color:#ef4444;text-align:center;padding:1.5rem">❌ ${e.message}</td></tr>`;
+    if(tb) tb.innerHTML = `<tr><td colspan="10" style="color:#ef4444;text-align:center;padding:1.5rem">❌ ${e.message}</td></tr>`;
   }
 }
 
 function filterEquipment() {
   const q  = (document.getElementById('eqSearch')?.value||'').trim().toLowerCase();
   const t  = document.getElementById('eqTypeFilter')?.value||'';
+  const ow = document.getElementById('eqOwnershipFilter')?.value||'';
   const s  = document.getElementById('eqStatusFilter')?.value||'';
   const br = (document.getElementById('eqBranchFilter')?.value||'').trim().toLowerCase();
   const pr = (document.getElementById('eqProjectFilter')?.value||'').trim().toLowerCase();
   const filtered = _eqData.filter(e =>
     (!q  || e.equipment_name.toLowerCase().includes(q) || (e.car_code||'').toLowerCase().includes(q) || (e.brand||'').toLowerCase().includes(q)) &&
     (!t  || e.equipment_type === t) &&
+    (!ow || (e.ownership_type||'مملوكة') === ow) &&
     (!s  || e.status === s) &&
     (!br || (e.branch||'').toLowerCase().includes(br)) &&
     (!pr || (e.project||'').toLowerCase().includes(pr))
@@ -12291,19 +12309,24 @@ function renderEquipmentTable(rows) {
   const pgEl = document.getElementById('eqPagination');
   if(pgEl) pgEl.innerHTML = '';
   if(!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد معدات</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد معدات</td></tr>`;
     return;
   }
   const statusMap = {active:{label:'عاملة',color:'#10b981'}, inactive:{label:'عاطلة',color:'#ef4444'}, maintenance:{label:'صيانة',color:'#f97316'}};
   tbody.innerHTML = rows.map((e,i) => {
     const st = statusMap[e.status] || {label:e.status, color:'#94a3b8'};
     const typeColor = e.equipment_type==='معدات تحريك تربة'?'#3b82f6':e.equipment_type==='معدات رفع'?'#8b5cf6':e.equipment_type==='معدات ثابتة'?'#f59e0b':'#6b7280';
+    const isRented  = (e.ownership_type||'مملوكة') === 'مؤجرة';
+    const ownColor  = isRented ? '#d97706' : '#059669';
+    const ownBg     = isRented ? '#fef3c720' : '#d1fae520';
+    const ownLabel  = isRented ? '🔑 مؤجرة' : '🏗️ مملوكة';
     return `<tr>
       <td style="text-align:center;color:var(--muted)">${i+1}</td>
       <td><code style="background:var(--surface-2);padding:.15rem .4rem;border-radius:4px;font-size:.82rem">${e.car_code}</code></td>
       <td><strong>${e.equipment_name}</strong>${e.chassis?`<br><small style="color:var(--muted)">شاسيه: ${e.chassis}</small>`:''}</td>
       <td style="font-size:.85rem">${[e.brand,e.model].filter(Boolean).join(' / ')||'—'}</td>
       <td><span style="background:${typeColor}20;color:${typeColor};font-size:.72rem;padding:.2rem .55rem;border-radius:20px;font-weight:700;white-space:nowrap">${e.equipment_type}</span></td>
+      <td style="text-align:center"><span style="background:${ownBg};color:${ownColor};font-size:.72rem;padding:.2rem .55rem;border-radius:20px;font-weight:700;white-space:nowrap">${ownLabel}</span></td>
       <td style="font-size:.85rem">${e.branch||'—'}</td>
       <td style="text-align:center;color:var(--muted)">${e.year||'—'}</td>
       <td style="text-align:center"><span style="background:${st.color}20;color:${st.color};font-size:.75rem;padding:.2rem .6rem;border-radius:20px;font-weight:700">${st.label}</span></td>
@@ -12318,27 +12341,29 @@ function renderEquipmentTable(rows) {
 function showEquipmentForm(id=null) {
   _eqEditId = id;
   document.getElementById('eqFormTitle').textContent = id ? '✏️ تعديل معدة' : '➕ إضافة معدة';
-  const fields = ['Code','Name','Brand','Model','Year','Chassis','Type','Status','Branch','Sector','Project','License','Notes'];
+  const fields = ['Code','Name','Brand','Model','Year','Chassis','Type','Ownership','Status','Branch','Sector','Project','License','Notes'];
   fields.forEach(f => { const el = document.getElementById('eq'+f); if(el) el.value = ''; });
   document.getElementById('eqType').value = 'معدات تحريك تربة';
+  document.getElementById('eqOwnership').value = 'مملوكة';
   document.getElementById('eqStatus').value = 'active';
 
   if(id) {
     const e = _eqData.find(x => x.id === id);
     if(e) {
-      document.getElementById('eqCode').value    = e.car_code||'';
-      document.getElementById('eqName').value    = e.equipment_name||'';
-      document.getElementById('eqBrand').value   = e.brand||'';
-      document.getElementById('eqModel').value   = e.model||'';
-      document.getElementById('eqYear').value    = e.year||'';
-      document.getElementById('eqChassis').value = e.chassis||'';
-      document.getElementById('eqType').value    = e.equipment_type||'معدات تحريك تربة';
-      document.getElementById('eqStatus').value  = e.status||'active';
-      document.getElementById('eqBranch').value  = e.branch||'';
-      document.getElementById('eqSector').value  = e.sector||'';
-      document.getElementById('eqProject').value = e.project||'';
-      document.getElementById('eqLicense').value = e.license_expiry||'';
-      document.getElementById('eqNotes').value   = e.notes||'';
+      document.getElementById('eqCode').value      = e.car_code||'';
+      document.getElementById('eqName').value      = e.equipment_name||'';
+      document.getElementById('eqBrand').value     = e.brand||'';
+      document.getElementById('eqModel').value     = e.model||'';
+      document.getElementById('eqYear').value      = e.year||'';
+      document.getElementById('eqChassis').value   = e.chassis||'';
+      document.getElementById('eqType').value      = e.equipment_type||'معدات تحريك تربة';
+      document.getElementById('eqOwnership').value = e.ownership_type||'مملوكة';
+      document.getElementById('eqStatus').value    = e.status||'active';
+      document.getElementById('eqBranch').value    = e.branch||'';
+      document.getElementById('eqSector').value    = e.sector||'';
+      document.getElementById('eqProject').value   = e.project||'';
+      document.getElementById('eqLicense').value   = e.license_expiry||'';
+      document.getElementById('eqNotes').value     = e.notes||'';
     }
   }
   const modal = document.getElementById('eqFormModal');
@@ -12359,6 +12384,7 @@ async function saveEquipment() {
     year:           document.getElementById('eqYear').value.trim(),
     chassis:        document.getElementById('eqChassis').value.trim(),
     equipment_type: document.getElementById('eqType').value,
+    ownership_type: document.getElementById('eqOwnership').value,
     status:         document.getElementById('eqStatus').value,
     branch:         document.getElementById('eqBranch').value.trim(),
     sector:         document.getElementById('eqSector').value.trim(),
