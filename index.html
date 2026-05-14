@@ -7057,7 +7057,7 @@ async function renderDriverTrip() {
     if(!isNaN(v) && v <= startOdo) {
       inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
     } else if(!isNaN(v) && (v - startOdo) > 1500) {
-      inp.style.borderColor='#f59e0b'; inp.style.color='#d97706';
+      inp.style.borderColor='#ef4444'; inp.style.color='#ef4444';
     } else {
       inp.style.borderColor='#f59e0b'; inp.style.color='#1e3a5f';
     }
@@ -9010,7 +9010,7 @@ async function renderDriverSinglePage() {
       const notes=document.getElementById('dpEndNotes').value.trim();
       if(isNaN(end_odo)||end_odo<=0) return showNotification('أدخل عداد النهاية','error');
       if(end_odo<=startOdo) return showNotification('عداد النهاية يجب أن يكون أكبر من البداية ('+startOdo+' كم)','error');
-      if((end_odo - startOdo) > 1500) return showNotification(`المسافة المدخلة (${Math.round(end_odo-startOdo)} كم) تتجاوز الحد الأقصى 1500 كم للرحلة الواحدة — تحقق من القراءة`,'error');
+      if((end_odo - startOdo) > 1500) return showNotification('القراءة المدخلة غير صحيحة، يرجى التحقق من عداد المركبة','error');
       const btn=document.getElementById('dpEndOk');
       btn.disabled=true; btn.textContent='⏳ جاري...';
       const loc=await silentGetLocation();
