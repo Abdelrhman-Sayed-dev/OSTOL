@@ -2254,8 +2254,6 @@ async def end_current(body: dict, cu: dict = Depends(get_user)):
             raise HTTPException(404, "لا توجد رحلة نشطة")
         if end_odo is None or end_odo <= active["start_odometer"]:
             raise HTTPException(400, "عداد النهاية يجب أن يكون أكبر من البداية")
-        if (end_odo - active["start_odometer"]) > 1500:
-            raise HTTPException(400, f"المسافة ({round(end_odo - active['start_odometer'], 1)} كم) تتجاوز الحد الأقصى 1500 كم — تحقق من القراءة")
         c.execute("UPDATE trips SET end_time=?,end_odometer=?,end_location=?,notes=? WHERE id=?",
                   (now, end_odo, loc, notes, active["id"]))
         c.execute("SELECT * FROM trips WHERE id=?", (active["id"],))
@@ -7057,9 +7055,7 @@ async def list_all_shifts(
                 r["working_hours"] = round(r["end_hours"] - r["start_hours"], 2)
             else:
                 r["working_hours"] = None
-            # الملكية: الأولوية للقيمة المخزنة في الوردية، ثم من جدول equipment
             r["ownership_type"] = r.get("ownership_type") or r.get("eq_ownership_type") or "مملوكة"
-            # نوع المعدة من جدول equipment لو موجود
             r["equipment_type_label"] = r.get("eq_type_label") or ""
     return {"total": total, "shifts": rows}
 
