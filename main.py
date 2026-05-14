@@ -4761,11 +4761,12 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
     now      = datetime.utcnow()
     expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    # لو target_user_id محدد، نستخدم 'admins' كـ target_group حتى تمر CHECK constraint القديمة
-    # الـ routing الفعلي بيتم بالـ target_user_id وليس target_group
-    tg = body.target_group if body.target_user_id is None else (body.target_group or 'admins')
-    if tg not in ('admins', 'drivers'):
-        tg = 'admins'
+    # لو target_user_id محدد، target_group بيبقى فاضي — الـ routing بيتم عبر target_user_id فقط
+    # لو مجموعة، target_user_id بيبقى NULL و target_group هو المحدد
+    if body.target_user_id is not None:
+        tg = ''  # رسالة لشخص محدد — مش لمجموعة
+    else:
+        tg = body.target_group  # 'admins' أو 'drivers'
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
@@ -4841,7 +4842,11 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
             SELECT id, duration_sec, created_at, expires_at,
                    play_count, max_plays, audio_data
             FROM voice_notes
-            WHERE (target_group = ? OR COALESCE(target_user_id, 0) = ?)
+            WHERE (
+                (target_user_id IS NULL AND target_group = ?)
+                OR
+                (target_user_id IS NOT NULL AND target_user_id = ?)
+            )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
@@ -4934,7 +4939,11 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
             SELECT id, duration_sec, created_at, expires_at,
                    play_count, max_plays, audio_data, target_group, target_user_id
             FROM voice_notes
-            WHERE (target_group = ? OR COALESCE(target_user_id, 0) = ?)
+            WHERE (
+                (target_user_id IS NULL AND target_group = ?)
+                OR
+                (target_user_id IS NOT NULL AND target_user_id = ?)
+            )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
