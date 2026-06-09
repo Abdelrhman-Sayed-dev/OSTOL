@@ -1039,7 +1039,17 @@ WORKSHOP_TYPES = [
     "oil_brake",     # زيت الفرامل
     "oil_hydro",     # زيت الهيدروليك
     "oil_grease",    # شحم
-    "filter", "tire", "battery", "belt", "other",
+    "filter",        # فلتر (legacy)
+    "filter_oil",       # فلتر زيت
+    "filter_solar",     # فلتر سولار
+    "filter_petrol",    # فلتر بنزين
+    "filter_air",       # فلتر هواء
+    "filter_separator", # فلتر فاصل
+    "filter_ac",        # فلتر تكيف
+    "filter_dryer",     # فلتر مجفف
+    "filter_breather",  # فلتر منفس
+    "filter_hydraulic", # فلتر هيدروليك
+    "tire", "battery", "belt", "other",
 ]
 
 # أنواع الزيت التفصيلية
@@ -2541,7 +2551,9 @@ async def get_operational_page2(
     tires     = []
     batteries = []
 
-    OIL_TYPES     = {"oil", "oil_motor", "oil_gear", "oil_brake", "oil_hydro", "oil_grease", "filter"}
+    OIL_TYPES     = {"oil", "oil_motor", "oil_gear", "oil_brake", "oil_hydro", "oil_grease",
+                     "filter", "filter_oil", "filter_solar", "filter_petrol", "filter_air",
+                     "filter_separator", "filter_ac", "filter_dryer", "filter_breather", "filter_hydraulic"}
     TIRE_TYPES    = {"tire"}
     BATTERY_TYPES = {"battery"}
 
@@ -5831,7 +5843,11 @@ async def driver_kpi_report(
             c.execute("""
                 SELECT COALESCE(SUM(quantity),0) as liters
                 FROM workshop_records
-                WHERE driver_id=? AND type IN ('oil','filter')
+                WHERE driver_id=? AND type IN (
+                    'oil','filter','filter_oil','filter_solar','filter_petrol',
+                    'filter_air','filter_separator','filter_ac','filter_dryer',
+                    'filter_breather','filter_hydraulic'
+                )
                   AND date(created_at) >= ? AND date(created_at) < ?
             """, (did, month_start, month_end))
             oil_liters = float(c.fetchone()[0] or 0)
