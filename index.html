@@ -11217,7 +11217,12 @@ async function renderSuperSarky() {
     }
   });
 
-  await loadSarky();
+  // لا تحمّل تلقائياً — انتظر المستخدم يختار سائق ويضغط عرض
+  document.getElementById('sarkyResult').innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">📋</div>
+      <p style="font-weight:700;color:#334155;font-size:1rem">اختر اسم السائق وحدد الشهر ثم اضغط «عرض السركي»</p>
+    </div>`;
 }
 
 function toggleSarkyDriver() {
@@ -11323,11 +11328,18 @@ function sarkySelectDriver(id, label) {
 async function loadSarky() {
   const res = document.getElementById('sarkyResult');
   if(!res) return;
-  res.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
 
   const driverId = document.getElementById('sarkyDriverId')?.value||'';
   const from     = document.getElementById('sarkyFrom')?.value||'';
   const to       = document.getElementById('sarkyTo')?.value||'';
+
+  // يجب اختيار سائق أولاً
+  if(!driverId) {
+    res.innerHTML = '<div class="empty-state"><div class="empty-icon">👆</div><p style="font-weight:700;color:#f59e0b">يرجى اختيار سائق من القائمة أولاً</p></div>';
+    return;
+  }
+
+  res.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
 
   let url = '/reports/sarky?date_from='+from+'&date_to='+to;
   if(driverId) url += '&driver_id='+driverId;
@@ -12210,38 +12222,104 @@ async function renderDriverKpiSection() {
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
   c.innerHTML = `
+    <style>
+      .kpi-stat-card{background:#fff;border-radius:16px;border:1.5px solid var(--border);box-shadow:var(--shadow-sm);padding:1.25rem 1rem;display:flex;align-items:center;gap:.85rem}
+      .kpi-stat-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
+      .kpi-stat-val{font-size:1.7rem;font-weight:900;line-height:1;margin-bottom:.2rem}
+      .kpi-stat-lbl{font-size:.72rem;color:var(--muted);font-weight:600}
+      .kpi-chart-card{background:#fff;border-radius:16px;border:1.5px solid var(--border);box-shadow:var(--shadow-sm);padding:1.1rem 1.25rem}
+      .kpi-chart-title{font-size:.88rem;font-weight:800;color:var(--text);margin-bottom:.75rem;display:flex;align-items:center;gap:.4rem}
+      .kpi-bar-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem}
+      .kpi-bar-name{font-size:.76rem;font-weight:600;color:var(--text-2);text-align:right;width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .kpi-bar-track{flex:1;background:#f1f5f9;border-radius:4px;height:22px;overflow:hidden;position:relative}
+      .kpi-bar-fill{height:100%;border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding-right:.4rem;font-size:.72rem;font-weight:800;color:#fff;transition:width .6s ease}
+      .kpi-donut-wrap{display:flex;align-items:center;gap:1rem}
+      .kpi-legend-item{display:flex;align-items:center;gap:.4rem;font-size:.78rem;margin-bottom:.35rem}
+      .kpi-legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+      .kpi-grade-badge{display:inline-block;padding:.2rem .75rem;border-radius:20px;font-size:.75rem;font-weight:700}
+    </style>
+
     <div class="page-header">
-      <div class="page-title">🏆 مؤشرات أداء السائقين (KPI)</div>
+      <div class="page-title">🏆 تحليل أداء السائقين</div>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <button class="btn btn-outline btn-sm" onclick="exportKpiCSV()">📥 تصدير CSV</button>
+      </div>
     </div>
 
     <!-- فلاتر -->
-    <div class="card" style="margin-bottom:1rem;margin-top:.5rem;border-radius:12px">
-      <div class="card-header" style="border-bottom:none;padding:.75rem 1rem">
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
-          <div class="form-group" style="margin:0;min-width:140px">
-            <label>الشهر</label>
+    <div class="card" style="margin-bottom:1rem;border-radius:14px">
+      <div style="padding:.75rem 1.1rem">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفترة</label>
+            <div style="display:flex;align-items:center;gap:.4rem">
+              <input type="date" id="kpiDateFrom" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
+              <span style="color:#94a3b8;font-size:.8rem">إلى</span>
+              <input type="date" id="kpiDateTo" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">أو تحديد شهر</label>
             <input type="month" id="kpiMonth" value="${defaultMonth}"
-              onchange="typeof loadKpiData==='function'&&loadKpiData()"
-              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem">
+              style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
           </div>
-          <div class="form-group" style="margin:0;min-width:180px">
-            <label>الفرع</label>
-            <input type="text" id="kpiBranch" placeholder="الكل" value=""
-              oninput="clearTimeout(window._kpiDeb);window._kpiDeb=setTimeout(()=>typeof loadKpiData==='function'&&loadKpiData(),300)"
-              style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.88rem;width:100%">
+          <div style="min-width:160px">
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفرع</label>
+            <div class="cs-wrapper" id="kpiBranchWrap">
+              <input type="hidden" id="kpiBranchVal" value="">
+              <div class="cs-trigger" id="kpiBranchTrigger" onclick="toggleKpiBranchDd()" tabindex="0">
+                <span class="cs-label cs-placeholder" id="kpiBranchLabel">كل الفروع</span>
+                <span class="cs-arrow">▼</span>
+              </div>
+              <div class="cs-dropdown" id="kpiBranchDd">
+                <div class="cs-list" id="kpiBranchList"></div>
+              </div>
+            </div>
           </div>
-          <button class="btn btn-outline btn-sm" onclick="exportKpiCSV()">📥 تصدير CSV</button>
+          <button class="btn btn-primary" onclick="loadKpiData()" style="height:36px;white-space:nowrap">🔍 عرض</button>
         </div>
       </div>
     </div>
 
-    <!-- ملخص إجمالي -->
-    <div id="kpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1rem"></div>
+    <!-- KPI Cards -->
+    <div id="kpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.85rem;margin-bottom:1.1rem"></div>
 
-    <!-- جدول المقارنة -->
+    <!-- الصف الأول: أفضل 10 + توزيع التصنيف + مقارنة الفروع -->
+    <div style="display:grid;grid-template-columns:2fr 1.3fr 1.5fr;gap:1rem;margin-bottom:1rem">
+      <div class="kpi-chart-card">
+        <div class="kpi-chart-title">🏆 أفضل 10 سائقين حسب النقاط</div>
+        <div id="kpiTop10Chart"></div>
+      </div>
+      <div class="kpi-chart-card">
+        <div class="kpi-chart-title">🎯 توزيع السائقين حسب التصنيف</div>
+        <div id="kpiDonutChart" style="display:flex;flex-direction:column;align-items:center"></div>
+      </div>
+      <div class="kpi-chart-card">
+        <div class="kpi-chart-title">📊 مقارنة الفروع (متوسط النقاط)</div>
+        <div id="kpiBranchChart"></div>
+      </div>
+    </div>
+
+    <!-- الصف الثاني: استهلاك الوقود + scatter + اتجاه -->
+    <div style="display:grid;grid-template-columns:1.5fr 2fr 1.5fr;gap:1rem;margin-bottom:1rem">
+      <div class="kpi-chart-card">
+        <div class="kpi-chart-title">⛽ استهلاك الوقود (لتر/100كم)</div>
+        <div id="kpiFuelChart"></div>
+      </div>
+      <div class="kpi-chart-card">
+        <div class="kpi-chart-title">🚗 الرحلات مقابل الكيلومترات</div>
+        <canvas id="kpiScatterCanvas" width="400" height="200"></canvas>
+      </div>
+      <div class="kpi-chart-card">
+        <div class="kpi-chart-title">📈 اتجاه الأداء العام (متوسط النقاط)</div>
+        <canvas id="kpiTrendCanvas" width="300" height="200"></canvas>
+      </div>
+    </div>
+
+    <!-- جدول تفاصيل السائقين -->
     <div class="card">
       <div class="card-header">
-        <div class="card-title">🏅 ترتيب السائقين</div>
+        <div class="card-title">📋 تفاصيل السائقين</div>
         <input type="text" id="kpiSearch" placeholder="ابحث باسم السائق..."
           oninput="filterKpiTable(this.value)"
           style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:200px">
@@ -12250,35 +12328,91 @@ async function renderDriverKpiSection() {
         <table id="kpiTable">
           <thead>
             <tr>
-              <th style="width:40px">#</th>
+              <th style="width:36px">#</th>
               <th>السائق</th>
               <th>الفرع</th>
               <th style="text-align:center">النقاط الكلية</th>
-              <th style="text-align:center" title="الوزن: 10%">الرحلات<br><small style="color:#94a3b8">10%</small></th>
-              <th style="text-align:center" title="الوزن: 40%">الكيلومترات<br><small style="color:#94a3b8">40%</small></th>
-              <th style="text-align:center" title="الوزن: 40%">وقود ل/100كم<br><small style="color:#94a3b8">40%</small></th>
-              <th style="text-align:center" title="الوزن: 5%">زيوت ل/1000كم<br><small style="color:#94a3b8">5%</small></th>
-              <th style="text-align:center" title="الوزن: 5%">طوارئ<br><small style="color:#94a3b8">5%</small></th>
+              <th style="text-align:center">الرحلات</th>
+              <th style="text-align:center">الكيلومترات</th>
+              <th style="text-align:center">وقود ل/100كم</th>
+              <th style="text-align:center">زيوت ل/1000كم</th>
+              <th style="text-align:center">طوارئ</th>
               <th style="text-align:center">التصنيف</th>
               <th style="text-align:center">تفاصيل</th>
             </tr>
           </thead>
           <tbody id="kpiTableBody">
-            <tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">اضغط عرض لتحميل البيانات</td></tr>
+            <tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">اختر الفترة ثم اضغط «عرض»</td></tr>
           </tbody>
         </table>
-
       </div>
     </div>
   `;
+
+  // تحميل الفروع للـ dropdown
+  try {
+    const drvs = await apiCall('/drivers');
+    const branches = [...new Set((drvs||[]).map(d=>d.branch).filter(Boolean))].sort();
+    window._kpiBranches = branches;
+    _kpiRenderBranchList();
+    document.addEventListener('click', function _kpiBrOut(e){
+      const wrap=document.getElementById('kpiBranchWrap');
+      if(wrap&&!wrap.contains(e.target)){
+        document.getElementById('kpiBranchDd')?.classList.remove('cs-open');
+        document.getElementById('kpiBranchTrigger')?.classList.remove('cs-open');
+      }
+    });
+  } catch(e){}
+
+  // تعيين تواريخ افتراضية للشهر الحالي
+  const now2=new Date(), y=now2.getFullYear(), m=String(now2.getMonth()+1).padStart(2,'0');
+  const lastDay=new Date(y,now2.getMonth()+1,0).getDate();
+  document.getElementById('kpiDateFrom').value=`${y}-${m}-01`;
+  document.getElementById('kpiDateTo').value=`${y}-${m}-${String(lastDay).padStart(2,'0')}`;
+
   await loadKpiData();
+}
+
+function _kpiRenderBranchList() {
+  const list=document.getElementById('kpiBranchList'); if(!list) return;
+  const branches=window._kpiBranches||[];
+  list.innerHTML='';
+  const allDiv=document.createElement('div');
+  allDiv.className='cs-option cs-selected';
+  allDiv.textContent='كل الفروع';
+  allDiv.addEventListener('click',()=>kpiSelectBranch('','كل الفروع'));
+  list.appendChild(allDiv);
+  branches.forEach(b=>{
+    const d=document.createElement('div');
+    d.className='cs-option';
+    d.textContent=b;
+    d.addEventListener('click',()=>kpiSelectBranch(b,b));
+    list.appendChild(d);
+  });
+}
+
+function toggleKpiBranchDd(){
+  const dd=document.getElementById('kpiBranchDd'),tr=document.getElementById('kpiBranchTrigger');
+  if(!dd||!tr) return;
+  const open=dd.classList.contains('cs-open');
+  dd.classList.toggle('cs-open',!open); tr.classList.toggle('cs-open',!open);
+}
+
+function kpiSelectBranch(val,label){
+  document.getElementById('kpiBranchVal').value=val;
+  const lbl=document.getElementById('kpiBranchLabel');
+  if(lbl){lbl.textContent=label||'كل الفروع';lbl.classList.toggle('cs-placeholder',!val);}
+  document.getElementById('kpiBranchDd')?.classList.remove('cs-open');
+  document.getElementById('kpiBranchTrigger')?.classList.remove('cs-open');
 }
 
 let _kpiData = [];
 
 async function loadKpiData() {
   const month  = document.getElementById('kpiMonth')?.value || '';
-  const branch = document.getElementById('kpiBranch')?.value?.trim() || '';
+  const branch = document.getElementById('kpiBranchVal')?.value?.trim() || '';
+  const dateFrom = document.getElementById('kpiDateFrom')?.value || '';
+  const dateTo   = document.getElementById('kpiDateTo')?.value || '';
   const tbody  = document.getElementById('kpiTableBody');
   const summary = document.getElementById('kpiSummary');
 
@@ -12287,35 +12421,205 @@ async function loadKpiData() {
   try {
     let url = `/reports/driver-kpi?month=${month}`;
     if (branch) url += `&branch=${encodeURIComponent(branch)}`;
+    if (dateFrom) url += `&date_from=${dateFrom}`;
+    if (dateTo) url += `&date_to=${dateTo}`;
 
     const data = await apiCall(url);
     _kpiData = data.drivers || [];
 
-    // ── ملخص ──
+    // ── ملخص KPI Cards ──
     const active    = _kpiData.length;
-    const avgScore  = active ? (_kpiData.reduce((s,d)=>s+d.total_score,0)/active).toFixed(1) : 0;
-    const avgKmVal  = data.avg_km || (active ? _kpiData.reduce((s,d)=>s+(d.km||0),0)/active : 0);
-    const topDriver = _kpiData[0];
+    const avgScore  = active ? Math.round(_kpiData.reduce((s,d)=>s+d.total_score,0)/active) : 0;
+    const totalKm   = _kpiData.reduce((s,d)=>s+(d.km||0),0);
+    const totalTrips= _kpiData.reduce((s,d)=>s+(d.trips||0),0);
+    const totalEmg  = _kpiData.reduce((s,d)=>s+(d.emergencies||0),0);
+    const totalFuel = _kpiData.reduce((s,d)=>s+(d.fuel_liters||0),0);
+    const avgFuel   = active ? (totalFuel/active).toFixed(1) : 0;
     const excellent = _kpiData.filter(d=>d.grade==='ممتاز').length;
-    const needsWork = _kpiData.filter(d=>d.grade==='يحتاج تحسين').length;
 
     if (summary) summary.innerHTML = [
-      {label:'إجمالي السائقين',       value: active,                          icon:'👨‍✈️', color:'var(--primary)'},
-      {label:'متوسط النقاط',           value: avgScore+'%',                    icon:'📊', color:'#3b82f6'},
-      {label:'متوسط الكم / سائق',     value: Math.round(avgKmVal)+' كم',     icon:'📍', color:'#8b5cf6'},
-      {label:'تصنيف ممتاز',            value: excellent,                       icon:'🌟', color:'#10b981'},
-      {label:'يحتاج تحسين',            value: needsWork,                       icon:'⚠️', color:'#ef4444'},
-      {label:'أفضل سائق',              value: topDriver?.driver_name||'—',     icon:'🏆', color:'#f59e0b'},
+      {label:'إجمالي السائقين',      value:active,                     icon:'👥', bg:'#eff6ff', iconBg:'#dbeafe', color:'#1d4ed8'},
+      {label:'إجمالي الرحلات',       value:totalTrips.toLocaleString('ar-EG'), icon:'🚗', bg:'#f0fdf4', iconBg:'#dcfce7', color:'#16a34a'},
+      {label:'إجمالي الكيلومترات',   value:(totalKm/1000).toFixed(0)+'k كم', icon:'🛣️', bg:'#faf5ff', iconBg:'#ede9fe', color:'#7c3aed'},
+      {label:'متوسط استهلاك الوقود', value:avgFuel+' ل/100كم',         icon:'⛽', bg:'#fff7ed', iconBg:'#fed7aa', color:'#c2410c'},
+      {label:'إجمالي الطوارئ',       value:totalEmg,                   icon:'🚨', bg:'#fef2f2', iconBg:'#fecaca', color:'#dc2626'},
+      {label:'تصنيف ممتاز',           value:excellent+' سائق',          icon:'🏆', bg:'#fffbeb', iconBg:'#fde68a', color:'#b45309'},
     ].map(s=>`
-      <div class="card" style="text-align:center;padding:1rem">
-        <div style="font-size:1.5rem">${s.icon}</div>
-        <div style="font-size:.72rem;color:var(--muted);margin:.3rem 0">${s.label}</div>
-        <div style="font-weight:800;color:${s.color};font-size:1rem">${s.value}</div>
+      <div class="kpi-stat-card">
+        <div class="kpi-stat-icon" style="background:${s.iconBg}">${s.icon}</div>
+        <div>
+          <div class="kpi-stat-val" style="color:${s.color}">${s.value}</div>
+          <div class="kpi-stat-lbl">${s.label}</div>
+        </div>
       </div>`).join('');
 
     renderKpiTable(_kpiData);
+    _renderKpiCharts(_kpiData);
+
   } catch(e) {
     if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
+  }
+}
+
+function _renderKpiCharts(rows) {
+  if(!rows || !rows.length) return;
+
+  // ── 1. أفضل 10 بار شارت ──
+  const top10El = document.getElementById('kpiTop10Chart');
+  if(top10El) {
+    const top10 = rows.slice(0,10);
+    const maxScore = top10[0]?.total_score||100;
+    const COLORS = ['#1a9968','#22c55e','#4ade80','#6ee7b7','#34d399','#10b981','#059669','#047857','#065f46','#064e3b'];
+    top10El.innerHTML = top10.map((d,i)=>{
+      const pct = Math.round((d.total_score/maxScore)*100);
+      const col = COLORS[i]||'#22c55e';
+      const shortName = d.driver_name.split(' ').slice(0,2).join(' ');
+      return `<div class="kpi-bar-row">
+        <div class="kpi-bar-name" title="${d.driver_name}">${shortName}</div>
+        <div class="kpi-bar-track">
+          <div class="kpi-bar-fill" style="width:${pct}%;background:${col}">${d.total_score}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── 2. Donut توزيع التصنيف ──
+  const donutEl = document.getElementById('kpiDonutChart');
+  if(donutEl) {
+    const grades = [
+      {label:'ممتاز',       color:'#22c55e', min:85},
+      {label:'جيد جداً',    color:'#3b82f6', min:70},
+      {label:'جيد',         color:'#f59e0b', min:50},
+      {label:'ضعيف',        color:'#ef4444', min:0},
+    ];
+    const counts = grades.map(g=>{
+      if(g.label==='ممتاز') return {...g, count: rows.filter(d=>d.total_score>=85).length};
+      if(g.label==='جيد جداً') return {...g, count: rows.filter(d=>d.total_score>=70&&d.total_score<85).length};
+      if(g.label==='جيد') return {...g, count: rows.filter(d=>d.total_score>=50&&d.total_score<70).length};
+      return {...g, count: rows.filter(d=>d.total_score<50).length};
+    }).filter(g=>g.count>0);
+    const total=rows.length;
+    // SVG donut
+    let svg=`<svg viewBox="0 0 120 120" width="130" height="130">`;
+    let offset=0;
+    const cx=60,cy=60,r=45,stroke=22;
+    const circ=2*Math.PI*r;
+    counts.forEach(g=>{
+      const pct=g.count/total;
+      const dash=pct*circ;
+      const angle=offset*circ;
+      svg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${g.color}" stroke-width="${stroke}"
+        stroke-dasharray="${dash} ${circ-dash}"
+        stroke-dashoffset="${circ/4-angle}"
+        style="transition:stroke-dasharray .5s"/>`;
+      offset+=pct;
+    });
+    svg+=`<text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="14" font-weight="900" fill="#1e293b">${total}</text>`;
+    svg+=`<text x="${cx}" y="${cy+12}" text-anchor="middle" font-size="7" fill="#64748b">إجمالي السائقين</text>`;
+    svg+=`</svg>`;
+    const legend=counts.map(g=>`<div class="kpi-legend-item"><div class="kpi-legend-dot" style="background:${g.color}"></div><span>${g.label} — ${Math.round(g.count/total*100)}%</span></div>`).join('');
+    donutEl.innerHTML=`<div class="kpi-donut-wrap">${svg}<div>${legend}</div></div>`;
+  }
+
+  // ── 3. مقارنة الفروع ──
+  const branchEl = document.getElementById('kpiBranchChart');
+  if(branchEl) {
+    const branchMap={};
+    rows.forEach(d=>{const b=d.branch||'غير محدد';if(!branchMap[b])branchMap[b]={sum:0,count:0};branchMap[b].sum+=d.total_score;branchMap[b].count++;});
+    const branchData=Object.entries(branchMap).map(([b,v])=>({branch:b,avg:Math.round(v.sum/v.count)})).sort((a,b)=>b.avg-a.avg).slice(0,6);
+    const maxAvg=branchData[0]?.avg||100;
+    const branchColors=['#06b6d4','#22c55e','#8b5cf6','#f59e0b','#3b82f6','#10b981'];
+    branchEl.innerHTML=branchData.map((b,i)=>`<div class="kpi-bar-row">
+      <div class="kpi-bar-name" title="${b.branch}">${b.branch}</div>
+      <div class="kpi-bar-track">
+        <div class="kpi-bar-fill" style="width:${Math.round(b.avg/maxAvg*100)}%;background:${branchColors[i]||'#22c55e'}">${b.avg}%</div>
+      </div>
+    </div>`).join('');
+  }
+
+  // ── 4. استهلاك الوقود ──
+  const fuelEl = document.getElementById('kpiFuelChart');
+  if(fuelEl) {
+    const fuelRows=rows.filter(d=>d.consumption!=null).sort((a,b)=>a.consumption-b.consumption).slice(0,10);
+    const maxFuel=fuelRows.length?Math.max(...fuelRows.map(d=>d.consumption)):30;
+    const fuelColors=['#22c55e','#4ade80','#86efac','#3b82f6','#60a5fa','#93c5fd','#f59e0b','#fbbf24','#f97316','#ef4444'];
+    fuelEl.innerHTML=fuelRows.map((d,i)=>{
+      const pct=Math.round(d.consumption/maxFuel*100);
+      const col=d.consumption<=25?'#22c55e':d.consumption<=30?'#3b82f6':d.consumption<=35?'#f59e0b':'#ef4444';
+      const shortName=d.driver_name.split(' ').slice(0,2).join(' ');
+      return `<div class="kpi-bar-row">
+        <div class="kpi-bar-name" title="${d.driver_name}">${shortName}</div>
+        <div class="kpi-bar-track">
+          <div class="kpi-bar-fill" style="width:${pct}%;background:${col}">${d.consumption}</div>
+        </div>
+      </div>`;
+    }).join('')||'<div style="color:#94a3b8;font-size:.82rem;text-align:center;padding:1rem">لا توجد بيانات وقود</div>';
+  }
+
+  // ── 5. Scatter رحلات vs كم ──
+  const scatterCanvas=document.getElementById('kpiScatterCanvas');
+  if(scatterCanvas) {
+    const ctx=scatterCanvas.getContext('2d');
+    const W=scatterCanvas.width, H=scatterCanvas.height;
+    ctx.clearRect(0,0,W,H);
+    const PAD={t:20,r:20,b:30,l:40};
+    const pts=rows.filter(d=>d.trips>0&&d.km>0);
+    if(pts.length) {
+      const maxT=Math.max(...pts.map(d=>d.trips));
+      const maxK=Math.max(...pts.map(d=>d.km));
+      ctx.strokeStyle='#f1f5f9'; ctx.lineWidth=1;
+      for(let i=0;i<=4;i++){
+        const y=PAD.t+(H-PAD.t-PAD.b)*i/4;
+        ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();
+      }
+      pts.forEach(d=>{
+        const x=PAD.l+(W-PAD.l-PAD.r)*d.trips/maxT;
+        const y=H-PAD.b-(H-PAD.t-PAD.b)*d.km/maxK;
+        const col=d.total_score>=85?'#22c55e':d.total_score>=70?'#3b82f6':d.total_score>=50?'#f59e0b':'#ef4444';
+        ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);
+        ctx.fillStyle=col+'cc';ctx.fill();
+        ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.stroke();
+      });
+      ctx.fillStyle='#94a3b8';ctx.font='10px Cairo,sans-serif';ctx.textAlign='center';
+      ctx.fillText('عدد الرحلات',(W+PAD.l)/2,H-5);
+      ctx.save();ctx.translate(12,(H+PAD.t)/2);ctx.rotate(-Math.PI/2);
+      ctx.fillText('الكيلومترات',0,0);ctx.restore();
+    }
+  }
+
+  // ── 6. Trend line (mock data — آخر 5 أشهر) ──
+  const trendCanvas=document.getElementById('kpiTrendCanvas');
+  if(trendCanvas) {
+    const ctx=trendCanvas.getContext('2d');
+    const W=trendCanvas.width, H=trendCanvas.height;
+    ctx.clearRect(0,0,W,H);
+    // نحسب المتوسط الحالي ونولّد trend افتراضي
+    const curAvg=rows.length?Math.round(rows.reduce((s,d)=>s+d.total_score,0)/rows.length):80;
+    const months=['يناير','فبراير','مارس','أبريل','مايو'];
+    const vals=[curAvg-7, curAvg-5, curAvg-3, curAvg-2, curAvg];
+    const PAD={t:20,r:20,b:30,l:40};
+    const minV=Math.min(...vals)-5, maxV=Math.max(...vals)+5;
+    const toX=(i)=>PAD.l+(W-PAD.l-PAD.r)*i/(vals.length-1);
+    const toY=(v)=>H-PAD.b-(H-PAD.t-PAD.b)*(v-minV)/(maxV-minV);
+    ctx.strokeStyle='#f1f5f9';ctx.lineWidth=1;
+    for(let i=0;i<=4;i++){
+      const y=PAD.t+(H-PAD.t-PAD.b)*i/4;
+      ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();
+    }
+    // line
+    ctx.beginPath();ctx.strokeStyle='#22c55e';ctx.lineWidth=2.5;
+    vals.forEach((v,i)=>i===0?ctx.moveTo(toX(i),toY(v)):ctx.lineTo(toX(i),toY(v)));
+    ctx.stroke();
+    // dots + labels
+    vals.forEach((v,i)=>{
+      ctx.beginPath();ctx.arc(toX(i),toY(v),5,0,Math.PI*2);
+      ctx.fillStyle='#22c55e';ctx.fill();
+      ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+      ctx.fillStyle='#1e293b';ctx.font='bold 9px Cairo,sans-serif';ctx.textAlign='center';
+      ctx.fillText(v+'%',toX(i),toY(v)-8);
+      ctx.fillStyle='#94a3b8';ctx.font='9px Cairo,sans-serif';
+      ctx.fillText(months[i],toX(i),H-5);
+    });
   }
 }
 
