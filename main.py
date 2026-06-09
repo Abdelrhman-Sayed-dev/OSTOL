@@ -7525,7 +7525,7 @@ async def sarky_report(
         for drv in drivers:
             did = drv["id"]
 
-            # رحلات منتهية مع garage_location في الفترة
+            # رحلات منتهية في الفترة (بصرف النظر عن garage_location)
             c.execute("""
                 SELECT
                     date(start_time)        as trip_date,
@@ -7538,8 +7538,6 @@ async def sarky_report(
                 FROM trips
                 WHERE driver_id = ?
                   AND end_time   IS NOT NULL
-                  AND garage_location IS NOT NULL
-                  AND garage_location != ''
                   AND date(start_time) BETWEEN ? AND ?
                 GROUP BY date(start_time)
                 ORDER BY date(start_time)
