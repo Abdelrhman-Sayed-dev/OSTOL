@@ -5409,22 +5409,25 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
         <div class="filter-grid">
         <div class="form-group" style="margin:0">
             <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">المركبة</label>
-            <div style="position:relative" id="opCarWrap">
-              <input type="text" id="opCarSearch"
-                placeholder="🔍 ابحث بالرقم أو الموديل..."
-                autocomplete="off"
-                style="width:100%;padding:.45rem .75rem .45rem 2.2rem;border:1.5px solid var(--border);border-radius:10px;
-                       font-family:inherit;font-size:.84rem;background:#fff;cursor:pointer;box-sizing:border-box"
-                oninput="filterOpCarList()"
-                onfocus="showOpCarList()"
-              >
-              <span style="position:absolute;left:.65rem;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:.85rem;pointer-events:none">▾</span>
+            <div class="cs-wrapper" id="opCarWrap">
               <input type="hidden" id="opCar" value="">
-              <div id="opCarDropdown"
-                style="display:none;position:absolute;top:calc(100% + 4px);right:0;left:0;
-                       background:#fff;border:1.5px solid var(--border);border-radius:10px;
-                       max-height:220px;overflow-y:auto;z-index:500;
-                       box-shadow:0 8px 24px rgba(15,23,42,.1)">
+              <!-- trigger button -->
+              <div class="cs-trigger" id="opCarTrigger" onclick="toggleOpCarDropdown()" tabindex="0"
+                   onkeydown="if(event.key==='Enter'||event.key===' ')toggleOpCarDropdown()">
+                <span class="cs-label cs-placeholder" id="opCarLabel">— كل المركبات —</span>
+                <span class="cs-arrow">▼</span>
+              </div>
+              <!-- dropdown -->
+              <div class="cs-dropdown" id="opCarDropdown">
+                <div class="cs-search-wrap" style="position:relative">
+                  <span class="cs-search-icon">🔍</span>
+                  <input type="text" class="cs-search" id="opCarSearch"
+                    placeholder="ابحث بالرقم أو الموديل..."
+                    autocomplete="off"
+                    oninput="filterOpCarList()"
+                    onclick="event.stopPropagation()">
+                </div>
+                <div class="cs-list" id="opCarList"></div>
               </div>
             </div>
           </div>
@@ -5497,62 +5500,96 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
     const wrap = document.getElementById('opCarWrap');
     if (wrap && !wrap.contains(e.target)) {
       const dd = document.getElementById('opCarDropdown');
-      if (dd) dd.style.display = 'none';
+      const tr = document.getElementById('opCarTrigger');
+      if (dd) { dd.classList.remove('cs-open'); }
+      if (tr) { tr.classList.remove('cs-open'); }
     }
   });
 }
 
 function _renderOpCarList(cars, query) {
-  const dd = document.getElementById('opCarDropdown');
-  if (!dd) return;
+  const list = document.getElementById('opCarList');
+  if (!list) return;
   const q = (query||'').trim().toLowerCase();
+  const selectedId = document.getElementById('opCar')?.value || '';
+
+  function hl(text) {
+    if (!q) return text;
+    const idx = text.toLowerCase().indexOf(q);
+    if (idx < 0) return text;
+    return text.slice(0,idx) + '<mark>' + text.slice(idx, idx+q.length) + '</mark>' + text.slice(idx+q.length);
+  }
+
   const filtered = cars.filter(c => {
-    const text = `${c.plate} ${c.model} ${c.car_name||''}`.toLowerCase();
+    const text = (c.plate + ' ' + c.model + ' ' + (c.car_name||'')).toLowerCase();
     return !q || text.includes(q);
   });
-  // "كل المركبات" option always at top
-  const allItem = `<div data-val="" data-label="— كل المركبات —"
-    onclick="selectOpCar('', '— كل المركبات —')"
-    style="padding:.5rem .9rem;cursor:pointer;font-size:.83rem;color:#64748b;
-           border-bottom:1px solid #f1f5f9;transition:background .1s"
-    onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
-    — كل المركبات —
+
+  const allSel = selectedId === '';
+  const allItem = `<div class="cs-option ${allSel?'cs-selected':''}"
+    onclick="selectOpCar('', '— كل المركبات —')">
+    <span>— كل المركبات —</span>
   </div>`;
+
   const items = filtered.map(c => {
-    const label = `${c.plate} — ${c.model}${c.car_name?' ('+c.car_name+')':''}`;
-    return `<div data-val="${c.id}" data-label="${label}"
-      onclick="selectOpCar('${c.id}', \`${label.replace(/`/g,"'")}\`)"
-      style="padding:.5rem .9rem;cursor:pointer;font-size:.83rem;border-bottom:1px solid #f8fafc;transition:background .1s"
-      onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''">
-      <strong style="color:#1e3a5f">${c.plate}</strong>
-      <span style="color:#64748b;margin-right:.4rem">${c.model}${c.car_name?' — '+c.car_name:''}</span>
+    const label = c.plate + ' — ' + c.model + (c.car_name?' ('+c.car_name+')':'');
+    const isSel = String(c.id) === String(selectedId);
+    return `<div class="cs-option ${isSel?'cs-selected':''}"
+      onclick="selectOpCar('${c.id}', '${label.replace(/'/g,"\'")}')" >
+      <strong style="color:#1e3a5f">${hl(c.plate)}</strong>
+      <span style="color:#64748b;margin-right:.35rem">${hl(c.model)}${c.car_name?' — '+hl(c.car_name):''}</span>
     </div>`;
   });
+
   if (!filtered.length) {
-    dd.innerHTML = allItem + `<div style="padding:.6rem .9rem;color:#94a3b8;font-size:.82rem">لا توجد نتائج</div>`;
+    list.innerHTML = allItem + '<div class="cs-empty">لا توجد نتائج</div>';
   } else {
-    dd.innerHTML = allItem + items.join('');
+    list.innerHTML = allItem + items.join('');
+  }
+}
+
+function toggleOpCarDropdown() {
+  const dd = document.getElementById('opCarDropdown');
+  const tr = document.getElementById('opCarTrigger');
+  if (!dd || !tr) return;
+  const isOpen = dd.classList.contains('cs-open');
+  if (isOpen) {
+    dd.classList.remove('cs-open');
+    tr.classList.remove('cs-open');
+  } else {
+    dd.classList.add('cs-open');
+    tr.classList.add('cs-open');
+    setTimeout(() => document.getElementById('opCarSearch')?.focus(), 80);
+    _renderOpCarList(window._opCars || [], '');
+    if (document.getElementById('opCarSearch'))
+      document.getElementById('opCarSearch').value = '';
   }
 }
 
 async function showOpCarList() {
   const dd = document.getElementById('opCarDropdown');
-  if (dd) dd.style.display = 'block';
+  const tr = document.getElementById('opCarTrigger');
+  if (dd) dd.classList.add('cs-open');
+  if (tr) tr.classList.add('cs-open');
   filterOpCarList();
 }
 
 async function filterOpCarList() {
   const q = document.getElementById('opCarSearch')?.value || '';
-  const dd = document.getElementById('opCarDropdown');
-  if (dd) dd.style.display = 'block';
   _renderOpCarList(window._opCars || [], q);
 }
 
 async function selectOpCar(val, label) {
   document.getElementById('opCar').value = val;
-  document.getElementById('opCarSearch').value = val ? label : '';
+  const lbl = document.getElementById('opCarLabel');
+  if (lbl) {
+    lbl.textContent = label || '— كل المركبات —';
+    lbl.classList.toggle('cs-placeholder', !val);
+  }
   const dd = document.getElementById('opCarDropdown');
-  if (dd) dd.style.display = 'none';
+  const tr = document.getElementById('opCarTrigger');
+  if (dd) dd.classList.remove('cs-open');
+  if (tr) tr.classList.remove('cs-open');
 }
 
 async function generateOpCard() {
