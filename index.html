@@ -11126,8 +11126,11 @@ async function renderSuperSarky() {
     </div>
 
     <style>
-      .sarky-filters{display:grid;grid-template-columns:1fr auto auto auto;gap:.75rem;align-items:end;margin-bottom:1.25rem}
+      .sarky-filters{display:grid;grid-template-columns:1fr auto auto auto;gap:.75rem;align-items:end;margin-bottom:1.25rem;overflow:visible}
+      .sarky-filters > div{overflow:visible;position:relative}
       @media(max-width:700px){.sarky-filters{grid-template-columns:1fr 1fr}}
+      #sarkyDriverWrap, #sarkyDriverWrap .cs-dropdown{overflow:visible !important}
+      #sarkyDriverDd{z-index:999999 !important;position:absolute !important}
       .sarky-card{background:#fff;border-radius:20px;border:1.5px solid var(--border);
         box-shadow:0 6px 24px rgba(15,23,42,.08);overflow:hidden;margin-bottom:1.5rem}
       .sarky-card-header{background:linear-gradient(135deg,#1a2942,#0f4c81);
@@ -11150,12 +11153,12 @@ async function renderSuperSarky() {
     </style>
 
     <!-- فلاتر -->
-    <div class="card no-print" style="margin-bottom:1.25rem">
-      <div style="padding:1rem 1.2rem">
-        <div class="sarky-filters">
+    <div class="card no-print" style="margin-bottom:1.25rem;overflow:visible">
+      <div style="padding:1rem 1.2rem;overflow:visible">
+        <div class="sarky-filters" style="overflow:visible">
           <div>
             <label style="font-size:.8rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">السائق</label>
-            <div class="cs-wrapper" id="sarkyDriverWrap">
+            <div class="cs-wrapper" id="sarkyDriverWrap" style="overflow:visible;position:relative">
               <input type="hidden" id="sarkyDriverId" value="">
               <div class="cs-trigger" id="sarkyDriverTrigger" onclick="toggleSarkyDriver()" tabindex="0"
                    onkeydown="if(event.key==='Enter'||event.key===' ')toggleSarkyDriver()">
