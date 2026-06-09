@@ -2922,12 +2922,13 @@ async def get_prices(branch: Optional[str] = None, cu: dict = Depends(get_user))
         else:
             c.execute("SELECT key,value FROM app_settings WHERE key LIKE 'price_%'")
             all_rows = {r["key"]: float(r["value"]) for r in c.fetchall()}
-            # رجّع بس الأسعار العامة (مش الفروع) — key بدون underscore زيادة
+            # رجّع بس الأسعار العامة (مش الفروع)
+            # الأسعار المقبولة هي كل ws_type موجود في WORKSHOP_TYPES
+            VALID_PRICE_KEYS = {f"price_{t}" for t in WORKSHOP_TYPES}
             return {
-                k.replace("price_",""): v
+                k.replace("price_", ""): v
                 for k, v in all_rows.items()
-                if k.count('_') == 1  # price_oil, price_fuel_solar لكن مش price_branch_oil
-                   or k.startswith('price_fuel_')  # fuel subtypes
+                if k in VALID_PRICE_KEYS
             }
 
 @app.put("/settings/prices")
@@ -5161,6 +5162,80 @@ async def get_maintenance_alerts(cu: dict = Depends(require_admin_or_reporter)):
     """يرجع فقط السجلات اللي status فيها warning أو overdue."""
     all_rows = await get_maintenance_schedule(cu)
     return [r for r in all_rows if r["alert_status"] in ("warning", "overdue")]
+
+
+@app.get("/driver/maintenance-alerts")
+async def get_driver_maintenance_alerts(cu: dict = Depends(get_user)):
+    """
+    تنبيهات الصيانة الدورية للسائق:
+    - يجيب العربية المخصصة للسائق
+    - يرجع السجلات warning أو overdue فقط
+    - يظل ظاهر لحد ما الصيانة تتعمل (last_done_km / last_done_date يتحدثوا)
+    """
+    driver_id = cu.get("driver_id")
+    if not driver_id:
+        return []
+
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # جيب العربية الأساسية للسائق
+        c.execute("""
+            SELECT c.id, c.plate, c.model
+            FROM cars c
+            INNER JOIN driver_car_permissions p ON c.id = p.car_id
+            WHERE p.driver_id = ?
+            ORDER BY p.id ASC
+            LIMIT 1
+        """, (driver_id,))
+        car_row = c.fetchone()
+        if not car_row:
+            return []
+
+        car = dict(car_row)
+        car_id = car["id"]
+
+        # آخر عداد مسجل للعربية من الرحلات
+        c.execute("""
+            SELECT t.end_odometer
+            FROM trips t
+            INNER JOIN (
+                SELECT car_id, MAX(end_time) as latest
+                FROM trips
+                WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL AND car_id = ?
+                GROUP BY car_id
+            ) lx ON t.car_id = lx.car_id AND t.end_time = lx.latest
+            WHERE t.end_odometer IS NOT NULL AND t.car_id = ?
+        """, (car_id, car_id))
+        odo_row = c.fetchone()
+        current_km = float(odo_row["end_odometer"]) if odo_row else None
+
+        # جدول الصيانة للعربية دي
+        c.execute("SELECT * FROM maintenance_schedule WHERE car_id = ?", (car_id,))
+        rows = c.fetchall()
+
+    cars_map = {car_id: {"plate": car["plate"], "model": car["model"], "branch": ""}}
+    alerts = []
+    for row in rows:
+        d = dict(row)
+        d["_current_km"] = current_km
+        enriched = _maintenance_row(d, cars_map)
+        if enriched["alert_status"] in ("warning", "overdue"):
+            remaining = None
+            if enriched.get("next_due_km") and current_km is not None:
+                remaining = round(enriched["next_due_km"] - current_km, 1)
+            alerts.append({
+                "maintenance_type": enriched["maintenance_type"],
+                "alert_status":     enriched["alert_status"],
+                "next_due_km":      enriched.get("next_due_km"),
+                "current_km":       enriched.get("current_km"),
+                "remaining_km":     remaining,
+                "next_due_date":    enriched.get("next_due_date"),
+                "car_plate":        car["plate"],
+                "car_model":        car["model"],
+                "notes":            enriched.get("notes", ""),
+            })
+    return alerts
 
 
 @app.post("/maintenance/schedule", status_code=201)
