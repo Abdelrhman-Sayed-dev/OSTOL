@@ -12244,10 +12244,25 @@ async function renderDriverKpiSection() {
 
   c.innerHTML = `
     <style>
-      .kpi-stat-card{background:#fff;border-radius:16px;border:1.5px solid var(--border);box-shadow:var(--shadow-sm);padding:1.25rem 1rem;display:flex;align-items:center;gap:.85rem}
-      .kpi-stat-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
-      .kpi-stat-val{font-size:1.7rem;font-weight:900;line-height:1;margin-bottom:.2rem}
-      .kpi-stat-lbl{font-size:.72rem;color:var(--muted);font-weight:600}
+      .kpi-stat-card{
+        background:#fff;
+        border-radius:18px;
+        border:1.5px solid var(--border);
+        box-shadow:0 2px 12px rgba(15,23,42,.06);
+        padding:1rem 1.1rem;
+        display:flex;
+        align-items:center;
+        gap:.75rem;
+        transition:transform .15s, box-shadow .15s;
+      }
+      .kpi-stat-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(15,23,42,.1)}
+      .kpi-stat-icon{
+        width:42px;height:42px;border-radius:12px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:1.2rem;flex-shrink:0;
+      }
+      .kpi-stat-val{font-size:1.25rem;font-weight:900;line-height:1.1;margin-bottom:.2rem;letter-spacing:-.5px}
+      .kpi-stat-lbl{font-size:.7rem;color:var(--muted);font-weight:600;letter-spacing:.2px}
       .kpi-chart-card{background:#fff;border-radius:16px;border:1.5px solid var(--border);box-shadow:var(--shadow-sm);padding:1.1rem 1.25rem}
       .kpi-chart-title{font-size:.88rem;font-weight:800;color:var(--text);margin-bottom:.75rem;display:flex;align-items:center;gap:.4rem}
       .kpi-bar-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem}
@@ -12305,8 +12320,8 @@ async function renderDriverKpiSection() {
     <!-- KPI Cards -->
     <div id="kpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.85rem;margin-bottom:1.1rem"></div>
 
-    <!-- الصف الأول: أفضل 10 + توزيع التصنيف + مقارنة الفروع -->
-    <div style="display:grid;grid-template-columns:2fr 1.3fr 1.5fr;gap:1rem;margin-bottom:1rem">
+    <!-- الصف الأول: أفضل 10 + توزيع التصنيف + مقارنة الفروع + اتجاه الأداء -->
+    <div style="display:grid;grid-template-columns:2fr 1.2fr 1.4fr 1.4fr;gap:1rem;margin-bottom:1rem">
       <div class="kpi-chart-card">
         <div class="kpi-chart-title">🏆 أفضل 10 سائقين حسب النقاط</div>
         <div id="kpiTop10Chart"></div>
@@ -12319,21 +12334,9 @@ async function renderDriverKpiSection() {
         <div class="kpi-chart-title">📊 مقارنة الفروع (متوسط النقاط)</div>
         <div id="kpiBranchChart"></div>
       </div>
-    </div>
-
-    <!-- الصف الثاني: استهلاك الوقود + scatter + اتجاه -->
-    <div style="display:grid;grid-template-columns:1.5fr 2fr 1.5fr;gap:1rem;margin-bottom:1rem">
-      <div class="kpi-chart-card">
-        <div class="kpi-chart-title">⛽ استهلاك الوقود (لتر/100كم)</div>
-        <div id="kpiFuelChart"></div>
-      </div>
-      <div class="kpi-chart-card">
-        <div class="kpi-chart-title">🚗 الرحلات مقابل الكيلومترات</div>
-        <canvas id="kpiScatterCanvas" width="400" height="200"></canvas>
-      </div>
       <div class="kpi-chart-card">
         <div class="kpi-chart-title">📈 اتجاه الأداء العام (متوسط النقاط)</div>
-        <canvas id="kpiTrendCanvas" width="300" height="200"></canvas>
+        <canvas id="kpiTrendCanvas" width="300" height="220"></canvas>
       </div>
     </div>
 
@@ -12459,16 +12462,16 @@ async function loadKpiData() {
     const excellent = _kpiData.filter(d=>d.grade==='ممتاز').length;
 
     if (summary) summary.innerHTML = [
-      {label:'إجمالي السائقين',      value:active,                     icon:'👥', bg:'#eff6ff', iconBg:'#dbeafe', color:'#1d4ed8'},
-      {label:'إجمالي الرحلات',       value:totalTrips.toLocaleString('ar-EG'), icon:'🚗', bg:'#f0fdf4', iconBg:'#dcfce7', color:'#16a34a'},
-      {label:'إجمالي الكيلومترات',   value:(totalKm/1000).toFixed(0)+'k كم', icon:'🛣️', bg:'#faf5ff', iconBg:'#ede9fe', color:'#7c3aed'},
-      {label:'متوسط استهلاك الوقود', value:avgFuel+' ل/100كم',         icon:'⛽', bg:'#fff7ed', iconBg:'#fed7aa', color:'#c2410c'},
-      {label:'إجمالي الطوارئ',       value:totalEmg,                   icon:'🚨', bg:'#fef2f2', iconBg:'#fecaca', color:'#dc2626'},
-      {label:'تصنيف ممتاز',           value:excellent+' سائق',          icon:'🏆', bg:'#fffbeb', iconBg:'#fde68a', color:'#b45309'},
+      {label:'إجمالي السائقين',      value:active,                              icon:'👥', iconBg:'#e0e7ff', color:'#4338ca'},
+      {label:'إجمالي الرحلات',       value:totalTrips.toLocaleString('ar-EG'),  icon:'🚗', iconBg:'#d1fae5', color:'#059669'},
+      {label:'إجمالي الكيلومترات',   value:(totalKm/1000).toFixed(0)+'k كم',   icon:'🛣️', iconBg:'#ede9fe', color:'#7c3aed'},
+      {label:'متوسط استهلاك الوقود', value:avgFuel+' ل/100كم',                  icon:'⛽', iconBg:'#ffedd5', color:'#ea580c'},
+      {label:'إجمالي الطوارئ',       value:totalEmg,                            icon:'🚨', iconBg:'#fee2e2', color:'#dc2626'},
+      {label:'تصنيف ممتاز',           value:excellent+' سائق',                   icon:'🏆', iconBg:'#fef9c3', color:'#ca8a04'},
     ].map(s=>`
       <div class="kpi-stat-card">
         <div class="kpi-stat-icon" style="background:${s.iconBg}">${s.icon}</div>
-        <div>
+        <div style="min-width:0">
           <div class="kpi-stat-val" style="color:${s.color}">${s.value}</div>
           <div class="kpi-stat-lbl">${s.label}</div>
         </div>
@@ -12558,57 +12561,7 @@ function _renderKpiCharts(rows) {
     </div>`).join('');
   }
 
-  // ── 4. استهلاك الوقود ──
-  const fuelEl = document.getElementById('kpiFuelChart');
-  if(fuelEl) {
-    const fuelRows=rows.filter(d=>d.consumption!=null).sort((a,b)=>a.consumption-b.consumption).slice(0,10);
-    const maxFuel=fuelRows.length?Math.max(...fuelRows.map(d=>d.consumption)):30;
-    const fuelColors=['#22c55e','#4ade80','#86efac','#3b82f6','#60a5fa','#93c5fd','#f59e0b','#fbbf24','#f97316','#ef4444'];
-    fuelEl.innerHTML=fuelRows.map((d,i)=>{
-      const pct=Math.round(d.consumption/maxFuel*100);
-      const col=d.consumption<=25?'#22c55e':d.consumption<=30?'#3b82f6':d.consumption<=35?'#f59e0b':'#ef4444';
-      const shortName=d.driver_name.split(' ').slice(0,2).join(' ');
-      return `<div class="kpi-bar-row">
-        <div class="kpi-bar-name" title="${d.driver_name}">${shortName}</div>
-        <div class="kpi-bar-track">
-          <div class="kpi-bar-fill" style="width:${pct}%;background:${col}">${d.consumption}</div>
-        </div>
-      </div>`;
-    }).join('')||'<div style="color:#94a3b8;font-size:.82rem;text-align:center;padding:1rem">لا توجد بيانات وقود</div>';
-  }
-
-  // ── 5. Scatter رحلات vs كم ──
-  const scatterCanvas=document.getElementById('kpiScatterCanvas');
-  if(scatterCanvas) {
-    const ctx=scatterCanvas.getContext('2d');
-    const W=scatterCanvas.width, H=scatterCanvas.height;
-    ctx.clearRect(0,0,W,H);
-    const PAD={t:20,r:20,b:30,l:40};
-    const pts=rows.filter(d=>d.trips>0&&d.km>0);
-    if(pts.length) {
-      const maxT=Math.max(...pts.map(d=>d.trips));
-      const maxK=Math.max(...pts.map(d=>d.km));
-      ctx.strokeStyle='#f1f5f9'; ctx.lineWidth=1;
-      for(let i=0;i<=4;i++){
-        const y=PAD.t+(H-PAD.t-PAD.b)*i/4;
-        ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();
-      }
-      pts.forEach(d=>{
-        const x=PAD.l+(W-PAD.l-PAD.r)*d.trips/maxT;
-        const y=H-PAD.b-(H-PAD.t-PAD.b)*d.km/maxK;
-        const col=d.total_score>=85?'#22c55e':d.total_score>=70?'#3b82f6':d.total_score>=50?'#f59e0b':'#ef4444';
-        ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);
-        ctx.fillStyle=col+'cc';ctx.fill();
-        ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.stroke();
-      });
-      ctx.fillStyle='#94a3b8';ctx.font='10px Cairo,sans-serif';ctx.textAlign='center';
-      ctx.fillText('عدد الرحلات',(W+PAD.l)/2,H-5);
-      ctx.save();ctx.translate(12,(H+PAD.t)/2);ctx.rotate(-Math.PI/2);
-      ctx.fillText('الكيلومترات',0,0);ctx.restore();
-    }
-  }
-
-  // ── 6. Trend line (mock data — آخر 5 أشهر) ──
+  // ── 4. Trend line ──
   const trendCanvas=document.getElementById('kpiTrendCanvas');
   if(trendCanvas) {
     const ctx=trendCanvas.getContext('2d');
