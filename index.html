@@ -4315,6 +4315,15 @@ const WT = {
   oil_hydro: {icon:'🔵',label:'زيت الهيدروليك'},
   oil_grease:{icon:'⚫',label:'شحم'},
   filter:    {icon:'🔧',label:'فلتر'},
+  filter_oil:      {icon:'🔴',label:'فلتر زيت'},
+  filter_solar:    {icon:'🟤',label:'فلتر سولار'},
+  filter_petrol:   {icon:'🟡',label:'فلتر بنزين'},
+  filter_air:      {icon:'🔵',label:'فلتر هواء'},
+  filter_separator:{icon:'⚪',label:'فلتر فاصل'},
+  filter_ac:       {icon:'❄️',label:'فلتر تكيف'},
+  filter_dryer:    {icon:'🟠',label:'فلتر مجفف'},
+  filter_breather: {icon:'🌬️',label:'فلتر منفس'},
+  filter_hydraulic:{icon:'🔧',label:'فلتر هيدروليك'},
   tire:      {icon:'⚫',label:'كوتش'},
   battery:   {icon:'🔋',label:'بطارية'},
   belt:      {icon:'🔩',label:'سيور'},
@@ -4344,7 +4353,7 @@ async function renderAdminWorkshops() {
   // حساب الإجماليات حسب الفئة
   const fuelTotal        = records.filter(r=>r.type&&r.type.startsWith('fuel_')).reduce((s,r)=>s+(r.price||0),0);
   const oilTotal         = records.filter(r=>r.type&&(r.type==='oil'||r.type.startsWith('oil_'))).reduce((s,r)=>s+(r.price||0),0);
-  const maintenanceTotal = records.filter(r=>r.type&&['filter','belt','other'].includes(r.type)).reduce((s,r)=>s+(r.price||0),0);
+  const maintenanceTotal = records.filter(r=>r.type&&(['filter','belt','other'].includes(r.type)||r.type.startsWith('filter_'))).reduce((s,r)=>s+(r.price||0),0);
   const partsTotal       = records.filter(r=>r.type&&['tire','battery'].includes(r.type)).reduce((s,r)=>s+(r.price||0),0);
   const fmt = v => v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
@@ -7664,7 +7673,22 @@ function openWsModal(type) {
         <option value="repair">🔧 تصليح</option>
         <option value="replacement">🔄 استبدال</option>
       </select></div>`;
-  else if(['filter','battery','belt'].includes(type)) specific=`
+  else if(type==='filter') specific=`
+    <div class="form-group"><label>نوع الفلتر <span class="req">*</span></label>
+      <select id="wFilterSubType">
+        <option value="">-- اختر نوع الفلتر --</option>
+        <option value="filter_oil">🔴 فلتر زيت</option>
+        <option value="filter_solar">🟤 فلتر سولار</option>
+        <option value="filter_petrol">🟡 فلتر بنزين</option>
+        <option value="filter_air">🔵 فلتر هواء</option>
+        <option value="filter_separator">⚪ فلتر فاصل</option>
+        <option value="filter_ac">❄️ فلتر تكيف</option>
+        <option value="filter_dryer">🟠 فلتر مجفف</option>
+        <option value="filter_breather">🌬️ فلتر منفس</option>
+        <option value="filter_hydraulic">🔧 فلتر هيدروليك</option>
+      </select></div>
+    <input type="hidden" id="wOpType" value="replacement">`;
+  else if(['battery','belt'].includes(type)) specific=`
     <div class="form-group"><label>نوع العملية <span class="req">*</span></label>
       <select id="wOpType">
         <option value="">-- اختر --</option>
@@ -7758,7 +7782,13 @@ function openWsModal(type) {
       if(!ta) return showNotification('اختر حالة الكوتش','error');
       payload.tire_action=ta;
     }
-    if(['filter','battery','belt'].includes(selWsType)){
+    if(selWsType==='filter'){
+      const filterSub=document.getElementById('wFilterSubType')?.value;
+      if(!filterSub) return showNotification('اختر نوع الفلتر','error');
+      payload.type=filterSub;
+      payload.operation_type='replacement';
+    }
+    if(['battery','belt'].includes(selWsType)){
       const op=document.getElementById('wOpType')?.value;
       if(!op) return showNotification('اختر نوع العملية','error');
       payload.operation_type=op;
@@ -9903,7 +9933,23 @@ function dpWsModal(type) {
       '<div class="form-group"><label>رقم مستند الصرف</label><input type="text" id="wDocNum" placeholder="مثال: 2024/075"></div>' +
       '<div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>' +
       '</div>';
-  } else if (['filter', 'belt'].includes(type)) {
+  } else if (type === 'filter') {
+    specific =
+      '<div class="form-group"><label>نوع الفلتر <span class="req">*</span></label>' +
+      '<select id="wFilterSubType">' +
+      '<option value="">-- اختر نوع الفلتر --</option>' +
+      '<option value="filter_oil">🔴 فلتر زيت</option>' +
+      '<option value="filter_solar">🟤 فلتر سولار</option>' +
+      '<option value="filter_petrol">🟡 فلتر بنزين</option>' +
+      '<option value="filter_air">🔵 فلتر هواء</option>' +
+      '<option value="filter_separator">⚪ فلتر فاصل</option>' +
+      '<option value="filter_ac">❄️ فلتر تكيف</option>' +
+      '<option value="filter_dryer">🟠 فلتر مجفف</option>' +
+      '<option value="filter_breather">🌬️ فلتر منفس</option>' +
+      '<option value="filter_hydraulic">🔧 فلتر هيدروليك</option>' +
+      '</select></div>' +
+      '<input type="hidden" id="wOpType" value="replacement">';
+  } else if (type === 'belt') {
     specific =
       '<div class="form-group"><label>نوع العملية <span class="req">*</span></label>' +
       '<select id="wOpType"><option value="">-- اختر --</option><option value="maintenance">🔧 صيانة</option><option value="replacement">🔄 استبدال</option></select></div>';
@@ -10022,8 +10068,15 @@ function dpWsModal(type) {
       if (recv)  payload.receiver_name = recv;
     }
 
-    // ── Filter / Belt ──
-    if (['filter', 'belt'].includes(selWsType)) {
+    // ── Filter ──
+    if (selWsType === 'filter') {
+      const filterSub = document.getElementById('wFilterSubType')?.value;
+      if (!filterSub) return showNotification('اختر نوع الفلتر', 'error');
+      payload.type = filterSub;
+      payload.operation_type = 'replacement';
+    }
+    // ── Belt ──
+    if (selWsType === 'belt') {
       const op = document.getElementById('wOpType')?.value;
       if (!op) return showNotification('اختر نوع العملية', 'error');
       payload.operation_type = op;
