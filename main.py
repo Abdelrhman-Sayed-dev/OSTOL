@@ -7480,3 +7480,92 @@ async def import_rental_arabic(
     write_audit_log(cu["user_id"],cu["username"],cu["role"],
                     "import_rental_arabic", f"استيراد {inserted} معدة")
     return {"inserted": inserted, "skipped": len(invalid), "invalid_rows": invalid}
+
+# ══════════════════════════════════════════════════════
+# السركي — تقرير حضور السائقين من الرحلات
+# ══════════════════════════════════════════════════════
+
+@app.get("/reports/sarky")
+async def sarky_report(
+    driver_id: int  = Query(None),
+    date_from: str  = Query(None, description="YYYY-MM-DD"),
+    date_to:   str  = Query(None, description="YYYY-MM-DD"),
+    branch:    str  = Query(None),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """
+    السركي: تقرير حضور السائقين المُحتسب من الرحلات.
+    يوم الحضور = أي يوم فيه رحلة واحدة على الأقل منتهية مع garage_location مسجّل.
+    """
+    eff_branch = _branch_filter(cu) or branch
+
+    # defaults: الشهر الحالي
+    if not date_from:
+        date_from = datetime.utcnow().strftime("%Y-%m-01")
+    if not date_to:
+        date_to = datetime.utcnow().strftime("%Y-%m-%d")
+
+    with get_db() as conn:
+        c = conn.cursor()
+
+        # ── جيب السائقين ──
+        q_drv = "SELECT d.id, d.name, d.branch, d.fixed_number FROM drivers d WHERE 1=1"
+        p_drv: list = []
+        if eff_branch:
+            q_drv += " AND d.branch=?"
+            p_drv.append(eff_branch)
+        if driver_id:
+            q_drv += " AND d.id=?"
+            p_drv.append(driver_id)
+        q_drv += " ORDER BY d.name"
+        c.execute(q_drv, p_drv)
+        drivers = [dict(r) for r in c.fetchall()]
+
+        results = []
+        for drv in drivers:
+            did = drv["id"]
+
+            # رحلات منتهية مع garage_location في الفترة
+            c.execute("""
+                SELECT
+                    date(start_time)        as trip_date,
+                    COUNT(*)                as trip_count,
+                    COALESCE(SUM(
+                        CASE WHEN end_odometer > start_odometer
+                             THEN end_odometer - start_odometer
+                             ELSE 0 END
+                    ), 0)                   as km_total
+                FROM trips
+                WHERE driver_id = ?
+                  AND end_time   IS NOT NULL
+                  AND garage_location IS NOT NULL
+                  AND garage_location != ''
+                  AND date(start_time) BETWEEN ? AND ?
+                GROUP BY date(start_time)
+                ORDER BY date(start_time)
+            """, (did, date_from, date_to))
+            days = [dict(r) for r in c.fetchall()]
+
+            total_days  = len(days)
+            total_trips = sum(d["trip_count"] for d in days)
+            total_km    = round(sum(d["km_total"]  for d in days), 2)
+
+            results.append({
+                "driver_id":    did,
+                "driver_name":  drv["name"],
+                "branch":       drv["branch"] or "",
+                "fixed_number": drv["fixed_number"] or "",
+                "total_days":   total_days,
+                "total_trips":  total_trips,
+                "total_km":     total_km,
+                "days_detail":  days,      # يوم يوم
+            })
+
+        # رتّب: الأكتر حضوراً أول
+        results.sort(key=lambda x: (-x["total_days"], -x["total_km"]))
+        return {
+            "date_from": date_from,
+            "date_to":   date_to,
+            "branch":    eff_branch or "الكل",
+            "drivers":   results,
+        }
