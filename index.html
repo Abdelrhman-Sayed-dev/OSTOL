@@ -225,7 +225,24 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 .modal-body .cs-dropdown,
 .modal-content .cs-dropdown { z-index: 99999; }
 
-
+/* ══ GLOBAL FIX: منع قص الـ dropdown في أي مكان ══
+   أي card أو grid أو filter container بيحتوي cs-wrapper
+   يجب أن يكون overflow:visible عشان الـ dropdown يطلع */
+.card:has(.cs-wrapper),
+.card-header:has(.cs-wrapper),
+[class*="filter"]:has(.cs-wrapper),
+[class*="form"]:has(.cs-wrapper) {
+  overflow: visible !important;
+}
+/* Fallback للمتصفحات اللي ما تدعمش :has() */
+.cs-wrapper { overflow: visible; }
+.cs-dropdown.cs-open {
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  /* تأكيد خروج من أي stacking context */
+  transform: translateZ(0);
+}
 
 
 /* ══════════════════════════════════════════════════════
@@ -5194,7 +5211,8 @@ async function renderOperationalCard() {
       .op-bar { height:10px;border-radius:6px;background:linear-gradient(90deg,#3b82f6,#06b6d4);min-width:4px;transition:.4s }
       .op-km-badge { display:inline-block;background:#dbeafe;color:#1d4ed8;border-radius:20px;
                      font-size:.78rem;font-weight:700;padding:.1rem .5rem;margin-right:.4rem }
-      .filter-grid { display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:.8rem;align-items:end }
+      .filter-grid { display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:.8rem;align-items:end;overflow:visible }
+      .filter-grid > div { overflow:visible;position:relative }
       @media(max-width:768px){ .filter-grid { grid-template-columns:1fr 1fr } }
 .fs-pagination{
   display:flex;align-items:center;justify-content:space-between;
@@ -5406,12 +5424,12 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
 .ws-table-wrap table{min-width:340px;width:100%}
 </style>
 
-    <div class="card no-print">
+    <div class="card no-print" style="overflow:visible">
       <div class="card-header">
         <div class="card-title">📊 البطاقة التشغيلية للمركبات</div>
       </div>
-      <div style="padding:1rem 1.2rem 1.4rem">
-        <div class="filter-grid">
+      <div style="padding:1rem 1.2rem 1.4rem;overflow:visible">
+        <div class="filter-grid" style="overflow:visible">
         <div class="form-group" style="margin:0">
             <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">المركبة</label>
             <div class="cs-wrapper" id="opCarWrap">
@@ -12250,9 +12268,9 @@ async function renderDriverKpiSection() {
     </div>
 
     <!-- فلاتر -->
-    <div class="card" style="margin-bottom:1rem;border-radius:14px">
-      <div style="padding:.75rem 1.1rem">
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+    <div class="card" style="margin-bottom:1rem;border-radius:14px;overflow:visible">
+      <div style="padding:.75rem 1.1rem;overflow:visible">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;overflow:visible">
           <div>
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفترة</label>
             <div style="display:flex;align-items:center;gap:.4rem">
