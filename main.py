@@ -7568,14 +7568,17 @@ async def sarky_report(
                 lt = day.get("last_trip_time")
                 first_fmt = ""
                 last_fmt  = ""
+                tz_offset = timedelta(hours=3)   # UTC+3 القاهرة
                 if ft:
                     try:
-                        first_fmt = datetime.fromisoformat(ft.replace("Z","")).strftime("%H:%M")
+                        dt_ft = datetime.fromisoformat(ft.replace("Z","")) + tz_offset
+                        first_fmt = dt_ft.strftime("%H:%M")
                     except Exception:
                         first_fmt = ""
                 if lt:
                     try:
-                        last_fmt = datetime.fromisoformat(lt.replace("Z","")).strftime("%H:%M")
+                        dt_lt = datetime.fromisoformat(lt.replace("Z","")) + tz_offset
+                        last_fmt = dt_lt.strftime("%H:%M")
                     except Exception:
                         pass
                 days.append({**day, "first_trip_time": first_fmt, "garage_time": last_fmt})
@@ -15169,14 +15172,17 @@ async def sarky_report(
                 lt = day.get("last_trip_time")
                 first_fmt = ""
                 last_fmt  = ""
+                tz_offset = timedelta(hours=3)   # UTC+3 القاهرة
                 if ft:
                     try:
-                        first_fmt = datetime.fromisoformat(ft.replace("Z","")).strftime("%H:%M")
+                        dt_ft = datetime.fromisoformat(ft.replace("Z","")) + tz_offset
+                        first_fmt = dt_ft.strftime("%H:%M")
                     except Exception:
                         first_fmt = ""
                 if lt:
                     try:
-                        last_fmt = datetime.fromisoformat(lt.replace("Z","")).strftime("%H:%M")
+                        dt_lt = datetime.fromisoformat(lt.replace("Z","")) + tz_offset
+                        last_fmt = dt_lt.strftime("%H:%M")
                     except Exception:
                         pass
                 days.append({**day, "first_trip_time": first_fmt, "garage_time": last_fmt})
