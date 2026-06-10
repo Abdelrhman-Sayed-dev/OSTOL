@@ -7587,6 +7587,54 @@ async def sarky_report(
             total_trips = sum(d["trip_count"] for d in days)
             total_km    = round(sum(d["km_total"] for d in days), 2)
 
+            # ── KPI: جيب بيانات السائق لنفس الفترة ──
+            c.execute("""
+                SELECT COUNT(*) as cnt,
+                       COALESCE(SUM(end_odometer - start_odometer),0) as km
+                FROM trips
+                WHERE driver_id=? AND end_time IS NOT NULL
+                  AND end_odometer IS NOT NULL
+                  AND date(start_time) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_tr = dict(c.fetchone())
+
+            c.execute("""
+                SELECT COALESCE(SUM(quantity),0) as liters
+                FROM workshop_records
+                WHERE driver_id=? AND type LIKE 'fuel_%'
+                  AND date(created_at) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_fuel = float(c.fetchone()[0] or 0)
+
+            c.execute("""
+                SELECT COALESCE(SUM(quantity),0) as liters
+                FROM workshop_records
+                WHERE driver_id=? AND type IN (
+                    'oil','filter','filter_oil','filter_solar','filter_petrol',
+                    'filter_air','filter_separator','filter_ac','filter_dryer',
+                    'filter_breather','filter_hydraulic'
+                ) AND date(created_at) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_oil = float(c.fetchone()[0] or 0)
+
+            c.execute("""
+                SELECT COUNT(*) FROM emergency_reports
+                WHERE driver_id=? AND date(created_at) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_emg = c.fetchone()[0] or 0
+
+            kpi_km = max(0.0, float(kpi_tr["km"] or 0))
+            kpi_scores = _calc_kpi_score(
+                trips=int(kpi_tr["cnt"] or 0),
+                km=kpi_km,
+                fuel_liters=kpi_fuel,
+                fuel_consumption=0,
+                emergencies=kpi_emg,
+                open_requests=0,
+                oil_liters=kpi_oil,
+                avg_km_all_drivers=0,
+            )
+
             results.append({
                 "driver_id":    did,
                 "driver_name":  drv["name"],
@@ -7596,6 +7644,14 @@ async def sarky_report(
                 "total_trips":  total_trips,
                 "total_km":     total_km,
                 "days_detail":  days,
+                "kpi_score":    kpi_scores["total_score"],
+                "kpi_grade":    kpi_scores["grade"],
+                "kpi_color":    kpi_scores["grade_color"],
+                "kpi_trips_score": kpi_scores["trips_score"],
+                "kpi_km_score":    kpi_scores["km_score"],
+                "kpi_emg_score":   kpi_scores["emg_score"],
+                "kpi_fuel_score":  kpi_scores.get("fuel_score"),
+                "kpi_oil_score":   kpi_scores.get("oil_score"),
             })
 
         # رتّب: الأكتر حضوراً أول
@@ -15191,6 +15247,54 @@ async def sarky_report(
             total_trips = sum(d["trip_count"] for d in days)
             total_km    = round(sum(d["km_total"] for d in days), 2)
 
+            # ── KPI: جيب بيانات السائق لنفس الفترة ──
+            c.execute("""
+                SELECT COUNT(*) as cnt,
+                       COALESCE(SUM(end_odometer - start_odometer),0) as km
+                FROM trips
+                WHERE driver_id=? AND end_time IS NOT NULL
+                  AND end_odometer IS NOT NULL
+                  AND date(start_time) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_tr = dict(c.fetchone())
+
+            c.execute("""
+                SELECT COALESCE(SUM(quantity),0) as liters
+                FROM workshop_records
+                WHERE driver_id=? AND type LIKE 'fuel_%'
+                  AND date(created_at) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_fuel = float(c.fetchone()[0] or 0)
+
+            c.execute("""
+                SELECT COALESCE(SUM(quantity),0) as liters
+                FROM workshop_records
+                WHERE driver_id=? AND type IN (
+                    'oil','filter','filter_oil','filter_solar','filter_petrol',
+                    'filter_air','filter_separator','filter_ac','filter_dryer',
+                    'filter_breather','filter_hydraulic'
+                ) AND date(created_at) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_oil = float(c.fetchone()[0] or 0)
+
+            c.execute("""
+                SELECT COUNT(*) FROM emergency_reports
+                WHERE driver_id=? AND date(created_at) BETWEEN ? AND ?
+            """, (did, date_from, date_to))
+            kpi_emg = c.fetchone()[0] or 0
+
+            kpi_km = max(0.0, float(kpi_tr["km"] or 0))
+            kpi_scores = _calc_kpi_score(
+                trips=int(kpi_tr["cnt"] or 0),
+                km=kpi_km,
+                fuel_liters=kpi_fuel,
+                fuel_consumption=0,
+                emergencies=kpi_emg,
+                open_requests=0,
+                oil_liters=kpi_oil,
+                avg_km_all_drivers=0,
+            )
+
             results.append({
                 "driver_id":    did,
                 "driver_name":  drv["name"],
@@ -15200,6 +15304,14 @@ async def sarky_report(
                 "total_trips":  total_trips,
                 "total_km":     total_km,
                 "days_detail":  days,
+                "kpi_score":    kpi_scores["total_score"],
+                "kpi_grade":    kpi_scores["grade"],
+                "kpi_color":    kpi_scores["grade_color"],
+                "kpi_trips_score": kpi_scores["trips_score"],
+                "kpi_km_score":    kpi_scores["km_score"],
+                "kpi_emg_score":   kpi_scores["emg_score"],
+                "kpi_fuel_score":  kpi_scores.get("fuel_score"),
+                "kpi_oil_score":   kpi_scores.get("oil_score"),
             })
 
         # رتّب: الأكتر حضوراً أول
