@@ -5874,14 +5874,30 @@ async def driver_kpi_report(
             trips_count = tr["cnt"] or 0
             km_total    = max(0.0, float(tr["km"] or 0))
 
-            # ── وقود — بيانات كل تفويلة على حدة ──
+            # ── وقود — سيارات فقط (استبعاد سولار المعدات) ──
+            # نجيب الـ car_ids المرتبطة بالسائق من رحلاته في الفترة
+            c.execute("""
+                SELECT DISTINCT t.car_id
+                FROM trips t
+                JOIN cars c ON c.id = t.car_id
+                WHERE t.driver_id=?
+                  AND t.end_time IS NOT NULL
+                  AND date(t.start_time) >= ? AND date(t.start_time) < ?
+                  AND (c.equipment_type IS NULL OR c.equipment_type = '')
+            """, (did, month_start, month_end))
+            car_ids_no_equip = [r[0] for r in c.fetchall()]
+
+            # لو مفيش سيارات عادية، معدل الاستهلاك مش قابل للحساب
             c.execute("""
                 SELECT quantity, odometer_reading, created_at, price
                 FROM workshop_records
                 WHERE driver_id=? AND type LIKE 'fuel_%'
                   AND date(created_at) >= ? AND date(created_at) < ?
+                  AND (vehicle_id IS NULL OR vehicle_id IN ({}))
                 ORDER BY created_at ASC
-            """, (did, month_start, month_end))
+            """.format(
+                ",".join("?" * len(car_ids_no_equip)) if car_ids_no_equip else "SELECT -1"
+            ), (did, month_start, month_end, *car_ids_no_equip) if car_ids_no_equip else (did, month_start, month_end))
             fuel_rows = [dict(r) for r in c.fetchall()]
             # إجمالي الوقود الفعلي للعرض (كل التفويلات)
             fuel_liters_total = sum(float(r.get("quantity") or 0) for r in fuel_rows)
@@ -7525,16 +7541,18 @@ async def sarky_report(
         for drv in drivers:
             did = drv["id"]
 
-            # رحلات منتهية في الفترة (بصرف النظر عن garage_location)
+            # رحلات منتهية في الفترة — مع أول وقت بداية وآخر وقت نهاية لكل يوم
             c.execute("""
                 SELECT
-                    date(start_time)        as trip_date,
-                    COUNT(*)                as trip_count,
+                    date(start_time)                            AS trip_date,
+                    COUNT(*)                                    AS trip_count,
                     COALESCE(SUM(
                         CASE WHEN end_odometer > start_odometer
                              THEN end_odometer - start_odometer
                              ELSE 0 END
-                    ), 0)                   as km_total
+                    ), 0)                                       AS km_total,
+                    MIN(start_time)                             AS first_trip_time,
+                    MAX(end_time)                               AS last_trip_time
                 FROM trips
                 WHERE driver_id = ?
                   AND end_time   IS NOT NULL
@@ -7542,21 +7560,71 @@ async def sarky_report(
                 GROUP BY date(start_time)
                 ORDER BY date(start_time)
             """, (did, date_from, date_to))
-            days = [dict(r) for r in c.fetchall()]
+            days_raw = [dict(r) for r in c.fetchall()]
 
-            total_days  = len(days)
-            total_trips = sum(d["trip_count"] for d in days)
-            total_km    = round(sum(d["km_total"]  for d in days), 2)
+            # حساب الوقت الإضافي لكل يوم
+            # ساعة العمل الرسمية = 8 ص → 5 م (9 ساعات)
+            # الوقت الإضافي = كل دقيقة بعد 17:00 في آخر رحلة
+            OVERTIME_START_HOUR = 17  # 5 م
+            days = []
+            for day in days_raw:
+                extra = {}
+                ft = day.get("first_trip_time")  # بداية أول رحلة من الجراج
+                lt = day.get("last_trip_time")    # نهاية آخر رحلة (= وقت الجراج)
+                overtime_min = 0
+                first_fmt = ""
+                last_fmt  = ""
+                work_hours = ""
+                if ft:
+                    try:
+                        dt_first = datetime.fromisoformat(ft.replace("Z",""))
+                        first_fmt = dt_first.strftime("%H:%M")
+                    except Exception:
+                        first_fmt = ""
+                if lt:
+                    try:
+                        dt_last = datetime.fromisoformat(lt.replace("Z",""))
+                        last_fmt = dt_last.strftime("%H:%M")
+                        # حساب الوقت الإضافي
+                        overtime_threshold = dt_last.replace(
+                            hour=OVERTIME_START_HOUR, minute=0, second=0, microsecond=0
+                        )
+                        if dt_last > overtime_threshold:
+                            overtime_min = int((dt_last - overtime_threshold).total_seconds() / 60)
+                        # إجمالي ساعات العمل
+                        if ft:
+                            dt_first2 = datetime.fromisoformat(ft.replace("Z",""))
+                            total_work_min = int((dt_last - dt_first2).total_seconds() / 60)
+                            h, m = divmod(total_work_min, 60)
+                            work_hours = f"{h}س {m}د"
+                    except Exception:
+                        pass
+                extra = {
+                    "first_trip_time": first_fmt,
+                    "garage_time":     last_fmt,
+                    "work_hours":      work_hours,
+                    "overtime_min":    overtime_min,
+                    "overtime_str":    f"{overtime_min//60}س {overtime_min%60}د" if overtime_min > 0 else "—",
+                }
+                days.append({**day, **extra})
+
+            total_days       = len(days)
+            total_trips      = sum(d["trip_count"]   for d in days)
+            total_km         = round(sum(d["km_total"] for d in days), 2)
+            total_overtime_min = sum(d["overtime_min"] for d in days)
+            ot_h, ot_m = divmod(total_overtime_min, 60)
 
             results.append({
-                "driver_id":    did,
-                "driver_name":  drv["name"],
-                "branch":       drv["branch"] or "",
-                "fixed_number": drv["fixed_number"] or "",
-                "total_days":   total_days,
-                "total_trips":  total_trips,
-                "total_km":     total_km,
-                "days_detail":  days,      # يوم يوم
+                "driver_id":          did,
+                "driver_name":        drv["name"],
+                "branch":             drv["branch"] or "",
+                "fixed_number":       drv["fixed_number"] or "",
+                "total_days":         total_days,
+                "total_trips":        total_trips,
+                "total_km":           total_km,
+                "total_overtime_min": total_overtime_min,
+                "total_overtime_str": f"{ot_h}س {ot_m}د" if total_overtime_min > 0 else "—",
+                "days_detail":        days,
             })
 
         # رتّب: الأكتر حضوراً أول
