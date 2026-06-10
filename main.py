@@ -7602,10 +7602,7 @@ async def sarky_report(
             "date_to":   date_to,
             "branch":    eff_branch or "الكل",
             "drivers":   results,
-        }"""
-Fleet Management System — Production-Ready Backend
-Author: Refactored for enterprise use
-"""
+        }
 
 
 import base64
