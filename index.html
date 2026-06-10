@@ -11409,30 +11409,22 @@ function _buildSarkyCard(d, from, to) {
   // جدول الأيام التفصيلية
   const daysHtml = (d.days_detail||[]).map((day,i)=>{
     const km  = typeof day.km_total==='number' ? day.km_total.toFixed(1) : '0';
-    const ot  = day.overtime_min > 0
-      ? `<span style="background:#fef3c7;color:#b45309;border-radius:5px;padding:.1rem .45rem;font-size:.7rem;font-weight:700">⏰ إضافي ${day.overtime_str}</span>`
-      : '';
-    return '<div class="sarky-day-row" style="background:'+(i%2===0?'#fff':'#f8fafc')+';display:grid;grid-template-columns:95px 55px 65px 65px 65px 1fr auto;align-items:center;gap:.4rem;font-size:.78rem">'
+    return '<div class="sarky-day-row" style="background:'+(i%2===0?'#fff':'#f8fafc')+';display:grid;grid-template-columns:95px 55px 65px 65px 65px;align-items:center;gap:.4rem;font-size:.78rem">'
       + '<span style="font-weight:700;color:#334155">'+day.trip_date+'</span>'
       + '<span class="sarky-day-badge">'+day.trip_count+' رحلة</span>'
       + '<span style="color:#7c3aed;font-weight:700">'+km+' كم</span>'
       + '<span style="color:#0891b2;font-weight:600" title="بداية أول رحلة من الجراج">🚀 '+(day.first_trip_time||'—')+'</span>'
       + '<span style="color:#be185d;font-weight:600" title="وقت إيداع الجراج (نهاية آخر رحلة)">🏁 '+(day.garage_time||'—')+'</span>'
-      + '<span style="color:#64748b;font-size:.72rem">'+(day.work_hours?'⏱ '+day.work_hours:'')+'</span>'
-      + ot
       + '</div>';
   }).join('') || '<div style="padding:.75rem 1rem;color:#94a3b8;font-size:.82rem">لا توجد أيام مسجّلة</div>';
 
   // رأس أعمدة الجدول
-  const daysHeader = '<div style="display:grid;grid-template-columns:95px 55px 65px 65px 65px 1fr auto;align-items:center;gap:.4rem;padding:.4rem .85rem;background:#f1f5f9;border-bottom:1px solid #e2e8f0;font-size:.7rem;font-weight:700;color:#64748b">'
+  const daysHeader = '<div style="display:grid;grid-template-columns:95px 55px 65px 65px 65px;align-items:center;gap:.4rem;padding:.4rem .85rem;background:#f1f5f9;border-bottom:1px solid #e2e8f0;font-size:.7rem;font-weight:700;color:#64748b">'
     + '<span>التاريخ</span><span>الرحلات</span><span>الكم</span>'
-    + '<span>بداية الجراج</span><span>نهاية الجراج</span><span>ساعات العمل</span><span>إضافي</span>'
+    + '<span>بداية الجراج</span><span>نهاية الجراج</span>'
     + '</div>';
 
-  // إجمالي الوقت الإضافي
-  const otTotal = d.total_overtime_str && d.total_overtime_str !== '—'
-    ? '<span style="color:#d97706;font-weight:700">⏰ إجمالي الوقت الإضافي: <strong>'+d.total_overtime_str+'</strong></span>'
-    : '';
+
 
   // توقيع المدير
   const signatureBlock = `
@@ -11484,7 +11476,6 @@ function _buildSarkyCard(d, from, to) {
     +   '<span style="color:#475569">⚡ معدل الرحلات/يوم: <strong>'+(d.total_trips/d.total_days).toFixed(1)+'</strong></span>'
     +   '<span style="color:#475569">📐 معدل الكم/رحلة: <strong>'+pct+'</strong> كم</span>'
     +   '<span style="color:#475569">🛣️ معدل الكم/يوم: <strong>'+(d.total_km/d.total_days).toFixed(1)+'</strong> كم</span>'
-    +   (otTotal ? '<span style="margin-right:auto">'+otTotal+'</span>' : '')
     + '</div>' : '')
     // جدول الأيام مع هيدر
     + '<div style="max-height:300px;overflow-y:auto">'+daysHeader+daysHtml+'</div>'
