@@ -7623,32 +7623,6 @@ async def sarky_report(
             """, (did, date_from, date_to))
             kpi_emg = c.fetchone()[0] or 0
 
-            # ── جيب raw KPI بنفس منطق الـ KPI endpoint الحقيقي ──
-            # وقود: نجيب التفويلات مرتبة بالعداد لحساب fuel_dist
-            c.execute("""
-                SELECT quantity, odometer_reading
-                FROM workshop_records
-                WHERE driver_id=? AND type LIKE 'fuel_%'
-                  AND date(created_at) BETWEEN ? AND ?
-                ORDER BY created_at ASC
-            """, (did, date_from, date_to))
-            fuel_rows = [dict(r) for r in c.fetchall()]
-            kpi_fuel_total = sum(float(r.get("quantity") or 0) for r in fuel_rows)
-
-            if len(fuel_rows) >= 2:
-                rows_odo = [r for r in fuel_rows if r.get("odometer_reading")]
-                if len(rows_odo) >= 2:
-                    dist_km = float(rows_odo[-1]["odometer_reading"]) - float(rows_odo[0]["odometer_reading"])
-                    liters_ex_last = sum(float(r.get("quantity") or 0) for r in fuel_rows[:-1])
-                    kpi_fuel_calc = liters_ex_last if (dist_km > 0 and liters_ex_last > 0) else kpi_fuel_total
-                    kpi_fuel_dist = dist_km if (dist_km > 0 and liters_ex_last > 0) else None
-                else:
-                    kpi_fuel_calc = kpi_fuel_total
-                    kpi_fuel_dist = None
-            else:
-                kpi_fuel_calc = 0.0
-                kpi_fuel_dist = None
-
             results.append({
                 "driver_id":    did,
                 "driver_name":  drv["name"],
@@ -7658,39 +7632,7 @@ async def sarky_report(
                 "total_trips":  total_trips,
                 "total_km":     total_km,
                 "days_detail":  days,
-                # raw KPI — score يُحسب بعد اكتمال كل السائقين
-                "_kpi_trips":      int(kpi_tr["cnt"] or 0),
-                "_kpi_km":         max(0.0, float(kpi_tr["km"] or 0)),
-                "_kpi_fuel_calc":  kpi_fuel_calc,
-                "_kpi_fuel_dist":  kpi_fuel_dist,
-                "_kpi_oil":        kpi_oil,
-                "_kpi_emg":        kpi_emg,
             })
-
-        # ── pass 2: avg_km من كل السائقين → نفس منطق KPI الحقيقي ──
-        km_vals = [r["_kpi_km"] for r in results if r["_kpi_km"] > 0]
-        avg_km_peers = (sum(km_vals) / len(km_vals)) if km_vals else 0.0
-
-        for r in results:
-            kpi_scores = _calc_kpi_score(
-                trips=r.pop("_kpi_trips"),
-                km=r.pop("_kpi_km"),
-                fuel_liters=r.pop("_kpi_fuel_calc"),
-                fuel_consumption=0,
-                emergencies=r.pop("_kpi_emg"),
-                open_requests=0,
-                oil_liters=r.pop("_kpi_oil"),
-                avg_km_all_drivers=avg_km_peers,
-                fuel_dist=r.pop("_kpi_fuel_dist"),
-            )
-            r["kpi_score"]       = kpi_scores["total_score"]
-            r["kpi_grade"]       = kpi_scores["grade"]
-            r["kpi_color"]       = kpi_scores["grade_color"]
-            r["kpi_trips_score"] = kpi_scores["trips_score"]
-            r["kpi_km_score"]    = kpi_scores["km_score"]
-            r["kpi_emg_score"]   = kpi_scores["emg_score"]
-            r["kpi_fuel_score"]  = kpi_scores.get("fuel_score")
-            r["kpi_oil_score"]   = kpi_scores.get("oil_score")
 
         # رتّب: الأكتر حضوراً أول
         results.sort(key=lambda x: (-x["total_days"], -x["total_km"]))
@@ -15321,32 +15263,6 @@ async def sarky_report(
             """, (did, date_from, date_to))
             kpi_emg = c.fetchone()[0] or 0
 
-            # ── جيب raw KPI بنفس منطق الـ KPI endpoint الحقيقي ──
-            # وقود: نجيب التفويلات مرتبة بالعداد لحساب fuel_dist
-            c.execute("""
-                SELECT quantity, odometer_reading
-                FROM workshop_records
-                WHERE driver_id=? AND type LIKE 'fuel_%'
-                  AND date(created_at) BETWEEN ? AND ?
-                ORDER BY created_at ASC
-            """, (did, date_from, date_to))
-            fuel_rows = [dict(r) for r in c.fetchall()]
-            kpi_fuel_total = sum(float(r.get("quantity") or 0) for r in fuel_rows)
-
-            if len(fuel_rows) >= 2:
-                rows_odo = [r for r in fuel_rows if r.get("odometer_reading")]
-                if len(rows_odo) >= 2:
-                    dist_km = float(rows_odo[-1]["odometer_reading"]) - float(rows_odo[0]["odometer_reading"])
-                    liters_ex_last = sum(float(r.get("quantity") or 0) for r in fuel_rows[:-1])
-                    kpi_fuel_calc = liters_ex_last if (dist_km > 0 and liters_ex_last > 0) else kpi_fuel_total
-                    kpi_fuel_dist = dist_km if (dist_km > 0 and liters_ex_last > 0) else None
-                else:
-                    kpi_fuel_calc = kpi_fuel_total
-                    kpi_fuel_dist = None
-            else:
-                kpi_fuel_calc = 0.0
-                kpi_fuel_dist = None
-
             results.append({
                 "driver_id":    did,
                 "driver_name":  drv["name"],
@@ -15356,39 +15272,7 @@ async def sarky_report(
                 "total_trips":  total_trips,
                 "total_km":     total_km,
                 "days_detail":  days,
-                # raw KPI — score يُحسب بعد اكتمال كل السائقين
-                "_kpi_trips":      int(kpi_tr["cnt"] or 0),
-                "_kpi_km":         max(0.0, float(kpi_tr["km"] or 0)),
-                "_kpi_fuel_calc":  kpi_fuel_calc,
-                "_kpi_fuel_dist":  kpi_fuel_dist,
-                "_kpi_oil":        kpi_oil,
-                "_kpi_emg":        kpi_emg,
             })
-
-        # ── pass 2: avg_km من كل السائقين → نفس منطق KPI الحقيقي ──
-        km_vals = [r["_kpi_km"] for r in results if r["_kpi_km"] > 0]
-        avg_km_peers = (sum(km_vals) / len(km_vals)) if km_vals else 0.0
-
-        for r in results:
-            kpi_scores = _calc_kpi_score(
-                trips=r.pop("_kpi_trips"),
-                km=r.pop("_kpi_km"),
-                fuel_liters=r.pop("_kpi_fuel_calc"),
-                fuel_consumption=0,
-                emergencies=r.pop("_kpi_emg"),
-                open_requests=0,
-                oil_liters=r.pop("_kpi_oil"),
-                avg_km_all_drivers=avg_km_peers,
-                fuel_dist=r.pop("_kpi_fuel_dist"),
-            )
-            r["kpi_score"]       = kpi_scores["total_score"]
-            r["kpi_grade"]       = kpi_scores["grade"]
-            r["kpi_color"]       = kpi_scores["grade_color"]
-            r["kpi_trips_score"] = kpi_scores["trips_score"]
-            r["kpi_km_score"]    = kpi_scores["km_score"]
-            r["kpi_emg_score"]   = kpi_scores["emg_score"]
-            r["kpi_fuel_score"]  = kpi_scores.get("fuel_score")
-            r["kpi_oil_score"]   = kpi_scores.get("oil_score")
 
         # رتّب: الأكتر حضوراً أول
         results.sort(key=lambda x: (-x["total_days"], -x["total_km"]))
