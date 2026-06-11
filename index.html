@@ -687,6 +687,7 @@ tbody tr:hover{background:#F8FAFC;transition:.1s}
   animation:slideUp .3s cubic-bezier(.4,0,.2,1);
   max-width:340px;border:1px solid rgba(255,255,255,.1);
 }
+@media print { .notification { display:none!important; } }
 @keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 .notification.success{background:#4f46e5;color:white}
 .notification.error{background:#7F1D1D;color:white}
@@ -5761,10 +5762,12 @@ async function generateOpCard() {
     const pct = maxKm>0 ? (km/maxKm*100).toFixed(1) : 0;
     // ── تمييز الصفوف الشاذة: مسافة > 900 كم في الفترة أو رحلات > 50 ──
     const isAnomalous = km > 900 || r.trip_count > 50;
+    // لا نعرض badge "شاذ" على صف إجمالي الفترة
+    const isTotal = String(r.period||'').includes('إجمالي');
     const rowStyle = isAnomalous
       ? 'background:linear-gradient(90deg,#fef9c3 0%,#fff 100%);border-right:3px solid #f59e0b;'
       : '';
-    const anomalyBadge = isAnomalous
+    const anomalyBadge = (isAnomalous && !isTotal)
       ? `<span title="قيمة شاذة — يُنصح بمراجعة البيانات"
                style="background:#fef3c7;color:#92400e;font-size:.62rem;padding:.1rem .4rem;
                       border-radius:20px;border:1px solid #fcd34d;font-weight:700;margin-right:.4rem">
@@ -6471,9 +6474,8 @@ async function submitTripFix(tripId) {
 }
 
 async function downloadOpPDF() {
-  showNotification('جاري تجهيز الطباعة...','info',2000);
-  // نعطي الـ browser وقت يعرض الـ notification أولاً
-  setTimeout(() => window.print(), 300);
+  // تأخير بسيط يضمن إن الـ DOM جاهز قبل الطباعة
+  setTimeout(() => window.print(), 150);
 }
 
 /* ── REQUESTS SECTION (Admin) ── */
