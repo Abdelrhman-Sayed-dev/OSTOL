@@ -5787,16 +5787,14 @@ async function generateOpCard() {
 
   // Summary cards — المسافة الكلية = عداد نهاية آخر رحلة − عداد بداية أول رحلة
   const realTotalKm = Math.max(0, (data.max_odo||0) - (data.min_odo||0));
-  // حساب أيام الشغل = عدد الأيام المختلفة اللي فيها رحلة
-  const workDays = data.rows
-    ? new Set(data.rows.flatMap(r => r.first_date ? [r.first_date.substring(0,10)] : [])).size
-    : 0;
+  // أيام عمل المركبة — جاية مباشرة من الـ API (COUNT DISTINCT date)
+  const workDays = data.work_days || 0;
   const summaryCards = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:.8rem">
       ${[
         {icon:'🛣️', label:'إجمالي المسافة',           val:fmt(realTotalKm)+' كم',   color:'#3b82f6'},
         {icon:'🗺️', label:'عدد الرحلات',               val:data.total_trips,          color:'#8b5cf6'},
-        {icon:'📅', label:'أيام الشغل',                 val:workDays+' يوم',           color:'#0891b2'},
+        {icon:'📅', label:'أيام عمل المركبة',           val:workDays+' يوم',           color:'#0891b2'},
         {icon:'📟', label:'عداد البداية (أول رحلة)',   val:fmt(data.min_odo)+' كم',  color:'#10b981'},
         {icon:'📟', label:'عداد النهاية (آخر رحلة)',   val:fmt(data.max_odo)+' كم',  color:'#f59e0b'},
       ].map(s=>`
@@ -6199,11 +6197,11 @@ function renderPage2(p2) {
         <td>${t.price||'&nbsp;'}</td>
         <td>&nbsp;</td>
         <td>${t.driver||'&nbsp;'}</td>
-        <td>&nbsp;</td>
+        <td style="min-width:40px">&nbsp;</td>
         <td>${t.receiver_name||'&nbsp;'}</td>
       </tr>`);
     });
-    while(rows.length < EMPTY_TIRES) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(12) + '</tr>');
+    while(rows.length < EMPTY_TIRES) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(11) + '</tr>');
     tiresTbody.innerHTML = rows.join('');
   }
 }
