@@ -5020,8 +5020,8 @@ function calcDistance(c1, c2) {
 
 /* ── OPERATIONAL CARD ── */
 
-// ─── بيان مسحوبات السولار ───
-function buildFuelDetailTable(rows) {
+// ─── بيان مسحوبات الوقود (سولار / بنزين) ───
+function buildFuelDetailTable(rows, fuelLabel) {
   if(!rows || !rows.length) return '';
   let totalQty = 0, totalCost = 0;
   const tRows = rows.map((r, i) => {
@@ -5044,7 +5044,7 @@ function buildFuelDetailTable(rows) {
     <div style="margin-bottom:.8rem">
       <div style="font-size:.85rem;font-weight:800;color:#1e3a5f;
                   border-right:3px solid #ea580c;padding-right:.5rem;margin-bottom:.5rem">
-        ⛽ بيان مسحوبات السولار (${rows.length} عملية تمويل)
+        ⛽ بيان مسحوبات ${fuelLabel||'السولار'} (${rows.length} عملية تمويل)
       </div>
       <div style="overflow-x:auto">
         <table class="op-table" style="font-size:.8rem">
@@ -5088,7 +5088,8 @@ async function renderOperationalCard() {
   c.innerHTML = `
     <style>
       /* كل البطاقة landscape — عشان جداول الزيوت (15 عمود) تعدي */
-      @page { size: A4 landscape; margin: 6mm 8mm; }
+      @page { size: A4 landscape; margin: 8mm 10mm; }
+      @page :first { margin-top: 6mm; }
 
       @media print {
         /* إخفاء UI */
@@ -5181,6 +5182,43 @@ async function renderOperationalCard() {
 
         /* الـ summary cards في الصفحة الأولى */
         .op-summary-cards { page-break-inside:avoid!important }
+
+        /* منع كسر الـ section cards */
+        .op-section-block {
+          page-break-inside:avoid!important;
+          break-inside:avoid!important;
+        }
+
+        /* الـ card الأولى */
+        .card:first-of-type {
+          page-break-after:always!important;
+          break-after:always!important;
+        }
+
+        /* تصغير الـ summary cards في الطباعة */
+        .op-summary-grid-print {
+          display:grid!important;
+          grid-template-columns:repeat(5,1fr)!important;
+          gap:3mm!important;
+          margin-bottom:4mm!important;
+        }
+        .op-summary-grid-print > div {
+          padding:3mm 2mm!important;
+          border-radius:4px!important;
+          font-size:7pt!important;
+        }
+        .op-summary-grid-print > div > div:first-child { font-size:11pt!important; }
+
+        /* fuel section */
+        .op-fuel-section {
+          page-break-inside:avoid!important;
+          break-inside:avoid!important;
+          margin-bottom:3mm!important;
+        }
+
+        /* جدول الرحلات — يكسر بعد كل 20 صف */
+        .op-trips-table { page-break-inside:auto!important }
+        .op-trips-table tr { page-break-inside:avoid!important }
       }
 
       .op-print-header { display:none }
@@ -5504,7 +5542,7 @@ tbody tr:hover{background:rgba(6,182,212,.03)}
     if (filterDiv) {
       const btn = document.createElement('div');
       btn.style.cssText = 'display:flex;align-items:flex-end;gap:.4rem';
-      btn.innerHTML = `<button class="btn btn-warning btn-sm" onclick="checkAnomalousTrips()" title="كشف الرحلات ذات قراءات العداد الخاطئة" style="height:38px;white-space:nowrap">⚠️ رحلات شاذة</button>`;
+      btn.innerHTML = `<button class="btn btn-warning btn-sm" onclick="checkAnomalousTrips()" title="كشف الرحلات ذات قراءات عداد غير منطقية" style="height:38px;white-space:nowrap">⚠️ رحلات شاذة</button>`;
       filterDiv.appendChild(btn);
     }
   }, 50);
@@ -5697,6 +5735,10 @@ async function generateOpCard() {
   const carStr = car
     ? `${car.plate} — ${car.model}${car.car_name?' ('+car.car_name+')':''}`
     : 'جميع المركبات';
+  // معلومات إضافية للعرض في البطاقة
+  const carCodeStr    = car?.car_code  ? `الكود: ${car.car_code}`    : '';
+  const carChassisStr = car?.chassis   ? `الشاسيه: ${car.chassis}`   : '';
+  const carExtraInfo  = [carCodeStr, carChassisStr].filter(Boolean).join('   |   ');
 
   function fmt(n) { return fmtNum(n); }
   function fmtDate(d) {
@@ -5745,11 +5787,16 @@ async function generateOpCard() {
 
   // Summary cards — المسافة الكلية = عداد نهاية آخر رحلة − عداد بداية أول رحلة
   const realTotalKm = Math.max(0, (data.max_odo||0) - (data.min_odo||0));
+  // حساب أيام الشغل = عدد الأيام المختلفة اللي فيها رحلة
+  const workDays = data.rows
+    ? new Set(data.rows.flatMap(r => r.first_date ? [r.first_date.substring(0,10)] : [])).size
+    : 0;
   const summaryCards = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:.8rem">
       ${[
         {icon:'🛣️', label:'إجمالي المسافة',           val:fmt(realTotalKm)+' كم',   color:'#3b82f6'},
         {icon:'🗺️', label:'عدد الرحلات',               val:data.total_trips,          color:'#8b5cf6'},
+        {icon:'📅', label:'أيام الشغل',                 val:workDays+' يوم',           color:'#0891b2'},
         {icon:'📟', label:'عداد البداية (أول رحلة)',   val:fmt(data.min_odo)+' كم',  color:'#10b981'},
         {icon:'📟', label:'عداد النهاية (آخر رحلة)',   val:fmt(data.max_odo)+' كم',  color:'#f59e0b'},
       ].map(s=>`
@@ -5769,10 +5816,24 @@ async function generateOpCard() {
       const dData = await apiCall(`/reports/operational-by-driver?car_id=${car_id}&date_from=${date_from}&date_to=${date_to}`);
 
       // ── نوع الوقود + كمية السولار + معدل الاستهلاك + جدول المسحوبات ──
-      const solarRec   = (dData.fuel_records||[]).find(f=>f.type==='fuel_solar');
-      const totalSolar = solarRec ? (solarRec.total_qty||0) : 0;
       const fuelDetail = dData.fuel_detail || [];
-      const solarDetail= fuelDetail.filter(f=>f.type==='fuel_solar');
+      // نحدد نوع الوقود الأساسي: السولار أولاً، ثم البنزين الأكثر استخداماً
+      const fuelRecords = dData.fuel_records || [];
+      const solarRec    = fuelRecords.find(f=>f.type==='fuel_solar');
+      const petrolTypes = ['fuel_92','fuel_95','fuel_80','fuel_cng'];
+      const petrolRec   = fuelRecords.filter(f=>petrolTypes.includes(f.type))
+                                     .sort((a,b)=>(b.count||0)-(a.count||0))[0];
+      const primaryFuelType = solarRec ? 'fuel_solar' : (petrolRec?.type || null);
+      const primaryFuelLabel = primaryFuelType === 'fuel_solar' ? 'السولار'
+        : primaryFuelType === 'fuel_92' ? 'بنزين 92'
+        : primaryFuelType === 'fuel_95' ? 'بنزين 95'
+        : primaryFuelType === 'fuel_80' ? 'بنزين 80'
+        : primaryFuelType === 'fuel_cng' ? 'غاز طبيعي'
+        : 'الوقود';
+      const totalSolar  = solarRec ? (solarRec.total_qty||0) : 0;
+      const primaryDetail = primaryFuelType ? fuelDetail.filter(f=>f.type===primaryFuelType) : [];
+      // للتوافق مع الكود القديم
+      const solarDetail = fuelDetail.filter(f=>f.type==='fuel_solar');
 
       // ── معدل الاستهلاك الصحيح (بدون آخر تفويلة) ──
       // المنطق: آخر تفويلة لسه جوه التانك ومش اتحرقت كلها
@@ -5780,9 +5841,9 @@ async function generateOpCard() {
       // الوقود  = إجمالي الكميات بدون آخر تفويلة
       // المعدل  = (الوقود ÷ المسافة) × 100  →  ل/100كم
       let consumption = null;
-      if (solarDetail.length >= 2) {
+      if (primaryDetail.length >= 2) {
         // رتّب تصاعدياً بالتاريخ
-        const sorted = [...solarDetail].sort((a,b)=>
+        const sorted = [...primaryDetail].sort((a,b)=>
           (a.fuel_date||'') < (b.fuel_date||'') ? -1 : 1
         );
         const first   = sorted[0];
@@ -5794,7 +5855,7 @@ async function generateOpCard() {
         if (distKm > 0 && liters > 0) {
           consumption = ((liters / distKm) * 100).toFixed(1);
         }
-      } else if (solarDetail.length === 1 && totalSolar > 0 && realTotalKm > 0) {
+      } else if (primaryDetail.length === 1 && (totalSolar > 0 || petrolRec) && realTotalKm > 0) {
         // تفويلة واحدة فقط — مش كافي نستبعد، نعرض null
         consumption = null;
       }
@@ -5825,7 +5886,7 @@ async function generateOpCard() {
             <span style="color:#15803d">${allFuels}</span></span>
           </div>
           ${fuelCards ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:.8rem">${fuelCards}</div>` : ''}
-          ${solarDetail.length > 0 ? buildFuelDetailTable(solarDetail) : ''}
+          ${primaryDetail.length > 0 ? buildFuelDetailTable(primaryDetail, primaryFuelLabel) : ''}
         `;
       } else {
         fuelTypeHtml = `
@@ -5889,12 +5950,14 @@ async function generateOpCard() {
         المركبة: ${carStr} &nbsp;|&nbsp; الفترة: ${fmtDate(date_from)} — ${fmtDate(date_to)}
         &nbsp;|&nbsp; نوع التقرير: ${report_type==='detailed'?'تفصيلي':'إجمالي'}
       </div>
+      ${carExtraInfo ? `<div style="font-size:9pt;color:#475569;margin-top:.15rem">${carExtraInfo}</div>` : ''}
     </div>
 
     <div class="card">
       <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
         <div>
           <div class="card-title">📊 ${carStr}</div>
+          ${carExtraInfo ? `<div style="font-size:.75rem;color:#475569;margin-top:.15rem;font-weight:600">${carExtraInfo}</div>` : ''}
           <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">
             ${fmtDate(date_from)} — ${fmtDate(date_to)} &nbsp;|&nbsp;
             ${report_type==='detailed'?'تقرير تفصيلي':'تقرير إجمالي'}
@@ -5948,6 +6011,7 @@ async function generateOpCard() {
         ${driversHtml}
 
         <!-- ═══ خامساً: الزيوت والشحوم المتصرفة ═══ -->
+        <div class="op-section-block">
         <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin-bottom:.8rem;color:#1e3a5f">
           خامساً: الزيوت والشحوم المتصرفة
         </div>
@@ -5991,8 +6055,10 @@ async function generateOpCard() {
             </tbody>
           </table>
         </div>
+        </div><!-- /op-section-block oils -->
 
         <!-- ═══ سادساً: الكاوتش والبطاريات المتصرفة ═══ -->
+        <div class="op-section-block">
         <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin-bottom:.8rem;color:#1e3a5f">
           سادساً: الكاوتش والبطاريات المتصرفة
         </div>
@@ -6028,6 +6094,7 @@ async function generateOpCard() {
             </tbody>
           </table>
         </div>
+        </div><!-- /op-section-block tires -->
 
         <!-- ═══ توقيعات ═══ -->
         <div class="op-signatures-block" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2rem;margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0">
@@ -6082,9 +6149,11 @@ function renderPage2(p2) {
       if(o.quantity) qtyCells[col] = o.quantity;
       const priceNum = parseFloat(o.price) || 0;
       totalCost += priceNum;
-      const costVal = priceNum > 0
+      // نعرض التكلفة لو فيه كمية مسجلة (حتى لو السعر لسه 0)
+      const hasQty = o.quantity && parseFloat(o.quantity) > 0;
+      const costVal = (priceNum > 0)
         ? priceNum.toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2})
-        : '&nbsp;';
+        : (hasQty ? '<span style="color:#94a3b8;font-size:.75rem">لم يُدخل</span>' : '&nbsp;');
       rows.push(`<tr>
         <td>${o.date||'&nbsp;'}</td>
         ${qtyCells.map(c=>`<td>${c}</td>`).join('')}
@@ -6330,7 +6399,7 @@ async function checkAnomalousTrips() {
     <div class="card-header" style="background:#fef3c7;border-radius:12px 12px 0 0;margin:-1.4rem -1.6rem 1rem">
       <div style="padding:.8rem 1.2rem">
         <div class="card-title" style="color:#92400e">
-          ⚠️ رحلات بقراءات عداد مشبوهة (أكثر من 1000 كم في رحلة واحدة) — ${data.count} رحلة
+          ⚠️ رحلات بقراءات عداد غير منطقية (أكثر من 1000 كم في رحلة واحدة) — ${data.count} رحلة
         </div>
         <div style="font-size:.78rem;color:#b45309;margin-top:.2rem">
           هذه الرحلات تُؤثر على دقة التقارير — يُرجى مراجعتها وتصحيحها
