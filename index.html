@@ -5042,13 +5042,13 @@ function buildFuelDetailTable(rows, fuelLabel) {
   }).join('');
 
   return `
-    <div style="margin-bottom:.8rem">
+    <div style="margin-bottom:.8rem;page-break-inside:avoid;break-inside:avoid">
       <div style="font-size:.85rem;font-weight:800;color:#1e3a5f;
                   border-right:3px solid #ea580c;padding-right:.5rem;margin-bottom:.5rem">
         ⛽ بيان مسحوبات ${fuelLabel||'السولار'} (${rows.length} عملية تمويل)
       </div>
       <div style="overflow-x:auto">
-        <table class="op-table" style="font-size:.8rem">
+        <table class="op-table" style="font-size:.8rem;page-break-inside:avoid;break-inside:avoid">
           <thead>
             <tr>
               <th style="width:32px">#</th>
@@ -5072,7 +5072,6 @@ function buildFuelDetailTable(rows, fuelLabel) {
           </tfoot>
         </table>
       </div>
-
     </div>`;
 }
 
@@ -5215,6 +5214,11 @@ async function renderOperationalCard() {
           page-break-inside:avoid!important;
           break-inside:avoid!important;
           margin-bottom:3mm!important;
+        }
+        /* جدول مسحوبات الوقود لا ينكسر */
+        .op-fuel-table-wrap {
+          page-break-inside:avoid!important;
+          break-inside:avoid!important;
         }
 
         /* جدول الرحلات — يكسر بعد كل 20 صف */
