@@ -12538,20 +12538,15 @@ async function loadKpiData() {
     // ── ملخص KPI Cards ──
     const active    = _kpiData.length;
     const avgScore  = active ? Math.round(_kpiData.reduce((s,d)=>s+d.total_score,0)/active) : 0;
-    const totalKm   = _kpiData.reduce((s,d)=>s+(d.km||0),0);
     const totalTrips= _kpiData.reduce((s,d)=>s+(d.trips||0),0);
     const totalEmg  = _kpiData.reduce((s,d)=>s+(d.emergencies||0),0);
-    const totalFuel = _kpiData.reduce((s,d)=>s+(d.fuel_liters||0),0);
-    const avgFuel   = active ? (totalFuel/active).toFixed(1) : 0;
     const excellent = _kpiData.filter(d=>d.grade==='ممتاز').length;
 
     if (summary) summary.innerHTML = [
-      {label:'إجمالي السائقين',      value:active,                              icon:'👥', iconBg:'#e0e7ff', color:'#4338ca'},
-      {label:'إجمالي الرحلات',       value:totalTrips.toLocaleString('ar-EG'),  icon:'🚗', iconBg:'#d1fae5', color:'#059669'},
-      {label:'إجمالي الكيلومترات',   value:(totalKm/1000).toFixed(0)+'k كم',   icon:'🛣️', iconBg:'#ede9fe', color:'#7c3aed'},
-      {label:'متوسط استهلاك الوقود', value:avgFuel+' ل/100كم',                  icon:'⛽', iconBg:'#ffedd5', color:'#ea580c'},
-      {label:'إجمالي الطوارئ',       value:totalEmg,                            icon:'🚨', iconBg:'#fee2e2', color:'#dc2626'},
-      {label:'تصنيف ممتاز',           value:excellent+' سائق',                   icon:'🏆', iconBg:'#fef9c3', color:'#ca8a04'},
+      {label:'إجمالي السائقين', value:active,                             icon:'👥', iconBg:'#e0e7ff', color:'#4338ca'},
+      {label:'إجمالي الرحلات',  value:totalTrips.toLocaleString('ar-EG'), icon:'🚗', iconBg:'#d1fae5', color:'#059669'},
+      {label:'إجمالي الطوارئ',  value:totalEmg,                           icon:'🚨', iconBg:'#fee2e2', color:'#dc2626'},
+      {label:'تصنيف ممتاز',      value:excellent+' سائق',                  icon:'🏆', iconBg:'#fef9c3', color:'#ca8a04'},
     ].map(s=>`
       <div class="kpi-stat-card">
         <div class="kpi-stat-icon" style="background:${s.iconBg}">${s.icon}</div>
@@ -12645,39 +12640,127 @@ function _renderKpiCharts(rows) {
     </div>`).join('');
   }
 
-  // ── 4. Trend line ──
+  // ── 4. Trend line — بيانات حقيقية من الـ API ──
+  // نرسم placeholder فوراً، ثم نجيب البيانات الحقيقية async
   const trendCanvas=document.getElementById('kpiTrendCanvas');
   if(trendCanvas) {
     const ctx=trendCanvas.getContext('2d');
     const W=trendCanvas.width, H=trendCanvas.height;
     ctx.clearRect(0,0,W,H);
-    // نحسب المتوسط الحالي ونولّد trend افتراضي
-    const curAvg=rows.length?Math.round(rows.reduce((s,d)=>s+d.total_score,0)/rows.length):80;
-    const months=['يناير','فبراير','مارس','أبريل','مايو'];
-    const vals=[curAvg-7, curAvg-5, curAvg-3, curAvg-2, curAvg];
-    const PAD={t:20,r:20,b:30,l:40};
-    const minV=Math.min(...vals)-5, maxV=Math.max(...vals)+5;
-    const toX=(i)=>PAD.l+(W-PAD.l-PAD.r)*i/(vals.length-1);
-    const toY=(v)=>H-PAD.b-(H-PAD.t-PAD.b)*(v-minV)/(maxV-minV);
-    ctx.strokeStyle='#f1f5f9';ctx.lineWidth=1;
-    for(let i=0;i<=4;i++){
-      const y=PAD.t+(H-PAD.t-PAD.b)*i/4;
-      ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();
+    ctx.fillStyle='#94a3b8';ctx.font='12px Cairo,sans-serif';ctx.textAlign='center';
+    ctx.fillText('⏳ جاري تحميل بيانات الاتجاه...', W/2, H/2);
+  }
+  // نشغّل الـ fetch بدون await
+  _loadAndDrawTrend();
+}
+
+// ── دالة مستقلة لجلب ورسم بيانات الـ trend الحقيقية ──
+async function _loadAndDrawTrend() {
+  const trendCanvas = document.getElementById('kpiTrendCanvas');
+  if (!trendCanvas) return;
+  const ctx = trendCanvas.getContext('2d');
+  const W = trendCanvas.width, H = trendCanvas.height;
+
+  try {
+    const branch = document.getElementById('kpiBranchVal')?.value?.trim() || '';
+    const branchParam = branch ? `&branch=${encodeURIComponent(branch)}` : '';
+
+    // آخر 6 شهور من الشهر الحالي للخلف
+    const now = new Date();
+    const monthsToFetch = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const label = d.toLocaleDateString('ar-EG', {month:'short', year:'2-digit'});
+      monthsToFetch.push({ ym, label });
     }
-    // line
-    ctx.beginPath();ctx.strokeStyle='#22c55e';ctx.lineWidth=2.5;
-    vals.forEach((v,i)=>i===0?ctx.moveTo(toX(i),toY(v)):ctx.lineTo(toX(i),toY(v)));
+
+    // fetch موازي لكل الشهور
+    const results = await Promise.all(
+      monthsToFetch.map(async m => {
+        try {
+          const data = await apiCall(`/reports/driver-kpi?month=${m.ym}${branchParam}`);
+          const drivers = data.drivers || [];
+          if (!drivers.length) return { ...m, avg: null };
+          const avg = Math.round(drivers.reduce((s, d) => s + d.total_score, 0) / drivers.length);
+          return { ...m, avg };
+        } catch { return { ...m, avg: null }; }
+      })
+    );
+
+    // فلتر الشهور اللي فيها بيانات فعلية
+    const validPoints = results.filter(r => r.avg !== null);
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (validPoints.length === 0) {
+      ctx.fillStyle = '#94a3b8'; ctx.font = '11px Cairo,sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('لا توجد بيانات بعد', W/2, H/2);
+      return;
+    }
+
+    if (validPoints.length === 1) {
+      const x = W/2, y = H/2 - 10;
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2);
+      ctx.fillStyle='#22c55e'; ctx.fill();
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
+      ctx.fillStyle='#1e293b'; ctx.font='bold 10px Cairo,sans-serif'; ctx.textAlign='center';
+      ctx.fillText(validPoints[0].avg+'%', x, y-12);
+      ctx.fillStyle='#94a3b8'; ctx.font='9px Cairo,sans-serif';
+      ctx.fillText(validPoints[0].label, x, H-5);
+      return;
+    }
+
+    const vals = validPoints.map(p => p.avg);
+    const PAD = {t:24,r:20,b:30,l:44};
+    const minV = Math.min(...vals) - 5;
+    const maxV = Math.max(...vals) + 5;
+    const toX = i => PAD.l + (W-PAD.l-PAD.r)*i/(validPoints.length-1);
+    const toY = v => H-PAD.b - (H-PAD.t-PAD.b)*(v-minV)/(maxV-minV);
+
+    // grid + Y labels
+    ctx.strokeStyle='#f1f5f9'; ctx.lineWidth=1;
+    for (let i=0; i<=4; i++) {
+      const y = PAD.t + (H-PAD.t-PAD.b)*i/4;
+      ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke();
+      const yVal = Math.round(maxV - (maxV-minV)*i/4);
+      ctx.fillStyle='#cbd5e1'; ctx.font='8px Cairo,sans-serif'; ctx.textAlign='right';
+      ctx.fillText(yVal+'%', PAD.l-4, y+3);
+    }
+
+    // gradient fill تحت الخط
+    const grad = ctx.createLinearGradient(0, PAD.t, 0, H-PAD.b);
+    grad.addColorStop(0, 'rgba(34,197,94,0.18)');
+    grad.addColorStop(1, 'rgba(34,197,94,0)');
+    ctx.beginPath();
+    ctx.moveTo(toX(0), toY(vals[0]));
+    vals.forEach((v,i) => { if(i>0) ctx.lineTo(toX(i),toY(v)); });
+    ctx.lineTo(toX(vals.length-1), H-PAD.b);
+    ctx.lineTo(toX(0), H-PAD.b);
+    ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+
+    // الخط الرئيسي
+    ctx.beginPath(); ctx.strokeStyle='#22c55e'; ctx.lineWidth=2.5;
+    vals.forEach((v,i) => i===0 ? ctx.moveTo(toX(i),toY(v)) : ctx.lineTo(toX(i),toY(v)));
     ctx.stroke();
-    // dots + labels
-    vals.forEach((v,i)=>{
-      ctx.beginPath();ctx.arc(toX(i),toY(v),5,0,Math.PI*2);
-      ctx.fillStyle='#22c55e';ctx.fill();
-      ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
-      ctx.fillStyle='#1e293b';ctx.font='bold 9px Cairo,sans-serif';ctx.textAlign='center';
-      ctx.fillText(v+'%',toX(i),toY(v)-8);
-      ctx.fillStyle='#94a3b8';ctx.font='9px Cairo,sans-serif';
-      ctx.fillText(months[i],toX(i),H-5);
+
+    // النقاط والتسميات
+    validPoints.forEach((p,i) => {
+      const x=toX(i), y=toY(p.avg);
+      ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2);
+      ctx.fillStyle='#22c55e'; ctx.fill();
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
+      ctx.fillStyle='#1e293b'; ctx.font='bold 9px Cairo,sans-serif'; ctx.textAlign='center';
+      ctx.fillText(p.avg+'%', x, y-9);
+      ctx.fillStyle='#94a3b8'; ctx.font='8px Cairo,sans-serif';
+      ctx.fillText(p.label, x, H-4);
     });
+
+  } catch(e) {
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#ef4444'; ctx.font='10px Cairo,sans-serif'; ctx.textAlign='center';
+    ctx.fillText('خطأ في تحميل البيانات', W/2, H/2);
   }
 }
 
