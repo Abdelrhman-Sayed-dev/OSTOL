@@ -2609,7 +2609,7 @@ async def get_operational_page2(
                 "operation":    op or t,
                 "quantity":     qty or "",
                 "price":        price,
-                "odometer_reading": odo or "",
+                "odometer":     odo or "",
                 "engine_hours": eng_h or "",
                 "doc_number":   doc_num,
                 "supply_source":supply,
@@ -2619,31 +2619,29 @@ async def get_operational_page2(
             })
         elif t in TIRE_TYPES:
             tires.append({
-                "date":             date_str,
-                "item":             item_n or "إطارات",
-                "spec":             item_s or r.get("tire_action","") or "",
-                "quantity":         qty or "",
-                "odometer_reading": odo or "",
-                "price":            price,
-                "doc_number":       doc_num,
-                "receiver_name":    recv,
-                "notes":            notes,
-                "driver":           r.get("driver_name",""),
-                "vehicle":          r.get("vehicle_plate",""),
+                "date":          date_str,
+                "item":          item_n or "إطارات",
+                "spec":          item_s or r.get("tire_action","") or "",
+                "quantity":      qty or "",
+                "price":         price,
+                "doc_number":    doc_num,
+                "receiver_name": recv,
+                "notes":         notes,
+                "driver":        r.get("driver_name",""),
+                "vehicle":       r.get("vehicle_plate",""),
             })
         elif t in BATTERY_TYPES:
             tires.append({
-                "date":             date_str,
-                "item":             item_n or "بطارية",
-                "spec":             item_s or op or "",
-                "quantity":         qty or "",
-                "odometer_reading": odo or "",
-                "price":            price,
-                "doc_number":       doc_num,
-                "receiver_name":    recv,
-                "notes":            notes,
-                "driver":           r.get("driver_name",""),
-                "vehicle":          r.get("vehicle_plate",""),
+                "date":          date_str,
+                "item":          item_n or "بطارية",
+                "spec":          item_s or op or "",
+                "quantity":      qty or "",
+                "price":         price,
+                "doc_number":    doc_num,
+                "receiver_name": recv,
+                "notes":         notes,
+                "driver":        r.get("driver_name",""),
+                "vehicle":       r.get("vehicle_plate",""),
             })
 
     return {
@@ -4776,11 +4774,11 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
     now      = datetime.utcnow()
     expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    # لو target_user_id محدد، نستخدم 'admins' كـ target_group حتى تمر CHECK constraint القديمة
-    # الـ routing الفعلي بيتم بالـ target_user_id وليس target_group
-    tg = body.target_group if body.target_user_id is None else (body.target_group or 'admins')
-    if tg not in ('admins', 'drivers'):
-        tg = 'admins'
+    # لو target_user_id محدد → target_group فاضي عشان يوصل للشخص ده بس
+    if body.target_user_id is not None:
+        tg = ''   # رسالة شخصية — مش لمجموعة
+    else:
+        tg = body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
@@ -4952,7 +4950,11 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
             SELECT id, duration_sec, created_at, expires_at,
                    play_count, max_plays, audio_data, target_group, target_user_id
             FROM voice_notes
-            WHERE (target_group = ? OR COALESCE(target_user_id, 0) = ?)
+            WHERE (
+                (target_user_id IS NULL AND target_group = ?)
+                OR
+                (target_user_id = ?)
+            )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
@@ -10251,7 +10253,7 @@ async def get_operational_page2(
                 "operation":    op or t,
                 "quantity":     qty or "",
                 "price":        price,
-                "odometer_reading": odo or "",
+                "odometer":     odo or "",
                 "engine_hours": eng_h or "",
                 "doc_number":   doc_num,
                 "supply_source":supply,
@@ -10261,31 +10263,29 @@ async def get_operational_page2(
             })
         elif t in TIRE_TYPES:
             tires.append({
-                "date":             date_str,
-                "item":             item_n or "إطارات",
-                "spec":             item_s or r.get("tire_action","") or "",
-                "quantity":         qty or "",
-                "odometer_reading": odo or "",
-                "price":            price,
-                "doc_number":       doc_num,
-                "receiver_name":    recv,
-                "notes":            notes,
-                "driver":           r.get("driver_name",""),
-                "vehicle":          r.get("vehicle_plate",""),
+                "date":          date_str,
+                "item":          item_n or "إطارات",
+                "spec":          item_s or r.get("tire_action","") or "",
+                "quantity":      qty or "",
+                "price":         price,
+                "doc_number":    doc_num,
+                "receiver_name": recv,
+                "notes":         notes,
+                "driver":        r.get("driver_name",""),
+                "vehicle":       r.get("vehicle_plate",""),
             })
         elif t in BATTERY_TYPES:
             tires.append({
-                "date":             date_str,
-                "item":             item_n or "بطارية",
-                "spec":             item_s or op or "",
-                "quantity":         qty or "",
-                "odometer_reading": odo or "",
-                "price":            price,
-                "doc_number":       doc_num,
-                "receiver_name":    recv,
-                "notes":            notes,
-                "driver":           r.get("driver_name",""),
-                "vehicle":          r.get("vehicle_plate",""),
+                "date":          date_str,
+                "item":          item_n or "بطارية",
+                "spec":          item_s or op or "",
+                "quantity":      qty or "",
+                "price":         price,
+                "doc_number":    doc_num,
+                "receiver_name": recv,
+                "notes":         notes,
+                "driver":        r.get("driver_name",""),
+                "vehicle":       r.get("vehicle_plate",""),
             })
 
     return {
@@ -12418,11 +12418,11 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
     now      = datetime.utcnow()
     expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    # لو target_user_id محدد، نستخدم 'admins' كـ target_group حتى تمر CHECK constraint القديمة
-    # الـ routing الفعلي بيتم بالـ target_user_id وليس target_group
-    tg = body.target_group if body.target_user_id is None else (body.target_group or 'admins')
-    if tg not in ('admins', 'drivers'):
-        tg = 'admins'
+    # لو target_user_id محدد → target_group فاضي عشان يوصل للشخص ده بس
+    if body.target_user_id is not None:
+        tg = ''   # رسالة شخصية — مش لمجموعة
+    else:
+        tg = body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
     with get_db() as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
@@ -12594,7 +12594,11 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
             SELECT id, duration_sec, created_at, expires_at,
                    play_count, max_plays, audio_data, target_group, target_user_id
             FROM voice_notes
-            WHERE (target_group = ? OR COALESCE(target_user_id, 0) = ?)
+            WHERE (
+                (target_user_id IS NULL AND target_group = ?)
+                OR
+                (target_user_id = ?)
+            )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
