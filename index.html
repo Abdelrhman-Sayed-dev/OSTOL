@@ -6016,7 +6016,7 @@ async function generateOpCard() {
         <div class="op-fuel-block">
           ${fuelTypeHtml}
         </div>
-        <div style="overflow-x:auto">
+        ${(tableRows && report_type === 'detailed') ? `<div style="overflow-x:auto">
           <table class="op-table">
             <thead>
               <tr>
@@ -6030,9 +6030,8 @@ async function generateOpCard() {
               </tr>
             </thead>
             <tbody>${tableRows}</tbody>
-
           </table>
-        </div>
+        </div>` : ''}
       </div>
       <!-- السائقون في نهاية الصفحة الأولى -->
       <div style="padding:0 1.2rem 1.4rem">
