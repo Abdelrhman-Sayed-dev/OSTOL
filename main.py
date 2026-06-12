@@ -2609,7 +2609,7 @@ async def get_operational_page2(
                 "operation":    op or t,
                 "quantity":     qty or "",
                 "price":        price,
-                "odometer":     odo or "",
+                "odometer_reading": odo or "",
                 "engine_hours": eng_h or "",
                 "doc_number":   doc_num,
                 "supply_source":supply,
@@ -2619,29 +2619,31 @@ async def get_operational_page2(
             })
         elif t in TIRE_TYPES:
             tires.append({
-                "date":          date_str,
-                "item":          item_n or "إطارات",
-                "spec":          item_s or r.get("tire_action","") or "",
-                "quantity":      qty or "",
-                "price":         price,
-                "doc_number":    doc_num,
-                "receiver_name": recv,
-                "notes":         notes,
-                "driver":        r.get("driver_name",""),
-                "vehicle":       r.get("vehicle_plate",""),
+                "date":             date_str,
+                "item":             item_n or "إطارات",
+                "spec":             item_s or r.get("tire_action","") or "",
+                "quantity":         qty or "",
+                "odometer_reading": odo or "",
+                "price":            price,
+                "doc_number":       doc_num,
+                "receiver_name":    recv,
+                "notes":            notes,
+                "driver":           r.get("driver_name",""),
+                "vehicle":          r.get("vehicle_plate",""),
             })
         elif t in BATTERY_TYPES:
             tires.append({
-                "date":          date_str,
-                "item":          item_n or "بطارية",
-                "spec":          item_s or op or "",
-                "quantity":      qty or "",
-                "price":         price,
-                "doc_number":    doc_num,
-                "receiver_name": recv,
-                "notes":         notes,
-                "driver":        r.get("driver_name",""),
-                "vehicle":       r.get("vehicle_plate",""),
+                "date":             date_str,
+                "item":             item_n or "بطارية",
+                "spec":             item_s or op or "",
+                "quantity":         qty or "",
+                "odometer_reading": odo or "",
+                "price":            price,
+                "doc_number":       doc_num,
+                "receiver_name":    recv,
+                "notes":            notes,
+                "driver":           r.get("driver_name",""),
+                "vehicle":          r.get("vehicle_plate",""),
             })
 
     return {
@@ -3727,7 +3729,6 @@ async def operational_report(
         c.execute(f"""
             SELECT
                 COUNT(t.id)                                       AS tc,
-                COUNT(DISTINCT date(t.start_time))                AS work_days,
                 ROUND(SUM(t.end_odometer - t.start_odometer), 1) AS tkm,
                 (SELECT t2.start_odometer FROM trips t2
                  WHERE {where_sql.replace('t.', 't2.')}
@@ -3744,7 +3745,6 @@ async def operational_report(
             "car_info":    car_info,
             "total_km":    tot["tkm"]    or 0,
             "total_trips": tot["tc"]     or 0,
-            "work_days":   tot["work_days"] or 0,
             "min_odo":     tot["first_odo"],
             "max_odo":     tot["last_odo"],
             "report_type": report_type,
@@ -10251,7 +10251,7 @@ async def get_operational_page2(
                 "operation":    op or t,
                 "quantity":     qty or "",
                 "price":        price,
-                "odometer":     odo or "",
+                "odometer_reading": odo or "",
                 "engine_hours": eng_h or "",
                 "doc_number":   doc_num,
                 "supply_source":supply,
@@ -10261,29 +10261,31 @@ async def get_operational_page2(
             })
         elif t in TIRE_TYPES:
             tires.append({
-                "date":          date_str,
-                "item":          item_n or "إطارات",
-                "spec":          item_s or r.get("tire_action","") or "",
-                "quantity":      qty or "",
-                "price":         price,
-                "doc_number":    doc_num,
-                "receiver_name": recv,
-                "notes":         notes,
-                "driver":        r.get("driver_name",""),
-                "vehicle":       r.get("vehicle_plate",""),
+                "date":             date_str,
+                "item":             item_n or "إطارات",
+                "spec":             item_s or r.get("tire_action","") or "",
+                "quantity":         qty or "",
+                "odometer_reading": odo or "",
+                "price":            price,
+                "doc_number":       doc_num,
+                "receiver_name":    recv,
+                "notes":            notes,
+                "driver":           r.get("driver_name",""),
+                "vehicle":          r.get("vehicle_plate",""),
             })
         elif t in BATTERY_TYPES:
             tires.append({
-                "date":          date_str,
-                "item":          item_n or "بطارية",
-                "spec":          item_s or op or "",
-                "quantity":      qty or "",
-                "price":         price,
-                "doc_number":    doc_num,
-                "receiver_name": recv,
-                "notes":         notes,
-                "driver":        r.get("driver_name",""),
-                "vehicle":       r.get("vehicle_plate",""),
+                "date":             date_str,
+                "item":             item_n or "بطارية",
+                "spec":             item_s or op or "",
+                "quantity":         qty or "",
+                "odometer_reading": odo or "",
+                "price":            price,
+                "doc_number":       doc_num,
+                "receiver_name":    recv,
+                "notes":            notes,
+                "driver":           r.get("driver_name",""),
+                "vehicle":          r.get("vehicle_plate",""),
             })
 
     return {
@@ -11369,7 +11371,6 @@ async def operational_report(
         c.execute(f"""
             SELECT
                 COUNT(t.id)                                       AS tc,
-                COUNT(DISTINCT date(t.start_time))                AS work_days,
                 ROUND(SUM(t.end_odometer - t.start_odometer), 1) AS tkm,
                 (SELECT t2.start_odometer FROM trips t2
                  WHERE {where_sql.replace('t.', 't2.')}
@@ -11386,7 +11387,6 @@ async def operational_report(
             "car_info":    car_info,
             "total_km":    tot["tkm"]    or 0,
             "total_trips": tot["tc"]     or 0,
-            "work_days":   tot["work_days"] or 0,
             "min_odo":     tot["first_odo"],
             "max_odo":     tot["last_odo"],
             "report_type": report_type,
