@@ -5116,17 +5116,12 @@ async function renderOperationalCard() {
           margin:0!important; padding:0!important;
         }
 
-        /* فاصل صفحة */
-        .op-page-break {
-          display:block!important;
-          page-break-before:always!important;
-          break-before:always!important;
-          height:0!important; margin:0!important; border:none!important;
-        }
+        /* فاصل صفحة — مشيناه، كل حاجة تتدفق تحت بعض */
+        .op-page-break { display:none!important; }
 
-        /* الصفحة الثانية */
-        .op-page2 { border:none!important; }
-        .op-page2 > div { padding:4mm 0 0!important; }
+        /* الصفحة الثانية — تتدفق طبيعي بدون فاصل */
+        .op-page2 { border:none!important; box-shadow:none!important; margin-top:0!important; }
+        .op-page2 > div { padding:2mm 0 0!important; }
 
         /* جدول الرحلات */
         .op-table                    { width:100%!important; border-collapse:collapse!important }
@@ -5189,10 +5184,10 @@ async function renderOperationalCard() {
           break-inside:avoid!important;
         }
 
-        /* الـ card الأولى */
+        /* الـ card الأولى — تتدفق طبيعي */
         .card:first-of-type {
-          page-break-after:always!important;
-          break-after:always!important;
+          page-break-after:auto!important;
+          break-after:auto!important;
         }
 
         /* تصغير الـ summary cards في الطباعة */
