@@ -800,12 +800,47 @@ def _safe_add_columns(c):
         log.warning(f"voice_notes migration: {e}")
     try: c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
     except Exception: pass
-    # تصحيح الرسائل الشخصية القديمة
+    # migration: إزالة CHECK constraint من voice_notes نهائياً
     try:
-        c.execute("""
+        vn_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='voice_notes'"
+        ).fetchone()
+        if vn_sql and 'CHECK' in (vn_sql[0] or ''):
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS _vn_tmp(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id INTEGER NOT NULL,
+                    sender_role TEXT NOT NULL DEFAULT 'superuser',
+                    target_group TEXT DEFAULT '',
+                    target_user_id INTEGER DEFAULT NULL,
+                    audio_data TEXT NOT NULL,
+                    duration_sec REAL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    play_count INTEGER DEFAULT 0,
+                    max_plays INTEGER DEFAULT 2,
+                    is_deleted INTEGER DEFAULT 0
+                );
+                INSERT OR IGNORE INTO _vn_tmp
+                    SELECT id,sender_id,
+                           COALESCE(sender_role,'superuser'),
+                           target_group,target_user_id,audio_data,
+                           duration_sec,created_at,expires_at,
+                           play_count,max_plays,is_deleted
+                    FROM voice_notes;
+                DROP TABLE voice_notes;
+                ALTER TABLE _vn_tmp RENAME TO voice_notes;
+            """)
+            log.info('✅ voice_notes CHECK constraint removed')
+    except Exception as e:
+        log.warning(f'voice_notes constraint migration: {e}')
+
+    # تصحيح الرسائل الشخصية القديمة → target_group = 'personal'
+    try:
+        conn.execute("""
             UPDATE voice_notes SET target_group = 'personal'
             WHERE target_user_id IS NOT NULL AND target_user_id != 0
-              AND target_group IN ('admins', 'drivers', '')
+              AND target_group IN ('admins', 'drivers')
         """)
         conn.commit()
     except Exception: pass
@@ -4798,13 +4833,32 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
                     (cu["user_id"], tg, body.target_user_id, body.audio_data,
                      body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
             except Exception:
-                # fallback لو الـ CHECK constraint رفض '' → نستخدم 'admins'
-                tg_fallback = 'admins' if not tg else tg
-                c.execute("""INSERT INTO voice_notes
+                # CHECK constraint قديم → نعيد بناء الجدول بدون CHECK ثم نعيد الـ INSERT
+                try:
+                    c.execute("""CREATE TABLE IF NOT EXISTS voice_notes_new(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sender_id INTEGER NOT NULL,
+                        sender_role TEXT NOT NULL DEFAULT 'superuser',
+                        target_group TEXT DEFAULT '',
+                        target_user_id INTEGER DEFAULT NULL,
+                        audio_data TEXT NOT NULL,
+                        duration_sec REAL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        play_count INTEGER DEFAULT 0,
+                        max_plays INTEGER DEFAULT 2,
+                        is_deleted INTEGER DEFAULT 0
+                    )""")                    c.execute("""INSERT OR IGNORE INTO voice_notes_new
+                        SELECT id,sender_id,
+                               COALESCE(sender_role,'superuser'),
+                               target_group,target_user_id,audio_data,
+                               duration_sec,created_at,expires_at,
+                               play_count,max_plays,is_deleted
+                        FROM voice_notes""")                    c.execute("DROP TABLE voice_notes")                    c.execute("ALTER TABLE voice_notes_new RENAME TO voice_notes")                    conn.commit()                except Exception: pass                c.execute("""INSERT INTO voice_notes
                     (sender_id, target_group, target_user_id, audio_data,
                      duration_sec, created_at, expires_at, max_plays)
                     VALUES(?,?,?,?,?,?,?,?)""",
-                    (cu["user_id"], tg_fallback, body.target_user_id, body.audio_data,
+                    (cu["user_id"], tg, body.target_user_id, body.audio_data,
                      body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
             note_id = c.lastrowid
         return {"id": note_id, "expires_at": expires}
@@ -4866,16 +4920,18 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
                    play_count, max_plays, audio_data
             FROM voice_notes
             WHERE (
-                    (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                    OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
-                    OR (target_user_id = ? AND target_group IN ('','personal'))
+                    -- رسائل المجموعة
+                    (target_group = ? AND target_user_id IS NULL)
+                    OR (target_group = ? AND target_user_id = 0)
+                    -- رسائل شخصية بأي target_group
+                    OR target_user_id = ?
                   )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, uid, now))
+        """, (group, group, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 
@@ -8456,12 +8512,47 @@ def _safe_add_columns(c):
         log.warning(f"voice_notes migration: {e}")
     try: c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
     except Exception: pass
-    # تصحيح الرسائل الشخصية القديمة
+    # migration: إزالة CHECK constraint من voice_notes نهائياً
     try:
-        c.execute("""
+        vn_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='voice_notes'"
+        ).fetchone()
+        if vn_sql and 'CHECK' in (vn_sql[0] or ''):
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS _vn_tmp(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sender_id INTEGER NOT NULL,
+                    sender_role TEXT NOT NULL DEFAULT 'superuser',
+                    target_group TEXT DEFAULT '',
+                    target_user_id INTEGER DEFAULT NULL,
+                    audio_data TEXT NOT NULL,
+                    duration_sec REAL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    play_count INTEGER DEFAULT 0,
+                    max_plays INTEGER DEFAULT 2,
+                    is_deleted INTEGER DEFAULT 0
+                );
+                INSERT OR IGNORE INTO _vn_tmp
+                    SELECT id,sender_id,
+                           COALESCE(sender_role,'superuser'),
+                           target_group,target_user_id,audio_data,
+                           duration_sec,created_at,expires_at,
+                           play_count,max_plays,is_deleted
+                    FROM voice_notes;
+                DROP TABLE voice_notes;
+                ALTER TABLE _vn_tmp RENAME TO voice_notes;
+            """)
+            log.info('✅ voice_notes CHECK constraint removed')
+    except Exception as e:
+        log.warning(f'voice_notes constraint migration: {e}')
+
+    # تصحيح الرسائل الشخصية القديمة → target_group = 'personal'
+    try:
+        conn.execute("""
             UPDATE voice_notes SET target_group = 'personal'
             WHERE target_user_id IS NOT NULL AND target_user_id != 0
-              AND target_group IN ('admins', 'drivers', '')
+              AND target_group IN ('admins', 'drivers')
         """)
         conn.commit()
     except Exception: pass
@@ -12454,13 +12545,32 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
                     (cu["user_id"], tg, body.target_user_id, body.audio_data,
                      body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
             except Exception:
-                # fallback لو الـ CHECK constraint رفض '' → نستخدم 'admins'
-                tg_fallback = 'admins' if not tg else tg
-                c.execute("""INSERT INTO voice_notes
+                # CHECK constraint قديم → نعيد بناء الجدول بدون CHECK ثم نعيد الـ INSERT
+                try:
+                    c.execute("""CREATE TABLE IF NOT EXISTS voice_notes_new(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sender_id INTEGER NOT NULL,
+                        sender_role TEXT NOT NULL DEFAULT 'superuser',
+                        target_group TEXT DEFAULT '',
+                        target_user_id INTEGER DEFAULT NULL,
+                        audio_data TEXT NOT NULL,
+                        duration_sec REAL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        play_count INTEGER DEFAULT 0,
+                        max_plays INTEGER DEFAULT 2,
+                        is_deleted INTEGER DEFAULT 0
+                    )""")                    c.execute("""INSERT OR IGNORE INTO voice_notes_new
+                        SELECT id,sender_id,
+                               COALESCE(sender_role,'superuser'),
+                               target_group,target_user_id,audio_data,
+                               duration_sec,created_at,expires_at,
+                               play_count,max_plays,is_deleted
+                        FROM voice_notes""")                    c.execute("DROP TABLE voice_notes")                    c.execute("ALTER TABLE voice_notes_new RENAME TO voice_notes")                    conn.commit()                except Exception: pass                c.execute("""INSERT INTO voice_notes
                     (sender_id, target_group, target_user_id, audio_data,
                      duration_sec, created_at, expires_at, max_plays)
                     VALUES(?,?,?,?,?,?,?,?)""",
-                    (cu["user_id"], tg_fallback, body.target_user_id, body.audio_data,
+                    (cu["user_id"], tg, body.target_user_id, body.audio_data,
                      body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
             note_id = c.lastrowid
         return {"id": note_id, "expires_at": expires}
@@ -12522,16 +12632,18 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
                    play_count, max_plays, audio_data
             FROM voice_notes
             WHERE (
-                    (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                    OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
-                    OR (target_user_id = ? AND target_group IN ('','personal'))
+                    -- رسائل المجموعة
+                    (target_group = ? AND target_user_id IS NULL)
+                    OR (target_group = ? AND target_user_id = 0)
+                    -- رسائل شخصية بأي target_group
+                    OR target_user_id = ?
                   )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, uid, now))
+        """, (group, group, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 
