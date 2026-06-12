@@ -5131,6 +5131,24 @@ async function renderOperationalCard() {
         .op-km-badge                 { background:none!important; color:inherit!important;
                                        padding:0!important; border-radius:0!important; font-weight:700!important }
 
+        /* جداول الصيانة وقطع الغيار في الطباعة */
+        .op-maint-table {
+          width:100%!important; border-collapse:collapse!important;
+          font-size:6.5pt!important;
+        }
+        .op-maint-table th {
+          font-size:6pt!important; padding:2px 2px!important;
+          background:#1e3a5f!important; color:#fff!important;
+          border:1px solid #888!important;
+          white-space:normal!important; word-break:break-word!important;
+          -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important;
+        }
+        .op-maint-table td {
+          font-size:6.5pt!important; padding:2px 2px!important;
+          border:1px solid #bbb!important;
+          white-space:normal!important;
+        }
+
         /* جداول الزيوت والكاوتش — 15 عمود */
         .op-page2-table {
           width:100%!important; border-collapse:collapse!important;
@@ -5233,6 +5251,21 @@ async function renderOperationalCard() {
 
       .op-print-header { display:none }
       .op-page-break   { display:none }
+      .op-maint-table { width:100%;border-collapse:collapse;font-size:.82rem;direction:rtl; }
+      .op-maint-table th {
+        background:#1e3a5f;color:white;
+        padding:.45rem .5rem;text-align:center;
+        font-weight:700;font-size:.72rem;
+        border:1px solid #fff;white-space:nowrap;
+      }
+      .op-maint-table td {
+        border:1px solid #cbd5e1;
+        padding:.5rem .4rem;
+        text-align:center;
+        min-height:30px;
+      }
+      .op-maint-table tbody tr:nth-child(even) td { background:#f8fafc }
+
       .op-page2-table {
         width:100%;border-collapse:collapse;font-size:.78rem;direction:rtl;
       }
@@ -6118,23 +6151,23 @@ async function generateOpCard() {
             رابعاً: اعمال الصيانة والاصلاح بالعملية
           </div>
           <div style="overflow-x:auto">
-            <table class="op-table op-page2-table" style="table-layout:fixed;width:100%">
+            <table class="op-table op-maint-table" style="width:100%;border-collapse:collapse">
               <thead>
                 <tr>
-                  <th rowspan="2" style="width:8%;text-align:center">مسلسل عملية الاصلاح</th>
-                  <th colspan="2" style="width:16%;text-align:center">تاريخ التوقف للاصلاح</th>
-                  <th rowspan="2" style="width:24%;text-align:center">اعمال الصيانة والاصلاح الى تمت</th>
-                  <th colspan="3" style="width:27%;text-align:center">التكاليف</th>
-                  <th colspan="2" style="width:15%;text-align:center">مسؤول الورشة</th>
+                  <th style="text-align:center;min-width:60px" rowspan="2">مسلسل عملية الاصلاح</th>
+                  <th style="text-align:center;min-width:130px" colspan="2">تاريخ التوقف للاصلاح</th>
+                  <th style="text-align:center;min-width:200px" rowspan="2">اعمال الصيانة والاصلاح الى تمت</th>
+                  <th style="text-align:center;min-width:220px" colspan="3">التكاليف</th>
+                  <th style="text-align:center;min-width:120px" colspan="2">مسؤول الورشة</th>
                 </tr>
                 <tr>
-                  <th style="width:8%;text-align:center">من</th>
-                  <th style="width:8%;text-align:center">الى</th>
-                  <th style="width:9%;text-align:center">قطع غيار</th>
-                  <th style="width:9%;text-align:center">عمالة</th>
-                  <th style="width:9%;text-align:center">تشغيلات خارجية</th>
-                  <th style="width:7%;text-align:center">الاسم</th>
-                  <th style="width:8%;text-align:center">التوقيع</th>
+                  <th style="text-align:center;min-width:65px">من</th>
+                  <th style="text-align:center;min-width:65px">الى</th>
+                  <th style="text-align:center;min-width:70px">قطع غيار</th>
+                  <th style="text-align:center;min-width:70px">عمالة</th>
+                  <th style="text-align:center;min-width:80px">تشغيلات خارجية</th>
+                  <th style="text-align:center;min-width:60px">الاسم</th>
+                  <th style="text-align:center;min-width:60px">التوقيع</th>
                 </tr>
               </thead>
               <tbody>
@@ -6161,23 +6194,23 @@ async function generateOpCard() {
             خامساً: قطع الغيار الرئيسية المنصرفة للاصلاح
           </div>
           <div style="overflow-x:auto">
-            <table class="op-table op-page2-table" style="table-layout:fixed;width:100%">
+            <table class="op-table op-maint-table" style="width:100%;border-collapse:collapse">
               <thead>
                 <tr>
-                  <th rowspan="2" style="width:8%">مسلسل عملية الاصلاح</th>
-                  <th rowspan="2" style="width:22%">اسم الجزء</th>
-                  <th rowspan="2" style="width:9%">الكمية المنصرفة بالعدد</th>
-                  <th colspan="2" style="width:14%">مستند الصرف</th>
-                  <th colspan="2" style="width:16%">السعر</th>
-                  <th colspan="2" style="width:14%">القائم بالصرف</th>
+                  <th style="text-align:center;min-width:70px" rowspan="2">مسلسل عملية الاصلاح</th>
+                  <th style="text-align:center;min-width:180px" rowspan="2">اسم الجزء</th>
+                  <th style="text-align:center;min-width:80px" rowspan="2">الكمية المنصرفة بالعدد</th>
+                  <th style="text-align:center;min-width:120px" colspan="2">مستند الصرف</th>
+                  <th style="text-align:center;min-width:140px" colspan="2">السعر</th>
+                  <th style="text-align:center;min-width:120px" colspan="2">القائم بالصرف</th>
                 </tr>
                 <tr>
-                  <th style="width:7%">رقم</th>
-                  <th style="width:7%">تاريخ</th>
-                  <th style="width:8%">الوحدة</th>
-                  <th style="width:8%">الاجمالي</th>
-                  <th style="width:7%">الاسم</th>
-                  <th style="width:7%">التوقيع</th>
+                  <th style="text-align:center;min-width:60px">رقم</th>
+                  <th style="text-align:center;min-width:60px">تاريخ</th>
+                  <th style="text-align:center;min-width:70px">الوحدة</th>
+                  <th style="text-align:center;min-width:70px">الاجمالي</th>
+                  <th style="text-align:center;min-width:60px">الاسم</th>
+                  <th style="text-align:center;min-width:60px">التوقيع</th>
                 </tr>
               </thead>
               <tbody>
