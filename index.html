@@ -5205,20 +5205,14 @@ async function renderOperationalCard() {
           break-after:auto!important;
         }
 
-        /* fuel cards: صفين مضغوطين في الطباعة */
-        .op-fuel-cards-grid {
-          grid-template-columns:repeat(2,1fr)!important;
-          gap:2mm!important;
-          margin-bottom:2mm!important;
+        /* fuel cards: مخفية في الطباعة — المعلومات موجودة في الجدول */
+        .op-fuel-cards-grid { display:none!important; }
+
+        /* fuel block كامل: شريط + جدول في نفس المكان */
+        .op-fuel-block {
+          page-break-inside:avoid!important;
+          break-inside:avoid!important;
         }
-        .op-fuel-cards-grid > div {
-          padding:2mm 1.5mm!important;
-          border-radius:3px!important;
-          border-width:1px!important;
-        }
-        .op-fuel-cards-grid > div > div:first-child { font-size:9pt!important; }
-        .op-fuel-cards-grid > div > div:nth-child(2) { font-size:5.5pt!important; margin:.5mm 0!important; }
-        .op-fuel-cards-grid > div > div:nth-child(3) { font-size:7pt!important; }
 
         /* fuel section */
         .op-fuel-section {
@@ -5986,7 +5980,9 @@ async function generateOpCard() {
       </div>
       <div style="padding:0 1.2rem 1.4rem">
         ${summaryCards}
-        ${fuelTypeHtml}
+        <div class="op-fuel-block">
+          ${fuelTypeHtml}
+        </div>
         <div style="overflow-x:auto">
           <table class="op-table">
             <thead>
