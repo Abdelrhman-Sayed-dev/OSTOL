@@ -4778,75 +4778,78 @@ class VoiceNoteCreate(BaseModel):
 async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user)):
     if cu["role"] not in ("superuser", "admin"):
         raise HTTPException(403, "غير مصرح")
-    # يجب أن يكون target_group صالح أو target_user_id محدد
     if body.target_user_id is None and body.target_group not in ("admins", "drivers"):
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
-    now      = datetime.utcnow()
-    expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    # لو target_user_id محدد → target_group = 'personal' عشان يوصل للشخص ده بس
-    if body.target_user_id is not None:
-        tg = 'personal'   # رسالة شخصية — مش لمجموعة
-    else:
-        tg = body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
-                         duration_sec,created_at,expires_at,max_plays)
-                         VALUES(?,?,?,?,?,?,?,?)""",
-                      (cu["user_id"], tg, body.target_user_id, body.audio_data,
-                       body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
-        note_id = c.lastrowid
-    return {"id": note_id, "expires_at": expires}
+    now     = datetime.utcnow()
+    expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
+    # لو رسالة شخصية → target_group فاضي لضمان عدم وصولها للمجموعة
+    tg = '' if body.target_user_id is not None else (
+        body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
+    )
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            # تأكد إن الـ CHECK constraint اتشال (migration)
+            try:
+                c.execute("""INSERT INTO voice_notes
+                    (sender_id, target_group, target_user_id, audio_data,
+                     duration_sec, created_at, expires_at, max_plays)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    (cu["user_id"], tg, body.target_user_id, body.audio_data,
+                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+            except Exception:
+                # fallback لو الـ CHECK constraint رفض '' → نستخدم 'admins'
+                tg_fallback = 'admins' if not tg else tg
+                c.execute("""INSERT INTO voice_notes
+                    (sender_id, target_group, target_user_id, audio_data,
+                     duration_sec, created_at, expires_at, max_plays)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    (cu["user_id"], tg_fallback, body.target_user_id, body.audio_data,
+                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+            note_id = c.lastrowid
+        return {"id": note_id, "expires_at": expires}
+    except Exception as e:
+        log.error(f"create_voice_note error: {e}")
+        raise HTTPException(500, f"خطأ في حفظ الرسالة: {str(e)}")
 
 @app.get("/voice-notes")
 async def list_voice_notes(cu: dict = Depends(get_user)):
-    """
-    - superuser/admin بيبعتوا → بيشوفوا الرسائل اللي أرسلوها هم (صفحة الإدارة)
-    - driver/admin (كمستقبل) → بيشوف الرسائل اللي مرسلة له بالاسم أو لمجموعته
-    الفصل: نستخدم query param ?sent=1 لعرض المُرسَل
-    """
     role = cu["role"]
     uid  = cu["user_id"]
     now  = datetime.utcnow().isoformat() + "Z"
 
     # ── صفحة إدارة الرسائل (superuser أو admin) ──
-    # GET /voice-notes يُرجع الرسائل المُرسَلة من الشخص ده
     if role in ("superuser", "admin"):
-        with get_db() as conn:
-            c = conn.cursor()
-            try:
+        try:
+            with get_db() as conn:
+                c = conn.cursor()
                 c.execute("""
-                    SELECT id, target_group,
-                           COALESCE(target_user_id, NULL) AS target_user_id,
-                           duration_sec, created_at,
-                           expires_at, play_count, max_plays, is_deleted
-                    FROM voice_notes
-                    WHERE sender_id = ?
-                    ORDER BY created_at DESC
+                    SELECT vn.id, vn.target_group, vn.target_user_id,
+                           vn.duration_sec, vn.created_at,
+                           vn.expires_at, vn.play_count, vn.max_plays, vn.is_deleted,
+                           u.username  AS target_uname,
+                           d.name      AS target_dname
+                    FROM voice_notes vn
+                    LEFT JOIN users   u ON u.id = vn.target_user_id
+                    LEFT JOIN drivers d ON d.user_id = vn.target_user_id
+                    WHERE vn.sender_id = ?
+                    ORDER BY vn.created_at DESC
                 """, (uid,))
-            except Exception:
-                c.execute("""
-                    SELECT id, target_group, NULL AS target_user_id,
-                           duration_sec, created_at,
-                           expires_at, play_count, max_plays, is_deleted
-                    FROM voice_notes
-                    WHERE sender_id = ?
-                    ORDER BY created_at DESC
-                """, (uid,))
-            rows = [dict(r) for r in c.fetchall()]
-            # أضف اسم المستلم
-            for row in rows:
-                tid = row.get("target_user_id")
-                if tid:
-                    c.execute("SELECT username FROM users WHERE id=?", (tid,))
-                    u = c.fetchone()
-                    if u:
-                        row["target_name"] = u["username"]
+                rows = []
+                for r in c.fetchall():
+                    row = dict(r)
+                    tid = row.get("target_user_id")
+                    if tid:
+                        row["target_name"] = row.get("target_uname") or row.get("target_dname") or "مستخدم"
                     else:
-                        c.execute("SELECT name FROM drivers WHERE user_id=?", (tid,))
-                        d = c.fetchone()
-                        row["target_name"] = d["name"] if d else "مستخدم"
-            return rows
+                        row["target_name"] = None
+                    row.pop("target_uname", None)
+                    row.pop("target_dname", None)
+                    rows.append(row)
+                return rows
+        except Exception as e:
+            log.error(f"list_voice_notes error: {e}")
+            raise HTTPException(500, f"خطأ في جلب الرسائل: {str(e)}")
 
     # ── استقبال الرسائل (driver, reporter …) ──
     if role == "driver":
@@ -4872,7 +4875,7 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, now))
+        """, (group, uid, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 
@@ -4961,15 +4964,16 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
             FROM voice_notes
             WHERE (
                 (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                OR
-                (target_user_id = ?)
+                OR (target_group = 'personal' AND target_user_id = ?)
+                OR (target_group = '' AND target_user_id = ?)
+                OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
             )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, now))
+        """, (group, uid, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 @app.delete("/voice-notes/{note_id}")
@@ -12431,75 +12435,78 @@ class VoiceNoteCreate(BaseModel):
 async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user)):
     if cu["role"] not in ("superuser", "admin"):
         raise HTTPException(403, "غير مصرح")
-    # يجب أن يكون target_group صالح أو target_user_id محدد
     if body.target_user_id is None and body.target_group not in ("admins", "drivers"):
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
-    now      = datetime.utcnow()
-    expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    # لو target_user_id محدد → target_group = 'personal' عشان يوصل للشخص ده بس
-    if body.target_user_id is not None:
-        tg = 'personal'   # رسالة شخصية — مش لمجموعة
-    else:
-        tg = body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute("""INSERT INTO voice_notes(sender_id,target_group,target_user_id,audio_data,
-                         duration_sec,created_at,expires_at,max_plays)
-                         VALUES(?,?,?,?,?,?,?,?)""",
-                      (cu["user_id"], tg, body.target_user_id, body.audio_data,
-                       body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
-        note_id = c.lastrowid
-    return {"id": note_id, "expires_at": expires}
+    now     = datetime.utcnow()
+    expires = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
+    # لو رسالة شخصية → target_group فاضي لضمان عدم وصولها للمجموعة
+    tg = '' if body.target_user_id is not None else (
+        body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
+    )
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            # تأكد إن الـ CHECK constraint اتشال (migration)
+            try:
+                c.execute("""INSERT INTO voice_notes
+                    (sender_id, target_group, target_user_id, audio_data,
+                     duration_sec, created_at, expires_at, max_plays)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    (cu["user_id"], tg, body.target_user_id, body.audio_data,
+                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+            except Exception:
+                # fallback لو الـ CHECK constraint رفض '' → نستخدم 'admins'
+                tg_fallback = 'admins' if not tg else tg
+                c.execute("""INSERT INTO voice_notes
+                    (sender_id, target_group, target_user_id, audio_data,
+                     duration_sec, created_at, expires_at, max_plays)
+                    VALUES(?,?,?,?,?,?,?,?)""",
+                    (cu["user_id"], tg_fallback, body.target_user_id, body.audio_data,
+                     body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
+            note_id = c.lastrowid
+        return {"id": note_id, "expires_at": expires}
+    except Exception as e:
+        log.error(f"create_voice_note error: {e}")
+        raise HTTPException(500, f"خطأ في حفظ الرسالة: {str(e)}")
 
 @app.get("/voice-notes")
 async def list_voice_notes(cu: dict = Depends(get_user)):
-    """
-    - superuser/admin بيبعتوا → بيشوفوا الرسائل اللي أرسلوها هم (صفحة الإدارة)
-    - driver/admin (كمستقبل) → بيشوف الرسائل اللي مرسلة له بالاسم أو لمجموعته
-    الفصل: نستخدم query param ?sent=1 لعرض المُرسَل
-    """
     role = cu["role"]
     uid  = cu["user_id"]
     now  = datetime.utcnow().isoformat() + "Z"
 
     # ── صفحة إدارة الرسائل (superuser أو admin) ──
-    # GET /voice-notes يُرجع الرسائل المُرسَلة من الشخص ده
     if role in ("superuser", "admin"):
-        with get_db() as conn:
-            c = conn.cursor()
-            try:
+        try:
+            with get_db() as conn:
+                c = conn.cursor()
                 c.execute("""
-                    SELECT id, target_group,
-                           COALESCE(target_user_id, NULL) AS target_user_id,
-                           duration_sec, created_at,
-                           expires_at, play_count, max_plays, is_deleted
-                    FROM voice_notes
-                    WHERE sender_id = ?
-                    ORDER BY created_at DESC
+                    SELECT vn.id, vn.target_group, vn.target_user_id,
+                           vn.duration_sec, vn.created_at,
+                           vn.expires_at, vn.play_count, vn.max_plays, vn.is_deleted,
+                           u.username  AS target_uname,
+                           d.name      AS target_dname
+                    FROM voice_notes vn
+                    LEFT JOIN users   u ON u.id = vn.target_user_id
+                    LEFT JOIN drivers d ON d.user_id = vn.target_user_id
+                    WHERE vn.sender_id = ?
+                    ORDER BY vn.created_at DESC
                 """, (uid,))
-            except Exception:
-                c.execute("""
-                    SELECT id, target_group, NULL AS target_user_id,
-                           duration_sec, created_at,
-                           expires_at, play_count, max_plays, is_deleted
-                    FROM voice_notes
-                    WHERE sender_id = ?
-                    ORDER BY created_at DESC
-                """, (uid,))
-            rows = [dict(r) for r in c.fetchall()]
-            # أضف اسم المستلم
-            for row in rows:
-                tid = row.get("target_user_id")
-                if tid:
-                    c.execute("SELECT username FROM users WHERE id=?", (tid,))
-                    u = c.fetchone()
-                    if u:
-                        row["target_name"] = u["username"]
+                rows = []
+                for r in c.fetchall():
+                    row = dict(r)
+                    tid = row.get("target_user_id")
+                    if tid:
+                        row["target_name"] = row.get("target_uname") or row.get("target_dname") or "مستخدم"
                     else:
-                        c.execute("SELECT name FROM drivers WHERE user_id=?", (tid,))
-                        d = c.fetchone()
-                        row["target_name"] = d["name"] if d else "مستخدم"
-            return rows
+                        row["target_name"] = None
+                    row.pop("target_uname", None)
+                    row.pop("target_dname", None)
+                    rows.append(row)
+                return rows
+        except Exception as e:
+            log.error(f"list_voice_notes error: {e}")
+            raise HTTPException(500, f"خطأ في جلب الرسائل: {str(e)}")
 
     # ── استقبال الرسائل (driver, reporter …) ──
     if role == "driver":
@@ -12525,7 +12532,7 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, now))
+        """, (group, uid, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 
@@ -12614,15 +12621,16 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
             FROM voice_notes
             WHERE (
                 (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                OR
-                (target_user_id = ?)
+                OR (target_group = 'personal' AND target_user_id = ?)
+                OR (target_group = '' AND target_user_id = ?)
+                OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
             )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, now))
+        """, (group, uid, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 @app.delete("/voice-notes/{note_id}")
