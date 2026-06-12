@@ -5097,31 +5097,49 @@ async function renderOperationalCard() {
         #sidebarOverlay, .no-print,
         .card.no-print               { display:none!important }
 
-        /* layout */
-        body, html                   { background:#fff!important }
-        #appShell                    { display:block!important }
-        .main-content                { margin:0!important; padding:0!important; background:#fff!important }
-        .page-content                { padding:0!important }
-        #opCardResult                { padding:0!important; margin:0!important }
-        #driversReport               { display:none!important }
-        #anomalyResult               { display:none!important }
+        /* ══ PRINT RESET ══ */
+        @page { size:A4 landscape; margin:6mm 8mm; }
+        *, *::before, *::after { box-sizing:border-box!important }
+        body, html { background:#fff!important; font-size:9pt!important }
+        #appShell { display:block!important }
+        .main-content { margin:0!important; padding:0!important; background:#fff!important }
+        .page-content { padding:0!important }
+        #opCardResult { padding:0!important; margin:0!important }
+        #driversReport, #anomalyResult { display:none!important }
 
         /* print header */
-        .op-print-header             { display:block!important }
+        .op-print-header { display:block!important; margin-bottom:2mm!important }
+        .op-print-header h1 { font-size:13pt!important; margin:0 0 1mm!important }
+        .op-print-header p  { font-size:7.5pt!important; margin:0!important }
 
-        /* كارد عام */
+        /* كارد — بدون padding أو shadow */
         .card {
-          box-shadow:none!important; border:1px solid #ddd!important;
-          border-radius:0!important; page-break-inside:auto;
+          box-shadow:none!important; border:none!important;
+          border-radius:0!important; page-break-inside:auto!important;
           margin:0!important; padding:0!important;
         }
 
-        /* فاصل صفحة — مشيناه، كل حاجة تتدفق تحت بعض */
+        /* card داخلي */
+        .card > div, .card > * { padding:0!important; margin:0!important }
+
+        /* فاصل صفحة — مخفي */
         .op-page-break { display:none!important; }
 
-        /* الصفحة الثانية — تتدفق طبيعي بدون فاصل */
+        /* الصفحة الثانية */
         .op-page2 { border:none!important; box-shadow:none!important; margin-top:0!important; }
-        .op-page2 > div { padding:2mm 0 0!important; }
+        .op-page2 > div { padding:0!important; }
+
+        /* body الكارت الرئيسي */
+        .op-card-body { padding:2mm 3mm!important; }
+
+        /* الـ card header (أزرار الطباعة) */
+        .card-header { display:none!important; }
+
+        /* السائقون في نهاية الصفحة الأولى */
+        #opPage2Card > div:first-child { padding:0 3mm!important; }
+
+        /* نوع الوقود شريط */
+        .op-fuel-type-bar { padding:2mm 3mm!important; margin-bottom:2mm!important; font-size:8pt!important }
 
         /* جدول الرحلات */
         .op-table                    { width:100%!important; border-collapse:collapse!important }
@@ -5193,56 +5211,61 @@ async function renderOperationalCard() {
         /* anomaly rows بدون لون */
         tr[style*="fef9c3"] td { background:#fff!important }
 
-        /* ── Summary cards: صف واحد أفقي مضغوط ── */
+        /* ── Summary cards: صف أفقي مضغوط جداً ── */
         .op-summary-cards {
-          display:grid!important;
-          grid-template-columns:repeat(5,1fr)!important;
+          display:flex!important;
+          flex-direction:row!important;
           gap:2mm!important;
-          margin-bottom:3mm!important;
+          margin-bottom:2mm!important;
           page-break-inside:avoid!important;
           break-inside:avoid!important;
         }
         .op-summary-card-item {
-          padding:2mm 1.5mm!important;
-          border-radius:3px!important;
+          flex:1!important;
+          padding:1.5mm 2mm!important;
+          border-radius:2px!important;
           border-width:1px!important;
+          text-align:center!important;
         }
-        .op-summary-icon { font-size:10pt!important; }
-        .op-summary-card-item > div:nth-child(2) { font-size:5.5pt!important; margin:.5mm 0!important; }
-        .op-summary-card-item > div:nth-child(3) { font-size:7pt!important; }
+        .op-summary-icon { font-size:9pt!important; line-height:1!important; }
+        .op-summary-card-item > div:nth-child(2) { font-size:5pt!important; margin:0.5mm 0!important; line-height:1.1!important }
+        .op-summary-card-item > div:nth-child(3) { font-size:7.5pt!important; font-weight:900!important }
 
-        /* منع كسر الـ section cards */
+        /* sections */
         .op-section-block {
           page-break-inside:avoid!important;
           break-inside:avoid!important;
+          margin-bottom:2mm!important;
         }
+        .op-section-block > div:first-child {
+          font-size:9pt!important;
+          padding-bottom:1mm!important;
+          margin-bottom:1.5mm!important;
+        }
+        .card:first-of-type { page-break-after:auto!important; break-after:auto!important; }
 
-        /* الـ card الأولى — تتدفق طبيعي */
-        .card:first-of-type {
-          page-break-after:auto!important;
-          break-after:auto!important;
-        }
+        /* السائقون في الفترة */
+        .op-drivers-section { margin-bottom:2mm!important; }
+        .op-drivers-section table { font-size:7pt!important }
+        .op-drivers-section th, .op-drivers-section td { padding:2px 4px!important }
 
         /* fuel cards: مخفية في الطباعة — المعلومات موجودة في الجدول */
         .op-fuel-cards-grid { display:none!important; }
 
-        /* fuel block كامل: شريط + جدول في نفس المكان */
+        /* fuel block */
         .op-fuel-block {
           page-break-inside:avoid!important;
           break-inside:avoid!important;
+          margin-bottom:2mm!important;
         }
-
-        /* fuel section */
-        .op-fuel-section {
-          page-break-inside:avoid!important;
-          break-inside:avoid!important;
-          margin-bottom:3mm!important;
-        }
-        /* جدول مسحوبات الوقود لا ينكسر */
-        .op-fuel-table-wrap {
+        /* fuel table */
+        .op-fuel-section, .op-fuel-table-wrap {
           page-break-inside:avoid!important;
           break-inside:avoid!important;
         }
+        /* fuel table text */
+        .op-fuel-block table { font-size:7pt!important }
+        .op-fuel-block th, .op-fuel-block td { padding:2px 4px!important; font-size:7pt!important }
 
         /* جدول الرحلات — يكسر بعد كل صف بشكل طبيعي */
         .op-trips-table { page-break-inside:auto!important }
@@ -6011,7 +6034,7 @@ async function generateOpCard() {
           <button class="btn btn-primary btn-sm" onclick="downloadOpPDF()">📄 تحميل PDF</button>
         </div>
       </div>
-      <div style="padding:0 1.2rem 1.4rem">
+      <div class="op-card-body" style="padding:0 1.2rem 1.4rem">
         ${summaryCards}
         <div class="op-fuel-block">
           ${fuelTypeHtml}
