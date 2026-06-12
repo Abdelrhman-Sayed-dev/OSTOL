@@ -800,6 +800,15 @@ def _safe_add_columns(c):
         log.warning(f"voice_notes migration: {e}")
     try: c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
     except Exception: pass
+    # تصحيح الرسائل الشخصية القديمة
+    try:
+        c.execute("""
+            UPDATE voice_notes SET target_group = 'personal'
+            WHERE target_user_id IS NOT NULL AND target_user_id != 0
+              AND target_group IN ('admins', 'drivers', '')
+        """)
+        conn.commit()
+    except Exception: pass
     try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target ON voice_notes(target_user_id)")
     except Exception: pass
 
@@ -4774,9 +4783,9 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
     now      = datetime.utcnow()
     expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    # لو target_user_id محدد → target_group فاضي عشان يوصل للشخص ده بس
+    # لو target_user_id محدد → target_group = 'personal' عشان يوصل للشخص ده بس
     if body.target_user_id is not None:
-        tg = ''   # رسالة شخصية — مش لمجموعة
+        tg = 'personal'   # رسالة شخصية — مش لمجموعة
     else:
         tg = body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
     with get_db() as conn:
@@ -4951,7 +4960,7 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
                    play_count, max_plays, audio_data, target_group, target_user_id
             FROM voice_notes
             WHERE (
-                (target_user_id IS NULL AND target_group = ?)
+                (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
                 OR
                 (target_user_id = ?)
             )
@@ -8444,6 +8453,15 @@ def _safe_add_columns(c):
         log.warning(f"voice_notes migration: {e}")
     try: c.execute("ALTER TABLE voice_notes ADD COLUMN target_user_id INTEGER DEFAULT NULL")
     except Exception: pass
+    # تصحيح الرسائل الشخصية القديمة
+    try:
+        c.execute("""
+            UPDATE voice_notes SET target_group = 'personal'
+            WHERE target_user_id IS NOT NULL AND target_user_id != 0
+              AND target_group IN ('admins', 'drivers', '')
+        """)
+        conn.commit()
+    except Exception: pass
     try: c.execute("CREATE INDEX IF NOT EXISTS idx_vnotes_target ON voice_notes(target_user_id)")
     except Exception: pass
 
@@ -12418,9 +12436,9 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
         raise HTTPException(400, "حدد مجموعة مستلمين (admins/drivers) أو شخصاً محدداً")
     now      = datetime.utcnow()
     expires  = (now + timedelta(hours=body.hours_ttl)).isoformat() + "Z"
-    # لو target_user_id محدد → target_group فاضي عشان يوصل للشخص ده بس
+    # لو target_user_id محدد → target_group = 'personal' عشان يوصل للشخص ده بس
     if body.target_user_id is not None:
-        tg = ''   # رسالة شخصية — مش لمجموعة
+        tg = 'personal'   # رسالة شخصية — مش لمجموعة
     else:
         tg = body.target_group if body.target_group in ('admins', 'drivers') else 'admins'
     with get_db() as conn:
@@ -12595,7 +12613,7 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
                    play_count, max_plays, audio_data, target_group, target_user_id
             FROM voice_notes
             WHERE (
-                (target_user_id IS NULL AND target_group = ?)
+                (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
                 OR
                 (target_user_id = ?)
             )
