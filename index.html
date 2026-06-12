@@ -5175,8 +5175,23 @@ async function renderOperationalCard() {
         /* anomaly rows بدون لون */
         tr[style*="fef9c3"] td { background:#fff!important }
 
-        /* الـ summary cards في الصفحة الأولى */
-        .op-summary-cards { page-break-inside:avoid!important }
+        /* ── Summary cards: صف واحد أفقي مضغوط ── */
+        .op-summary-cards {
+          display:grid!important;
+          grid-template-columns:repeat(5,1fr)!important;
+          gap:2mm!important;
+          margin-bottom:3mm!important;
+          page-break-inside:avoid!important;
+          break-inside:avoid!important;
+        }
+        .op-summary-card-item {
+          padding:2mm 1.5mm!important;
+          border-radius:3px!important;
+          border-width:1px!important;
+        }
+        .op-summary-icon { font-size:10pt!important; }
+        .op-summary-card-item > div:nth-child(2) { font-size:5.5pt!important; margin:.5mm 0!important; }
+        .op-summary-card-item > div:nth-child(3) { font-size:7pt!important; }
 
         /* منع كسر الـ section cards */
         .op-section-block {
@@ -5190,19 +5205,20 @@ async function renderOperationalCard() {
           break-after:auto!important;
         }
 
-        /* تصغير الـ summary cards في الطباعة */
-        .op-summary-grid-print {
-          display:grid!important;
-          grid-template-columns:repeat(5,1fr)!important;
-          gap:3mm!important;
-          margin-bottom:4mm!important;
+        /* fuel cards: صفين مضغوطين في الطباعة */
+        .op-fuel-cards-grid {
+          grid-template-columns:repeat(2,1fr)!important;
+          gap:2mm!important;
+          margin-bottom:2mm!important;
         }
-        .op-summary-grid-print > div {
-          padding:3mm 2mm!important;
-          border-radius:4px!important;
-          font-size:7pt!important;
+        .op-fuel-cards-grid > div {
+          padding:2mm 1.5mm!important;
+          border-radius:3px!important;
+          border-width:1px!important;
         }
-        .op-summary-grid-print > div > div:first-child { font-size:11pt!important; }
+        .op-fuel-cards-grid > div > div:first-child { font-size:9pt!important; }
+        .op-fuel-cards-grid > div > div:nth-child(2) { font-size:5.5pt!important; margin:.5mm 0!important; }
+        .op-fuel-cards-grid > div > div:nth-child(3) { font-size:7pt!important; }
 
         /* fuel section */
         .op-fuel-section {
@@ -5216,7 +5232,7 @@ async function renderOperationalCard() {
           break-inside:avoid!important;
         }
 
-        /* جدول الرحلات — يكسر بعد كل 20 صف */
+        /* جدول الرحلات — يكسر بعد كل صف بشكل طبيعي */
         .op-trips-table { page-break-inside:auto!important }
         .op-trips-table tr { page-break-inside:avoid!important }
       }
@@ -5792,17 +5808,17 @@ async function generateOpCard() {
   // أيام عمل المركبة — جاية مباشرة من الـ API (COUNT DISTINCT date)
   const workDays = data.work_days || 0;
   const summaryCards = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem;margin-bottom:.8rem">
+    <div class="op-summary-cards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:.8rem;margin-bottom:.8rem">
       ${[
-        {icon:'🛣️', label:'إجمالي المسافة',           val:fmt(realTotalKm)+' كم',   color:'#3b82f6'},
-        {icon:'🗺️', label:'عدد الرحلات',               val:data.total_trips,          color:'#8b5cf6'},
-        {icon:'📅', label:'أيام عمل المركبة',           val:workDays+' يوم',           color:'#0891b2'},
-        {icon:'📟', label:'عداد البداية (أول رحلة)',   val:fmt(data.min_odo)+' كم',  color:'#10b981'},
-        {icon:'📟', label:'عداد النهاية (آخر رحلة)',   val:fmt(data.max_odo)+' كم',  color:'#f59e0b'},
+        {icon:'🛣️', label:'إجمالي المسافة',         val:fmt(realTotalKm)+' كم',  color:'#3b82f6'},
+        {icon:'🗺️', label:'عدد الرحلات',             val:data.total_trips,         color:'#8b5cf6'},
+        {icon:'📅', label:'أيام عمل المركبة',         val:workDays+' يوم',          color:'#0891b2'},
+        {icon:'📟', label:'عداد البداية (أول رحلة)', val:fmt(data.min_odo)+' كم', color:'#10b981'},
+        {icon:'📟', label:'عداد النهاية (آخر رحلة)', val:fmt(data.max_odo)+' كم', color:'#f59e0b'},
       ].map(s=>`
-        <div style="background:#fff;border:1.5px solid ${s.color}22;border-radius:14px;
-                    padding:.8rem 1rem;text-align:center">
-          <div style="font-size:1.4rem">${s.icon}</div>
+        <div class="op-summary-card-item" style="background:#fff;border:1.5px solid ${s.color}22;
+                    border-radius:14px;padding:.8rem 1rem;text-align:center">
+          <div class="op-summary-icon" style="font-size:1.4rem">${s.icon}</div>
           <div style="font-size:.72rem;color:#64748b;margin:.2rem 0">${s.label}</div>
           <div style="font-weight:800;color:${s.color};font-size:.95rem">${s.val}</div>
         </div>`).join('')}
@@ -5885,7 +5901,7 @@ async function generateOpCard() {
             <span><strong style="color:#166534">نوع الوقود:</strong>
             <span style="color:#15803d">${allFuels}</span></span>
           </div>
-          ${fuelCards ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:.8rem">${fuelCards}</div>` : ''}
+          ${fuelCards ? `<div class="op-fuel-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:.8rem">${fuelCards}</div>` : ''}
           ${primaryDetail.length > 0 ? buildFuelDetailTable(primaryDetail, primaryFuelLabel) : ''}
         `;
       } else {
