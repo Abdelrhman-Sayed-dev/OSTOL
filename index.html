@@ -5799,7 +5799,7 @@ async function generateOpCard() {
 
   const periodHeader = isDaily?'اليوم' : isWeekly?'الأسبوع' : isMonthly?'الشهر' : isYearly?'السنة' : 'الفترة';
 
-  const tableRows = data.rows.map((r,i)=>{
+  const tableRows = data.rows.filter(r => !String(r.period||'').includes('إجمالي')).map((r,i)=>{
     const km  = Math.max(0, (r.max_odo||0) - (r.min_odo||0));
     const pct = maxKm>0 ? (km/maxKm*100).toFixed(1) : 0;
     // ── تمييز الصفوف الشاذة: مسافة > 900 كم في الفترة أو رحلات > 50 ──
@@ -6274,6 +6274,8 @@ function renderPage2(p2) {
     const rows = [];
     let totalCost = 0;
     oils.forEach(o => {
+      // تجاهل السجلات اللي مفيهاش كمية مسجّلة
+      if(!o.quantity || parseFloat(o.quantity) === 0) return;
       const qtyCells = ['&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;'];
       const col = OIL_COL[o.oil_col] ?? 5;
       if(o.quantity) qtyCells[col] = o.quantity;
@@ -6299,15 +6301,7 @@ function renderPage2(p2) {
       </tr>`);
     });
     while(rows.length < EMPTY_OILS) rows.push('<tr>' + '<td>&nbsp;</td>'.repeat(16) + '</tr>');
-    // صف الإجمالي
-    const totalFmt = totalCost > 0
-      ? totalCost.toLocaleString('ar-EG', {minimumFractionDigits:2, maximumFractionDigits:2})
-      : '—';
-    rows.push(`<tr style="background:#f0fdf9;font-weight:800;border-top:2px solid #1e3a5f">
-      <td colspan="7" style="text-align:left;padding-right:.5rem;color:#065f46">الإجمالي</td>
-      <td style="background:#d1fae5;color:#065f46;text-align:center;font-size:1rem">${totalFmt}</td>
-      <td colspan="8">&nbsp;</td>
-    </tr>`);
+
     oilsTbody.innerHTML = rows.join('');
   }
 
@@ -11653,39 +11647,7 @@ function _buildSarkyCard(d, from, to, kpi=null) {
 
   return '<div class="sarky-card no-break" style="page-break-inside:avoid">'
     // هيدر البطاقة
-    + '<div class="sarky-card-header">'
-    +   '<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">'
-    +     '<div>'
-    +       '<div style="font-size:1.05rem;font-weight:800;margin-bottom:.2rem">🧑‍✈️ '+d.driver_name+'</div>'
-    +       '<div style="font-size:.78rem;opacity:.8">'
-    +         (d.branch?'📍 '+d.branch:'')
-    +         (d.fixed_number?' &nbsp;|&nbsp; # '+d.fixed_number:'')
-    +       '</div>'
-    +     '</div>'
-    +     '<div style="text-align:left;font-size:.75rem;opacity:.75">'+from+' → '+to+'</div>'
-    +   '</div>'
-    + '</div>'
-    // KPI Score — يظهر لو متوفر
-    + (kpi ? (() => {
-        const R=18,S=4,C=2*Math.PI*R,D=(kpi.total_score/100)*C;
-        const gc=kpi.total_score>=85?'#4ade80':kpi.total_score>=70?'#60a5fa':kpi.total_score>=50?'#fb923c':'#f87171';
-        return '<div style="display:flex;align-items:center;gap:1rem;padding:.65rem 1.25rem;background:rgba(255,255,255,0.08);border-top:1px solid rgba(255,255,255,0.12)">'
-          +'<svg viewBox="0 0 44 44" width="44" height="44">'
-          +'<circle cx="22" cy="22" r="'+R+'" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="'+S+'"/>'
-          +'<circle cx="22" cy="22" r="'+R+'" fill="none" stroke="'+gc+'" stroke-width="'+S+'"'
-          +' stroke-linecap="round"'
-          +' stroke-dasharray="'+D.toFixed(1)+' '+(C-D).toFixed(1)+'"'
-          +' stroke-dashoffset="'+(C/4).toFixed(1)+'"/>'
-          +'<text x="22" y="26" text-anchor="middle" font-size="10" font-weight="900" fill="'+gc+'" font-family="Cairo,sans-serif">'+kpi.total_score+'</text>'
-          +'</svg>'
-          +'<div>'
-          +'<div style="font-size:.7rem;color:rgba(255,255,255,.6)">نقاط KPI</div>'
-          +'<div style="font-size:1.05rem;font-weight:900;color:'+gc+'">'+kpi.total_score+'% — '+kpi.grade+'</div>'
-          +'<div style="font-size:.68rem;color:rgba(255,255,255,.5)">الترتيب: '+(kpi.rank===1?'🥇':kpi.rank===2?'🥈':kpi.rank===3?'🥉':'#'+kpi.rank)+'</div>'
-          +'</div>'
-          +'</div>';
-      })() : '')
-    // KPIs
+    + '<div class="sarky-card-header">'    +   '<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">'    +     '<div>'    +       '<div style="font-size:1.05rem;font-weight:800;margin-bottom:.2rem">🧑‍✈️ '+d.driver_name+'</div>'    +       '<div style="font-size:.78rem;opacity:.8">'    +         (d.branch?'📍 '+d.branch:'')    +         (d.fixed_number?' &nbsp;|&nbsp; # '+d.fixed_number:'')    +       '</div>'    +       '<div style="font-size:.72rem;color:rgba(255,255,255,.6);margin-top:.25rem">'+from+' → '+to+'</div>'    +     '</div>'    +     (kpi ? (() => {        const R=22,S=5,C=2*Math.PI*R,D=(kpi.total_score/100)*C;        const gc=kpi.total_score>=85?'#4ade80':kpi.total_score>=70?'#60a5fa':kpi.total_score>=50?'#fb923c':'#f87171';        const rankStr=kpi.rank===1?'🥇':kpi.rank===2?'🥈':kpi.rank===3?'🥉':('<span style="color:#fff;font-weight:900">#'+kpi.rank+'</span>');        return '<div style="display:flex;flex-direction:column;align-items:center;gap:.25rem">'          +'<svg viewBox="0 0 54 54" width="56" height="56">'          +'<circle cx="27" cy="27" r="'+R+'" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="'+S+'"/>'          +'<circle cx="27" cy="27" r="'+R+'" fill="none" stroke="'+gc+'" stroke-width="'+S+'"'          +' stroke-linecap="round"'          +' stroke-dasharray="'+D.toFixed(1)+' '+(C-D).toFixed(1)+'"'          +' stroke-dashoffset="'+(C/4).toFixed(1)+'"/>'          +'<text x="27" y="23" text-anchor="middle" font-size="12" font-weight="900" fill="'+gc+'" font-family="Cairo,sans-serif">'+kpi.total_score+'</text>'          +'<text x="27" y="35" text-anchor="middle" font-size="7.5" fill="rgba(255,255,255,.7)" font-family="Cairo,sans-serif">'+kpi.grade+'</text>'          +'</svg>'          +'<div style="font-size:.78rem;font-weight:800;color:'+gc+'">'+rankStr+'</div>'          +'</div>';      })() : '')    +   '</div>'    + '</div>'    // KPIs
     + '<div class="sarky-kpi-grid" style="border-bottom:1px solid #f1f5f9">'
     +   '<div class="sarky-kpi">'
     +     '<div class="sarky-kpi-val" style="color:#1d4ed8">'+d.total_days+'</div>'
