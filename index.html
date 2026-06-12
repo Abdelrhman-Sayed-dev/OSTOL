@@ -6030,16 +6030,7 @@ async function generateOpCard() {
               </tr>
             </thead>
             <tbody>${tableRows}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="2" style="font-weight:800">🏁 الإجمالي</td>
-                <td style="text-align:center">${data.total_trips}</td>
-                <td><span class="op-km-badge" style="background:#bfdbfe;color:#1e40af">${fmt(realTotalKm)} كم</span></td>
-                <td style="text-align:center">${fmt(data.min_odo)}</td>
-                <td style="text-align:center">${fmt(data.max_odo)}</td>
-                <td style="text-align:center;font-size:.8rem;color:#94a3b8">—</td>
-              </tr>
-            </tfoot>
+
           </table>
         </div>
       </div>
@@ -6084,7 +6075,7 @@ async function generateOpCard() {
                 <th>أخرى</th>
                 <th>رقم</th>
                 <th>تاريخ</th>
-                <th>عداد الآن (كم)</th>
+                <th style="background:#e0f2fe;color:#0369a1">قراءة العداد أثناء العملية (كم)</th>
                 <th>محرك الآن (ساعة)</th>
                 <th>الاسم</th>
                 <th>عدد التشغيل</th>
@@ -6300,7 +6291,7 @@ function renderPage2(p2) {
         <td>${o.doc_number||'&nbsp;'}</td>
         <td>&nbsp;</td>
         <td>${o.supply_source||'&nbsp;'}</td>
-        <td style="font-weight:600;color:#0891b2">${o.odometer_reading ? fmtNum(o.odometer_reading)+' كم' : (o.odometer||'&nbsp;')}</td>
+        <td style="background:#f0f9ff;font-weight:700;color:#0369a1;text-align:center">${o.odometer_reading ? fmtNum(o.odometer_reading)+' كم' : '&nbsp;'}</td>
         <td>${o.engine_hours||'&nbsp;'}</td>
         <td>${o.driver||'&nbsp;'}</td>
         <td>&nbsp;</td>
@@ -11595,8 +11586,18 @@ async function loadSarky() {
     + _sarkyKpiBlock('📏','إجمالي الكيلومترات',totalKm.toFixed(1),'كم','#7c3aed','#f5f3ff')
     + '</div>' : '';
 
+  // ── جلب KPI score للسائق/السائقين بشكل موازي ──
+  let kpiMap = {};
+  try {
+    // نحدد الشهر من from (YYYY-MM-DD → YYYY-MM)
+    const month = from ? from.substring(0,7) : '';
+    const kpiParams = month ? `?month=${month}` : '';
+    const kpiData = await apiCall(`/reports/driver-kpi${kpiParams}`);
+    (kpiData.drivers||[]).forEach(k => { kpiMap[k.driver_id] = k; });
+  } catch(e) { /* مش مشكلة لو KPI مش متاح */ }
+
   // ── بطاقة لكل سائق ──
-  const cardsHtml = drivers.map(d=>_buildSarkyCard(d, from, to)).join('');
+  const cardsHtml = drivers.map(d=>_buildSarkyCard(d, from, to, kpiMap[d.driver_id]||null)).join('');
 
   res.innerHTML = summaryHtml + cardsHtml;
 }
@@ -11610,7 +11611,7 @@ function _sarkyKpiBlock(icon, label, value, unit, color, bg) {
     + '</div>';
 }
 
-function _buildSarkyCard(d, from, to) {
+function _buildSarkyCard(d, from, to, kpi=null) {
   const hasData = d.total_days > 0;
   const pct = d.total_km > 0 ? Math.round(d.total_km / Math.max(d.total_trips,1)) : 0;
 
@@ -11664,6 +11665,26 @@ function _buildSarkyCard(d, from, to) {
     +     '<div style="text-align:left;font-size:.75rem;opacity:.75">'+from+' → '+to+'</div>'
     +   '</div>'
     + '</div>'
+    // KPI Score — يظهر لو متوفر
+    + (kpi ? (() => {
+        const R=18,S=4,C=2*Math.PI*R,D=(kpi.total_score/100)*C;
+        const gc=kpi.total_score>=85?'#4ade80':kpi.total_score>=70?'#60a5fa':kpi.total_score>=50?'#fb923c':'#f87171';
+        return '<div style="display:flex;align-items:center;gap:1rem;padding:.65rem 1.25rem;background:rgba(255,255,255,0.08);border-top:1px solid rgba(255,255,255,0.12)">'
+          +'<svg viewBox="0 0 44 44" width="44" height="44">'
+          +'<circle cx="22" cy="22" r="'+R+'" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="'+S+'"/>'
+          +'<circle cx="22" cy="22" r="'+R+'" fill="none" stroke="'+gc+'" stroke-width="'+S+'"'
+          +' stroke-linecap="round"'
+          +' stroke-dasharray="'+D.toFixed(1)+' '+(C-D).toFixed(1)+'"'
+          +' stroke-dashoffset="'+(C/4).toFixed(1)+'"/>'
+          +'<text x="22" y="26" text-anchor="middle" font-size="10" font-weight="900" fill="'+gc+'" font-family="Cairo,sans-serif">'+kpi.total_score+'</text>'
+          +'</svg>'
+          +'<div>'
+          +'<div style="font-size:.7rem;color:rgba(255,255,255,.6)">نقاط KPI</div>'
+          +'<div style="font-size:1.05rem;font-weight:900;color:'+gc+'">'+kpi.total_score+'% — '+kpi.grade+'</div>'
+          +'<div style="font-size:.68rem;color:rgba(255,255,255,.5)">الترتيب: '+(kpi.rank===1?'🥇':kpi.rank===2?'🥈':kpi.rank===3?'🥉':'#'+kpi.rank)+'</div>'
+          +'</div>'
+          +'</div>';
+      })() : '')
     // KPIs
     + '<div class="sarky-kpi-grid" style="border-bottom:1px solid #f1f5f9">'
     +   '<div class="sarky-kpi">'
@@ -12987,12 +13008,23 @@ function renderKpiTable(rows) {
   const _kpiPaged = paginateData(rows, _kpiPg, 15);
   tbody.innerHTML = _kpiPaged.map(d => {
     const barColor = d.total_score>=85?'#10b981':d.total_score>=70?'#3b82f6':d.total_score>=50?'#f97316':'#ef4444';
+    // SVG mini circle
+    const _R=20,_S=4,_C=2*Math.PI*_R,_D=(d.total_score/100)*_C;
     const scoreBar = `
-      <div style="display:flex;align-items:center;gap:.5rem">
-        <div style="flex:1;background:var(--border);border-radius:4px;height:8px;overflow:hidden">
-          <div style="width:${d.total_score}%;height:100%;background:${barColor};border-radius:4px;transition:width .4s"></div>
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <svg viewBox="0 0 50 50" width="42" height="42" style="flex-shrink:0">
+          <circle cx="25" cy="25" r="${_R}" fill="none" stroke="${barColor}22" stroke-width="${_S}"/>
+          <circle cx="25" cy="25" r="${_R}" fill="none" stroke="${barColor}" stroke-width="${_S}"
+            stroke-linecap="round"
+            stroke-dasharray="${_D.toFixed(1)} ${(_C-_D).toFixed(1)}"
+            stroke-dashoffset="${(_C/4).toFixed(1)}"/>
+          <text x="25" y="29" text-anchor="middle" font-size="11" font-weight="900"
+                fill="${barColor}" font-family="Cairo,sans-serif">${d.total_score}</text>
+        </svg>
+        <div>
+          <div style="font-weight:900;color:${barColor};font-size:.9rem">${d.total_score}%</div>
+          <div style="font-size:.68rem;color:var(--muted)">${d.grade}</div>
         </div>
-        <span style="font-weight:900;color:${barColor};min-width:40px;font-size:.95rem">${d.total_score}%</span>
       </div>`;
 
     const grade = `<span style="background:${d.grade_color}20;color:${d.grade_color};font-size:.75rem;padding:.2rem .7rem;border-radius:20px;font-weight:700">${d.grade}</span>`;
@@ -13105,12 +13137,52 @@ function showKpiDetail(driverId) {
     </div>
     <div style="padding:.5rem 0">
 
-      <!-- النقاط الكلية -->
-      <div style="text-align:center;padding:1.5rem;background:var(--surface-2);border-radius:16px;margin-bottom:1.5rem">
-        <div style="font-size:3rem;font-weight:900;color:${d.grade_color};line-height:1">${d.total_score}%</div>
-        <div style="font-size:1.1rem;color:${d.grade_color};margin-top:.5rem">${d.grade}</div>
-        <div style="font-size:.82rem;color:var(--muted);margin-top:.3rem">
-          ${d.month} &nbsp;|&nbsp; الترتيب: ${d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':'#'+d.rank}
+      <!-- النقاط الكلية — SVG Circle Score -->
+      <div style="display:flex;align-items:center;gap:1.5rem;padding:1.2rem 1.5rem;background:var(--surface-2);border-radius:16px;margin-bottom:1.5rem">
+        ${ (() => {
+          const R = 52, STROKE = 10;
+          const circ = 2 * Math.PI * R;
+          const dash  = (d.total_score / 100) * circ;
+          const color = d.grade_color;
+          return `<svg viewBox="0 0 130 130" width="120" height="120" style="flex-shrink:0">
+            <!-- الحلقة الخلفية -->
+            <circle cx="65" cy="65" r="${R}" fill="none" stroke="${color}22" stroke-width="${STROKE}"/>
+            <!-- الحلقة المتقدمة -->
+            <circle cx="65" cy="65" r="${R}" fill="none" stroke="${color}" stroke-width="${STROKE}"
+              stroke-linecap="round"
+              stroke-dasharray="${dash.toFixed(1)} ${(circ - dash).toFixed(1)}"
+              stroke-dashoffset="${(circ / 4).toFixed(1)}"
+              style="transition:stroke-dasharray .6s ease"/>
+            <!-- النص -->
+            <text x="65" y="60" text-anchor="middle" font-size="22" font-weight="900"
+                  fill="${color}" font-family="Cairo,sans-serif">${d.total_score}</text>
+            <text x="65" y="76" text-anchor="middle" font-size="10" fill="${color}"
+                  font-family="Cairo,sans-serif">نقطة</text>
+          </svg>`;
+        })() }
+        <div style="flex:1">
+          <div style="font-size:1.4rem;font-weight:900;color:${d.grade_color}">${d.grade}</div>
+          <div style="font-size:.85rem;color:var(--muted);margin-top:.3rem">${d.month}</div>
+          <div style="font-size:.85rem;color:var(--muted);margin-top:.2rem">
+            الترتيب: ${d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':'<strong>#'+d.rank+'</strong>'}
+          </div>
+          <!-- sub-scores سريع -->
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem">
+            ${ [
+              {lbl:'رحلات',  v:d.trips_score,          w:'10%'},
+              {lbl:'كم',     v:d.km_score,              w:'40%'},
+              {lbl:'وقود',   v:d.fuel_score,            w:'40%'},
+              {lbl:'زيوت',   v:d.oil_score,             w:'5%'},
+              {lbl:'طوارئ',  v:d.emg_score,             w:'5%'},
+            ].map(s => {
+              const c = s.v==null?'#94a3b8':s.v>=85?'#10b981':s.v>=70?'#3b82f6':s.v>=50?'#f97316':'#ef4444';
+              const val = s.v!=null ? s.v+'%' : '—';
+              return `<div style="background:${c}18;border:1px solid ${c}44;border-radius:8px;padding:.2rem .5rem;font-size:.7rem;text-align:center">
+                <div style="color:var(--muted);font-size:.6rem">${s.lbl} <span style="opacity:.7">(${s.w})</span></div>
+                <div style="font-weight:800;color:${c}">${val}</div>
+              </div>`;
+            }).join('') }
+          </div>
         </div>
       </div>
 
