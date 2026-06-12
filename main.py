@@ -4833,28 +4833,36 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
                     (cu["user_id"], tg, body.target_user_id, body.audio_data,
                      body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
             except Exception:
-                # CHECK constraint قديم → نعيد بناء الجدول بدون CHECK ثم نعيد الـ INSERT
+                # CHECK constraint قديم → نستخدم executescript لإعادة بناء الجدول
                 try:
-                    c.execute("""CREATE TABLE IF NOT EXISTS voice_notes_new(
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        sender_id INTEGER NOT NULL,
-                        sender_role TEXT NOT NULL DEFAULT 'superuser',
-                        target_group TEXT DEFAULT '',
-                        target_user_id INTEGER DEFAULT NULL,
-                        audio_data TEXT NOT NULL,
-                        duration_sec REAL DEFAULT 0,
-                        created_at TEXT NOT NULL,
-                        expires_at TEXT NOT NULL,
-                        play_count INTEGER DEFAULT 0,
-                        max_plays INTEGER DEFAULT 2,
-                        is_deleted INTEGER DEFAULT 0
-                    )""")                    c.execute("""INSERT OR IGNORE INTO voice_notes_new
-                        SELECT id,sender_id,
-                               COALESCE(sender_role,'superuser'),
-                               target_group,target_user_id,audio_data,
-                               duration_sec,created_at,expires_at,
-                               play_count,max_plays,is_deleted
-                        FROM voice_notes""")                    c.execute("DROP TABLE voice_notes")                    c.execute("ALTER TABLE voice_notes_new RENAME TO voice_notes")                    conn.commit()                except Exception: pass                c.execute("""INSERT INTO voice_notes
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS _vn_fix(
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            sender_id INTEGER NOT NULL,
+                            sender_role TEXT NOT NULL DEFAULT 'superuser',
+                            target_group TEXT DEFAULT '',
+                            target_user_id INTEGER DEFAULT NULL,
+                            audio_data TEXT NOT NULL,
+                            duration_sec REAL DEFAULT 0,
+                            created_at TEXT NOT NULL,
+                            expires_at TEXT NOT NULL,
+                            play_count INTEGER DEFAULT 0,
+                            max_plays INTEGER DEFAULT 2,
+                            is_deleted INTEGER DEFAULT 0
+                        );
+                        INSERT OR IGNORE INTO _vn_fix
+                            SELECT id, sender_id,
+                                   COALESCE(sender_role,'superuser'),
+                                   target_group, target_user_id, audio_data,
+                                   duration_sec, created_at, expires_at,
+                                   play_count, max_plays, is_deleted
+                            FROM voice_notes;
+                        DROP TABLE voice_notes;
+                        ALTER TABLE _vn_fix RENAME TO voice_notes;
+                    """)
+                except Exception:
+                    pass
+                c.execute("""INSERT INTO voice_notes
                     (sender_id, target_group, target_user_id, audio_data,
                      duration_sec, created_at, expires_at, max_plays)
                     VALUES(?,?,?,?,?,?,?,?)""",
@@ -12545,28 +12553,36 @@ async def create_voice_note(body: VoiceNoteCreate, cu: dict = Depends(get_user))
                     (cu["user_id"], tg, body.target_user_id, body.audio_data,
                      body.duration_sec, now.isoformat()+"Z", expires, body.max_plays))
             except Exception:
-                # CHECK constraint قديم → نعيد بناء الجدول بدون CHECK ثم نعيد الـ INSERT
+                # CHECK constraint قديم → نستخدم executescript لإعادة بناء الجدول
                 try:
-                    c.execute("""CREATE TABLE IF NOT EXISTS voice_notes_new(
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        sender_id INTEGER NOT NULL,
-                        sender_role TEXT NOT NULL DEFAULT 'superuser',
-                        target_group TEXT DEFAULT '',
-                        target_user_id INTEGER DEFAULT NULL,
-                        audio_data TEXT NOT NULL,
-                        duration_sec REAL DEFAULT 0,
-                        created_at TEXT NOT NULL,
-                        expires_at TEXT NOT NULL,
-                        play_count INTEGER DEFAULT 0,
-                        max_plays INTEGER DEFAULT 2,
-                        is_deleted INTEGER DEFAULT 0
-                    )""")                    c.execute("""INSERT OR IGNORE INTO voice_notes_new
-                        SELECT id,sender_id,
-                               COALESCE(sender_role,'superuser'),
-                               target_group,target_user_id,audio_data,
-                               duration_sec,created_at,expires_at,
-                               play_count,max_plays,is_deleted
-                        FROM voice_notes""")                    c.execute("DROP TABLE voice_notes")                    c.execute("ALTER TABLE voice_notes_new RENAME TO voice_notes")                    conn.commit()                except Exception: pass                c.execute("""INSERT INTO voice_notes
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS _vn_fix(
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            sender_id INTEGER NOT NULL,
+                            sender_role TEXT NOT NULL DEFAULT 'superuser',
+                            target_group TEXT DEFAULT '',
+                            target_user_id INTEGER DEFAULT NULL,
+                            audio_data TEXT NOT NULL,
+                            duration_sec REAL DEFAULT 0,
+                            created_at TEXT NOT NULL,
+                            expires_at TEXT NOT NULL,
+                            play_count INTEGER DEFAULT 0,
+                            max_plays INTEGER DEFAULT 2,
+                            is_deleted INTEGER DEFAULT 0
+                        );
+                        INSERT OR IGNORE INTO _vn_fix
+                            SELECT id, sender_id,
+                                   COALESCE(sender_role,'superuser'),
+                                   target_group, target_user_id, audio_data,
+                                   duration_sec, created_at, expires_at,
+                                   play_count, max_plays, is_deleted
+                            FROM voice_notes;
+                        DROP TABLE voice_notes;
+                        ALTER TABLE _vn_fix RENAME TO voice_notes;
+                    """)
+                except Exception:
+                    pass
+                c.execute("""INSERT INTO voice_notes
                     (sender_id, target_group, target_user_id, audio_data,
                      duration_sec, created_at, expires_at, max_plays)
                     VALUES(?,?,?,?,?,?,?,?)""",
