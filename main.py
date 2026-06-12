@@ -4861,21 +4861,21 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
 
     with get_db() as conn:
         c = conn.cursor()
-        # الرسائل المرسلة للمجموعة (بدون target_user_id) أو للشخص تحديداً فقط
         c.execute("""
             SELECT id, duration_sec, created_at, expires_at,
                    play_count, max_plays, audio_data
             FROM voice_notes
             WHERE (
                     (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                    OR COALESCE(target_user_id, 0) = ?
+                    OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
+                    OR (target_user_id = ? AND target_group IN ('','personal'))
                   )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, uid, uid, now))
+        """, (group, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 
@@ -4964,16 +4964,15 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
             FROM voice_notes
             WHERE (
                 (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                OR (target_group = 'personal' AND target_user_id = ?)
-                OR (target_group = '' AND target_user_id = ?)
                 OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
+                OR (target_user_id = ? AND target_group IN ('','personal'))
             )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, uid, uid, now))
+        """, (group, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 @app.delete("/voice-notes/{note_id}")
@@ -12518,21 +12517,21 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
 
     with get_db() as conn:
         c = conn.cursor()
-        # الرسائل المرسلة للمجموعة (بدون target_user_id) أو للشخص تحديداً فقط
         c.execute("""
             SELECT id, duration_sec, created_at, expires_at,
                    play_count, max_plays, audio_data
             FROM voice_notes
             WHERE (
                     (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                    OR COALESCE(target_user_id, 0) = ?
+                    OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
+                    OR (target_user_id = ? AND target_group IN ('','personal'))
                   )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, uid, uid, now))
+        """, (group, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 
@@ -12621,16 +12620,15 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
             FROM voice_notes
             WHERE (
                 (target_group = ? AND (target_user_id IS NULL OR target_user_id = 0))
-                OR (target_group = 'personal' AND target_user_id = ?)
-                OR (target_group = '' AND target_user_id = ?)
                 OR (target_user_id = ? AND target_group NOT IN ('admins','drivers'))
+                OR (target_user_id = ? AND target_group IN ('','personal'))
             )
               AND sender_id != ?
               AND is_deleted = 0
               AND expires_at > ?
               AND play_count < max_plays
             ORDER BY created_at DESC
-        """, (group, uid, uid, uid, uid, now))
+        """, (group, uid, uid, uid, now))
         return [dict(r) for r in c.fetchall()]
 
 @app.delete("/voice-notes/{note_id}")
