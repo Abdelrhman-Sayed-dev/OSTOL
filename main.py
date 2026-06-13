@@ -3771,6 +3771,7 @@ async def operational_report(
         c.execute(f"""
             SELECT
                 COUNT(t.id)                                       AS tc,
+                COUNT(DISTINCT date(t.start_time))                AS work_days,
                 ROUND(SUM(t.end_odometer - t.start_odometer), 1) AS tkm,
                 (SELECT t2.start_odometer FROM trips t2
                  WHERE {where_sql.replace('t.', 't2.')}
@@ -3787,6 +3788,7 @@ async def operational_report(
             "car_info":    car_info,
             "total_km":    tot["tkm"]    or 0,
             "total_trips": tot["tc"]     or 0,
+            "work_days":   int(tot.get("work_days") or 0),
             "min_odo":     tot["first_odo"],
             "max_odo":     tot["last_odo"],
             "report_type": report_type,
@@ -11491,6 +11493,7 @@ async def operational_report(
         c.execute(f"""
             SELECT
                 COUNT(t.id)                                       AS tc,
+                COUNT(DISTINCT date(t.start_time))                AS work_days,
                 ROUND(SUM(t.end_odometer - t.start_odometer), 1) AS tkm,
                 (SELECT t2.start_odometer FROM trips t2
                  WHERE {where_sql.replace('t.', 't2.')}
@@ -11507,6 +11510,7 @@ async def operational_report(
             "car_info":    car_info,
             "total_km":    tot["tkm"]    or 0,
             "total_trips": tot["tc"]     or 0,
+            "work_days":   int(tot.get("work_days") or 0),
             "min_odo":     tot["first_odo"],
             "max_odo":     tot["last_odo"],
             "report_type": report_type,
