@@ -15514,36 +15514,58 @@ async def ocr_odometer(
         }]
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key":         ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type":      "application/json",
-                },
-                json=payload
-            )
+    last_error = None
+    for attempt in range(2):  # محاولتان في حالة فشل الأولى
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key":         ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type":      "application/json",
+                    },
+                    json=payload
+                )
 
-        if resp.status_code != 200:
-            body = resp.text[:500]
-            log.error(f"[OCR] Claude API {resp.status_code}: {body}")
-            raise HTTPException(502, f"Claude API رجع خطأ {resp.status_code}: {body}")
+            if resp.status_code == 200:
+                data     = resp.json()
+                raw_text = (data.get("content") or [{}])[0].get("text", "").strip()
+                log.info(f"[OCR] raw response: {raw_text!r}  media_type={media_type}  size={len(raw_bytes)}")
+                match   = _re.search(r'\d+', raw_text)
+                reading = match.group(0) if match else ""
+                return {"ok": True, "reading": reading, "raw": raw_text}
 
-        data     = resp.json()
-        raw_text = (data.get("content") or [{}])[0].get("text", "").strip()
-        log.info(f"[OCR] raw response: {raw_text!r}  media_type={media_type}  size={len(raw_bytes)}")
+            # خطأ من Claude API — نحاول نعرف السبب بدون HTML خام
+            status = resp.status_code
+            try:
+                err_body = resp.json()
+                err_msg  = err_body.get("error", {}).get("message") or str(err_body)
+            except Exception:
+                # الـ response مش JSON (مثلاً HTML من Cloudflare)
+                err_msg = f"خطأ مؤقت في الشبكة (كود {status})"
+            log.error(f"[OCR] Claude API attempt {attempt+1} — {status}: {resp.text[:300]}")
+            last_error = HTTPException(502, f"تعذّر الوصول لخدمة قراءة الصورة — {err_msg}")
 
-        match   = _re.search(r'\d+', raw_text)
-        reading = match.group(0) if match else ""
+            if attempt == 0 and status in (502, 503, 504):
+                import asyncio
+                await asyncio.sleep(2)  # انتظر ثانيتين قبل إعادة المحاولة
+                continue
+            raise last_error
 
-        return {"ok": True, "reading": reading, "raw": raw_text}
+        except HTTPException:
+            raise
+        except httpx.TimeoutException:
+            log.warning(f"[OCR] timeout attempt {attempt+1}")
+            last_error = HTTPException(504, "انتهى وقت الانتظار — يرجى المحاولة مرة أخرى")
+            if attempt == 0:
+                import asyncio
+                await asyncio.sleep(1)
+                continue
+            raise last_error
+        except Exception as e:
+            log.error(f"[OCR] unexpected error attempt {attempt+1}: {e}")
+            last_error = HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى")
+            raise last_error
 
-    except HTTPException:
-        raise
-    except httpx.TimeoutException:
-        raise HTTPException(504, "انتهى وقت الانتظار — يرجى المحاولة مرة أخرى")
-    except Exception as e:
-        log.error(f"[OCR] unexpected error: {e}")
-        raise HTTPException(502, f"خطأ غير متوقع: {str(e)}")
+    raise last_error or HTTPException(502, "فشلت محاولات قراءة الصورة — يرجى المحاولة مرة أخرى")
