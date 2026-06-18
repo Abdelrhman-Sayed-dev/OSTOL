@@ -15456,34 +15456,35 @@ async def sarky_report(
 @app.post("/ocr/odometer")
 async def ocr_odometer(
     file: UploadFile = File(...),
-    cu: dict = Depends(get_user)   # أي مستخدم مسجّل دخول
+    cu: dict = Depends(get_user)
 ):
     """قراءة رقم العداد من صورة عبر Claude Vision API."""
+    import re as _re
 
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     if not ANTHROPIC_API_KEY:
         raise HTTPException(500, "ANTHROPIC_API_KEY غير مضبوطة على السيرفر")
 
-    # ── التحقق من نوع الملف ──
-    content_type = file.content_type or ""
-    if not content_type.startswith("image/"):
-        raise HTTPException(400, "يجب رفع صورة (jpg/png/webp)")
-
     raw_bytes = await file.read()
-    if len(raw_bytes) > 10 * 1024 * 1024:   # 10 MB max
+    if len(raw_bytes) == 0:
+        raise HTTPException(400, "الصورة فارغة")
+    if len(raw_bytes) > 10 * 1024 * 1024:
         raise HTTPException(400, "حجم الصورة كبير جداً (الحد الأقصى 10 ميجا)")
 
-    b64_image = base64.b64encode(raw_bytes).decode("utf-8")
+    # ── تحديد media_type من الـ magic bytes إذا content_type مش موثوق ──
+    ct = (file.content_type or "").lower()
+    if raw_bytes[:3] == b'\xff\xd8\xff':
+        media_type = "image/jpeg"
+    elif raw_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        media_type = "image/png"
+    elif raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
+        media_type = "image/webp"
+    elif ct.startswith("image/"):
+        media_type = ct if ct in ("image/jpeg","image/png","image/webp","image/gif") else "image/jpeg"
+    else:
+        media_type = "image/jpeg"   # fallback آمن
 
-    # ── تحديد media_type المناسب ──
-    media_map = {
-        "image/jpeg": "image/jpeg",
-        "image/jpg":  "image/jpeg",
-        "image/png":  "image/png",
-        "image/webp": "image/webp",
-        "image/gif":  "image/gif",
-    }
-    media_type = media_map.get(content_type, "image/jpeg")
+    b64_image = base64.b64encode(raw_bytes).decode("utf-8")
 
     payload = {
         "model": "claude-sonnet-4-6",
@@ -15502,11 +15503,11 @@ async def ocr_odometer(
                 {
                     "type": "text",
                     "text": (
-                        "This is a car odometer photo. "
-                        "Read ONLY the main total odometer number (kilometers). "
-                        "Ignore speed, RPM, trip meter, temperature, time. "
-                        "Reply with ONLY the digits, nothing else. "
-                        "Example reply: 27846"
+                        "This is a car odometer/dashboard photo. "
+                        "Find the TOTAL odometer reading (main large number showing total km driven). "
+                        "Do NOT read: speed (km/h), RPM, trip meter, fuel, temperature, time, clock. "
+                        "Reply with ONLY the digits of the odometer number, nothing else. "
+                        "Example: 27846"
                     )
                 }
             ]
@@ -15514,7 +15515,7 @@ async def ocr_odometer(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
@@ -15524,18 +15525,25 @@ async def ocr_odometer(
                 },
                 json=payload
             )
-        resp.raise_for_status()
-        data = resp.json()
-        raw_text = (data.get("content") or [{}])[0].get("text", "").strip()
 
-        # استخرج أول تسلسل رقمي
-        import re
-        match = re.search(r'\d+', raw_text)
+        if resp.status_code != 200:
+            body = resp.text[:500]
+            log.error(f"[OCR] Claude API {resp.status_code}: {body}")
+            raise HTTPException(502, f"Claude API رجع خطأ {resp.status_code}: {body}")
+
+        data     = resp.json()
+        raw_text = (data.get("content") or [{}])[0].get("text", "").strip()
+        log.info(f"[OCR] raw response: {raw_text!r}  media_type={media_type}  size={len(raw_bytes)}")
+
+        match   = _re.search(r'\d+', raw_text)
         reading = match.group(0) if match else ""
 
         return {"ok": True, "reading": reading, "raw": raw_text}
 
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(502, f"Claude API error: {e.response.status_code}")
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        raise HTTPException(504, "انتهى وقت الانتظار — يرجى المحاولة مرة أخرى")
     except Exception as e:
-        raise HTTPException(502, f"فشل الاتصال بـ Claude API: {str(e)}")
+        log.error(f"[OCR] unexpected error: {e}")
+        raise HTTPException(502, f"خطأ غير متوقع: {str(e)}")
