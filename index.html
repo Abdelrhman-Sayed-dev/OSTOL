@@ -17128,19 +17128,25 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
   if (triggerBtn){ triggerBtn.disabled = true; triggerBtn.textContent = '⏳ جاري المعالجة...'; triggerBtn.className = 'odo-scan-btn scanning'; }
 
   try {
-    // إرسال الصورة للـ endpoint في الباك-إند (يتولى هو الاتصال بـ Claude API)
+    // إرسال الصورة للـ endpoint في الباك-إند
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch('/ocr/odometer', {
+    const tok = getToken();
+    const response = await fetch(API + '/ocr/odometer', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('access_token') || '') },
+      headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
       body: formData
     });
 
+    if (response.status === 401) {
+      throw new Error('انتهت الجلسة — يرجى تسجيل الدخول مجدداً');
+    }
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || 'خطأ في السيرفر: ' + response.status);
+      let detail = err.detail || ('خطأ ' + response.status);
+      if (typeof detail === 'object') detail = JSON.stringify(detail);
+      throw new Error(detail);
     }
     const data = await response.json();
     const best = (data.reading || '').trim();
@@ -17159,7 +17165,8 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
     }
   } catch (err) {
     console.error('[ODO-OCR]', err);
-    if (msgEl)     { msgEl.textContent = '❌ خطأ في قراءة الصورة — أدخل الرقم يدوياً'; msgEl.style.color = '#dc2626'; }
+    const errMsg = err.message || 'خطأ غير معروف';
+    if (msgEl)     { msgEl.textContent = '❌ ' + errMsg + ' — أدخل الرقم يدوياً'; msgEl.style.color = '#dc2626'; }
     if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
   } finally {
     fileInput.value = '';
