@@ -15456,7 +15456,7 @@ async def sarky_report(
 @app.post("/ocr/odometer")
 async def ocr_odometer(
     file: UploadFile = File(...),
-    cu: dict = Depends(get_current_user)   # أي مستخدم مسجّل دخول
+    cu: dict = Depends(get_user)   # أي مستخدم مسجّل دخول
 ):
     """قراءة رقم العداد من صورة عبر Claude Vision API."""
 
