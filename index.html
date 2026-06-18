@@ -17131,32 +17131,47 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
   if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '⏳ جاري المعالجة...'; triggerBtn.className = 'odo-scan-btn scanning'; }
 
   try {
-    const result = await Tesseract.recognize(file, 'eng', {
-      tessedit_char_whitelist: '0123456789.',
+    // ── معالجة الصورة لتحسين دقة OCR ──
+    const processedDataUrl = await preprocessOdoImage(file);
+
+    const result = await Tesseract.recognize(processedDataUrl, 'eng', {
+      tessedit_char_whitelist: '0123456789 \n',
       logger: () => {}
     });
 
-    const raw  = result.data.text.replace(/[^0-9.]/g, '').trim();
-    const nums = raw.match(/\d+/g);
-    let best   = '';
-    if (nums && nums.length) {
-      best = nums.reduce((a, b) => b.length >= a.length ? b : a, '');
+    // ── منطق اختيار أفضل رقم للعداد ──
+    // العداد عادةً: 4 إلى 7 أرقام بين 1,000 و 999,999
+    const rawText  = result.data.text || '';
+    const allNums  = rawText.match(/\d+/g) || [];
+
+    const candidates = allNums
+      .map(n => parseInt(n, 10))
+      .filter(n => !isNaN(n) && n >= 1000 && n <= 999999);
+
+    let best = '';
+    if (candidates.length > 0) {
+      // أفضل مرشح: 5-6 أرقام (عداد كلومترات نموذجي)
+      const ideal = candidates.filter(n => String(n).length >= 5 && String(n).length <= 6);
+      const pool  = ideal.length > 0 ? ideal : candidates;
+      // خذ أكبر قيمة في النطاق المنطقي (العداد الكلي يكون الأكبر دائماً)
+      best = String(Math.max(...pool));
+    } else {
+      // fallback: أي تسلسل 4-7 أرقام
+      const fallback = allNums.filter(n => n.length >= 4 && n.length <= 7);
+      if (fallback.length > 0) best = fallback[0];
     }
 
     const targetInput = document.getElementById(targetInputId);
     if (best && targetInput) {
       targetInput.value = best;
-      // تزامن مع الحقل المخفي (endOdo أو dpEndOdo) لضمان القراءة الصحيحة
+      // تزامن مع الحقل الرئيسي
       const mainId = isEnd ? 'endOdo' : (isDp ? 'dpEndOdo' : null);
-      if (mainId) {
-        const mainInput = document.getElementById(mainId);
-        if (mainInput) mainInput.value = best;
-      }
+      if (mainId) { const m = document.getElementById(mainId); if (m) m.value = best; }
       targetInput.dispatchEvent(new Event('input'));
       if (msgEl) { msgEl.textContent = `✅ تم قراءة العداد: ${best} كم — تحقق من الرقم وعدّله إذا لزم`; msgEl.style.color = '#059669'; }
       if (triggerBtn) { triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn done'; triggerBtn.disabled = false; }
     } else {
-      if (msgEl) { msgEl.textContent = '⚠️ لم يتم التعرف على الرقم — أدخله يدوياً أو أعد التصوير'; msgEl.style.color = '#dc2626'; }
+      if (msgEl) { msgEl.textContent = '⚠️ لم يتم التعرف على الرقم — حاول تقريب الكاميرا من العداد أو أدخله يدوياً'; msgEl.style.color = '#dc2626'; }
       if (triggerBtn) { triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
     }
   } catch (err) {
@@ -17168,6 +17183,44 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
     URL.revokeObjectURL(imgURL);
   }
 };
+
+// ── معالجة الصورة: تكبير + تباين عالي + تحويل للأبيض والأسود ──
+// يساعد Tesseract على قراءة أرقام العداد الرقمي/الديجيتال بدقة أعلى
+async function preprocessOdoImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      // تكبير الصورة x2 لتحسين دقة OCR
+      const scale = 2;
+      canvas.width  = img.width  * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+
+      // رسم الصورة مكبّرة
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      // تطبيق فلتر تباين عالي + تحويل للرمادي
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        // تحويل للرمادي
+        const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+        // threshold: أبيض وأسود صريح (يساعد على قراءة أرقام العداد)
+        const val = gray > 100 ? 255 : 0;
+        data[i] = data[i+1] = data[i+2] = val;
+        data[i+3] = 255;
+      }
+      ctx.putImageData(imageData, 0, 0);
+
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
 </script>
 
 </body>
