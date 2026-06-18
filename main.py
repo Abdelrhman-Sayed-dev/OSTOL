@@ -15449,21 +15449,21 @@ async def sarky_report(
         }
 
 # ══════════════════════════════════════════════════════════════
-#  📷 OCR Odometer — Claude Vision API (server-side proxy)
-#  السائق يرفع صورة العداد → الباك-إند يبعتها لـ Claude API
-#  بالـ API key ويرجع الرقم المقروء — آمن وسريع (~1 ثانية)
+#  📷 OCR Odometer — Google Cloud Vision API (server-side proxy)
+#  السائق يرفع صورة العداد → الباك-إند يبعتها لـ Google Vision
+#  مجاني 1000 صورة/شهر — آمن وسريع
 # ══════════════════════════════════════════════════════════════
 @app.post("/ocr/odometer")
 async def ocr_odometer(
     file: UploadFile = File(...),
     cu: dict = Depends(get_user)
 ):
-    """قراءة رقم العداد من صورة عبر Claude Vision API."""
+    """قراءة رقم العداد من صورة عبر Google Cloud Vision API."""
     import re as _re
 
-    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not ANTHROPIC_API_KEY:
-        raise HTTPException(500, "ANTHROPIC_API_KEY غير مضبوطة على السيرفر")
+    GOOGLE_API_KEY = os.environ.get("GOOGLE_VISION_API_KEY", "")
+    if not GOOGLE_API_KEY:
+        raise HTTPException(500, "GOOGLE_VISION_API_KEY غير مضبوطة على السيرفر")
 
     raw_bytes = await file.read()
     if len(raw_bytes) == 0:
@@ -15471,101 +15471,57 @@ async def ocr_odometer(
     if len(raw_bytes) > 10 * 1024 * 1024:
         raise HTTPException(400, "حجم الصورة كبير جداً (الحد الأقصى 10 ميجا)")
 
-    # ── تحديد media_type من الـ magic bytes إذا content_type مش موثوق ──
-    ct = (file.content_type or "").lower()
-    if raw_bytes[:3] == b'\xff\xd8\xff':
-        media_type = "image/jpeg"
-    elif raw_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-        media_type = "image/png"
-    elif raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
-        media_type = "image/webp"
-    elif ct.startswith("image/"):
-        media_type = ct if ct in ("image/jpeg","image/png","image/webp","image/gif") else "image/jpeg"
-    else:
-        media_type = "image/jpeg"   # fallback آمن
-
     b64_image = base64.b64encode(raw_bytes).decode("utf-8")
 
+    # Google Vision API — TEXT_DETECTION للأرقام
     payload = {
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 20,
-        "messages": [{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": b64_image
-                    }
-                },
-                {
-                    "type": "text",
-                    "text": (
-                        "This is a car odometer/dashboard photo. "
-                        "Find the TOTAL odometer reading (main large number showing total km driven). "
-                        "Do NOT read: speed (km/h), RPM, trip meter, fuel, temperature, time, clock. "
-                        "Reply with ONLY the digits of the odometer number, nothing else. "
-                        "Example: 27846"
-                    )
-                }
-            ]
+        "requests": [{
+            "image": {"content": b64_image},
+            "features": [{"type": "TEXT_DETECTION", "maxResults": 10}]
         }]
     }
 
-    last_error = None
-    for attempt in range(2):  # محاولتان في حالة فشل الأولى
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
-                resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key":         ANTHROPIC_API_KEY,
-                        "anthropic-version": "2023-06-01",
-                        "content-type":      "application/json",
-                    },
-                    json=payload
-                )
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+            resp = await client.post(
+                f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_API_KEY}",
+                headers={"content-type": "application/json"},
+                json=payload
+            )
 
-            if resp.status_code == 200:
-                data     = resp.json()
-                raw_text = (data.get("content") or [{}])[0].get("text", "").strip()
-                log.info(f"[OCR] raw response: {raw_text!r}  media_type={media_type}  size={len(raw_bytes)}")
-                match   = _re.search(r'\d+', raw_text)
-                reading = match.group(0) if match else ""
-                return {"ok": True, "reading": reading, "raw": raw_text}
-
-            # خطأ من Claude API — نحاول نعرف السبب بدون HTML خام
-            status = resp.status_code
+        if resp.status_code != 200:
             try:
                 err_body = resp.json()
-                err_msg  = err_body.get("error", {}).get("message") or str(err_body)
+                err_msg = err_body.get("error", {}).get("message", f"كود {resp.status_code}")
             except Exception:
-                # الـ response مش JSON (مثلاً HTML من Cloudflare)
-                err_msg = f"خطأ مؤقت في الشبكة (كود {status})"
-            log.error(f"[OCR] Claude API attempt {attempt+1} — {status}: {resp.text[:300]}")
-            last_error = HTTPException(502, f"تعذّر الوصول لخدمة قراءة الصورة — {err_msg}")
+                err_msg = f"خطأ مؤقت في الشبكة (كود {resp.status_code})"
+            log.error(f"[OCR] Google Vision {resp.status_code}: {resp.text[:300]}")
+            raise HTTPException(502, f"تعذّر الوصول لخدمة قراءة الصورة — {err_msg}")
 
-            if attempt == 0 and status in (502, 503, 504):
-                import asyncio
-                await asyncio.sleep(2)  # انتظر ثانيتين قبل إعادة المحاولة
-                continue
-            raise last_error
+        data = resp.json()
+        # استخراج كل النصوص المكتشفة
+        annotations = data.get("responses", [{}])[0].get("textAnnotations", [])
+        full_text = annotations[0].get("description", "") if annotations else ""
+        log.info(f"[OCR] Google Vision raw text: {full_text!r}  size={len(raw_bytes)}")
 
-        except HTTPException:
-            raise
-        except httpx.TimeoutException:
-            log.warning(f"[OCR] timeout attempt {attempt+1}")
-            last_error = HTTPException(504, "انتهى وقت الانتظار — يرجى المحاولة مرة أخرى")
-            if attempt == 0:
-                import asyncio
-                await asyncio.sleep(1)
-                continue
-            raise last_error
-        except Exception as e:
-            log.error(f"[OCR] unexpected error attempt {attempt+1}: {e}")
-            last_error = HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى")
-            raise last_error
+        # استخراج أكبر رقم (عداد المسافة الكلية يكون عادةً الأكبر)
+        numbers = _re.findall(r'\d+', full_text.replace(",", "").replace(".", ""))
+        # فلتر: الأرقام بين 1000 و 999999 (نطاق منطقي لعداد السيارة)
+        candidates = [int(n) for n in numbers if 1000 <= int(n) <= 999999]
+        if candidates:
+            reading = str(max(candidates))  # أكبر رقم = عداد الكيلومتر الكلي
+        else:
+            # لو مفيش في النطاق، خد أكبر رقم موجود
+            all_nums = [int(n) for n in numbers if n]
+            reading = str(max(all_nums)) if all_nums else ""
 
-    raise last_error or HTTPException(502, "فشلت محاولات قراءة الصورة — يرجى المحاولة مرة أخرى")
+        log.info(f"[OCR] extracted reading: {reading!r} from candidates={candidates}")
+        return {"ok": True, "reading": reading, "raw": full_text}
+
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        raise HTTPException(504, "انتهى وقت الانتظار — يرجى المحاولة مرة أخرى")
+    except Exception as e:
+        log.error(f"[OCR] unexpected error: {e}")
+        raise HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى")
