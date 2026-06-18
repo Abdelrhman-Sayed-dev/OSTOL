@@ -798,6 +798,16 @@ tbody tr:hover{background:#F8FAFC;transition:.1s}
 .gps-picker{border:2px dashed var(--border);border-radius:12px;padding:.9rem 1rem;background:#f8fafc;transition:.25s}
 .gps-picker.gps-ok{border:2px solid #10b981;background:#f0fdf9}
 .gps-picker.gps-err{border:2px solid #dc2626;background:#fff5f5}
+.odo-scan-btn{display:inline-flex;align-items:center;justify-content:center;gap:.45rem;padding:.55rem 1rem;border:none;border-radius:10px;font-family:inherit;font-size:.88rem;font-weight:700;cursor:pointer;transition:.2s;color:white;background:linear-gradient(135deg,#7c3aed,#a855f7);white-space:nowrap}
+.odo-scan-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 14px rgba(168,85,247,.4)}
+.odo-scan-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.odo-scan-btn.scanning{background:linear-gradient(135deg,#92400e,#d97706)}
+.odo-scan-btn.done{background:linear-gradient(135deg,#065f46,#10b981)}
+.odo-method-toggle{display:flex;gap:.5rem;margin-bottom:.6rem}
+.odo-method-toggle button{flex:1;padding:.5rem;border:2px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-size:.82rem;font-weight:700;cursor:pointer;transition:.2s;font-family:inherit}
+.odo-method-toggle button.active{background:#1e3a5f;color:white;border-color:#1e3a5f}
+.odo-camera-preview{width:100%;max-height:200px;border-radius:12px;object-fit:cover;display:none;margin-top:.5rem}
+.odo-ocr-result{font-size:.78rem;color:#7c3aed;margin-top:.35rem;min-height:1.2rem;font-weight:600}
 .gps-capture-btn{width:100%;padding:.75rem 1rem;border:none;border-radius:10px;font-family:inherit;font-size:.92rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.6rem;transition:.2s;color:white;background:linear-gradient(135deg,#1e40af,#3b82f6)}
 .gps-capture-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 14px rgba(59,130,246,.35)}
 .gps-capture-btn:disabled{opacity:.65;cursor:not-allowed;transform:none}
@@ -2202,6 +2212,7 @@ table tbody td {
 
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -7308,16 +7319,38 @@ async function renderDriverTrip() {
 
         <div class="form-group">
           <label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
-          <input type="number" id="endOdo"
-                 placeholder="${activeTrip ? 'أدخل رقم أكبر من '+(activeTrip.start_odometer||0) : 'مثال: 54350'}"
-                 min="${activeTrip?activeTrip.start_odometer+1:0}"
-                 style="font-size:2rem;font-weight:900;text-align:center;
-                        padding:1rem;border-radius:14px;letter-spacing:2px;
-                        border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
-                        transition:border-color .2s"
-                 onfocus="this.style.borderColor='#f59e0b';this.style.boxShadow='0 0 0 3px rgba(245,158,11,.15)'"
-                 onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow=''"
-                 oninput="validateEndOdo(this,${activeTrip?.start_odometer||0})">
+          <div class="odo-method-toggle">
+            <button id="endOdoManualBtn" class="active" onclick="switchOdoMethod('end','manual')">✏️ إدخال يدوي</button>
+            <button id="endOdoCamBtn" onclick="switchOdoMethod('end','camera')">📷 مسح بالكاميرا</button>
+          </div>
+          <div id="endOdoManualArea">
+            <input type="number" id="endOdo"
+                   placeholder="${activeTrip ? 'أدخل رقم أكبر من '+(activeTrip.start_odometer||0) : 'مثال: 54350'}"
+                   min="${activeTrip?activeTrip.start_odometer+1:0}"
+                   style="font-size:2rem;font-weight:900;text-align:center;
+                          padding:1rem;border-radius:14px;letter-spacing:2px;
+                          border:2px solid #e2e8f0;width:100%;color:#1e3a5f;
+                          transition:border-color .2s"
+                   onfocus="this.style.borderColor='#f59e0b';this.style.boxShadow='0 0 0 3px rgba(245,158,11,.15)'"
+                   onblur="this.style.borderColor='#e2e8f0';this.style.boxShadow=''"
+                   oninput="validateEndOdo(this,${activeTrip?.start_odometer||0})">
+          </div>
+          <div id="endOdoCamArea" style="display:none">
+            <input type="file" id="endOdoCamFile" accept="image/*" capture="environment" style="display:none" onchange="ocrOdoFromFile(this,'endOdoCam','endOdoOcrMsg')">
+            <button class="odo-scan-btn" style="width:100%;padding:.9rem;font-size:1rem;border-radius:14px" id="endOdoCamTrigger" onclick="document.getElementById('endOdoCamFile').click()">
+              📷 التقط صورة العداد
+            </button>
+            <canvas id="endOdoCanvas" style="display:none"></canvas>
+            <img id="endOdoPreview" class="odo-camera-preview">
+            <div class="odo-ocr-result" id="endOdoOcrMsg"></div>
+            <input type="number" id="endOdoCam"
+                   placeholder="ستظهر القراءة هنا تلقائياً أو عدّلها يدوياً"
+                   min="${activeTrip?activeTrip.start_odometer+1:0}"
+                   style="font-size:1.8rem;font-weight:900;text-align:center;margin-top:.5rem;
+                          padding:.9rem;border-radius:14px;letter-spacing:2px;
+                          border:2px solid #a855f7;width:100%;color:#1e3a5f;transition:border-color .2s"
+                   oninput="document.getElementById('endOdo').value=this.value;validateEndOdo(this,${activeTrip?.start_odometer||0})">
+          </div>
           ${activeTrip?`<div style="font-size:.8rem;color:#94a3b8;margin-top:.3rem;text-align:center">
             يجب أن يكون أكبر من <strong>${activeTrip.start_odometer} كم</strong>
           </div>`:''}
@@ -9393,9 +9426,27 @@ async function renderDriverSinglePage() {
         🚗 عداد البداية: <strong>${startOdo} كم</strong><br>
       </div>
       <div class="form-group"><label style="font-size:1rem;font-weight:700">عداد النهاية (كم) <span class="req">*</span></label>
-        <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}" max="999999"
-               class="odo-input"
-               oninput="this.classList.toggle('invalid',!isNaN(parseFloat(this.value))&&parseFloat(this.value)<=${startOdo})">
+        <div class="odo-method-toggle">
+          <button id="dpOdoManualBtn" class="active" onclick="switchOdoMethod('dp','manual')">✏️ إدخال يدوي</button>
+          <button id="dpOdoCamBtn" onclick="switchOdoMethod('dp','camera')">📷 مسح بالكاميرا</button>
+        </div>
+        <div id="dpOdoManualArea">
+          <input type="number" id="dpEndOdo" placeholder="أدخل الرقم" min="${startOdo+1}" max="999999"
+                 class="odo-input"
+                 oninput="this.classList.toggle('invalid',!isNaN(parseFloat(this.value))&&parseFloat(this.value)<=${startOdo})">
+        </div>
+        <div id="dpOdoCamArea" style="display:none">
+          <input type="file" id="dpOdoCamFile" accept="image/*" capture="environment" style="display:none" onchange="ocrOdoFromFile(this,'dpEndOdoCam','dpOdoOcrMsg')">
+          <button class="odo-scan-btn" style="width:100%;padding:.8rem;font-size:.95rem;border-radius:12px" onclick="document.getElementById('dpOdoCamFile').click()">
+            📷 التقط صورة العداد
+          </button>
+          <canvas id="dpOdoCanvas" style="display:none"></canvas>
+          <img id="dpOdoPreview" class="odo-camera-preview">
+          <div class="odo-ocr-result" id="dpOdoOcrMsg"></div>
+          <input type="number" id="dpEndOdoCam" placeholder="ستظهر القراءة تلقائياً أو عدّلها" min="${startOdo+1}" max="999999"
+                 class="odo-input" style="margin-top:.5rem;border-color:#a855f7"
+                 oninput="document.getElementById('dpEndOdo').value=this.value;this.classList.toggle('invalid',!isNaN(parseFloat(this.value))&&parseFloat(this.value)<=${startOdo})">
+        </div>
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem;text-align:center">
           يجب أن يكون أكبر من <strong style="color:#1e3a5f">${startOdo} كم</strong>
         </div>
@@ -17032,6 +17083,91 @@ window.addEventListener('load', function() {
 });
 
 console.log('✅ FleetSync Design System v3 — Runtime loaded');
+</script>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   📷 OCR Odometer Scanner — Tesseract.js
+   يدعم الإدخال اليدوي أو المسح بالكاميرا
+   ══════════════════════════════════════════════════════ */
+
+// تبديل بين الطريقة اليدوية والكاميرا
+window.switchOdoMethod = function(prefix, method) {
+  const manualArea = document.getElementById(prefix + 'OdoManualArea');
+  const camArea    = document.getElementById(prefix + 'OdoCamArea');
+  const manualBtn  = document.getElementById(prefix + 'OdoManualBtn');
+  const camBtn     = document.getElementById(prefix + 'OdoCamBtn');
+  if (!manualArea || !camArea) return;
+
+  if (method === 'manual') {
+    manualArea.style.display = '';
+    camArea.style.display    = 'none';
+    manualBtn && (manualBtn.className = 'active');
+    camBtn    && (camBtn.className    = '');
+  } else {
+    manualArea.style.display = 'none';
+    camArea.style.display    = '';
+    manualBtn && (manualBtn.className = '');
+    camBtn    && (camBtn.className    = 'active');
+  }
+};
+
+// قراءة العداد من الصورة عبر Tesseract
+window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  // تحديد عناصر الواجهة بناءً على targetInputId
+  const isEnd = targetInputId === 'endOdoCam';
+  const isDp  = targetInputId === 'dpEndOdoCam';
+  const previewEl  = document.getElementById(isEnd ? 'endOdoPreview' : 'dpOdoPreview');
+  const msgEl      = document.getElementById(msgId);
+  const triggerBtn = fileInput.nextElementSibling; // زر الالتقاط يلي input[file]
+
+  // عرض معاينة الصورة
+  const imgURL = URL.createObjectURL(file);
+  if (previewEl) { previewEl.src = imgURL; previewEl.style.display = 'block'; }
+  if (msgEl) { msgEl.textContent = '⏳ جاري قراءة العداد...'; msgEl.style.color = '#d97706'; }
+  if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '⏳ جاري المعالجة...'; triggerBtn.className = 'odo-scan-btn scanning'; }
+
+  try {
+    const result = await Tesseract.recognize(file, 'eng', {
+      tessedit_char_whitelist: '0123456789.',
+      logger: () => {}
+    });
+
+    const raw  = result.data.text.replace(/[^0-9.]/g, '').trim();
+    const nums = raw.match(/\d+/g);
+    let best   = '';
+    if (nums && nums.length) {
+      best = nums.reduce((a, b) => b.length >= a.length ? b : a, '');
+    }
+
+    const targetInput = document.getElementById(targetInputId);
+    if (best && targetInput) {
+      targetInput.value = best;
+      // تزامن مع الحقل المخفي (endOdo أو dpEndOdo) لضمان القراءة الصحيحة
+      const mainId = isEnd ? 'endOdo' : (isDp ? 'dpEndOdo' : null);
+      if (mainId) {
+        const mainInput = document.getElementById(mainId);
+        if (mainInput) mainInput.value = best;
+      }
+      targetInput.dispatchEvent(new Event('input'));
+      if (msgEl) { msgEl.textContent = `✅ تم قراءة العداد: ${best} كم — تحقق من الرقم وعدّله إذا لزم`; msgEl.style.color = '#059669'; }
+      if (triggerBtn) { triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn done'; triggerBtn.disabled = false; }
+    } else {
+      if (msgEl) { msgEl.textContent = '⚠️ لم يتم التعرف على الرقم — أدخله يدوياً أو أعد التصوير'; msgEl.style.color = '#dc2626'; }
+      if (triggerBtn) { triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
+    }
+  } catch (err) {
+    console.error('[OCR]', err);
+    if (msgEl) { msgEl.textContent = '❌ خطأ في معالجة الصورة — يرجى المحاولة مرة أخرى'; msgEl.style.color = '#dc2626'; }
+    if (triggerBtn) { triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
+  } finally {
+    fileInput.value = '';
+    URL.revokeObjectURL(imgURL);
+  }
+};
 </script>
 
 </body>
