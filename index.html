@@ -17143,9 +17143,18 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
       throw new Error('انتهت الجلسة — يرجى تسجيل الدخول مجدداً');
     }
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      let detail = err.detail || ('خطأ ' + response.status);
-      if (typeof detail === 'object') detail = JSON.stringify(detail);
+      const contentType = response.headers.get('content-type') || '';
+      let detail;
+      if (contentType.includes('application/json')) {
+        const err = await response.json().catch(() => ({}));
+        detail = err.detail || ('خطأ ' + response.status);
+        if (typeof detail === 'object') detail = JSON.stringify(detail);
+      } else {
+        // HTML أو نص غير JSON (مثل 502 Bad Gateway من Cloudflare)
+        detail = response.status >= 500
+          ? 'خطأ مؤقت في الخادم — يرجى المحاولة مرة أخرى'
+          : 'خطأ ' + response.status;
+      }
       throw new Error(detail);
     }
     const data = await response.json();
