@@ -15449,21 +15449,23 @@ async def sarky_report(
         }
 
 # ══════════════════════════════════════════════════════════════
-#  📷 OCR Odometer — Google Cloud Vision API (server-side proxy)
-#  السائق يرفع صورة العداد → الباك-إند يبعتها لـ Google Vision
-#  مجاني 1000 صورة/شهر — آمن وسريع
+#  📷 OCR Odometer — Tesseract (محلي، مجاني 100%، بدون API)
+#  السائق يرفع صورة العداد → الباك-إند يعالجها بـ Tesseract
+#  مطلوب: apt install tesseract-ocr + pip install pytesseract pillow
 # ══════════════════════════════════════════════════════════════
 @app.post("/ocr/odometer")
 async def ocr_odometer(
     file: UploadFile = File(...),
     cu: dict = Depends(get_user)
 ):
-    """قراءة رقم العداد من صورة عبر Google Cloud Vision API."""
+    """قراءة رقم العداد من صورة عبر Tesseract OCR (مجاني ومحلي)."""
     import re as _re
-
-    GOOGLE_API_KEY = os.environ.get("GOOGLE_VISION_API_KEY", "")
-    if not GOOGLE_API_KEY:
-        raise HTTPException(500, "GOOGLE_VISION_API_KEY غير مضبوطة على السيرفر")
+    try:
+        import pytesseract
+        from PIL import Image, ImageFilter, ImageEnhance
+        import io
+    except ImportError:
+        raise HTTPException(500, "مكتبة pytesseract أو Pillow غير مثبتة على السيرفر")
 
     raw_bytes = await file.read()
     if len(raw_bytes) == 0:
@@ -15471,57 +15473,48 @@ async def ocr_odometer(
     if len(raw_bytes) > 10 * 1024 * 1024:
         raise HTTPException(400, "حجم الصورة كبير جداً (الحد الأقصى 10 ميجا)")
 
-    b64_image = base64.b64encode(raw_bytes).decode("utf-8")
-
-    # Google Vision API — TEXT_DETECTION للأرقام
-    payload = {
-        "requests": [{
-            "image": {"content": b64_image},
-            "features": [{"type": "TEXT_DETECTION", "maxResults": 10}]
-        }]
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
-            resp = await client.post(
-                f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_API_KEY}",
-                headers={"content-type": "application/json"},
-                json=payload
-            )
+        img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
 
-        if resp.status_code != 200:
-            try:
-                err_body = resp.json()
-                err_msg = err_body.get("error", {}).get("message", f"كود {resp.status_code}")
-            except Exception:
-                err_msg = f"خطأ مؤقت في الشبكة (كود {resp.status_code})"
-            log.error(f"[OCR] Google Vision {resp.status_code}: {resp.text[:300]}")
-            raise HTTPException(502, f"تعذّر الوصول لخدمة قراءة الصورة — {err_msg}")
+        # ── تحسين الصورة لزيادة دقة OCR ──
+        # 1. تكبير الصورة (Tesseract بيشتغل أحسن مع صور أكبر)
+        w, h = img.size
+        scale = max(1, 1200 // min(w, h))
+        if scale > 1:
+            img = img.resize((w * scale, h * scale), Image.LANCZOS)
 
-        data = resp.json()
-        # استخراج كل النصوص المكتشفة
-        annotations = data.get("responses", [{}])[0].get("textAnnotations", [])
-        full_text = annotations[0].get("description", "") if annotations else ""
-        log.info(f"[OCR] Google Vision raw text: {full_text!r}  size={len(raw_bytes)}")
+        # 2. تحويل لـ grayscale
+        gray = img.convert("L")
 
-        # استخراج أكبر رقم (عداد المسافة الكلية يكون عادةً الأكبر)
-        numbers = _re.findall(r'\d+', full_text.replace(",", "").replace(".", ""))
-        # فلتر: الأرقام بين 1000 و 999999 (نطاق منطقي لعداد السيارة)
+        # 3. زيادة الـ contrast
+        enhancer = ImageEnhance.Contrast(gray)
+        gray = enhancer.enhance(2.5)
+
+        # 4. sharpen
+        gray = gray.filter(ImageFilter.SHARPEN)
+
+        # ── تشغيل Tesseract بـ config مناسب للأرقام ──
+        # --psm 6 = Assume a single uniform block of text
+        # --oem 3 = Default OCR engine
+        # digits only config
+        config = "--psm 6 --oem 3 -c tessedit_char_whitelist=0123456789. "
+        raw_text = pytesseract.image_to_string(gray, config=config).strip()
+        log.info(f"[OCR] Tesseract raw: {raw_text!r}  size={len(raw_bytes)}")
+
+        # ── استخراج أكبر رقم في نطاق عداد السيارة ──
+        numbers = _re.findall(r'\d+', raw_text.replace(",", "").replace(".", ""))
         candidates = [int(n) for n in numbers if 1000 <= int(n) <= 999999]
         if candidates:
-            reading = str(max(candidates))  # أكبر رقم = عداد الكيلومتر الكلي
+            reading = str(max(candidates))
         else:
-            # لو مفيش في النطاق، خد أكبر رقم موجود
             all_nums = [int(n) for n in numbers if n]
             reading = str(max(all_nums)) if all_nums else ""
 
-        log.info(f"[OCR] extracted reading: {reading!r} from candidates={candidates}")
-        return {"ok": True, "reading": reading, "raw": full_text}
+        log.info(f"[OCR] reading={reading!r} candidates={candidates}")
+        return {"ok": True, "reading": reading, "raw": raw_text}
 
     except HTTPException:
         raise
-    except httpx.TimeoutException:
-        raise HTTPException(504, "انتهى وقت الانتظار — يرجى المحاولة مرة أخرى")
     except Exception as e:
-        log.error(f"[OCR] unexpected error: {e}")
-        raise HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى")
+        log.error(f"[OCR] Tesseract error: {e}")
+        raise HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى أو إدخال الرقم يدوياً")
