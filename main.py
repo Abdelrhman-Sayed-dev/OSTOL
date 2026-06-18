@@ -15449,23 +15449,23 @@ async def sarky_report(
         }
 
 # ══════════════════════════════════════════════════════════════
-#  📷 OCR Odometer — Tesseract (محلي، مجاني 100%، بدون API)
-#  السائق يرفع صورة العداد → الباك-إند يعالجها بـ Tesseract
-#  مطلوب: apt install tesseract-ocr + pip install pytesseract pillow
+#  📷 OCR Odometer — EasyOCR (مجاني 100%، pip فقط، بدون apt)
+#  السائق يرفع صورة العداد → الباك-إند يقرأها بـ EasyOCR
 # ══════════════════════════════════════════════════════════════
 @app.post("/ocr/odometer")
 async def ocr_odometer(
     file: UploadFile = File(...),
     cu: dict = Depends(get_user)
 ):
-    """قراءة رقم العداد من صورة عبر Tesseract OCR (مجاني ومحلي)."""
+    """قراءة رقم العداد من صورة عبر EasyOCR (مجاني ومحلي)."""
     import re as _re
     try:
-        import pytesseract
-        from PIL import Image, ImageFilter, ImageEnhance
+        import easyocr
+        import numpy as np
+        from PIL import Image, ImageEnhance, ImageFilter
         import io
     except ImportError:
-        raise HTTPException(500, "مكتبة pytesseract أو Pillow غير مثبتة على السيرفر")
+        raise HTTPException(500, "مكتبة easyocr غير مثبتة — أضف easyocr لـ requirements.txt")
 
     raw_bytes = await file.read()
     if len(raw_bytes) == 0:
@@ -15474,34 +15474,29 @@ async def ocr_odometer(
         raise HTTPException(400, "حجم الصورة كبير جداً (الحد الأقصى 10 ميجا)")
 
     try:
+        # تحميل الصورة وتحسينها
         img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
 
-        # ── تحسين الصورة لزيادة دقة OCR ──
-        # 1. تكبير الصورة (Tesseract بيشتغل أحسن مع صور أكبر)
+        # تكبير لو صغيرة
         w, h = img.size
-        scale = max(1, 1200 // min(w, h))
-        if scale > 1:
+        if min(w, h) < 600:
+            scale = 600 // min(w, h)
             img = img.resize((w * scale, h * scale), Image.LANCZOS)
 
-        # 2. تحويل لـ grayscale
-        gray = img.convert("L")
+        # زيادة contrast
+        img = ImageEnhance.Contrast(img).enhance(2.0)
+        img = img.filter(ImageFilter.SHARPEN)
 
-        # 3. زيادة الـ contrast
-        enhancer = ImageEnhance.Contrast(gray)
-        gray = enhancer.enhance(2.5)
+        img_array = np.array(img)
 
-        # 4. sharpen
-        gray = gray.filter(ImageFilter.SHARPEN)
+        # EasyOCR — digit_only mode
+        reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+        results = reader.readtext(img_array, allowlist='0123456789', detail=0)
 
-        # ── تشغيل Tesseract بـ config مناسب للأرقام ──
-        # --psm 6 = Assume a single uniform block of text
-        # --oem 3 = Default OCR engine
-        # digits only config
-        config = "--psm 6 --oem 3 -c tessedit_char_whitelist=0123456789. "
-        raw_text = pytesseract.image_to_string(gray, config=config).strip()
-        log.info(f"[OCR] Tesseract raw: {raw_text!r}  size={len(raw_bytes)}")
+        raw_text = " ".join(results)
+        log.info(f"[OCR] EasyOCR raw: {raw_text!r}  size={len(raw_bytes)}")
 
-        # ── استخراج أكبر رقم في نطاق عداد السيارة ──
+        # استخراج أكبر رقم في نطاق عداد السيارة
         numbers = _re.findall(r'\d+', raw_text.replace(",", "").replace(".", ""))
         candidates = [int(n) for n in numbers if 1000 <= int(n) <= 999999]
         if candidates:
@@ -15516,5 +15511,5 @@ async def ocr_odometer(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"[OCR] Tesseract error: {e}")
+        log.error(f"[OCR] EasyOCR error: {e}")
         raise HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى أو إدخال الرقم يدوياً")
