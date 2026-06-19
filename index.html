@@ -7335,12 +7335,22 @@ async function renderDriverTrip() {
                    oninput="validateEndOdo(this,${activeTrip?.start_odometer||0})">
           </div>
           <div id="endOdoCamArea" style="display:none">
-            <input type="file" id="endOdoCamFile" accept="image/*" capture="environment" style="display:none" onchange="ocrOdoFromFile(this,'endOdoCam','endOdoOcrMsg')">
+            <input type="file" id="endOdoCamFile" accept="image/*" capture="environment" style="display:none" onchange="window.__openOdoCropper(this,'endOdoCam','endOdoOcrMsg')">
             <button class="odo-scan-btn" style="width:100%;padding:.9rem;font-size:1rem;border-radius:14px" id="endOdoCamTrigger" onclick="document.getElementById('endOdoCamFile').click()">
               📷 التقط صورة العداد
             </button>
             <canvas id="endOdoCanvas" style="display:none"></canvas>
             <img id="endOdoPreview" class="odo-camera-preview">
+            <div id="endOdoCamCropperWrap" style="display:none;position:relative;margin-top:.6rem;border-radius:12px;overflow:hidden;touch-action:none;user-select:none">
+              <img id="endOdoCamCropperImg" style="width:100%;display:block">
+              <div id="endOdoCamCropperBox" style="position:absolute;border:2px solid #a855f7;background:rgba(168,85,247,.15);cursor:move"></div>
+            </div>
+            <div id="endOdoCamCropperHint" style="display:none;font-size:.78rem;color:#64748b;text-align:center;margin-top:.3rem">
+              حرّك المربع البنفسجي ليغطي أرقام العداد فقط، ثم اضغط "تأكيد القراءة"
+            </div>
+            <button id="endOdoCamCropperConfirm" style="display:none;width:100%;margin-top:.5rem" class="odo-scan-btn" onclick="window.__confirmOdoCrop('endOdoCam','endOdoOcrMsg')">
+              ✅ تأكيد القراءة
+            </button>
             <div class="odo-ocr-result" id="endOdoOcrMsg"></div>
             <input type="number" id="endOdoCam"
                    placeholder="ستظهر القراءة هنا تلقائياً أو عدّلها يدوياً"
@@ -9435,12 +9445,22 @@ async function renderDriverSinglePage() {
                  oninput="this.classList.toggle('invalid',!isNaN(parseFloat(this.value))&&parseFloat(this.value)<=${startOdo})">
         </div>
         <div id="dpOdoCamArea" style="display:none">
-          <input type="file" id="dpOdoCamFile" accept="image/*" capture="environment" style="display:none" onchange="ocrOdoFromFile(this,'dpEndOdoCam','dpOdoOcrMsg')">
-          <button class="odo-scan-btn" style="width:100%;padding:.8rem;font-size:.95rem;border-radius:12px" onclick="document.getElementById('dpOdoCamFile').click()">
+          <input type="file" id="dpOdoCamFile" accept="image/*" capture="environment" style="display:none" onchange="window.__openOdoCropper(this,'dpEndOdoCam','dpOdoOcrMsg')">
+          <button class="odo-scan-btn" style="width:100%;padding:.8rem;font-size:.95rem;border-radius:12px" id="dpOdoCamTrigger" onclick="document.getElementById('dpOdoCamFile').click()">
             📷 التقط صورة العداد
           </button>
           <canvas id="dpOdoCanvas" style="display:none"></canvas>
           <img id="dpOdoPreview" class="odo-camera-preview">
+          <div id="dpEndOdoCamCropperWrap" style="display:none;position:relative;margin-top:.6rem;border-radius:12px;overflow:hidden;touch-action:none;user-select:none">
+            <img id="dpEndOdoCamCropperImg" style="width:100%;display:block">
+            <div id="dpEndOdoCamCropperBox" style="position:absolute;border:2px solid #a855f7;background:rgba(168,85,247,.15);cursor:move"></div>
+          </div>
+          <div id="dpEndOdoCamCropperHint" style="display:none;font-size:.78rem;color:#64748b;text-align:center;margin-top:.3rem">
+            حرّك المربع البنفسجي ليغطي أرقام العداد فقط، ثم اضغط "تأكيد القراءة"
+          </div>
+          <button id="dpEndOdoCamCropperConfirm" style="display:none;width:100%;margin-top:.5rem" class="odo-scan-btn" onclick="window.__confirmOdoCrop('dpEndOdoCam','dpOdoOcrMsg')">
+            ✅ تأكيد القراءة
+          </button>
           <div class="odo-ocr-result" id="dpOdoOcrMsg"></div>
           <input type="number" id="dpEndOdoCam" placeholder="ستظهر القراءة تلقائياً أو عدّلها" min="${startOdo+1}" max="999999"
                  class="odo-input" style="margin-top:.5rem;border-color:#a855f7"
@@ -17086,8 +17106,10 @@ console.log('✅ FleetSync Design System v3 — Runtime loaded');
 
 <script>
 /* ══════════════════════════════════════════════════════
-   📷 OCR Odometer Scanner — Claude Vision API
-   سريع جداً: ثانية واحدة بدل 10-20 ثانية مع Tesseract
+   📷 OCR Odometer Scanner — Tesseract.js (محلي، مجاني)
+   نظام معالجة متقدم: Grayscale → Denoise → Contrast →
+   Sharpen → Threshold → Crop manual → OCR digits-only
+   مع نظام تحقق من الثقة + Logs تفصيلية في Console
    ══════════════════════════════════════════════════════ */
 
 // تبديل بين الطريقة اليدوية والكاميرا
@@ -17110,8 +17132,27 @@ window.switchOdoMethod = function(prefix, method) {
   }
 };
 
-// ── تحسين صورة العداد قبل OCR: تكبير + تباين + تدرج رمادي ──
-window.preprocessOdoImage = async function(file) {
+// ══════════════════════════════════════════════════════
+//  أداة Debug بصرية — تعرض الصورة قبل/بعد المعالجة فعلياً
+//  في الـ Console عشان تقدر تشوفها كصورة مش بس Base64
+// ══════════════════════════════════════════════════════
+function logImageToConsole(label, canvasOrBlob) {
+  try {
+    const styleBig = 'font-size:1px; padding:60px 150px; background-size:contain; background-repeat:no-repeat; background-position:center;';
+    if (canvasOrBlob instanceof HTMLCanvasElement) {
+      const url = canvasOrBlob.toDataURL('image/png');
+      console.log('%c ', `${styleBig} background-image:url(${url});`);
+      console.log(`[OCR-DEBUG] ${label} →`, canvasOrBlob.width + 'x' + canvasOrBlob.height);
+    }
+  } catch (e) { /* صامت لو الكونسول ما يدعمش الصورة */ }
+}
+
+// ══════════════════════════════════════════════════════
+//  معالجة الصورة الكاملة قبل OCR
+//  المراحل: Grayscale → Median Denoise → Contrast Stretch
+//           → Sharpen (Unsharp Mask) → Adaptive Threshold
+// ══════════════════════════════════════════════════════
+window.preprocessOdoImage = async function(file, cropRect) {
   const img = await new Promise((res, rej) => {
     const i = new Image();
     i.onload = () => res(i);
@@ -17119,51 +17160,343 @@ window.preprocessOdoImage = async function(file) {
     i.src = URL.createObjectURL(file);
   });
 
-  // تكبير لو الصورة صغيرة (Tesseract بيشتغل أحسن مع دقة أعلى)
-  const scale = Math.max(1, Math.min(3, 1000 / Math.min(img.width, img.height)));
-  const w = Math.round(img.width * scale);
-  const h = Math.round(img.height * scale);
+  console.log(`[OCR-DEBUG] الصورة الأصلية: ${img.width}x${img.height}`);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, w, h);
-
-  const imgData = ctx.getImageData(0, 0, w, h);
-  const d = imgData.data;
-
-  // grayscale + زيادة تباين (contrast stretch) — مفيد جداً لشاشات العداد الرقمية
-  for (let i = 0; i < d.length; i += 4) {
-    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    // تباين أقوى: قيم فاتحة تتجه لأبيض، الغامقة لأسود
-    const contrasted = Math.min(255, Math.max(0, (gray - 128) * 1.8 + 128));
-    d[i] = d[i + 1] = d[i + 2] = contrasted;
+  // ── 1) قص منطقة العداد لو محددة، أو استخدام الصورة كاملة ──
+  let sx = 0, sy = 0, sw = img.width, sh = img.height;
+  if (cropRect) {
+    sx = Math.round(cropRect.x * img.width);
+    sy = Math.round(cropRect.y * img.height);
+    sw = Math.round(cropRect.w * img.width);
+    sh = Math.round(cropRect.h * img.height);
+    console.log('[OCR-DEBUG] منطقة القص:', { sx, sy, sw, sh });
   }
-  ctx.putImageData(imgData, 0, 0);
 
-  return await new Promise(res => canvas.toBlob(res, 'image/png'));
+  // ── 2) تكبير لدقة أعلى (مهم جداً لدقة Tesseract مع الأرقام الصغيرة) ──
+  const targetMinSide = 700;
+  const scale = Math.max(1, Math.min(4, targetMinSide / Math.min(sw, sh)));
+  const w = Math.round(sw * scale);
+  const h = Math.round(sh * scale);
+
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = w; srcCanvas.height = h;
+  const sctx = srcCanvas.getContext('2d');
+  sctx.imageSmoothingEnabled = true;
+  sctx.imageSmoothingQuality = 'high';
+  sctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+
+  logImageToConsole('بعد القص + التكبير', srcCanvas);
+
+  const imgData = sctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+  const n = w * h;
+
+  // ── 3) Grayscale ──
+  const gray = new Float32Array(n);
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    gray[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  }
+
+  // ── 4) Median Filter (إزالة تشويش/نويز بدون فقدان حواف الأرقام) ──
+  const denoised = new Float32Array(n);
+  const win = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      win.length = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          win.push(gray[yy * w + xx]);
+        }
+      }
+      win.sort((a, b) => a - b);
+      denoised[y * w + x] = win[Math.floor(win.length / 2)];
+    }
+  }
+
+  // ── 5) Contrast Stretch (تمدد الهيستوجرام لأقصى تباين فعلي) ──
+  let minV = 255, maxV = 0;
+  for (let p = 0; p < n; p++) {
+    if (denoised[p] < minV) minV = denoised[p];
+    if (denoised[p] > maxV) maxV = denoised[p];
+  }
+  const range = Math.max(1, maxV - minV);
+  const stretched = new Float32Array(n);
+  for (let p = 0; p < n; p++) {
+    stretched[p] = ((denoised[p] - minV) / range) * 255;
+  }
+
+  // ── 6) Sharpen (Unsharp mask مبسّط: original + (original - blur)*amount) ──
+  const sharpened = new Float32Array(n);
+  const amount = 1.0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x;
+      // تقريب blur بمتوسط الجيران
+      let sum = 0, cnt = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          sum += stretched[yy * w + xx]; cnt++;
+        }
+      }
+      const blur = sum / cnt;
+      const val = stretched[idx] + (stretched[idx] - blur) * amount;
+      sharpened[idx] = Math.min(255, Math.max(0, val));
+    }
+  }
+
+  // ── 7) Adaptive Threshold (Otsu's method) — تحويل لأبيض/أسود صريح ──
+  const histogram = new Array(256).fill(0);
+  for (let p = 0; p < n; p++) histogram[Math.round(sharpened[p])]++;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * histogram[i];
+  let sumB = 0, wB = 0, wF = 0, maxVar = 0, threshold = 127;
+  for (let t = 0; t < 256; t++) {
+    wB += histogram[t];
+    if (wB === 0) continue;
+    wF = n - wB;
+    if (wF === 0) break;
+    sumB += t * histogram[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const varBetween = wB * wF * (mB - mF) * (mB - mF);
+    if (varBetween > maxVar) { maxVar = varBetween; threshold = t; }
+  }
+  console.log('[OCR-DEBUG] Otsu threshold المحسوب:', threshold);
+
+  // كتابة النتيجة النهائية على canvas
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = w; outCanvas.height = h;
+  const octx = outCanvas.getContext('2d');
+  const outData = octx.createImageData(w, h);
+  for (let p = 0; p < n; p++) {
+    // نحدد لو الخلفية فاتحة أو غامقة عشان نطبّع الأرقام سوداء على أبيض دايماً
+    const v = sharpened[p] > threshold ? 255 : 0;
+    const o = p * 4;
+    outData.data[o] = outData.data[o + 1] = outData.data[o + 2] = v;
+    outData.data[o + 3] = 255;
+  }
+  octx.putImageData(outData, 0, 0);
+
+  logImageToConsole('بعد المعالجة الكاملة (Threshold)', outCanvas);
+
+  return { canvas: outCanvas, debugSrcCanvas: srcCanvas };
 };
 
-// ── قراءة العداد عبر Tesseract.js (في المتصفح، مجاني 100%) ──
-window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
+// ══════════════════════════════════════════════════════
+//  تشغيل OCR على نسخة من الصورة بإعدادات معيّنة، وإرجاع
+//  أفضل نتيجة رقمية مع نسبة الثقة
+// ══════════════════════════════════════════════════════
+async function runOcrPass(canvas, psm, label) {
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  const { data } = await Tesseract.recognize(blob, 'eng', {
+    tessedit_char_whitelist: '0123456789',
+    tessedit_pageseg_mode: psm,
+  });
+
+  console.log(`[OCR-DEBUG] (${label}, PSM=${psm}) النص الخام:`, JSON.stringify(data.text));
+  console.log(`[OCR-DEBUG] (${label}, PSM=${psm}) ثقة الصفحة الكلية:`, data.confidence);
+
+  const words = (data.words || [])
+    .map(w => ({
+      text: (w.text || '').replace(/\D/g, ''),
+      confidence: w.confidence || 0,
+    }))
+    .filter(w => w.text.length >= 4 && w.text.length <= 7);
+
+  words.forEach(w => console.log(`[OCR-DEBUG]   كلمة مرشّحة: "${w.text}" — ثقة: ${w.confidence.toFixed(1)}%`));
+
+  if (!words.length) {
+    // fallback من النص الخام لو Tesseract ما قسّمش كلمات
+    const numbers = (data.text || '').match(/\d{4,7}/g) || [];
+    if (numbers.length) {
+      return { value: numbers.sort((a, b) => b.length - a.length)[0], confidence: data.confidence || 0 };
+    }
+    return null;
+  }
+
+  // الأفضلية: أعلى ثقة، وعند التساوي أطول رقم منطقي (4-6 أرقام لعداد سيارة)
+  words.sort((a, b) => b.confidence - a.confidence);
+  return { value: words[0].text, confidence: words[0].confidence };
+}
+
+// ══════════════════════════════════════════════════════
+//  الدالة الرئيسية: تنسّق كل المراحل + تحقق من جودة النتيجة
+// ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+//  Cropper تفاعلي: يعرض الصورة + مربع قابل للسحب/التكبير
+//  المستخدم يحدد منطقة العداد بالضبط قبل تشغيل OCR — ده
+//  أكبر سبب لتحسين الدقة لأنه بيشيل كل العناصر المشتتة
+//  (الوقت، الحرارة، الوقود...) من مجال رؤية OCR.
+// ══════════════════════════════════════════════════════
+window.__odoCropState = {};
+
+window.__openOdoCropper = function(fileInput, targetInputId, msgId) {
   const file = fileInput.files[0];
   if (!file) return;
 
-  const isEnd     = targetInputId === 'endOdoCam';
-  const isDp      = targetInputId === 'dpEndOdoCam';
-  const previewEl = document.getElementById(isEnd ? 'endOdoPreview' : 'dpOdoPreview');
-  const msgEl     = document.getElementById(msgId);
-  const triggerBtn = fileInput.nextElementSibling;
+  const prefix = targetInputId; // 'endOdoCam' أو 'dpEndOdoCam'
+  const wrap   = document.getElementById(prefix + 'CropperWrap');
+  const imgEl  = document.getElementById(prefix + 'CropperImg');
+  const boxEl  = document.getElementById(prefix + 'CropperBox');
+  const hintEl = document.getElementById(prefix + 'CropperHint');
+  const confirmBtn = document.getElementById(prefix + 'CropperConfirm');
 
-  // عرض معاينة فورية
+  if (!wrap || !imgEl || !boxEl) {
+    // fallback: لو الـ cropper UI غير موجود لأي سبب، شغّل OCR مباشرة على الصورة كاملة
+    return ocrOdoFromFile(fileInput, targetInputId, msgId, null);
+  }
+
+  const imgURL = URL.createObjectURL(file);
+  imgEl.src = imgURL;
+  imgEl.onload = function() {
+    wrap.style.display = 'block';
+    hintEl.style.display = 'block';
+    confirmBtn.style.display = 'block';
+
+    // مربع افتراضي بنسبة 70% عرض × 30% ارتفاع في المنتصف (عادة مكان عداد الكيلومتر)
+    const defaultRect = { x: 0.15, y: 0.40, w: 0.70, h: 0.22 };
+    positionBox(defaultRect);
+
+    window.__odoCropState[prefix] = { file, rect: defaultRect };
+    setupDragResize(prefix, wrap, boxEl);
+  };
+
+  function positionBox(rect) {
+    boxEl.style.left   = (rect.x * 100) + '%';
+    boxEl.style.top    = (rect.y * 100) + '%';
+    boxEl.style.width  = (rect.w * 100) + '%';
+    boxEl.style.height = (rect.h * 100) + '%';
+  }
+};
+
+function setupDragResize(prefix, wrap, boxEl) {
+  let mode = null; // 'move' | 'resize'
+  let startX, startY, startRect;
+
+  function getRect() {
+    const wrapRect = wrap.getBoundingClientRect();
+    const boxRect  = boxEl.getBoundingClientRect();
+    return {
+      x: (boxRect.left - wrapRect.left) / wrapRect.width,
+      y: (boxRect.top  - wrapRect.top)  / wrapRect.height,
+      w: boxRect.width  / wrapRect.width,
+      h: boxRect.height / wrapRect.height,
+    };
+  }
+
+  function applyRect(r) {
+    r.x = Math.max(0, Math.min(1 - r.w, r.x));
+    r.y = Math.max(0, Math.min(1 - r.h, r.y));
+    r.w = Math.max(0.1, Math.min(1, r.w));
+    r.h = Math.max(0.08, Math.min(1, r.h));
+    boxEl.style.left   = (r.x * 100) + '%';
+    boxEl.style.top    = (r.y * 100) + '%';
+    boxEl.style.width  = (r.w * 100) + '%';
+    boxEl.style.height = (r.h * 100) + '%';
+    window.__odoCropState[prefix].rect = r;
+  }
+
+  function onDown(e, m) {
+    mode = m;
+    const pt = e.touches ? e.touches[0] : e;
+    startX = pt.clientX; startY = pt.clientY;
+    startRect = getRect();
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (!mode) return;
+    const pt = e.touches ? e.touches[0] : e;
+    const wrapRect = wrap.getBoundingClientRect();
+    const dx = (pt.clientX - startX) / wrapRect.width;
+    const dy = (pt.clientY - startY) / wrapRect.height;
+
+    if (mode === 'move') {
+      applyRect({ ...startRect, x: startRect.x + dx, y: startRect.y + dy });
+    } else if (mode === 'resize') {
+      applyRect({ ...startRect, w: startRect.w + dx, h: startRect.h + dy });
+    }
+  }
+
+  function onUp() { mode = null; }
+
+  boxEl.onmousedown  = (e) => onDown(e, 'move');
+  boxEl.ontouchstart = (e) => onDown(e, 'move');
+
+  // مقبض تكبير في الزاوية اليمنى السفلى (نضيفه ديناميكياً مرة واحدة)
+  if (!boxEl.querySelector('.resize-handle')) {
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle';
+    handle.style.cssText = 'position:absolute;right:-8px;bottom:-8px;width:18px;height:18px;background:#a855f7;border:2px solid white;border-radius:50%;cursor:nwse-resize';
+    handle.onmousedown  = (e) => { e.stopPropagation(); onDown(e, 'resize'); };
+    handle.ontouchstart = (e) => { e.stopPropagation(); onDown(e, 'resize'); };
+    boxEl.appendChild(handle);
+  }
+
+  document.onmousemove  = onMove;
+  document.ontouchmove  = onMove;
+  document.onmouseup    = onUp;
+  document.ontouchend   = onUp;
+}
+
+window.__confirmOdoCrop = function(targetInputId, msgId) {
+  const prefix = targetInputId;
+  const state  = window.__odoCropState[prefix];
+  const wrap   = document.getElementById(prefix + 'CropperWrap');
+  const hintEl = document.getElementById(prefix + 'CropperHint');
+  const confirmBtn = document.getElementById(prefix + 'CropperConfirm');
+  if (!state) return;
+
+  // إخفاء واجهة القص بعد التأكيد
+  wrap.style.display = 'none';
+  hintEl.style.display = 'none';
+  confirmBtn.style.display = 'none';
+
+  // بناء fileInput وهمي بالملف المحفوظ لإعادة استخدام نفس مسار المعالجة
+  const fakeInput = { files: [state.file] };
+  ocrOdoFromFile(fakeInput, targetInputId, msgId, state.rect);
+};
+
+// ══════════════════════════════════════════════════════
+//  الدالة الرئيسية: تنسّق كل المراحل + تحقق من جودة النتيجة
+// ══════════════════════════════════════════════════════
+window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId, cropRect) {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  const isEnd      = targetInputId === 'endOdoCam';
+  const isDp       = targetInputId === 'dpEndOdoCam';
+  const previewEl  = document.getElementById(isEnd ? 'endOdoPreview' : 'dpOdoPreview');
+  const msgEl      = document.getElementById(msgId);
+  // البحث عن زرار "التقط صورة" بالـ id الثابت (أوثق من nextElementSibling
+  // اللي ممكن يفشل لما الاستدعاء يجي من الـ cropper بـ object وهمي)
+  const triggerBtnId = isEnd ? 'endOdoCamTrigger' : (isDp ? 'dpOdoCamTrigger' : null);
+  const triggerBtn = triggerBtnId
+    ? document.getElementById(triggerBtnId)
+    : (fileInput.nextElementSibling || null);
+
+  console.log('═══════════════════════════════════════');
+  console.log('[OCR-DEBUG] بدء عملية قراءة العداد —', file.name, file.size + ' bytes');
+
   const imgURL = URL.createObjectURL(file);
   if (previewEl) { previewEl.src = imgURL; previewEl.style.display = 'block'; }
   if (msgEl)     { msgEl.textContent = '⏳ جاري قراءة العداد...'; msgEl.style.color = '#d97706'; }
   if (triggerBtn){ triggerBtn.disabled = true; triggerBtn.textContent = '⏳ جاري المعالجة...'; triggerBtn.className = 'odo-scan-btn scanning'; }
 
+  // حد الثقة الأدنى المقبول — تحت ده نطلب من المستخدم إعادة التصوير
+  const MIN_CONFIDENCE = 55;
+
   try {
-    // تحميل Tesseract.js من CDN لو مش محمّل
     if (!window.Tesseract) {
+      if (msgEl) msgEl.textContent = '⏳ تحميل أداة القراءة (أول مرة فقط)...';
       await new Promise((res, rej) => {
         const s = document.createElement('script');
         s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
@@ -17172,54 +17505,67 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
       });
     }
 
-    if (msgEl) msgEl.textContent = '⏳ جاري تحليل الصورة...';
+    if (msgEl) msgEl.textContent = '⏳ جاري تحسين الصورة...';
+    const { canvas } = await preprocessOdoImage(file, cropRect);
 
-    // ── معالجة الصورة لتحسين دقة القراءة ──
-    const processedBlob = await preprocessOdoImage(file);
+    if (msgEl) msgEl.textContent = '⏳ جاري تحليل الأرقام...';
 
-    const { data } = await Tesseract.recognize(processedBlob, 'eng', {
-      tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '6', // كتلة نص واحدة منتظمة
-    });
+    // نجرّب PSM مختلفين ونختار الأفضل ثقة — العداد عادة سطر واحد (7) أو كلمة واحدة (8)
+    const attempts = [
+      await runOcrPass(canvas, '7', 'سطر نص واحد'),
+      await runOcrPass(canvas, '8', 'كلمة واحدة'),
+    ];
+    const valid = attempts.filter(Boolean);
+    console.log('[OCR-DEBUG] كل المحاولات:', valid);
 
-    // استخدام بيانات الكلمات بمواقعها (أدق من النص الكامل المدمج)
-    const words = (data.words || []).map(w => ({
-      text: (w.text || '').replace(/\D/g, ''),
-      confidence: w.confidence || 0,
-      height: w.bbox ? (w.bbox.y1 - w.bbox.y0) : 0,
-    })).filter(w => w.text.length >= 4); // عداد الكيلومتر دايماً 4+ أرقام
-
-    let best = '';
-    if (words.length) {
-      // رتب حسب: أكبر ارتفاع للنص (الرقم الأكبر في الصورة) ثم الثقة
-      words.sort((a, b) => (b.height - a.height) || (b.confidence - a.confidence));
-      best = words[0].text;
-    } else {
-      // fallback: أكبر رقم بطول منطقي من النص الكامل
-      const raw = data.text || '';
-      const numbers = (raw.match(/\d{4,6}/g) || []);
-      const candidates = numbers.map(Number).filter(n => n >= 1000 && n <= 999999);
-      best = candidates.length ? String(Math.max(...candidates)) : '';
+    let result = null;
+    if (valid.length) {
+      valid.sort((a, b) => b.confidence - a.confidence);
+      result = valid[0];
     }
 
+    console.log('[OCR-DEBUG] أفضل نتيجة نهائية:', result);
+    console.log('═══════════════════════════════════════');
+
     const targetInput = document.getElementById(targetInputId);
-    if (best && targetInput) {
+
+    // ── نظام التحقق: رفض نتائج ضعيفة الثقة أو غير منطقية ──
+    const isPlausible = result && /^\d{4,7}$/.test(result.value);
+    const isConfident  = result && result.confidence >= MIN_CONFIDENCE;
+
+    if (isPlausible && isConfident) {
+      const best = result.value;
       targetInput.value = best;
       const mainId = isEnd ? 'endOdo' : (isDp ? 'dpEndOdo' : null);
       if (mainId) { const m = document.getElementById(mainId); if (m) m.value = best; }
       targetInput.dispatchEvent(new Event('input'));
-      if (msgEl)     { msgEl.textContent = `✅ تم قراءة العداد: ${best} كم — تحقق من الرقم وعدّله إذا لزم`; msgEl.style.color = '#059669'; }
+      if (msgEl)     {
+        msgEl.textContent = `✅ تم قراءة العداد: ${best} كم (ثقة ${Math.round(result.confidence)}%) — تحقق من الرقم وعدّله إذا لزم`;
+        msgEl.style.color = '#059669';
+      }
       if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn done'; triggerBtn.disabled = false; }
+    } else if (isPlausible && !isConfident) {
+      // النتيجة منطقية بس الثقة منخفضة — نعرضها بحذر ونطلب تأكيد
+      const best = result.value;
+      targetInput.value = best;
+      const mainId = isEnd ? 'endOdo' : (isDp ? 'dpEndOdo' : null);
+      if (mainId) { const m = document.getElementById(mainId); if (m) m.value = best; }
+      targetInput.dispatchEvent(new Event('input'));
+      if (msgEl)     {
+        msgEl.textContent = `⚠️ القراءة غير مؤكدة: ${best} كم (ثقة ${Math.round(result.confidence)}%) — يرجى التحقق جيداً أو إعادة التصوير`;
+        msgEl.style.color = '#d97706';
+      }
+      if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
     } else {
-      if (msgEl)     { msgEl.textContent = '⚠️ لم يتم التعرف على الرقم — أدخله يدوياً أو أعد التصوير'; msgEl.style.color = '#dc2626'; }
+      if (msgEl)     { msgEl.textContent = '❌ لم يتم التعرف على رقم واضح — يرجى إعادة التصوير بإضاءة أفضل وتركيز على العداد، أو الإدخال اليدوي'; msgEl.style.color = '#dc2626'; }
       if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
     }
   } catch (err) {
-    console.error('[ODO-OCR]', err);
+    console.error('[OCR-DEBUG] خطأ غير متوقع:', err);
     if (msgEl)     { msgEl.textContent = '❌ خطأ في قراءة الصورة — أدخل الرقم يدوياً'; msgEl.style.color = '#dc2626'; }
     if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
   } finally {
-    fileInput.value = '';
+    try { fileInput.value = ''; } catch (e) { /* fileInput وهمي من الـ cropper — تجاهل */ }
     URL.revokeObjectURL(imgURL);
   }
 };
