@@ -464,6 +464,27 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
   min-width:17px;text-align:center;animation:pulse 1.5s infinite;margin-right:auto;
 }
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+
+/* ── Accordion Nav Modules ── */
+.nav-module{margin-bottom:2px;}
+.nav-module-header{
+  display:flex;align-items:center;justify-content:space-between;gap:.5rem;
+  width:100%;text-align:right;border:none;background:none;cursor:pointer;
+  padding:.55rem .8rem;border-radius:10px;font-family:inherit;
+  font-size:.78rem;font-weight:700;color:#334155;
+  transition:.13s cubic-bezier(.4,0,.2,1);
+}
+.nav-module-header:hover{background:#e0e7ef;color:#1e3a5f;}
+.nav-module-header.open{background:#eef2f7;color:#1e3a5f;}
+.nav-module-title{display:flex;align-items:center;gap:.65rem;}
+.nav-module-arrow{font-size:.65rem;color:#94a3b8;transition:transform .15s ease;flex-shrink:0;}
+.nav-module-header.open .nav-module-arrow{color:#2563eb;}
+.nav-module-body{padding-right:.4rem;overflow:hidden;}
+.nav-module-body .nav-item{font-size:.79rem;padding:.48rem .8rem;}
+.nav-module-badge{
+  background:#ef4444;color:#fff;border-radius:50px;font-size:.56rem;font-weight:700;
+  padding:.08rem .36rem;min-width:15px;text-align:center;margin-right:.3rem;
+}
 .sidebar-footer{padding:.7rem .55rem;border-top:1px solid #e2e8f0;}
 .logout-btn-sidebar{
   display:flex;align-items:center;gap:.7rem;
@@ -2483,7 +2504,34 @@ function openModal(html) {
 }
 function closeModal() { document.getElementById('activeModal')?.remove(); }
 
-/* ── NAV ── */
+/* ── NAV: Modules (Accordion) ──
+   تجميع عناصر القائمة الجانبية في أقسام (Modules) لتقليل طولها.
+   ملاحظة: لا تغيير في الـ Routes أو الصلاحيات أو الـ Business Logic —
+   فقط إعادة تجميع بصري للعناصر الموجودة فعلاً ضمن buildAdminNav/buildSupervisorNav/buildDriverNav. */
+const NAV_MODULES = [
+  {key:'dashboard',  icon:'🏠', label:'لوحة التحكم',         collapsible:false},
+  {key:'fleet',      icon:'🚗', label:'إدارة الأسطول',        collapsible:true},
+  {key:'ops',        icon:'🛠️', label:'التشغيل',             collapsible:true},
+  {key:'equipment',  icon:'🏗️', label:'إدارة المعدات',       collapsible:true},
+  {key:'reports',    icon:'📊', label:'التقارير',            collapsible:true},
+  {key:'ai',         icon:'🤖', label:'التحليلات والذكاء',   collapsible:true},
+  {key:'admin',      icon:'⚙️', label:'الإدارة',             collapsible:true},
+  {key:'driverFlat', icon:'🚗', label:'القائمة',             collapsible:false},
+];
+const NAV_ITEM_MODULE = {
+  overview:'dashboard',
+  trips:'fleet', map:'fleet', drivers:'fleet', cars:'fleet', requests:'fleet',
+  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops',
+  'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment',
+  'monthly-report':'reports', 'driver-kpi':'reports',
+  'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
+  permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
+  'super-admins':'admin', 'super-reporters':'admin', 'super-reassign':'admin',
+  'super-logs':'admin', 'super-sarky':'admin', 'driver-photos':'admin',
+  'driver-trip':'driverFlat', 'driver-workshop':'driverFlat', 'driver-emergency':'driverFlat',
+};
+window._openNavModule = window._openNavModule || null;
+
 let currentSection = '';
 function buildSupervisorNav() {
   // مشرف الورشة: يشوف الورش + المركبات + الصيانة فقط
@@ -2556,17 +2604,82 @@ function buildDriverNav() {
   ];
 }
 
-function renderNav(items) {
-  document.getElementById('sidebarNav').innerHTML = items.filter(item=>!item.hidden).map(item=> item.separator
-    ? `<div style="margin:.5rem .75rem .25rem;font-size:.68rem;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;padding-top:.5rem;border-top:1px solid rgba(255,255,255,.08)">${item.icon} ${item.label}</div>`
-    : `<button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
+function navBadgeFor(item) {
+  if(item.id==='emergencies' && lastUnreadCount>0) return `<span class="nav-badge">${lastUnreadCount}</span>`;
+  if(item.id==='requests' && window._pendingRequestsCount>0) return `<span class="nav-badge">${window._pendingRequestsCount}</span>`;
+  if(item.id==='super-decisions' && window._pendingSuperCount>0) return `<span class="nav-badge">${window._pendingSuperCount}</span>`;
+  if(item.id==='maintenance' && window._maintenanceAlertCount>0) return `<span class="nav-badge" style="background:#ef4444">${window._maintenanceAlertCount}</span>`;
+  if(item.id==='super-licenses' && window._licenseAlertsCount>0) return `<span class="nav-badge" style="background:#f97316">${window._licenseAlertsCount}</span>`;
+  return '';
+}
+function navModuleBadgeCount(groupItems) {
+  // إجمالي التنبيهات داخل القسم المغلق، تظهر بجانب اسم القسم
+  let n = 0;
+  groupItems.forEach(item=>{
+    if(item.id==='emergencies') n += (lastUnreadCount||0);
+    if(item.id==='requests') n += (window._pendingRequestsCount||0);
+    if(item.id==='super-decisions') n += (window._pendingSuperCount||0);
+    if(item.id==='maintenance') n += (window._maintenanceAlertCount||0);
+    if(item.id==='super-licenses') n += (window._licenseAlertsCount||0);
+  });
+  return n;
+}
+function renderNavButton(item) {
+  return `<button class="nav-item ${item.id===currentSection?'active':''}" onclick="switchSection('${item.id}')">
       <span class="nav-icon">${item.icon}</span> ${item.label}
-      ${item.id==='emergencies' && lastUnreadCount>0 ? `<span class="nav-badge">${lastUnreadCount}</span>` : ''}
-      ${item.id==='requests' && window._pendingRequestsCount>0 ? `<span class="nav-badge">${window._pendingRequestsCount}</span>` : ''}
-      ${item.id==='super-decisions' && window._pendingSuperCount>0 ? `<span class="nav-badge">${window._pendingSuperCount}</span>` : ''}
-      ${item.id==='maintenance' && window._maintenanceAlertCount>0 ? `<span class="nav-badge" style="background:#ef4444">${window._maintenanceAlertCount}</span>` : ''}
-      ${item.id==='super-licenses' && window._licenseAlertsCount>0 ? `<span class="nav-badge" style="background:#f97316">${window._licenseAlertsCount}</span>` : ''}
-    </button>`).join('');
+      ${navBadgeFor(item)}
+    </button>`;
+}
+
+function renderNav(items) {
+  const real = items.filter(item=>!item.hidden && !item.separator);
+  // تجميع العناصر حسب القسم (Module) بدون أي تغيير في الـ id/icon/label/permissions
+  const groups = {};
+  real.forEach(item=>{
+    const modKey = NAV_ITEM_MODULE[item.id] || 'admin';
+    (groups[modKey] = groups[modKey] || []).push(item);
+  });
+  // افتح تلقائياً القسم الذي يحتوي الصفحة الحالية
+  if (currentSection && NAV_ITEM_MODULE[currentSection] && groups[NAV_ITEM_MODULE[currentSection]]) {
+    window._openNavModule = NAV_ITEM_MODULE[currentSection];
+  } else if (!window._openNavModule) {
+    const firstCollapsible = NAV_MODULES.find(m=>m.collapsible && groups[m.key]);
+    if (firstCollapsible) window._openNavModule = firstCollapsible.key;
+  }
+
+  let html = '';
+  NAV_MODULES.forEach(mod => {
+    const groupItems = groups[mod.key];
+    if (!groupItems || !groupItems.length) return;
+    if (!mod.collapsible) {
+      html += groupItems.map(renderNavButton).join('');
+      return;
+    }
+    const isOpen = window._openNavModule === mod.key;
+    const badgeCount = navModuleBadgeCount(groupItems);
+    html += `<div class="nav-module">
+      <button class="nav-module-header ${isOpen?'open':''}" onclick="toggleNavModule('${mod.key}')">
+        <span class="nav-module-title"><span class="nav-icon">${mod.icon}</span> ${mod.label}</span>
+        <span style="display:flex;align-items:center;">
+          ${(!isOpen && badgeCount>0) ? `<span class="nav-module-badge">${badgeCount}</span>` : ''}
+          <span class="nav-module-arrow">${isOpen?'▾':'◂'}</span>
+        </span>
+      </button>
+      <div class="nav-module-body" style="display:${isOpen?'block':'none'}">
+        ${groupItems.map(renderNavButton).join('')}
+      </div>
+    </div>`;
+  });
+  document.getElementById('sidebarNav').innerHTML = html;
+}
+
+function toggleNavModule(key) {
+  // فتح قسم واحد فقط في كل مرة — إغلاق الأقسام الأخرى تلقائياً
+  window._openNavModule = (window._openNavModule === key) ? null : key;
+  const items = isSupervisor() ? buildSupervisorNav()
+              : isAdminLike()  ? buildAdminNav()
+              : buildDriverNav();
+  renderNav(items);
 }
 
 async function switchSection(id) {
