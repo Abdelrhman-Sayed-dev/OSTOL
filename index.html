@@ -17110,15 +17110,15 @@ window.switchOdoMethod = function(prefix, method) {
   }
 };
 
-// ── قراءة العداد عبر Claude Vision API (عبر الباك-إند) ──
+// ── قراءة العداد عبر Tesseract.js (في المتصفح، مجاني 100%) ──
 window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
   const file = fileInput.files[0];
   if (!file) return;
 
-  const isEnd      = targetInputId === 'endOdoCam';
-  const isDp       = targetInputId === 'dpEndOdoCam';
-  const previewEl  = document.getElementById(isEnd ? 'endOdoPreview' : 'dpOdoPreview');
-  const msgEl      = document.getElementById(msgId);
+  const isEnd     = targetInputId === 'endOdoCam';
+  const isDp      = targetInputId === 'dpEndOdoCam';
+  const previewEl = document.getElementById(isEnd ? 'endOdoPreview' : 'dpOdoPreview');
+  const msgEl     = document.getElementById(msgId);
   const triggerBtn = fileInput.nextElementSibling;
 
   // عرض معاينة فورية
@@ -17128,37 +17128,28 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
   if (triggerBtn){ triggerBtn.disabled = true; triggerBtn.textContent = '⏳ جاري المعالجة...'; triggerBtn.className = 'odo-scan-btn scanning'; }
 
   try {
-    // إرسال الصورة للـ endpoint في الباك-إند
-    const formData = new FormData();
-    formData.append('file', file);
+    // تحميل Tesseract.js من CDN لو مش محمّل
+    if (!window.Tesseract) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
 
-    const tok = getToken();
-    const response = await fetch(API + '/ocr/odometer', {
-      method: 'POST',
-      headers: tok ? { 'Authorization': 'Bearer ' + tok } : {},
-      body: formData
+    if (msgEl) msgEl.textContent = '⏳ جاري تحليل الصورة...';
+
+    const { data: { text } } = await Tesseract.recognize(file, 'eng', {
+      tessedit_char_whitelist: '0123456789',
     });
 
-    if (response.status === 401) {
-      throw new Error('انتهت الجلسة — يرجى تسجيل الدخول مجدداً');
-    }
-    if (!response.ok) {
-      const contentType = response.headers.get('content-type') || '';
-      let detail;
-      if (contentType.includes('application/json')) {
-        const err = await response.json().catch(() => ({}));
-        detail = err.detail || ('خطأ ' + response.status);
-        if (typeof detail === 'object') detail = JSON.stringify(detail);
-      } else {
-        // HTML أو نص غير JSON (مثل 502 Bad Gateway من Cloudflare)
-        detail = response.status >= 500
-          ? 'خطأ مؤقت في الخادم — يرجى المحاولة مرة أخرى'
-          : 'خطأ ' + response.status;
-      }
-      throw new Error(detail);
-    }
-    const data = await response.json();
-    const best = (data.reading || '').trim();
+    const raw = text || '';
+    const numbers = raw.match(/\d+/g) || [];
+    const candidates = numbers.map(Number).filter(n => n >= 1000 && n <= 999999);
+    const best = candidates.length
+      ? String(Math.max(...candidates))
+      : (numbers.length ? String(Math.max(...numbers.map(Number))) : '');
 
     const targetInput = document.getElementById(targetInputId);
     if (best && targetInput) {
@@ -17174,8 +17165,7 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId) {
     }
   } catch (err) {
     console.error('[ODO-OCR]', err);
-    const errMsg = err.message || 'خطأ غير معروف';
-    if (msgEl)     { msgEl.textContent = '❌ ' + errMsg + ' — أدخل الرقم يدوياً'; msgEl.style.color = '#dc2626'; }
+    if (msgEl)     { msgEl.textContent = '❌ خطأ في قراءة الصورة — أدخل الرقم يدوياً'; msgEl.style.color = '#dc2626'; }
     if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
   } finally {
     fileInput.value = '';
