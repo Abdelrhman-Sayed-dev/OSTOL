@@ -2639,10 +2639,8 @@ function renderNav(items) {
     const modKey = NAV_ITEM_MODULE[item.id] || 'admin';
     (groups[modKey] = groups[modKey] || []).push(item);
   });
-  // افتح تلقائياً القسم الذي يحتوي الصفحة الحالية
-  if (currentSection && NAV_ITEM_MODULE[currentSection] && groups[NAV_ITEM_MODULE[currentSection]]) {
-    window._openNavModule = NAV_ITEM_MODULE[currentSection];
-  } else if (!window._openNavModule) {
+  // لو لسه مفيش قسم مفتوح (أول تحميل) اختار أول قسم فيه عناصر
+  if (!window._openNavModule) {
     const firstCollapsible = NAV_MODULES.find(m=>m.collapsible && groups[m.key]);
     if (firstCollapsible) window._openNavModule = firstCollapsible.key;
   }
@@ -2684,6 +2682,10 @@ function toggleNavModule(key) {
 
 async function switchSection(id) {
   currentSection=id;
+  // افتح تلقائياً القسم الذي يحتوي الصفحة المطلوبة (عند التنقل الفعلي فقط، وليس عند فتح/إغلاق القسم يدوياً)
+  if (NAV_ITEM_MODULE[id] && NAV_MODULES.find(m=>m.key===NAV_ITEM_MODULE[id] && m.collapsible)) {
+    window._openNavModule = NAV_ITEM_MODULE[id];
+  }
   const items = isSupervisor() ? buildSupervisorNav()
               : isAdminLike()  ? buildAdminNav()
               : buildDriverNav();
