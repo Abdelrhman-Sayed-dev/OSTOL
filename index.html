@@ -17106,10 +17106,12 @@ console.log('✅ FleetSync Design System v3 — Runtime loaded');
 
 <script>
 /* ══════════════════════════════════════════════════════
-   📷 OCR Odometer Scanner — Tesseract.js (محلي، مجاني)
-   نظام معالجة متقدم: Grayscale → Denoise → Contrast →
-   Sharpen → Threshold → Crop manual → OCR digits-only
-   مع نظام تحقق من الثقة + Logs تفصيلية في Console
+   📷 OCR Odometer Scanner — TrOCR Vision AI (محلي، مجاني)
+   نموذج Vision Transformer حقيقي يعمل في المتصفح بدون أي
+   API أو حساب أو كارت (via transformers.js / Hugging Face)
+   نظام معالجة: Grayscale → Denoise → Contrast → Sharpen →
+   Crop manual → AI Vision Model → استخراج وتحقق من الرقم
+   مع Logs تفصيلية في Console
    ══════════════════════════════════════════════════════ */
 
 // تبديل بين الطريقة اليدوية والكاميرا
@@ -17152,7 +17154,8 @@ function logImageToConsole(label, canvasOrBlob) {
 //  المراحل: Grayscale → Median Denoise → Contrast Stretch
 //           → Sharpen (Unsharp Mask) → Adaptive Threshold
 // ══════════════════════════════════════════════════════
-window.preprocessOdoImage = async function(file, cropRect) {
+window.preprocessOdoImage = async function(file, cropRect, opts) {
+  opts = opts || {};
   const img = await new Promise((res, rej) => {
     const i = new Image();
     i.onload = () => res(i);
@@ -17172,7 +17175,7 @@ window.preprocessOdoImage = async function(file, cropRect) {
     console.log('[OCR-DEBUG] منطقة القص:', { sx, sy, sw, sh });
   }
 
-  // ── 2) تكبير لدقة أعلى (مهم جداً لدقة Tesseract مع الأرقام الصغيرة) ──
+  // ── 2) تكبير لدقة أعلى (مهم جداً لدقة النموذج مع الأرقام الصغيرة) ──
   const targetMinSide = 700;
   const scale = Math.max(1, Math.min(4, targetMinSide / Math.min(sw, sh)));
   const w = Math.round(sw * scale);
@@ -17252,79 +17255,105 @@ window.preprocessOdoImage = async function(file, cropRect) {
     }
   }
 
-  // ── 7) Adaptive Threshold (Otsu's method) — تحويل لأبيض/أسود صريح ──
-  const histogram = new Array(256).fill(0);
-  for (let p = 0; p < n; p++) histogram[Math.round(sharpened[p])]++;
-  let sum = 0;
-  for (let i = 0; i < 256; i++) sum += i * histogram[i];
-  let sumB = 0, wB = 0, wF = 0, maxVar = 0, threshold = 127;
-  for (let t = 0; t < 256; t++) {
-    wB += histogram[t];
-    if (wB === 0) continue;
-    wF = n - wB;
-    if (wF === 0) break;
-    sumB += t * histogram[t];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const varBetween = wB * wF * (mB - mF) * (mB - mF);
-    if (varBetween > maxVar) { maxVar = varBetween; threshold = t; }
-  }
-  console.log('[OCR-DEBUG] Otsu threshold المحسوب:', threshold);
+  // ── 7) Adaptive Threshold (Otsu's method) — اختياري ──
+  // ملاحظة: نماذج Vision (TrOCR) مدرّبة على صور طبيعية/رمادية،
+  // فالـ threshold القاسي (أبيض/أسود صريح) ممكن يفيد OCR التقليدي
+  // لكن يضر نماذج AI الحديثة لأنه بيشيل تفاصيل بصرية مهمة لفهم الشكل.
+  // فبنسيبه افتراضياً متاح كخيار، لكن المسار الأساسي بيستخدم تباين فقط.
+  let outCanvas;
+  if (opts.skipThreshold) {
+    outCanvas = document.createElement('canvas');
+    outCanvas.width = w; outCanvas.height = h;
+    const octx = outCanvas.getContext('2d');
+    const outData = octx.createImageData(w, h);
+    for (let p = 0; p < n; p++) {
+      const v = Math.min(255, Math.max(0, sharpened[p]));
+      const o = p * 4;
+      outData.data[o] = outData.data[o + 1] = outData.data[o + 2] = v;
+      outData.data[o + 3] = 255;
+    }
+    octx.putImageData(outData, 0, 0);
+    logImageToConsole('بعد المعالجة (بدون Threshold — تباين فقط)', outCanvas);
+  } else {
+    const histogram = new Array(256).fill(0);
+    for (let p = 0; p < n; p++) histogram[Math.round(sharpened[p])]++;
+    let sum = 0;
+    for (let i = 0; i < 256; i++) sum += i * histogram[i];
+    let sumB = 0, wB = 0, wF = 0, maxVar = 0, threshold = 127;
+    for (let t = 0; t < 256; t++) {
+      wB += histogram[t];
+      if (wB === 0) continue;
+      wF = n - wB;
+      if (wF === 0) break;
+      sumB += t * histogram[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+      const varBetween = wB * wF * (mB - mF) * (mB - mF);
+      if (varBetween > maxVar) { maxVar = varBetween; threshold = t; }
+    }
+    console.log('[OCR-DEBUG] Otsu threshold المحسوب:', threshold);
 
-  // كتابة النتيجة النهائية على canvas
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = w; outCanvas.height = h;
-  const octx = outCanvas.getContext('2d');
-  const outData = octx.createImageData(w, h);
-  for (let p = 0; p < n; p++) {
-    // نحدد لو الخلفية فاتحة أو غامقة عشان نطبّع الأرقام سوداء على أبيض دايماً
-    const v = sharpened[p] > threshold ? 255 : 0;
-    const o = p * 4;
-    outData.data[o] = outData.data[o + 1] = outData.data[o + 2] = v;
-    outData.data[o + 3] = 255;
+    outCanvas = document.createElement('canvas');
+    outCanvas.width = w; outCanvas.height = h;
+    const octx = outCanvas.getContext('2d');
+    const outData = octx.createImageData(w, h);
+    for (let p = 0; p < n; p++) {
+      const v = sharpened[p] > threshold ? 255 : 0;
+      const o = p * 4;
+      outData.data[o] = outData.data[o + 1] = outData.data[o + 2] = v;
+      outData.data[o + 3] = 255;
+    }
+    octx.putImageData(outData, 0, 0);
+    logImageToConsole('بعد المعالجة الكاملة (Threshold)', outCanvas);
   }
-  octx.putImageData(outData, 0, 0);
-
-  logImageToConsole('بعد المعالجة الكاملة (Threshold)', outCanvas);
 
   return { canvas: outCanvas, debugSrcCanvas: srcCanvas };
 };
 
 // ══════════════════════════════════════════════════════
-//  تشغيل OCR على نسخة من الصورة بإعدادات معيّنة، وإرجاع
-//  أفضل نتيجة رقمية مع نسبة الثقة
+//  محرك القراءة: TrOCR (Vision Transformer) عبر transformers.js
+//  نموذج AI حقيقي مدرّب على فهم الصور وقراءة النص منها —
+//  أدق بكثير من OCR التقليدي (Tesseract) في الخطوط غير
+//  المنتظمة (عدادات ميكانيكية/ديجيتال) لأنه يفهم الشكل
+//  ككل بدل تحليل بكسلات منفصلة. مجاني 100%، يعمل بالكامل
+//  في المتصفح بدون أي API أو حساب أو كارت.
 // ══════════════════════════════════════════════════════
-async function runOcrPass(canvas, psm, label) {
-  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-  const { data } = await Tesseract.recognize(blob, 'eng', {
-    tessedit_char_whitelist: '0123456789',
-    tessedit_pageseg_mode: psm,
-  });
+let __trocrPipeline = null;
 
-  console.log(`[OCR-DEBUG] (${label}, PSM=${psm}) النص الخام:`, JSON.stringify(data.text));
-  console.log(`[OCR-DEBUG] (${label}, PSM=${psm}) ثقة الصفحة الكلية:`, data.confidence);
+async function loadTrOCR(onProgress) {
+  if (__trocrPipeline) return __trocrPipeline;
 
-  const words = (data.words || [])
-    .map(w => ({
-      text: (w.text || '').replace(/\D/g, ''),
-      confidence: w.confidence || 0,
-    }))
-    .filter(w => w.text.length >= 4 && w.text.length <= 7);
-
-  words.forEach(w => console.log(`[OCR-DEBUG]   كلمة مرشّحة: "${w.text}" — ثقة: ${w.confidence.toFixed(1)}%`));
-
-  if (!words.length) {
-    // fallback من النص الخام لو Tesseract ما قسّمش كلمات
-    const numbers = (data.text || '').match(/\d{4,7}/g) || [];
-    if (numbers.length) {
-      return { value: numbers.sort((a, b) => b.length - a.length)[0], confidence: data.confidence || 0 };
-    }
-    return null;
+  if (!window.__transformersLib) {
+    const mod = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js');
+    window.__transformersLib = mod;
   }
+  const { pipeline } = window.__transformersLib;
 
-  // الأفضلية: أعلى ثقة، وعند التساوي أطول رقم منطقي (4-6 أرقام لعداد سيارة)
-  words.sort((a, b) => b.confidence - a.confidence);
-  return { value: words[0].text, confidence: words[0].confidence };
+  console.log('[AI-OCR] تحميل نموذج TrOCR (أول مرة فقط، قد يأخذ بعض الوقت)...');
+  __trocrPipeline = await pipeline('image-to-text', 'Xenova/trocr-small-printed', {
+    progress_callback: (p) => {
+      if (p.status === 'progress' && onProgress) {
+        onProgress(Math.round(p.progress || 0));
+      }
+    }
+  });
+  console.log('[AI-OCR] النموذج جاهز ✅');
+  return __trocrPipeline;
+}
+
+// تشغيل النموذج على الصورة المعالجة، وإرجاع النص الخام المستخرج
+async function runAiOcrPass(canvas, onProgress) {
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  const imgURL = URL.createObjectURL(blob);
+  try {
+    const ocr = await loadTrOCR(onProgress);
+    const output = await ocr(imgURL);
+    const text = Array.isArray(output) ? (output[0]?.generated_text || '') : (output?.generated_text || '');
+    console.log('[AI-OCR] النص الخام من النموذج:', JSON.stringify(text));
+    return text;
+  } finally {
+    URL.revokeObjectURL(imgURL);
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -17491,71 +17520,51 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId, cropRect
   if (msgEl)     { msgEl.textContent = '⏳ جاري قراءة العداد...'; msgEl.style.color = '#d97706'; }
   if (triggerBtn){ triggerBtn.disabled = true; triggerBtn.textContent = '⏳ جاري المعالجة...'; triggerBtn.className = 'odo-scan-btn scanning'; }
 
-  // حد الثقة الأدنى المقبول — تحت ده نطلب من المستخدم إعادة التصوير
-  const MIN_CONFIDENCE = 55;
-
   try {
-    if (!window.Tesseract) {
-      if (msgEl) msgEl.textContent = '⏳ تحميل أداة القراءة (أول مرة فقط)...';
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
-    }
-
     if (msgEl) msgEl.textContent = '⏳ جاري تحسين الصورة...';
-    const { canvas } = await preprocessOdoImage(file, cropRect);
+    const { canvas } = await preprocessOdoImage(file, cropRect, { skipThreshold: true });
 
-    if (msgEl) msgEl.textContent = '⏳ جاري تحليل الأرقام...';
+    if (msgEl) msgEl.textContent = '⏳ جاري تحميل نموذج الذكاء الاصطناعي...';
+    const rawText = await runAiOcrPass(canvas, (pct) => {
+      if (msgEl) msgEl.textContent = `⏳ جاري تحميل النموذج... ${pct}%`;
+    });
 
-    // نجرّب PSM مختلفين ونختار الأفضل ثقة — العداد عادة سطر واحد (7) أو كلمة واحدة (8)
-    const attempts = [
-      await runOcrPass(canvas, '7', 'سطر نص واحد'),
-      await runOcrPass(canvas, '8', 'كلمة واحدة'),
-    ];
-    const valid = attempts.filter(Boolean);
-    console.log('[OCR-DEBUG] كل المحاولات:', valid);
+    if (msgEl) msgEl.textContent = '⏳ جاري استخراج الرقم...';
 
-    let result = null;
-    if (valid.length) {
-      valid.sort((a, b) => b.confidence - a.confidence);
-      result = valid[0];
+    // استخراج الأرقام من نص النموذج وتنظيفها
+    const digitsOnly = rawText.replace(/\D/g, '');
+    console.log('[AI-OCR] الأرقام المستخرجة (خام):', digitsOnly);
+
+    // محاولة ثانية على الصورة كاملة (بدون threshold) لو الأولى غير واضحة —
+    // بعض الصور بتستفيد من نسخة أقل معالجة مع النموذج لأنه مدرّب على صور طبيعية
+    let candidates = [digitsOnly].filter(t => t.length >= 4 && t.length <= 7);
+
+    if (!candidates.length) {
+      // إعادة محاولة بـ Threshold قاسي (أبيض/أسود صريح) كاستراتيجية بديلة
+      const { canvas: threshCanvas } = await preprocessOdoImage(file, cropRect, { skipThreshold: false });
+      const rawText2 = await runAiOcrPass(threshCanvas);
+      const digits2 = rawText2.replace(/\D/g, '');
+      console.log('[AI-OCR] محاولة ثانية (مع Threshold):', digits2);
+      candidates = [digits2].filter(t => t.length >= 4 && t.length <= 7);
     }
 
-    console.log('[OCR-DEBUG] أفضل نتيجة نهائية:', result);
+    console.log('[AI-OCR] المرشحون النهائيون:', candidates);
     console.log('═══════════════════════════════════════');
 
     const targetInput = document.getElementById(targetInputId);
+    const best = candidates.length ? candidates[0] : '';
+    const isPlausible = best && /^\d{4,7}$/.test(best);
 
-    // ── نظام التحقق: رفض نتائج ضعيفة الثقة أو غير منطقية ──
-    const isPlausible = result && /^\d{4,7}$/.test(result.value);
-    const isConfident  = result && result.confidence >= MIN_CONFIDENCE;
-
-    if (isPlausible && isConfident) {
-      const best = result.value;
+    if (isPlausible) {
       targetInput.value = best;
       const mainId = isEnd ? 'endOdo' : (isDp ? 'dpEndOdo' : null);
       if (mainId) { const m = document.getElementById(mainId); if (m) m.value = best; }
       targetInput.dispatchEvent(new Event('input'));
       if (msgEl)     {
-        msgEl.textContent = `✅ تم قراءة العداد: ${best} كم (ثقة ${Math.round(result.confidence)}%) — تحقق من الرقم وعدّله إذا لزم`;
+        msgEl.textContent = `✅ تم قراءة العداد بالذكاء الاصطناعي: ${best} كم — تحقق من الرقم وعدّله إذا لزم`;
         msgEl.style.color = '#059669';
       }
       if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn done'; triggerBtn.disabled = false; }
-    } else if (isPlausible && !isConfident) {
-      // النتيجة منطقية بس الثقة منخفضة — نعرضها بحذر ونطلب تأكيد
-      const best = result.value;
-      targetInput.value = best;
-      const mainId = isEnd ? 'endOdo' : (isDp ? 'dpEndOdo' : null);
-      if (mainId) { const m = document.getElementById(mainId); if (m) m.value = best; }
-      targetInput.dispatchEvent(new Event('input'));
-      if (msgEl)     {
-        msgEl.textContent = `⚠️ القراءة غير مؤكدة: ${best} كم (ثقة ${Math.round(result.confidence)}%) — يرجى التحقق جيداً أو إعادة التصوير`;
-        msgEl.style.color = '#d97706';
-      }
-      if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
     } else {
       if (msgEl)     { msgEl.textContent = '❌ لم يتم التعرف على رقم واضح — يرجى إعادة التصوير بإضاءة أفضل وتركيز على العداد، أو الإدخال اليدوي'; msgEl.style.color = '#dc2626'; }
       if (triggerBtn){ triggerBtn.textContent = '📷 إعادة المسح'; triggerBtn.className = 'odo-scan-btn'; triggerBtn.disabled = false; }
