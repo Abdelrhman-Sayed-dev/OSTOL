@@ -346,7 +346,7 @@ def migrate_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_driver ON workshop_records(driver_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_type ON workshop_records(type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_ws_photo ON workshop_records(odometer_photo)")
+        # ملحوظة: فهرس odometer_photo بيتعمل بعد ما الميجريشن الدفاعي تحت يضيف العمود فعلاً (راجع additions dict)
 
         # EMERGENCY REPORTS — audio stored as file path, NOT base64
         c.execute("""CREATE TABLE IF NOT EXISTS emergency_reports(
@@ -671,6 +671,12 @@ def _safe_add_columns(c):
                     c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type}")
                 except Exception:
                     pass
+
+    # ── الآن العمود odometer_photo موجود بالتأكيد (سواء من CREATE TABLE أو من الميجريشن فوق) — أنشئ الفهرس بأمان ──
+    try:
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ws_photo ON workshop_records(odometer_photo)")
+    except Exception:
+        pass
 
     # ── Migration: إضافة operator role في users CHECK constraint ──
     try:
@@ -8136,7 +8142,7 @@ def migrate_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_driver ON workshop_records(driver_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_type ON workshop_records(type)")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_ws_photo ON workshop_records(odometer_photo)")
+        # ملحوظة: فهرس odometer_photo بيتعمل بعد ما الميجريشن الدفاعي تحت يضيف العمود فعلاً (راجع additions dict)
 
         # EMERGENCY REPORTS — audio stored as file path, NOT base64
         c.execute("""CREATE TABLE IF NOT EXISTS emergency_reports(
@@ -8461,6 +8467,12 @@ def _safe_add_columns(c):
                     c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type}")
                 except Exception:
                     pass
+
+    # ── الآن العمود odometer_photo موجود بالتأكيد (سواء من CREATE TABLE أو من الميجريشن فوق) — أنشئ الفهرس بأمان ──
+    try:
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ws_photo ON workshop_records(odometer_photo)")
+    except Exception:
+        pass
 
     # ── Migration: إضافة operator role في users CHECK constraint ──
     try:
