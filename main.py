@@ -1627,11 +1627,11 @@ async def get_drivers(cu: dict = Depends(get_user), branch: Optional[str] = None
             c.execute("""SELECT d.*,u.username FROM drivers d
                          LEFT JOIN users u ON d.user_id=u.id
                          WHERE d.branch=?
-                         ORDER BY d.id DESC LIMIT 500""", (branch,))
+                         ORDER BY d.id DESC""", (branch,))
         else:
             c.execute("""SELECT d.*,u.username FROM drivers d
                          LEFT JOIN users u ON d.user_id=u.id
-                         ORDER BY d.id DESC LIMIT 500""")
+                         ORDER BY d.id DESC""")
         return [dict(r) for r in c.fetchall()]
 
 @app.post("/drivers", response_model=DriverResp)
@@ -1793,9 +1793,9 @@ async def get_cars(cu: dict = Depends(get_user), branch: Optional[str] = None):
                            year,project,branch,car_license_expiry,equipment_type,sector
                     FROM cars"""
         if branch:
-            c.execute(base_q + " WHERE branch=? ORDER BY id DESC LIMIT 500", (branch,))
+            c.execute(base_q + " WHERE branch=? ORDER BY id DESC", (branch,))
         else:
-            c.execute(base_q + " ORDER BY id DESC LIMIT 500")
+            c.execute(base_q + " ORDER BY id DESC")
         rows = []
         for r in c.fetchall():
             d = dict(r)
@@ -2171,17 +2171,18 @@ async def get_trips(cu: dict = Depends(get_user), branch: Optional[str] = None):
         c = conn.cursor()
         branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
+            # عرض كل الرحلات بدون أي حد أقصى (مطلوب من الإدارة لرؤية كل البيانات في صفحة الرحلات وخريطة الأسطول)
             if branch:
                 c.execute("""SELECT t.* FROM trips t
                              JOIN drivers d ON t.driver_id=d.id
                              WHERE d.branch=?
-                             ORDER BY t.id DESC LIMIT 2000""", (branch,))
+                             ORDER BY t.id DESC""", (branch,))
             else:
-                c.execute("SELECT * FROM trips ORDER BY id DESC LIMIT 2000")
+                c.execute("SELECT * FROM trips ORDER BY id DESC")
         else:
             did = cu.get("driver_id")
             if not did: return []
-            c.execute("SELECT * FROM trips WHERE driver_id=? ORDER BY id DESC LIMIT 200", (did,))
+            c.execute("SELECT * FROM trips WHERE driver_id=? ORDER BY id DESC", (did,))
         return [enrich(dict(r)) for r in c.fetchall()]
 
 @app.post("/trips/start", response_model=TripResp)
@@ -9423,11 +9424,11 @@ async def get_drivers(cu: dict = Depends(get_user), branch: Optional[str] = None
             c.execute("""SELECT d.*,u.username FROM drivers d
                          LEFT JOIN users u ON d.user_id=u.id
                          WHERE d.branch=?
-                         ORDER BY d.id DESC LIMIT 500""", (branch,))
+                         ORDER BY d.id DESC""", (branch,))
         else:
             c.execute("""SELECT d.*,u.username FROM drivers d
                          LEFT JOIN users u ON d.user_id=u.id
-                         ORDER BY d.id DESC LIMIT 500""")
+                         ORDER BY d.id DESC""")
         return [dict(r) for r in c.fetchall()]
 
 @app.post("/drivers", response_model=DriverResp)
@@ -9589,9 +9590,9 @@ async def get_cars(cu: dict = Depends(get_user), branch: Optional[str] = None):
                            year,project,branch,car_license_expiry,equipment_type,sector
                     FROM cars"""
         if branch:
-            c.execute(base_q + " WHERE branch=? ORDER BY id DESC LIMIT 500", (branch,))
+            c.execute(base_q + " WHERE branch=? ORDER BY id DESC", (branch,))
         else:
-            c.execute(base_q + " ORDER BY id DESC LIMIT 500")
+            c.execute(base_q + " ORDER BY id DESC")
         rows = []
         for r in c.fetchall():
             d = dict(r)
@@ -9967,17 +9968,18 @@ async def get_trips(cu: dict = Depends(get_user), branch: Optional[str] = None):
         c = conn.cursor()
         branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
+            # عرض كل الرحلات بدون أي حد أقصى (مطلوب من الإدارة لرؤية كل البيانات في صفحة الرحلات وخريطة الأسطول)
             if branch:
                 c.execute("""SELECT t.* FROM trips t
                              JOIN drivers d ON t.driver_id=d.id
                              WHERE d.branch=?
-                             ORDER BY t.id DESC LIMIT 2000""", (branch,))
+                             ORDER BY t.id DESC""", (branch,))
             else:
-                c.execute("SELECT * FROM trips ORDER BY id DESC LIMIT 2000")
+                c.execute("SELECT * FROM trips ORDER BY id DESC")
         else:
             did = cu.get("driver_id")
             if not did: return []
-            c.execute("SELECT * FROM trips WHERE driver_id=? ORDER BY id DESC LIMIT 200", (did,))
+            c.execute("SELECT * FROM trips WHERE driver_id=? ORDER BY id DESC", (did,))
         return [enrich(dict(r)) for r in c.fetchall()]
 
 @app.post("/trips/start", response_model=TripResp)
