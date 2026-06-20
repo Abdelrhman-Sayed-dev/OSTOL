@@ -340,11 +340,13 @@ def migrate_db():
             description TEXT DEFAULT '',
             tire_action TEXT DEFAULT '',
             location TEXT DEFAULT '',
+            odometer_photo TEXT DEFAULT '',
             FOREIGN KEY(driver_id) REFERENCES drivers(id),
             FOREIGN KEY(vehicle_id) REFERENCES cars(id)
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_driver ON workshop_records(driver_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_type ON workshop_records(type)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ws_photo ON workshop_records(odometer_photo)")
 
         # EMERGENCY REPORTS — audio stored as file path, NOT base64
         c.execute("""CREATE TABLE IF NOT EXISTS emergency_reports(
@@ -642,6 +644,7 @@ def _safe_add_columns(c):
         "workshop_records":   [("location","TEXT DEFAULT ''"),("operation_type","TEXT DEFAULT ''"),
                                ("vehicle_id","INTEGER"),("odometer_reading","REAL"),
                                ("description","TEXT DEFAULT ''"),("tire_action","TEXT DEFAULT ''"),
+                               ("odometer_photo","TEXT DEFAULT ''"),
                                ("doc_number","TEXT DEFAULT ''"),
                                ("engine_hours","REAL"),
                                ("supply_source","TEXT DEFAULT ''"),
@@ -1196,6 +1199,7 @@ class WorkshopCreate(BaseModel):
     operation_type: Optional[str] = ""; vehicle_id: Optional[int] = None
     odometer_reading: Optional[float] = None; description: Optional[str] = ""
     tire_action: Optional[str] = ""; location: Optional[str] = ""
+    odometer_photo: Optional[str] = ""   # base64 من الفرونت — صورة العداد عند التفويل/الصيانة
     # حقول البطاقة التشغيلية
     doc_number:    Optional[str]   = ""    # رقم مستند الصرف
     engine_hours:  Optional[float] = None  # ساعات المحرك
@@ -2371,6 +2375,32 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     QUANTITY_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil") or t in ("tire",)}
     HAS_QUANTITY   = rec.type in QUANTITY_TYPES
 
+    # ── صورة العداد (تفويل/صيانة): إلزامية لأنواع الوقود + الصيانة، اختيارية لباقي الأنواع ──
+    PHOTO_REQUIRED_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil")
+                             or t.startswith("filter") or t in ("tire","battery","belt")}
+    if rec.type in PHOTO_REQUIRED_TYPES and not (rec.odometer_photo or "").strip():
+        raise HTTPException(400, "صورة العداد مطلوبة لتسجيل هذه العملية")
+
+    odometer_photo_url = ""
+    if rec.odometer_photo:
+        import re as _re_ws
+        try:
+            _raw_b64 = rec.odometer_photo
+            _m = _re_ws.match(r"data:image/(\w+);base64,(.+)", _raw_b64, _re_ws.DOTALL)
+            _ext = _m.group(1) if _m else "jpg"
+            _b64data = _m.group(2) if _m else _raw_b64
+            _raw_bytes = base64.b64decode(_b64data)
+            if len(_raw_bytes) >= 2 and _raw_bytes[0] == 0xFF and _raw_bytes[1] == 0xD8: _ext = "jpg"
+            elif len(_raw_bytes) >= 4 and _raw_bytes[0] == 0x89 and _raw_bytes[1:4] == b"PNG": _ext = "png"
+            elif len(_raw_bytes) >= 3 and _raw_bytes[:3] == b"GIF": _ext = "gif"
+            elif len(_raw_bytes) >= 12 and _raw_bytes[:4] == b"RIFF" and _raw_bytes[8:12] == b"WEBP": _ext = "webp"
+            _photo_fname = f"odo_{rec.driver_id or 0}_{int(datetime.utcnow().timestamp()*1000)}.{_ext}"
+            (UPLOAD_DIR / _photo_fname).write_bytes(_raw_bytes)
+            odometer_photo_url = f"/uploads/{_photo_fname}"
+        except Exception as _photo_err:
+            log.error(f"[WORKSHOP] photo save failed: {_photo_err}")
+            raise HTTPException(400, "صورة العداد غير صالحة")
+
     with get_db() as conn:
         c = conn.cursor()
         # جيب الفرع لتحديد السعر — المشغل من equipment_operators بالـ token operator_id
@@ -2417,6 +2447,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             ("receiver_name", "TEXT DEFAULT ''"),
             ("operator_id", "INTEGER"),
             ("is_operator", "INTEGER DEFAULT 0"),
+            ("odometer_photo", "TEXT DEFAULT ''"),
         ]
         _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
         for _wc, _wd in _ws_extra_cols:
@@ -2431,24 +2462,26 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo)
+                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                           (op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
                            rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                            rec.description or "", rec.tire_action or "", rec.location or "",
                            rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
+                           odometer_photo_url))
             else:
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo)
+                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
                        rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                        rec.description or "", rec.tire_action or "", rec.location or "",
                        rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
+                       odometer_photo_url))
             rid = c.lastrowid
         except Exception as _ws_err:
             log.error(f"[WORKSHOP] INSERT failed: {_ws_err}")
@@ -2485,7 +2518,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 "price":final_price,"notes":rec.notes or "","created_at":now,
                 "operation_type":rec.operation_type or "","vehicle_id":rec.vehicle_id,
                 "odometer_reading":rec.odometer_reading,"description":rec.description or "",
-                "tire_action":rec.tire_action or "","vehicle_plate":vp,"location":rec.location or ""}
+                "tire_action":rec.tire_action or "","vehicle_plate":vp,"location":rec.location or "",
+                "odometer_photo":odometer_photo_url}
 
 @app.get("/workshops")
 async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None, month: Optional[str] = None):
@@ -2534,6 +2568,40 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
                 d.setdefault(k, None)
             rows.append(d)
         return rows
+
+@app.get("/workshops/attachments")
+async def get_workshop_attachments(cu: dict = Depends(get_user), branch: Optional[str] = None,
+                                    month: Optional[str] = None, type: Optional[str] = None):
+    """تتبع المرفقات — قائمة سجلات الورشة (تفويل/صيانة) المرفق بها صورة عداد، للمراجعة من لوحة الإدارة فقط."""
+    if cu["role"] not in ("admin", "superuser", "reporter"):
+        raise HTTPException(403, "غير مصرح")
+    q = """SELECT w.id, w.type, w.quantity, w.price, w.notes, w.created_at,
+                  w.operation_type, w.vehicle_id, w.odometer_reading, w.description,
+                  w.tire_action, w.location, w.odometer_photo,
+                  COALESCE(d.name, op.name) as driver_name,
+                  c.plate as vehicle_plate, c.model as vehicle_model,
+                  d.branch as branch
+           FROM workshop_records w
+           LEFT JOIN drivers d ON w.driver_id=d.id AND (w.is_operator IS NULL OR w.is_operator=0)
+           LEFT JOIN equipment_operators op ON w.operator_id=op.id
+           LEFT JOIN cars c ON w.vehicle_id=c.id
+           WHERE w.odometer_photo IS NOT NULL AND w.odometer_photo != ''"""
+    params = []
+    branch = _effective_branch(cu, branch)
+    if branch:
+        q += " AND d.branch=?"
+        params.append(branch)
+    if month:
+        q += " AND w.created_at LIKE ?"
+        params.append(month + "%")
+    if type:
+        q += " AND w.type=?"
+        params.append(type)
+    q += " ORDER BY w.id DESC LIMIT 500"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(q, params)
+        return [dict(r) for r in c.fetchall()]
 
 # ══════════════════════════════════════════════════════
 # 18b. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات
@@ -8062,11 +8130,13 @@ def migrate_db():
             description TEXT DEFAULT '',
             tire_action TEXT DEFAULT '',
             location TEXT DEFAULT '',
+            odometer_photo TEXT DEFAULT '',
             FOREIGN KEY(driver_id) REFERENCES drivers(id),
             FOREIGN KEY(vehicle_id) REFERENCES cars(id)
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_driver ON workshop_records(driver_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_type ON workshop_records(type)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ws_photo ON workshop_records(odometer_photo)")
 
         # EMERGENCY REPORTS — audio stored as file path, NOT base64
         c.execute("""CREATE TABLE IF NOT EXISTS emergency_reports(
@@ -8364,6 +8434,7 @@ def _safe_add_columns(c):
         "workshop_records":   [("location","TEXT DEFAULT ''"),("operation_type","TEXT DEFAULT ''"),
                                ("vehicle_id","INTEGER"),("odometer_reading","REAL"),
                                ("description","TEXT DEFAULT ''"),("tire_action","TEXT DEFAULT ''"),
+                               ("odometer_photo","TEXT DEFAULT ''"),
                                ("doc_number","TEXT DEFAULT ''"),
                                ("engine_hours","REAL"),
                                ("supply_source","TEXT DEFAULT ''"),
@@ -8918,6 +8989,7 @@ class WorkshopCreate(BaseModel):
     operation_type: Optional[str] = ""; vehicle_id: Optional[int] = None
     odometer_reading: Optional[float] = None; description: Optional[str] = ""
     tire_action: Optional[str] = ""; location: Optional[str] = ""
+    odometer_photo: Optional[str] = ""   # base64 من الفرونت — صورة العداد عند التفويل/الصيانة
     # حقول البطاقة التشغيلية
     doc_number:    Optional[str]   = ""    # رقم مستند الصرف
     engine_hours:  Optional[float] = None  # ساعات المحرك
@@ -10093,6 +10165,32 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     QUANTITY_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil") or t in ("tire",)}
     HAS_QUANTITY   = rec.type in QUANTITY_TYPES
 
+    # ── صورة العداد (تفويل/صيانة): إلزامية لأنواع الوقود + الصيانة، اختيارية لباقي الأنواع ──
+    PHOTO_REQUIRED_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil")
+                             or t.startswith("filter") or t in ("tire","battery","belt")}
+    if rec.type in PHOTO_REQUIRED_TYPES and not (rec.odometer_photo or "").strip():
+        raise HTTPException(400, "صورة العداد مطلوبة لتسجيل هذه العملية")
+
+    odometer_photo_url = ""
+    if rec.odometer_photo:
+        import re as _re_ws
+        try:
+            _raw_b64 = rec.odometer_photo
+            _m = _re_ws.match(r"data:image/(\w+);base64,(.+)", _raw_b64, _re_ws.DOTALL)
+            _ext = _m.group(1) if _m else "jpg"
+            _b64data = _m.group(2) if _m else _raw_b64
+            _raw_bytes = base64.b64decode(_b64data)
+            if len(_raw_bytes) >= 2 and _raw_bytes[0] == 0xFF and _raw_bytes[1] == 0xD8: _ext = "jpg"
+            elif len(_raw_bytes) >= 4 and _raw_bytes[0] == 0x89 and _raw_bytes[1:4] == b"PNG": _ext = "png"
+            elif len(_raw_bytes) >= 3 and _raw_bytes[:3] == b"GIF": _ext = "gif"
+            elif len(_raw_bytes) >= 12 and _raw_bytes[:4] == b"RIFF" and _raw_bytes[8:12] == b"WEBP": _ext = "webp"
+            _photo_fname = f"odo_{rec.driver_id or 0}_{int(datetime.utcnow().timestamp()*1000)}.{_ext}"
+            (UPLOAD_DIR / _photo_fname).write_bytes(_raw_bytes)
+            odometer_photo_url = f"/uploads/{_photo_fname}"
+        except Exception as _photo_err:
+            log.error(f"[WORKSHOP] photo save failed: {_photo_err}")
+            raise HTTPException(400, "صورة العداد غير صالحة")
+
     with get_db() as conn:
         c = conn.cursor()
         # جيب الفرع لتحديد السعر — المشغل من equipment_operators بالـ token operator_id
@@ -10139,6 +10237,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             ("receiver_name", "TEXT DEFAULT ''"),
             ("operator_id", "INTEGER"),
             ("is_operator", "INTEGER DEFAULT 0"),
+            ("odometer_photo", "TEXT DEFAULT ''"),
         ]
         _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
         for _wc, _wd in _ws_extra_cols:
@@ -10153,24 +10252,26 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo)
+                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                           (op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
                            rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                            rec.description or "", rec.tire_action or "", rec.location or "",
                            rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+                           rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
+                           odometer_photo_url))
             else:
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name)
-                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo)
+                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
                        rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                        rec.description or "", rec.tire_action or "", rec.location or "",
                        rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
-                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or ""))
+                       rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
+                       odometer_photo_url))
             rid = c.lastrowid
         except Exception as _ws_err:
             log.error(f"[WORKSHOP] INSERT failed: {_ws_err}")
@@ -10207,7 +10308,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 "price":final_price,"notes":rec.notes or "","created_at":now,
                 "operation_type":rec.operation_type or "","vehicle_id":rec.vehicle_id,
                 "odometer_reading":rec.odometer_reading,"description":rec.description or "",
-                "tire_action":rec.tire_action or "","vehicle_plate":vp,"location":rec.location or ""}
+                "tire_action":rec.tire_action or "","vehicle_plate":vp,"location":rec.location or "",
+                "odometer_photo":odometer_photo_url}
 
 @app.get("/workshops")
 async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None, month: Optional[str] = None):
@@ -10256,6 +10358,40 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
                 d.setdefault(k, None)
             rows.append(d)
         return rows
+
+@app.get("/workshops/attachments")
+async def get_workshop_attachments(cu: dict = Depends(get_user), branch: Optional[str] = None,
+                                    month: Optional[str] = None, type: Optional[str] = None):
+    """تتبع المرفقات — قائمة سجلات الورشة (تفويل/صيانة) المرفق بها صورة عداد، للمراجعة من لوحة الإدارة فقط."""
+    if cu["role"] not in ("admin", "superuser", "reporter"):
+        raise HTTPException(403, "غير مصرح")
+    q = """SELECT w.id, w.type, w.quantity, w.price, w.notes, w.created_at,
+                  w.operation_type, w.vehicle_id, w.odometer_reading, w.description,
+                  w.tire_action, w.location, w.odometer_photo,
+                  COALESCE(d.name, op.name) as driver_name,
+                  c.plate as vehicle_plate, c.model as vehicle_model,
+                  d.branch as branch
+           FROM workshop_records w
+           LEFT JOIN drivers d ON w.driver_id=d.id AND (w.is_operator IS NULL OR w.is_operator=0)
+           LEFT JOIN equipment_operators op ON w.operator_id=op.id
+           LEFT JOIN cars c ON w.vehicle_id=c.id
+           WHERE w.odometer_photo IS NOT NULL AND w.odometer_photo != ''"""
+    params = []
+    branch = _effective_branch(cu, branch)
+    if branch:
+        q += " AND d.branch=?"
+        params.append(branch)
+    if month:
+        q += " AND w.created_at LIKE ?"
+        params.append(month + "%")
+    if type:
+        q += " AND w.type=?"
+        params.append(type)
+    q += " ORDER BY w.id DESC LIMIT 500"
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute(q, params)
+        return [dict(r) for r in c.fetchall()]
 
 # ══════════════════════════════════════════════════════
 # 18b. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات

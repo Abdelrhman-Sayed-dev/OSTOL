@@ -466,21 +466,38 @@ body{background:var(--bg);min-height:100vh;overflow-x:hidden;color:var(--text)}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
 
 /* ── Accordion Nav Modules ── */
-.nav-module{margin-bottom:2px;}
+.nav-module{margin-bottom:4px;border-radius:10px;overflow:hidden;}
 .nav-module-header{
   display:flex;align-items:center;justify-content:space-between;gap:.5rem;
-  width:100%;text-align:right;border:none;background:none;cursor:pointer;
-  padding:.55rem .8rem;border-radius:10px;font-family:inherit;
-  font-size:.78rem;font-weight:700;color:#334155;
+  width:100%;text-align:right;border:none;cursor:pointer;
+  padding:.62rem .8rem;border-radius:10px;font-family:inherit;
+  font-size:.8rem;font-weight:800;color:#1e293b;
+  background:#eef1f6;border:1px solid #e2e8f0;
   transition:.13s cubic-bezier(.4,0,.2,1);
 }
-.nav-module-header:hover{background:#e0e7ef;color:#1e3a5f;}
-.nav-module-header.open{background:#eef2f7;color:#1e3a5f;}
+.nav-module-header:hover{background:#e2e8f3;}
+.nav-module-header.open{
+  background:#1e3a5f;color:#fff;border-color:#1e3a5f;
+  border-radius:10px 10px 0 0;
+}
 .nav-module-title{display:flex;align-items:center;gap:.65rem;}
-.nav-module-arrow{font-size:.65rem;color:#94a3b8;transition:transform .15s ease;flex-shrink:0;}
-.nav-module-header.open .nav-module-arrow{color:#2563eb;}
-.nav-module-body{padding-right:.4rem;overflow:hidden;}
-.nav-module-body .nav-item{font-size:.79rem;padding:.48rem .8rem;}
+.nav-module-arrow{font-size:.62rem;color:#94a3b8;transition:transform .15s ease;flex-shrink:0;}
+.nav-module-header.open .nav-module-arrow{color:#bfdbfe;}
+.nav-module-body{
+  padding:.35rem .4rem .4rem 1rem;overflow:hidden;
+  background:#f8fafc;border:1px solid #e2e8f0;border-top:none;
+  border-radius:0 0 10px 10px;position:relative;
+}
+.nav-module-body::before{
+  content:'';position:absolute;top:0;bottom:.4rem;right:1.05rem;
+  width:1.5px;background:#dbe2ec;
+}
+.nav-module-body .nav-item{
+  font-size:.77rem;padding:.46rem .7rem;color:#5b6678;font-weight:500;
+  margin-right:.15rem;border-radius:8px;
+}
+.nav-module-body .nav-item:hover{background:#e7edf6;color:#1e3a5f;}
+.nav-module-body .nav-item.active{background:#dbeafe;color:#1d4ed8;font-weight:700;}
 .nav-module-badge{
   background:#ef4444;color:#fff;border-radius:50px;font-size:.56rem;font-weight:700;
   padding:.08rem .36rem;min-width:15px;text-align:center;margin-right:.3rem;
@@ -2521,7 +2538,7 @@ const NAV_MODULES = [
 const NAV_ITEM_MODULE = {
   overview:'dashboard',
   trips:'fleet', map:'fleet', drivers:'fleet', cars:'fleet', requests:'fleet',
-  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops',
+  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops', 'ws-attachments':'ops',
   'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment',
   'monthly-report':'reports', 'driver-kpi':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
@@ -2567,6 +2584,7 @@ function buildAdminNav() {
     {id:'workshops',  icon:'🛠️', label:'الورش'},
     {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
+    {id:'ws-attachments', icon:'📎', label:'تتبع المرفقات'},
     {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
@@ -2639,8 +2657,9 @@ function renderNav(items) {
     const modKey = NAV_ITEM_MODULE[item.id] || 'admin';
     (groups[modKey] = groups[modKey] || []).push(item);
   });
-  // لو لسه مفيش قسم مفتوح (أول تحميل) اختار أول قسم فيه عناصر
-  if (!window._openNavModule) {
+  // أول تحميل فقط: افتح أول قسم فيه عناصر. بعد كذلك، اسمح للمستخدم بإغلاق كل الأقسام لو حب
+  if (!window._navInitialized) {
+    window._navInitialized = true;
     const firstCollapsible = NAV_MODULES.find(m=>m.collapsible && groups[m.key]);
     if (firstCollapsible) window._openNavModule = firstCollapsible.key;
   }
@@ -2729,6 +2748,7 @@ async function renderSection(id) {
     case 'super-logs':      await renderSuperLogs(); break;
     case 'super-sarky':     await renderSuperSarky(); break;
     case 'driver-photos': await renderDriverPhotosSection(); break;
+    case 'ws-attachments': await renderWsAttachments(); break;
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
     case 'shifts-table':         await renderShiftsTable(); break;
@@ -8095,6 +8115,7 @@ function openMaintenanceGroupModal() {
 
 function openWsModal(type) {
   selWsType = type;
+  window._wsOdoPhotoData = '';
   const wt  = WT[type];
   const activeCarId = window._wsActiveCarId;
   const _isOpWs = currentUser?.role === 'operator';
@@ -8186,6 +8207,23 @@ function openWsModal(type) {
       <input type="number" id="wOdo" placeholder="${currentUser?.role==='operator' ? 'مثال: 1250.5' : 'مثال: 54000'}" min="0" step="${currentUser?.role==='operator' ? '0.1' : '1'}">
     </div>
 
+    ${type!=='other' ? `
+    <div class="form-group">
+      <label>📷 صورة العداد <span class="req">*</span></label>
+      <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.4rem">
+        ارفع صورة واضحة للعداد كمرجع بصري — العداد يتم إدخاله يدوياً في الحقل السابق، الصورة فقط للتوثيق.
+      </div>
+      <div id="wOdoPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
+        <img id="wOdoPhotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)">
+      </div>
+      <label for="wOdoPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
+        border:1.5px dashed var(--border);border-radius:10px;padding:.7rem;cursor:pointer;
+        color:var(--text-2);font-size:.82rem;font-weight:600;background:var(--surface-2)">
+        <span id="wOdoPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
+      </label>
+      <input type="file" id="wOdoPhotoInput" accept="image/*" capture="environment" style="display:none">
+    </div>` : ''}
+
     <div class="form-group">
       <label>ملاحظات</label>
       <textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea>
@@ -8198,6 +8236,24 @@ function openWsModal(type) {
       <button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ السجل</button>
     </div>`);
 
+  const _wsPhotoInputEl2 = document.getElementById('wOdoPhotoInput');
+  if (_wsPhotoInputEl2) {
+    _wsPhotoInputEl2.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        window._wsOdoPhotoData = reader.result;
+        const preview = document.getElementById('wOdoPhotoPreview');
+        const wrap    = document.getElementById('wOdoPhotoPreviewWrap');
+        if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
+        const lbl = document.getElementById('wOdoPhotoBtnLabel');
+        if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
   document.getElementById('wsSubmitBtn').onclick = async () => {
     const vehicle_id       = _isOpWs ? null : (parseInt(document.getElementById('wVehicle')?.value)||null);
     const odometer_reading = parseFloat(document.getElementById('wOdo')?.value)||null;
@@ -8208,6 +8264,7 @@ function openWsModal(type) {
     if(!vehicle_id && !_isOpWs) return showNotification('اختر المركبة','error');
     const _finalVehicleId = _isOpWs ? null : vehicle_id;
     if(!odometer_reading||odometer_reading<=0) return showNotification(_isOpWs?'أدخل ساعات التشغيل':'أدخل قراءة العداد','error');
+    if(type!=='other' && !window._wsOdoPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل الحفظ','error');
 
     const _wsDriverId = _isOpWs
       ? (window._opData?.id || currentUser.operator_id || 0)
@@ -8217,7 +8274,8 @@ function openWsModal(type) {
     }
     const payload = {
       driver_id:_wsDriverId, type:selWsType,
-      price, notes, vehicle_id:_finalVehicleId, odometer_reading, location:''
+      price, notes, vehicle_id:_finalVehicleId, odometer_reading, location:'',
+      odometer_photo: window._wsOdoPhotoData || ''
     };
 
     // زيت: تحويل النوع للسبتروك المحدد
@@ -10348,6 +10406,150 @@ async function deleteDriverPhoto(id, btn) {
   } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; }
 }
 
+// ══════════════════════════════════════════════════════
+// تتبع المرفقات — مراجعة صور العداد المرفوعة عند التفويل/الصيانة
+// ══════════════════════════════════════════════════════
+async function renderWsAttachments() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+  const records = await apiCall('/workshops/attachments').catch(()=>[]);
+  window._wsAttachments = records;
+
+  const typeSet = [...new Set(records.map(r=>r.type))];
+  const typeOpts = typeSet.map(t=>`<option value="${t}">${WT[t]?.icon||'🔧'} ${WT[t]?.label||t}</option>`).join('');
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📎 تتبع المرفقات — صور العداد</div>
+        <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+          <select id="wsAttTypeFilter" onchange="filterWsAttachments()"
+            style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;background:var(--surface-2)">
+            <option value="">كل العمليات</option>
+            ${typeOpts}
+          </select>
+          <input type="text" id="wsAttSearch" placeholder="🔎 بحث باسم السائق أو رقم المركبة"
+            oninput="filterWsAttachments()"
+            style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;background:var(--surface-2);min-width:200px">
+          <button class="btn btn-ghost btn-sm" onclick="renderWsAttachments()">🔄 تحديث</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="wsAttTable" style="width:100%;border-collapse:collapse;font-size:.85rem">
+          <thead>
+            <tr>
+              <th>📷</th>
+              <th>العملية</th>
+              <th>🚗 المركبة</th>
+              <th>👨 السائق</th>
+              <th>⛽ الكمية</th>
+              <th>📍 الموقع</th>
+              <th>🕒 الوقت</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="wsAttTbody">
+            ${renderWsAttachmentsRows(records)}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderWsAttachmentsRows(records) {
+  if(!records.length) return `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد مرفقات مطابقة</p></div></td></tr>`;
+  return records.map(r => {
+    const wt = WT[r.type] || {icon:'🔧', label:r.type};
+    const dt = r.created_at ? new Date(r.created_at) : null;
+    const dateStr = dt ? dt.toLocaleDateString('ar-EG',{year:'numeric',month:'short',day:'numeric'}) : '—';
+    const timeStr = dt ? dt.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '';
+    const qtyStr = r.quantity ? `${r.quantity} ${r.type.startsWith('fuel_')||r.type.startsWith('oil')?'لتر':r.type==='tire'?'إطار':''}` : '—';
+    return `
+      <tr>
+        <td>
+          <img src="${r.odometer_photo}" alt="صورة العداد"
+            style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer"
+            onclick="openWsAttachmentModal(${r.id})"
+            onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'48\\' height=\\'48\\'><rect fill=\\'%23f1f5f9\\' width=\\'48\\' height=\\'48\\'></rect><text x=\\'24\\' y=\\'30\\' text-anchor=\\'middle\\' font-size=\\'18\\'>🖼️</text></svg>'">
+        </td>
+        <td><span style="font-weight:700">${wt.icon} ${wt.label}</span></td>
+        <td>${r.vehicle_plate ? `🚗 ${r.vehicle_plate}` : '—'}</td>
+        <td>👨 ${r.driver_name||'—'}</td>
+        <td>${qtyStr}</td>
+        <td style="font-size:.78rem;color:var(--muted)">${r.location ? '📍 '+r.location : '—'}</td>
+        <td style="font-size:.78rem;color:var(--muted)">${dateStr}<br>${timeStr}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="openWsAttachmentModal(${r.id})">🔍 عرض</button></td>
+      </tr>`;
+  }).join('');
+}
+
+function filterWsAttachments() {
+  const type = document.getElementById('wsAttTypeFilter')?.value || '';
+  const q    = (document.getElementById('wsAttSearch')?.value || '').trim().toLowerCase();
+  let records = window._wsAttachments || [];
+  if(type) records = records.filter(r=>r.type===type);
+  if(q) records = records.filter(r =>
+    (r.driver_name||'').toLowerCase().includes(q) ||
+    (r.vehicle_plate||'').toLowerCase().includes(q));
+  document.getElementById('wsAttTbody').innerHTML = renderWsAttachmentsRows(records);
+}
+
+function openWsAttachmentModal(id) {
+  const r = (window._wsAttachments||[]).find(x=>x.id===id);
+  if(!r) return;
+  const wt = WT[r.type] || {icon:'🔧', label:r.type};
+  const dt = r.created_at ? new Date(r.created_at) : null;
+  const dateStr = dt ? dt.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'}) : '—';
+  const timeStr = dt ? dt.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '—';
+  const qtyStr = r.quantity ? `${r.quantity} ${r.type.startsWith('fuel_')||r.type.startsWith('oil')?'لتر':r.type==='tire'?'إطار':'وحدة'}` : '—';
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${wt.icon} ${wt.label} — مراجعة المرفق</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="text-align:center;margin-bottom:1rem">
+      <img src="${r.odometer_photo}" alt="صورة العداد"
+        style="max-width:100%;max-height:340px;border-radius:12px;border:1.5px solid var(--border);object-fit:contain;background:var(--surface-2)"
+        onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'150\\'><rect fill=\\'%23f1f5f9\\' width=\\'200\\' height=\\'150\\'></rect><text x=\\'100\\' y=\\'80\\' text-anchor=\\'middle\\' font-size=\\'40\\'>🖼️</text></svg>'">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;font-size:.85rem">
+      <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">🚗 المركبة</div>
+        <div style="font-weight:700">${r.vehicle_plate ? r.vehicle_plate+(r.vehicle_model?' — '+r.vehicle_model:'') : '—'}</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">👨 السائق</div>
+        <div style="font-weight:700">${r.driver_name||'—'}</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">⛽ الكمية</div>
+        <div style="font-weight:700">${qtyStr}</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">🔢 قراءة العداد</div>
+        <div style="font-weight:700">${r.odometer_reading ?? '—'}</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;grid-column:1/-1">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">📍 الموقع</div>
+        <div style="font-weight:700">${r.location || 'غير متاح'}</div>
+      </div>
+      <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;grid-column:1/-1">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">🕒 الوقت</div>
+        <div style="font-weight:700">${dateStr} — ${timeStr}</div>
+      </div>
+      ${r.notes ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;grid-column:1/-1">
+        <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">💬 ملاحظات</div>
+        <div>${r.notes}</div>
+      </div>` : ''}
+    </div>
+    <div class="modal-footer">
+      <a href="${r.odometer_photo}" download class="btn btn-primary">⬇️ تحميل الصورة</a>
+      <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
+    </div>`);
+}
+
 function openDpMaintenanceGroup() {
   const MAINT = [
     {key:'filter',  icon:'🔧', label:'فلتر'},
@@ -10521,11 +10723,38 @@ function dpWsModal(type) {
     specific +
     '<div class="form-group"><label>' + odoLabel + ' <span class="req">*</span></label>' +
     '<input type="number" id="wOdo" placeholder="' + odoPlaceholder + '" min="0" step="' + odoStep + '"></div>' +
+    (type !== 'other' ?
+      '<div class="form-group"><label>📷 صورة العداد <span class="req">*</span></label>' +
+      '<div style="font-size:.72rem;color:var(--text-3);margin-bottom:.4rem">ارفع صورة واضحة للعداد كمرجع بصري — العداد يتم إدخاله يدوياً أعلاه، الصورة فقط للتوثيق.</div>' +
+      '<div id="wOdoPhotoPreviewWrap" style="display:none;margin-bottom:.5rem"><img id="wOdoPhotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)"></div>' +
+      '<label for="wOdoPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;border:1.5px dashed var(--border);border-radius:10px;padding:.7rem;cursor:pointer;color:var(--text-2);font-size:.82rem;font-weight:600;background:var(--surface-2)"><span id="wOdoPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span></label>' +
+      '<input type="file" id="wOdoPhotoInput" accept="image/*" capture="environment" style="display:none">' +
+      '</div>'
+    : '') +
     '<div class="form-group"><label>ملاحظات</label><textarea id="wNotes" placeholder="تفاصيل إضافية..."></textarea></div>' +
     '<input type="hidden" id="wPrice" value="' + priceVal + '">' +
     (priceVal > 0 ? '<div style="padding:.4rem .8rem;background:#f0fdf9;border:1px solid #6ee7b7;border-radius:8px;margin-bottom:.5rem;font-size:.85rem">💰 سعر الوحدة: <strong>' + priceVal.toFixed(2) + ' جنيه/وحدة</strong></div>' : '') +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" id="wsSubmitBtn">💾 حفظ</button></div>'
   );
+
+  window._wsOdoPhotoData = '';
+  const _wsPhotoInputEl = document.getElementById('wOdoPhotoInput');
+  if (_wsPhotoInputEl) {
+    _wsPhotoInputEl.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        window._wsOdoPhotoData = reader.result;
+        const preview = document.getElementById('wOdoPhotoPreview');
+        const wrap    = document.getElementById('wOdoPhotoPreviewWrap');
+        if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
+        const lbl = document.getElementById('wOdoPhotoBtnLabel');
+        if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
 
   document.getElementById('wsSubmitBtn').onclick = async () => {
     const odo   = parseFloat(document.getElementById('wOdo')?.value) || null;
@@ -10535,6 +10764,11 @@ function dpWsModal(type) {
 
     // ── Validation: عداد مطلوب دايماً ──
     if (!odo || odo <= 0) return showNotification(_isOp ? 'أدخل ساعات التشغيل' : 'أدخل قراءة العداد', 'error');
+
+    // ── Validation: صورة العداد مطلوبة (إلزامية) لكل العمليات إلا "أخرى" ──
+    if (type !== 'other' && !window._wsOdoPhotoData) {
+      return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل الحفظ', 'error');
+    }
 
     // ── تحديد driver_id وvehicle_id حسب الدور ──
     let _drvId, _vidFinal;
@@ -10554,6 +10788,7 @@ function dpWsModal(type) {
       price, notes,
       vehicle_id: _vidFinal,
       odometer_reading: odo,
+      odometer_photo: window._wsOdoPhotoData || '',
       location: ''
     };
 

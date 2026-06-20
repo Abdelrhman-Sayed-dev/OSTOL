@@ -125,6 +125,7 @@ def create_database():
             description      TEXT DEFAULT '',
             tire_action      TEXT DEFAULT '',
             location         TEXT DEFAULT '',
+            odometer_photo   TEXT DEFAULT '',
             FOREIGN KEY (driver_id)  REFERENCES drivers(id),
             FOREIGN KEY (vehicle_id) REFERENCES cars(id)
         )
@@ -229,6 +230,7 @@ def create_database():
         "CREATE INDEX IF NOT EXISTS idx_emg_driver     ON emergency_reports(driver_id)",
         "CREATE INDEX IF NOT EXISTS idx_emg_unread     ON emergency_reports(is_read)",
         "CREATE INDEX IF NOT EXISTS idx_ws_driver      ON workshop_records(driver_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ws_photo       ON workshop_records(odometer_photo)",
         "CREATE INDEX IF NOT EXISTS idx_garage_driver  ON garage_records(driver_id)",
         "CREATE INDEX IF NOT EXISTS idx_dcp_driver     ON driver_car_permissions(driver_id)",
         "CREATE INDEX IF NOT EXISTS idx_dcp_car        ON driver_car_permissions(car_id)",
