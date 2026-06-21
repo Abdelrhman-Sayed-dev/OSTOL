@@ -15019,8 +15019,8 @@ async function renderEquipmentOpCard() {
       .eqop-usage-bar{height:100%;border-radius:20px;background:linear-gradient(90deg,#3b82f6,#06b6d4)}
       .eqop-search-wrap{position:relative}
       .eqop-search-results{
-        position:absolute;top:calc(100% + 4px);right:0;left:0;background:#fff;border:1.5px solid var(--border);
-        border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:260px;overflow-y:auto;z-index:50;display:none;
+        position:fixed;background:#fff;border:1.5px solid var(--border);
+        border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow-y:auto;z-index:9999;display:none;
       }
       .eqop-search-results.show{display:block}
       .eqop-search-item{padding:.55rem .8rem;cursor:pointer;border-bottom:1px solid var(--border);font-size:.82rem}
@@ -15068,6 +15068,16 @@ async function renderEquipmentOpCard() {
   });
 }
 
+function positionEqOpSearchResults() {
+  const input = document.getElementById('eqOpSearch');
+  const resultsEl = document.getElementById('eqOpSearchResults');
+  if (!input || !resultsEl) return;
+  const r = input.getBoundingClientRect();
+  resultsEl.style.top = (r.bottom + 4) + 'px';
+  resultsEl.style.left = r.left + 'px';
+  resultsEl.style.width = r.width + 'px';
+}
+
 function filterEqOpSearch() {
   const q = (document.getElementById('eqOpSearch')?.value || '').trim().toLowerCase();
   const resultsEl = document.getElementById('eqOpSearchResults');
@@ -15079,13 +15089,23 @@ function filterEqOpSearch() {
       <div>${m.label}</div>
       ${m.ops.length ? `<div class="eq-ops">👷 ${m.ops.join(' • ')}</div>` : ''}
     </div>`).join('') : `<div class="eqop-search-item" style="color:var(--muted);cursor:default">لا توجد نتائج</div>`;
+  positionEqOpSearchResults();
   resultsEl.classList.add('show');
+  window._eqOpSearchRepositionHandler = window._eqOpSearchRepositionHandler || (() => positionEqOpSearchResults());
+  window.removeEventListener('scroll', window._eqOpSearchRepositionHandler, true);
+  window.removeEventListener('resize', window._eqOpSearchRepositionHandler);
+  window.addEventListener('scroll', window._eqOpSearchRepositionHandler, true);
+  window.addEventListener('resize', window._eqOpSearchRepositionHandler);
 }
 
 function selectEqOpSearchResult(carCode, label) {
   document.getElementById('eqOpEquipment').value = carCode;
   document.getElementById('eqOpSearch').value = label;
   document.getElementById('eqOpSearchResults').classList.remove('show');
+  if (window._eqOpSearchRepositionHandler) {
+    window.removeEventListener('scroll', window._eqOpSearchRepositionHandler, true);
+    window.removeEventListener('resize', window._eqOpSearchRepositionHandler);
+  }
 }
 
 async function generateEquipmentOpCard() {
