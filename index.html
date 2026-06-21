@@ -3323,37 +3323,12 @@ async function renderOverview() {
     }
   };
 
-  // استخدام مقياس لوغاريتمي إذا كان الفرق بين أكبر وأصغر قيمة > 50x
-  // هذا يضمن ظهور الكيرف حتى لو كان في يوم قيمة ضخمة جداً وبقية الأيام صغيرة
-  const fuelMax = Math.max(...fuelPerDay.filter(v=>v>0));
-  const fuelMin = Math.min(...fuelPerDay.filter(v=>v>0));
-  const useFuelLog = fuelMax > 0 && fuelMin > 0 && (fuelMax / fuelMin) > 50;
-  // إذا في قيم صفر مع لوغاريتمي نضع قيمة صغيرة بدل الصفر (اللوغاريتم لا يقبل 0)
-  const fuelPerDayAdj = useFuelLog ? fuelPerDay.map(v => v > 0 ? v : null) : fuelPerDay;
-
   new Chart(document.getElementById('chartFuelCost'), {
     type:'line',
-    data:{labels:dayLabels,datasets:[{label:'التكلفة',data:fuelPerDayAdj,
-      borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',tension:0,fill:true,
-      pointRadius:5,pointBackgroundColor:'#10b981',spanGaps:true}]},
-    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:18}},
-      plugins:{
-        legend:{display:false},
-        tooltip:{callbacks:{label:ctx=>'التكلفة: '+Math.round(ctx.parsed.y).toLocaleString('ar-EG')+' ج'}}
-      },
-      scales:{
-        x:{grid:{color:gc},ticks:{font:{size:9},maxRotation:0}},
-        y:{
-          type: useFuelLog ? 'logarithmic' : 'linear',
-          grid:{color:gc},
-          beginAtZero: !useFuelLog,
-          ticks:{
-            font:{size:9},
-            callback: v => v>=1000000 ? (v/1000000).toFixed(1)+'م' : v>=1000 ? Math.round(v/1000)+'ك' : v
-          }
-        }
-      }
-    },
+    data:{labels:dayLabels,datasets:[{label:'التكلفة',data:fuelPerDay,
+      borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',tension:0,fill:true,pointRadius:4,pointBackgroundColor:'#10b981'}]},
+    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14}},plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true}}},
     plugins:[valueLabelsPlugin]
   });
 
@@ -15140,87 +15115,383 @@ async function generateEquipmentOpCard() {
   const resEl  = document.getElementById('eqOpResult');
 
   if (!eqCode) return showNotification('اختر المعدة أولاً', 'error');
-
   resEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تجهيز البطاقة...</p></div>`;
 
-  let equipmentList = [];
+  // ── جلب بيانات المعدة والورديات والورشة بالتوازي ──
+  let equipmentList = [], shiftsResp = {shifts:[]}, allWs = [];
   try { const r = await apiCall('/equipment'); equipmentList = r.equipment || []; } catch(e) {}
-  const eq = equipmentList.find(e => e.car_code === eqCode);
+  try { shiftsResp = await apiCall(`/shifts?equipment_id=${encodeURIComponent(eqCode)}&date_from=${from}&date_to=${to}&limit=10000`); } catch(e) {}
+  try { allWs = await apiCall(`/workshops`); } catch(e) {}
 
-  let shiftsResp = {shifts:[]};
-  try {
-    shiftsResp = await apiCall(`/shifts?equipment_id=${encodeURIComponent(eqCode)}&date_from=${from}&date_to=${to}&limit=10000`);
-  } catch(e) {}
+  const eq = equipmentList.find(e => e.car_code === eqCode);
   const shifts = (shiftsResp.shifts || []).slice().sort((a,b)=> new Date(a.start_time) - new Date(b.start_time));
 
-  // ── المقاييس حسب التعريف المطلوب: ──
-  // عدد الورديات = عدد ساعات التشغيل ÷ 8  (مثال: 8 ساعات = 1 وردية، 16 ساعة = 2 وردية)
-  // نسبة الاستخدام اليومية = (عدد ساعات التشغيل ÷ 8) × 100  (بدون سقف — ممكن تتجاوز 100%)
-  const totalHours = shifts.reduce((sum, s) => sum + (s.working_hours || 0), 0);
-  const totalFuel  = shifts.reduce((sum, s) => sum + (parseFloat(s.fuel_liters) || 0), 0);
+  // ── فلتر سجلات الورشة للمعدة في الفترة ──
+  // سجلات الورشة للمعدة: is_operator=1 + operator_id من المشغلين اللي ليهم ورديات على هذه المعدة
+  const eqOperatorIds = new Set(shifts.map(s => s.operator_id).filter(Boolean));
+  const wsAll = (Array.isArray(allWs) ? allWs : []).filter(w => {
+    if (!w.created_at) return false;
+    const wDate = w.created_at.slice(0,10);
+    if (from && wDate < from) return false;
+    if (to   && wDate > to)   return false;
+    // سجل مرتبط بمشغل من ورديات هذه المعدة
+    return w.is_operator == 1 && eqOperatorIds.has(w.operator_id);
+  });
+
+  // ── تقسيم سجلات الورشة حسب النوع ──
+  const FUEL_TYPES_SET = new Set(['fuel_solar','fuel_92','fuel_95','fuel_80','fuel_cng']);
+  const OIL_TYPES_SET  = new Set(['oil','oil_motor','oil_gear','oil_brake','oil_hydro','oil_grease',
+                                   'filter','filter_oil','filter_solar','filter_petrol','filter_air',
+                                   'filter_separator','filter_ac','filter_dryer','filter_breather','filter_hydraulic']);
+  const wsFuel  = wsAll.filter(w => FUEL_TYPES_SET.has(w.type));
+  const wsOils  = wsAll.filter(w => OIL_TYPES_SET.has(w.type));
+  const wsTires = wsAll.filter(w => w.type === 'tire');
+  const wsBatt  = wsAll.filter(w => w.type === 'battery');
+  const wsMaint = wsAll.filter(w => w.type === 'other' || (!FUEL_TYPES_SET.has(w.type) && !OIL_TYPES_SET.has(w.type) && w.type !== 'tire' && w.type !== 'battery'));
+
+  // ── إجماليات ──
+  const totalHours  = shifts.reduce((s,r) => s + (r.working_hours||0), 0);
   const shiftsCount = totalHours / 8;
-  const usagePct     = (totalHours / 8) * 100;
+  const usagePct    = (totalHours / 8) * 100;
+  const totalFuelLt = wsFuel.reduce((s,r) => s + (parseFloat(r.quantity)||0), 0);
+  const totalFuelCost = wsFuel.reduce((s,r) => s + (parseFloat(r.price)||0), 0);
 
   const eqInfoLine = eq
-    ? `${eq.equipment_name} ${eq.car_code?'— '+eq.car_code:''} ${eq.equipment_type?'| '+eq.equipment_type:''} ${eq.brand?'| '+eq.brand:''} ${eq.branch?'| الفرع: '+eq.branch:''}`
+    ? `${eq.equipment_name}${eq.car_code?' — '+eq.car_code:''}${eq.equipment_type?' | '+eq.equipment_type:''}${eq.brand?' | '+eq.brand:''}${eq.branch?' | الفرع: '+eq.branch:''}`
     : eqCode;
 
+  function fmtN(n) { return (n||0).toLocaleString('ar-EG'); }
+  function fmtDt(s) { return s ? new Date(s).toLocaleDateString('ar-EG') : '—'; }
+  function fmtTm(s) { return s ? new Date(s).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '—'; }
+
+  // ── بطاقة الملخص (أعلى الصفحة) ──
   const summaryCards = `
-    <div class="eqop-summary-grid">
-      <div class="eqop-summary-card"><div class="ic">⏱️</div><div class="lbl">عدد ساعات التشغيل الفعلي</div><div class="val">${totalHours.toFixed(1)}</div></div>
-      <div class="eqop-summary-card"><div class="ic">📋</div><div class="lbl">عدد الورديات (الساعات÷8)</div><div class="val">${shiftsCount.toFixed(2)}</div></div>
-      <div class="eqop-summary-card"><div class="ic">📊</div><div class="lbl">نسبة الاستخدام اليومية</div><div class="val" style="color:${usagePct>100?'#dc2626':'#0f172a'}">${usagePct.toFixed(1)}%</div></div>
-      <div class="eqop-summary-card"><div class="ic">⛽</div><div class="lbl">إجمالي الوقود</div><div class="val">${totalFuel.toFixed(1)} لتر</div></div>
+    <div class="eqop-summary-grid" style="grid-template-columns:repeat(6,1fr)">
+      <div class="eqop-summary-card"><div class="ic">⏱️</div><div class="lbl">ساعات التشغيل</div><div class="val">${totalHours.toFixed(1)}</div></div>
+      <div class="eqop-summary-card"><div class="ic">📋</div><div class="lbl">عدد الورديات</div><div class="val">${shiftsCount.toFixed(2)}</div></div>
+      <div class="eqop-summary-card"><div class="ic">📊</div><div class="lbl">نسبة الاستخدام</div><div class="val" style="color:${usagePct>100?'#dc2626':'#0f172a'}">${usagePct.toFixed(1)}%</div></div>
+      <div class="eqop-summary-card"><div class="ic">⛽</div><div class="lbl">إجمالي الوقود</div><div class="val">${totalFuelLt.toLocaleString('ar-EG')} لتر</div></div>
+      <div class="eqop-summary-card"><div class="ic">💰</div><div class="lbl">تكلفة الوقود</div><div class="val" style="color:#ea580c">${totalFuelCost.toLocaleString('ar-EG')} ج</div></div>
+      <div class="eqop-summary-card"><div class="ic">👷</div><div class="lbl">عدد المشغلين</div><div class="val">${eqOperatorIds.size}</div></div>
     </div>`;
 
-  const rowsHtml = shifts.length ? shifts.map(s => {
-    const hrs = s.working_hours || 0;
-    const rowShifts = hrs / 8;
-    const rowUsagePct = (hrs / 8) * 100;
-    return `<tr>
-      <td>${fmtDate(s.start_time)}</td>
-      <td>${s.operator_name || '—'}</td>
-      <td>${s.start_time ? new Date(s.start_time).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
-      <td>${s.end_time ? new Date(s.end_time).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : (s.status==='active' ? '🟢 جارية' : '—')}</td>
-      <td>${s.start_hours ?? '—'}</td>
-      <td>${s.end_hours ?? '—'}</td>
-      <td><strong>${hrs.toFixed(1)}</strong></td>
-      <td>${rowShifts.toFixed(2)}</td>
-      <td><span style="font-weight:700;color:${rowUsagePct>100?'#dc2626':'#0f172a'}">${rowUsagePct.toFixed(1)}%</span></td>
-      <td>${s.fuel_liters ? s.fuel_liters+' لتر' : '—'}</td>
-      <td>${s.project || '—'}</td>
-      <td>${s.notes || '—'}</td>
-    </tr>`;
-  }).join('') : `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد ورديات في هذه الفترة</p></div></td></tr>`;
+  // ── أولاً: بيان مسحوبات الوقود ──
+  const fuelByType = {};
+  wsFuel.forEach(w => {
+    if(!fuelByType[w.type]) fuelByType[w.type] = [];
+    fuelByType[w.type].push(w);
+  });
+  const FUEL_LABEL_MAP = {fuel_solar:'السولار',fuel_92:'بنزين 92',fuel_95:'بنزين 95',fuel_80:'بنزين 80',fuel_cng:'غاز طبيعي'};
+  let fuelHtml = '';
+  Object.entries(fuelByType).forEach(([type, rows]) => {
+    let totQty=0, totCost=0;
+    const tRows = rows.map((r,i) => {
+      totQty  += parseFloat(r.quantity)||0;
+      totCost += parseFloat(r.price)||0;
+      return `<tr>
+        <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
+        <td style="text-align:center">${(r.created_at||'').slice(0,10)||'—'}</td>
+        <td style="text-align:center;font-weight:700;color:#ea580c">${fmtN(r.quantity)} لتر</td>
+        <td style="text-align:center;color:#64748b;font-size:.82rem">${r.odometer_reading ? fmtN(r.odometer_reading)+' كم' : '—'}</td>
+        <td style="text-align:center;color:#64748b;font-size:.82rem">${parseFloat(r.price)>0 ? fmtN(r.price)+' ج' : '—'}</td>
+        <td style="font-size:.78rem;color:#94a3b8">${r.driver_name||'—'}</td>
+        <td style="font-size:.78rem;color:#94a3b8">${r.notes||''}</td>
+      </tr>`;
+    }).join('');
+    fuelHtml += `
+      <div style="margin-bottom:.8rem;page-break-inside:avoid;break-inside:avoid">
+        <div style="font-size:.85rem;font-weight:800;color:#1e3a5f;border-right:3px solid #ea580c;padding-right:.5rem;margin-bottom:.5rem">
+          ⛽ بيان مسحوبات ${FUEL_LABEL_MAP[type]||type} (${rows.length} عملية تمويل)
+        </div>
+        <div style="overflow-x:auto">
+          <table class="op-table" style="font-size:.8rem">
+            <thead><tr>
+              <th style="width:32px">#</th><th>التاريخ</th><th>الكمية (لتر)</th>
+              <th>قراءة العداد</th><th>التكلفة</th><th>المشغل</th><th>ملاحظات</th>
+            </tr></thead>
+            <tbody>${tRows}</tbody>
+            <tfoot><tr style="background:#fff7ed;font-weight:800">
+              <td colspan="2" style="color:#ea580c">🏁 الإجمالي</td>
+              <td style="text-align:center;color:#ea580c">${totQty.toLocaleString('ar-EG')} لتر</td>
+              <td>—</td>
+              <td style="text-align:center;color:#64748b">${totCost>0?totCost.toLocaleString('ar-EG')+' ج':'—'}</td>
+              <td colspan="2"></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>`;
+  });
+  if (!fuelHtml) fuelHtml = `<div style="color:#94a3b8;font-size:.8rem;padding:.5rem">لا توجد سجلات وقود في هذه الفترة</div>`;
 
+  // ── المشغلون في هذه الفترة ──
+  const operatorMap = {};
+  shifts.forEach(s => {
+    const key = s.operator_id || s.operator_name || '—';
+    if(!operatorMap[key]) operatorMap[key] = { name: s.operator_name||'—', hours:0, shifts:0, firstDate: s.start_time };
+    operatorMap[key].hours  += s.working_hours||0;
+    operatorMap[key].shifts += 1;
+    if(!operatorMap[key].firstDate || s.start_time < operatorMap[key].firstDate) operatorMap[key].firstDate = s.start_time;
+  });
+  const operatorsArr = Object.values(operatorMap).sort((a,b) => b.hours - a.hours);
+  const opRows = operatorsArr.map((o,i) => `<tr>
+    <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
+    <td style="font-weight:700">${o.name}</td>
+    <td style="text-align:center">${o.shifts}</td>
+    <td><span style="background:#bfdbfe;color:#1e40af;padding:.2rem .7rem;border-radius:20px;font-weight:700;font-size:.85rem">${o.hours.toFixed(1)} ساعة</span></td>
+    <td style="text-align:center;font-size:.8rem;color:#94a3b8">${fmtDt(o.firstDate)}</td>
+  </tr>`).join('');
+  const operatorsHtml = operatorsArr.length ? `
+    <div class="op-drivers-section" style="margin-top:1rem">
+      <div style="font-weight:800;font-size:.88rem;color:#334155;margin-bottom:.6rem">
+        👷 المشغلون في هذه الفترة (${operatorsArr.length})
+      </div>
+      <div style="overflow-x:auto">
+        <table class="op-table">
+          <thead><tr>
+            <th style="width:36px">#</th><th>المشغل</th>
+            <th style="text-align:center">عدد الورديات</th>
+            <th>ساعات التشغيل</th>
+            <th style="text-align:center">أول وردية</th>
+          </tr></thead>
+          <tbody>${opRows}</tbody>
+        </table>
+      </div>
+    </div>` : `<div style="font-size:.8rem;color:#94a3b8;margin-top:.8rem">لا توجد ورديات في هذه الفترة</div>`;
+
+  // ── ثانياً: جدول الزيوت ──
+  const OIL_COL_MAP = {oil_motor:'motor',oil_gear:'gear',oil_brake:'brake',oil_hydro:'hydraulic',oil_grease:'grease',oil:'other',filter:'other',filter_oil:'motor'};
+  const OIL_COL_IDX = {motor:0,gear:1,brake:2,hydraulic:3,grease:4,other:5};
+  const oilsRows = wsOils.map(o => {
+    const qtyCells=['&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;','&nbsp;'];
+    const col = OIL_COL_MAP[o.type] || 'other';
+    const idx = OIL_COL_IDX[col] ?? 5;
+    if(o.quantity) qtyCells[idx] = parseFloat(o.quantity)||0;
+    const priceVal = parseFloat(o.price)||0;
+    return `<tr>
+      <td>${(o.created_at||'').slice(0,10)||'&nbsp;'}</td>
+      ${qtyCells.map(c=>`<td>${c}</td>`).join('')}
+      <td style="background:#fef9e7;font-weight:700;color:#92400e;text-align:center">${priceVal>0?priceVal.toLocaleString('ar-EG'):'&nbsp;'}</td>
+      <td>${o.doc_number||'&nbsp;'}</td><td>&nbsp;</td>
+      <td>${o.location||'&nbsp;'}</td>
+      <td style="background:#f0f9ff;font-weight:700;color:#0369a1;text-align:center">${o.odometer_reading?fmtN(o.odometer_reading)+' كم':'&nbsp;'}</td>
+      <td>&nbsp;</td><td>${o.driver_name||'&nbsp;'}</td><td>&nbsp;</td><td>&nbsp;</td>
+    </tr>`;
+  });
+  const EMPTY_OIL = 8;
+  while(oilsRows.length < EMPTY_OIL) oilsRows.push('<tr>'+'<td>&nbsp;</td>'.repeat(16)+'</tr>');
+
+  // ── ثالثاً: جدول الكاوتش والبطاريات ──
+  const tiresRows = [...wsTires,...wsBatt].map(t => `<tr>
+    <td>${(t.created_at||'').slice(0,10)||'&nbsp;'}</td>
+    <td>${t.type==='battery'?'بطارية':(t.description||t.notes||'إطار')}</td>
+    <td>${t.notes||'&nbsp;'}</td>
+    <td style="text-align:center">${t.quantity||'&nbsp;'}</td>
+    <td style="font-weight:600;color:#0891b2">${t.odometer_reading?fmtN(t.odometer_reading)+' كم':'&nbsp;'}</td>
+    <td>${t.doc_number||'&nbsp;'}</td><td>&nbsp;</td>
+    <td>${parseFloat(t.price)>0?parseFloat(t.price).toLocaleString('ar-EG'):'&nbsp;'}</td>
+    <td>&nbsp;</td><td>${t.driver_name||'&nbsp;'}</td><td style="min-width:40px">&nbsp;</td><td>&nbsp;</td>
+  </tr>`);
+  const EMPTY_TIRES = 6;
+  while(tiresRows.length < EMPTY_TIRES) tiresRows.push('<tr>'+'<td>&nbsp;</td>'.repeat(12)+'</tr>');
+
+  // ── رابعاً: جدول الصيانة ──
+  const maintRows = wsMaint.map((w,i) => `<tr>
+    <td style="text-align:center">${i+1}</td>
+    <td>${(w.created_at||'').slice(0,10)||'&nbsp;'}</td>
+    <td>&nbsp;</td>
+    <td style="background:#f0f9ff;font-weight:700;color:#0369a1;text-align:center">${w.odometer_reading?fmtN(w.odometer_reading)+' كم':'&nbsp;'}</td>
+    <td>${w.description||w.notes||'&nbsp;'}</td>
+    <td>${w.location||'&nbsp;'}</td>
+    <td>${parseFloat(w.price)>0?parseFloat(w.price).toLocaleString('ar-EG'):'&nbsp;'}</td>
+    <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td>
+  </tr>`);
+  const EMPTY_MAINT = 10;
+  while(maintRows.length < EMPTY_MAINT) maintRows.push('<tr>'+'<td>&nbsp;</td>'.repeat(11)+'</tr>');
+
+  // ── البناء الكامل للبطاقة ──
   resEl.innerHTML = `
+    <style>
+      @media print {
+        .sidebar,.topbar,.sidebar-overlay,#sidebarOverlay,.no-print{display:none!important}
+        body,html{background:#fff!important}
+        #appShell{display:block!important}
+        .main-content{margin:0!important;padding:0!important}
+        .page-content{padding:0!important}
+        .card{box-shadow:none!important;border:none!important;margin:0!important;padding:0!important}
+        .eqop-print-header{display:block!important;text-align:center;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #0f2027}
+        @page{size:A4 landscape;margin:8mm 10mm}
+        .eqop-page-break{page-break-after:always}
+      }
+      .eqop-print-header{display:none}
+      .eqop-page-break{display:none}
+      @media print{.eqop-page-break{display:block}}
+    </style>
+
+    <!-- رأس الطباعة -->
     <div class="eqop-print-header">
       <div style="font-size:16pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
       <div style="font-size:13pt;font-weight:700;margin-top:.3rem">بطاقة تشغيل المعدات</div>
-      <div style="font-size:10pt;color:#64748b;margin-top:.2rem">${eqInfoLine} &nbsp;|&nbsp; الفترة: ${fmtDate(from)} — ${fmtDate(to)}</div>
+      <div style="font-size:10pt;color:#64748b;margin-top:.2rem">${eqInfoLine} &nbsp;|&nbsp; الفترة: ${fmtDt(from)} — ${fmtDt(to)}</div>
     </div>
 
+    <!-- ════ الصفحة الأولى: الملخص + أولاً (الوقود) + المشغلون ════ -->
     <div class="card">
       <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
         <div>
           <div class="card-title">🏗️ ${eqInfoLine}</div>
-          <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">${fmtDate(from)} — ${fmtDate(to)}</div>
+          <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">${fmtDt(from)} — ${fmtDt(to)}</div>
         </div>
         <div style="display:flex;gap:.5rem" class="no-print">
           <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ طباعة</button>
         </div>
       </div>
-      <div style="padding:0 1.2rem 1.4rem">
+      <div class="op-card-body" style="padding:0 1.2rem 1.4rem">
         ${summaryCards}
-        <div style="overflow-x:auto">
-          <table class="eqop-table">
-            <thead><tr>
-              <th>التاريخ</th><th>المشغل</th><th>بداية الوردية</th><th>نهاية الوردية</th>
-              <th>عداد البداية</th><th>عداد النهاية</th><th>ساعات التشغيل</th>
-              <th>عدد الورديات</th><th>نسبة الاستخدام</th><th>الوقود</th><th>المشروع</th><th>ملاحظات</th>
-            </tr></thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
+
+        <!-- أولاً: بيان مسحوبات الوقود -->
+        <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin:.8rem 0 .6rem;color:#1e3a5f">
+          أولاً: بيان مسحوبات الوقود
+        </div>
+        ${fuelHtml}
+      </div>
+      <!-- المشغلون في نهاية الصفحة الأولى -->
+      <div style="padding:0 1.2rem 1.4rem">
+        ${operatorsHtml}
+      </div>
+    </div>
+
+    <!-- ════ فاصل صفحة ════ -->
+    <div class="eqop-page-break"></div>
+
+    <!-- ════ الصفحة الثانية: ثانياً + ثالثاً + رابعاً + خامساً ════ -->
+    <div class="card" style="margin-top:1rem">
+      <div style="padding:.5rem 1.2rem 1.4rem">
+
+        <!-- رأس طباعة مكرر للصفحة الثانية -->
+        <div class="eqop-print-header" style="margin-bottom:.5rem">
+          <div style="font-size:12pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
+          <div style="font-size:10pt;font-weight:700">بطاقة تشغيل المعدات — ${eqInfoLine}</div>
+        </div>
+
+        <!-- ثانياً: الزيوت والشحوم -->
+        <div class="op-section-block">
+          <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin-bottom:.8rem;color:#1e3a5f">
+            ثانياً: الزيوت والشحوم المتصرفة
+          </div>
+          <div style="overflow-x:auto;margin-bottom:1.5rem">
+            <table class="op-table op-page2-table">
+              <thead>
+                <tr>
+                  <th rowspan="2">التاريخ</th>
+                  <th colspan="6" style="text-align:center;border-bottom:1px solid #e2e8f0">الكمية المتصرفة</th>
+                  <th rowspan="2" style="background:#fef3c7;color:#92400e">التكلفة (ج)</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">مستند الصرف</th>
+                  <th rowspan="2">جهة الصرف</th>
+                  <th rowspan="2" style="background:#e0f2fe;color:#0369a1">قراءة العداد</th>
+                  <th rowspan="2">ساعات المحرك</th>
+                  <th rowspan="2">الاسم</th>
+                  <th rowspan="2">عدد التشغيل</th>
+                  <th rowspan="2">التوقيع</th>
+                </tr>
+                <tr>
+                  <th>زيت المحرك (ل)</th><th>زيت التروس (ل)</th><th>زيت الفرامل (ل)</th>
+                  <th>زيت الهيدروليك (ل)</th><th>شحم (كجم)</th><th>أخرى</th>
+                  <th>رقم</th><th>تاريخ</th>
+                </tr>
+              </thead>
+              <tbody>${oilsRows.join('')}</tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ثالثاً: الكاوتش والبطاريات -->
+        <div class="op-section-block">
+          <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin-bottom:.8rem;color:#1e3a5f">
+            ثالثاً: الكاوتش والبطاريات المتصرفة
+          </div>
+          <div style="overflow-x:auto;margin-bottom:1.5rem">
+            <table class="op-table op-page2-table">
+              <thead>
+                <tr>
+                  <th rowspan="2">التاريخ</th><th rowspan="2">اسم الصنف</th>
+                  <th rowspan="2">المقاس أو الصفة</th><th rowspan="2">الكمية بالعدد</th>
+                  <th rowspan="2" style="background:#1e4d8c">قراءة العداد</th>
+                  <th colspan="3" style="text-align:center;border-bottom:1px solid #e2e8f0">مستند الصرف</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">السعر</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">القائم بالصرف</th>
+                </tr>
+                <tr><th>رقم</th><th>تاريخ</th><th>الإجمالي</th><th>الوحدة</th><th>الاجمالي</th><th>الاسم</th><th>التوقيع</th></tr>
+              </thead>
+              <tbody>${tiresRows.join('')}</tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- رابعاً: أعمال الصيانة والإصلاح -->
+        <div class="op-section-block" style="margin-bottom:1.5rem">
+          <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin-bottom:.8rem;color:#1e3a5f">
+            رابعاً: أعمال الصيانة والإصلاح
+          </div>
+          <div style="overflow-x:auto">
+            <table class="op-table op-maint-table" style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <th style="min-width:55px" rowspan="2">مسلسل</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">تاريخ التوقف</th>
+                  <th style="min-width:90px;background:#1e4d8c" rowspan="2">قراءة العداد</th>
+                  <th style="min-width:180px" rowspan="2">أعمال الصيانة التي تمت</th>
+                  <th style="min-width:110px" rowspan="2">مكان الإصلاح</th>
+                  <th colspan="3" style="text-align:center;border-bottom:1px solid #e2e8f0">التكاليف</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">مسؤول الورشة</th>
+                </tr>
+                <tr>
+                  <th>من</th><th>إلى</th>
+                  <th>قطع غيار</th><th>عمالة</th><th>تشغيلات خارجية</th>
+                  <th>الاسم</th><th>التوقيع</th>
+                </tr>
+              </thead>
+              <tbody>${maintRows.join('')}</tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- خامساً: قطع الغيار الرئيسية -->
+        <div class="op-section-block" style="margin-bottom:1.5rem">
+          <div style="font-size:12pt;font-weight:800;border-bottom:2px solid #1e3a5f;padding-bottom:.3rem;margin-bottom:.8rem;color:#1e3a5f">
+            خامساً: قطع الغيار الرئيسية المنصرفة للإصلاح
+          </div>
+          <div style="overflow-x:auto">
+            <table class="op-table op-maint-table" style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <th rowspan="2" style="min-width:70px">مسلسل</th>
+                  <th rowspan="2" style="min-width:180px">اسم الجزء</th>
+                  <th rowspan="2" style="min-width:80px">الكمية بالعدد</th>
+                  <th rowspan="2" style="min-width:90px;background:#1e4d8c">قراءة العداد</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">مستند الصرف</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">السعر</th>
+                  <th colspan="2" style="text-align:center;border-bottom:1px solid #e2e8f0">القائم بالصرف</th>
+                </tr>
+                <tr><th>رقم</th><th>تاريخ</th><th>الوحدة</th><th>الإجمالي</th><th>الاسم</th><th>التوقيع</th></tr>
+              </thead>
+              <tbody>
+                ${'<tr>'+'<td>&nbsp;</td>'.repeat(10)+'</tr>'.repeat(12)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- التوقيعات -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2rem;margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0">
+          <div><div style="font-weight:700;margin-bottom:.5rem">متابعة المكتب الفني</div>
+            <div>الاسم : ............</div><div style="margin-top:.4rem">التوقيع : ............</div></div>
+          <div><div style="font-weight:700;margin-bottom:.5rem">مهندس المكتب الفني</div>
+            <div>الاسم : ............</div><div style="margin-top:.4rem">التوقيع : ............</div></div>
+          <div><div style="font-weight:700;margin-bottom:.5rem">المهندس الميكانيكي للموقع</div>
+            <div>الاسم : ............</div><div style="margin-top:.4rem">التوقيع : ............</div></div>
+        </div>
+        <div style="margin-top:1rem;font-size:.85rem;color:#64748b;border-top:1px dashed #e2e8f0;padding-top:.5rem">
+          تم تفريغ محتويات هذه البطاقة بسجل التشغيل والصيانة السنوي المُعدّ بتاريخ &nbsp; / &nbsp; /
         </div>
       </div>
     </div>`;
