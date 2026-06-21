@@ -2348,7 +2348,7 @@ async def create_user(user: UserCreate, cu: dict = Depends(require_admin)):
 async def list_users(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id,username,role,branch,last_login FROM users ORDER BY id DESC LIMIT 200")
+        c.execute("SELECT id,username,role,branch,last_login FROM users ORDER BY id DESC")
         return [dict(r) for r in c.fetchall()]
 
 @app.delete("/users/{uid}")
@@ -2550,21 +2550,21 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
                 conditions.append("w.created_at LIKE ?")
                 params.append(month + "%")
             where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-            c.execute(q + where + " ORDER BY w.id DESC LIMIT 500", params)
+            c.execute(q + where + " ORDER BY w.id DESC", params)
         elif cu["role"] == "operator":
             op_id3 = cu.get("operator_id")
             if not op_id3: return []
             month_cond = " AND w.created_at LIKE ?" if month else ""
             month_params = [month + "%"] if month else []
             # المشغل: operator_id column أو driver_id=0 sentinel
-            c.execute(q + " WHERE (w.operator_id=? OR (w.driver_id=0 AND w.is_operator=1 AND w.operator_id IS NULL AND w.created_at IS NOT NULL))" + month_cond + " ORDER BY w.id DESC LIMIT 200",
+            c.execute(q + " WHERE (w.operator_id=? OR (w.driver_id=0 AND w.is_operator=1 AND w.operator_id IS NULL AND w.created_at IS NOT NULL))" + month_cond + " ORDER BY w.id DESC",
                       [op_id3] + month_params)
         else:
             did = cu.get("driver_id")
             if not did: return []
             month_cond = " AND w.created_at LIKE ?" if month else ""
             month_params = [month + "%"] if month else []
-            c.execute(q + " WHERE w.driver_id=?" + month_cond + " ORDER BY w.id DESC LIMIT 200", [did] + month_params)
+            c.execute(q + " WHERE w.driver_id=?" + month_cond + " ORDER BY w.id DESC", [did] + month_params)
         rows = []
         for r in c.fetchall():
             d = dict(r)
@@ -2604,7 +2604,7 @@ async def get_workshop_attachments(cu: dict = Depends(get_user), branch: Optiona
     if type:
         q += " AND w.type=?"
         params.append(type)
-    q += " ORDER BY w.id DESC LIMIT 500"
+    q += " ORDER BY w.id DESC"
     with get_db() as conn:
         c = conn.cursor()
         c.execute(q, params)
@@ -2851,11 +2851,11 @@ async def get_garage_records(cu: dict = Depends(get_user)):
                LEFT JOIN drivers d ON g.driver_id=d.id
                LEFT JOIN cars c ON g.car_id=c.id"""
         if cu["role"] in ("admin", "reporter", "superuser"):
-            c.execute(q + " ORDER BY g.id DESC LIMIT 500")
+            c.execute(q + " ORDER BY g.id DESC")
         else:
             did = cu.get("driver_id")
             if not did: return []
-            c.execute(q + " WHERE g.driver_id=? ORDER BY g.id DESC LIMIT 200", (did,))
+            c.execute(q + " WHERE g.driver_id=? ORDER BY g.id DESC", (did,))
         return [dict(r) for r in c.fetchall()]
 
 @app.get("/garage/latest")
@@ -2953,18 +2953,18 @@ async def get_emergency_reports(cu: dict = Depends(get_user), branch: Optional[s
         branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
             if branch:
-                c.execute(q + " WHERE d.branch=? ORDER BY e.id DESC LIMIT 500", (branch,))
+                c.execute(q + " WHERE d.branch=? ORDER BY e.id DESC", (branch,))
             else:
-                c.execute(q + " ORDER BY e.id DESC LIMIT 500")
+                c.execute(q + " ORDER BY e.id DESC")
         elif cu["role"] == "operator":
             # المشغل يشوف بلاغاته باستخدام operator_id (المخزّن كـ driver_id في emergency_reports)
             op_id = cu.get("operator_id")
             if not op_id: return []
-            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC LIMIT 200", (op_id,))
+            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC", (op_id,))
         else:
             did = cu.get("driver_id")
             if not did: return []
-            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC LIMIT 200", (did,))
+            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC", (did,))
         rows = []
         for r in c.fetchall():
             d = dict(r)
@@ -7276,6 +7276,7 @@ async def get_operator_stats(oid: int, cu: dict = Depends(get_user)):
 @app.get("/shifts")
 async def list_all_shifts(
     operator_id: int = Query(None),
+    equipment_id: str = Query(None),
     branch:      str = Query(None),
     project:     str = Query(None),
     status:      str = Query(None),
@@ -7303,6 +7304,8 @@ async def list_all_shifts(
             q += " AND (s.branch=? OR o.branch=?)"; params.extend([eff_branch, eff_branch])
         if operator_id:
             q += " AND s.operator_id=?"; params.append(operator_id)
+        if equipment_id:
+            q += " AND s.equipment_id=?"; params.append(equipment_id)
         if project:
             q += " AND s.project LIKE ?"; params.append(f"%{project}%")
         if status:
@@ -8449,7 +8452,16 @@ def _safe_add_columns(c):
                                ("item_spec","TEXT DEFAULT ''"),
                                ("receiver_name","TEXT DEFAULT ''"),
                                ("operator_id","INTEGER"),
-                               ("is_operator","INTEGER DEFAULT 0")],
+                               ("is_operator","INTEGER DEFAULT 0"),
+                               ("fuel_source","TEXT DEFAULT ''"),
+                               ("station_name","TEXT DEFAULT ''"),
+                               ("pump_number","TEXT DEFAULT ''"),
+                               ("invoice_photo","TEXT DEFAULT ''"),
+                               ("parts_source","TEXT DEFAULT ''"),
+                               ("inventory_product_id","INTEGER"),
+                               ("direct_purchase_supplier","TEXT DEFAULT ''"),
+                               ("direct_purchase_cost","REAL"),
+                               ("approval_status","TEXT DEFAULT 'pending'")],
         "drivers":            [("national_id","TEXT DEFAULT ''"),("birth_date","TEXT DEFAULT ''"),
                                ("driver_license_expiry","TEXT DEFAULT ''"),
                                ("vehicle_license_expiry","TEXT DEFAULT ''"),
@@ -8472,6 +8484,82 @@ def _safe_add_columns(c):
     # ── الآن العمود odometer_photo موجود بالتأكيد (سواء من CREATE TABLE أو من الميجريشن فوق) — أنشئ الفهرس بأمان ──
     try:
         c.execute("CREATE INDEX IF NOT EXISTS idx_ws_photo ON workshop_records(odometer_photo)")
+    except Exception:
+        pass
+
+    # ══════════════════════════════════════════════════════
+    # VIRTUAL INVENTORY MODULE — إدارة المخزون
+    # ══════════════════════════════════════════════════════
+    c.execute("""CREATE TABLE IF NOT EXISTS inventory_categories(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS inventory_suppliers(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT DEFAULT '',
+        email TEXT DEFAULT '',
+        address TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS inventory_products(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        sku TEXT DEFAULT '',
+        category_id INTEGER,
+        supplier_id INTEGER,
+        purchase_price REAL DEFAULT 0,
+        sale_price REAL DEFAULT 0,
+        quantity REAL DEFAULT 0,
+        min_quantity REAL DEFAULT 0,
+        unit TEXT DEFAULT 'قطعة',
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(category_id) REFERENCES inventory_categories(id) ON DELETE SET NULL,
+        FOREIGN KEY(supplier_id) REFERENCES inventory_suppliers(id) ON DELETE SET NULL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS inventory_movements(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        movement_type TEXT NOT NULL CHECK(movement_type IN ('in','out','return','adjust')),
+        quantity REAL NOT NULL,
+        ref_type TEXT DEFAULT '',
+        ref_id INTEGER,
+        username TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(product_id) REFERENCES inventory_products(id) ON DELETE CASCADE
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS inventory_purchase_orders(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_number TEXT DEFAULT '',
+        supplier_id INTEGER,
+        order_date TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft' CHECK(status IN ('draft','open','received','cancelled')),
+        total_value REAL DEFAULT 0,
+        items_json TEXT DEFAULT '[]',
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(supplier_id) REFERENCES inventory_suppliers(id) ON DELETE SET NULL
+    )""")
+    for idx_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_inv_products_cat ON inventory_products(category_id)",
+        "CREATE INDEX IF NOT EXISTS idx_inv_products_sup ON inventory_products(supplier_id)",
+        "CREATE INDEX IF NOT EXISTS idx_inv_movements_prod ON inventory_movements(product_id)",
+        "CREATE INDEX IF NOT EXISTS idx_inv_po_supplier ON inventory_purchase_orders(supplier_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ws_approval ON workshop_records(approval_status)",
+    ]:
+        try: c.execute(idx_sql)
+        except Exception: pass
+    # تصنيفات أساسية افتراضية (مرة واحدة فقط لو الجدول فاضي)
+    try:
+        if c.execute("SELECT COUNT(*) FROM inventory_categories").fetchone()[0] == 0:
+            for cat_name in ["الإطارات","البطاريات","العمرات","الفرامل","الزيوت والفلاتر","الكهرباء","التبريد","العفشة","أخرى"]:
+                c.execute("INSERT INTO inventory_categories(name) VALUES(?)", (cat_name,))
     except Exception:
         pass
 
@@ -9010,6 +9098,17 @@ class WorkshopCreate(BaseModel):
     item_name:     Optional[str]   = ""    # اسم الصنف (كاوتش/بطارية)
     item_spec:     Optional[str]   = ""    # المقاس
     receiver_name: Optional[str]   = ""    # اسم المتسلم
+    # ── Virtual Inventory: مصدر الوقود (للتفويل) ──
+    fuel_source:   Optional[str]   = ""    # CompanyStation | ExternalStation
+    station_name:  Optional[str]   = ""    # اسم المحطة الخارجية
+    pump_number:   Optional[str]   = ""    # رقم المضخة (محطة الشركة)
+    invoice_photo: Optional[str]   = ""    # base64 صورة الفاتورة
+    # ── Virtual Inventory: مصدر القطعة (للصيانة) ──
+    parts_source:  Optional[str]   = ""    # Inventory | DirectPurchase | InventoryPurchase
+    inventory_product_id: Optional[int] = None   # المنتج المصروف من المخزن
+    direct_purchase_supplier: Optional[str] = ""  # المورد/المحل (شراء مباشر)
+    direct_purchase_cost: Optional[float] = None  # تكلفة الشراء المباشر
+
 
 class EmergencyCreate(BaseModel):
     driver_id: int; car_id: Optional[int] = None
@@ -10145,7 +10244,7 @@ async def create_user(user: UserCreate, cu: dict = Depends(require_admin)):
 async def list_users(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute("SELECT id,username,role,branch,last_login FROM users ORDER BY id DESC LIMIT 200")
+        c.execute("SELECT id,username,role,branch,last_login FROM users ORDER BY id DESC")
         return [dict(r) for r in c.fetchall()]
 
 @app.delete("/users/{uid}")
@@ -10178,6 +10277,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     # الأنواع اللي ليها كمية: الوقود بكل أنواعه + الزيت + الكوتش
     QUANTITY_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil") or t in ("tire",)}
     HAS_QUANTITY   = rec.type in QUANTITY_TYPES
+    IS_FUEL_TYPE   = rec.type.startswith("fuel_")
+    IS_PARTS_TYPE  = (not IS_FUEL_TYPE) and rec.type != "other"
 
     # ── صورة العداد (تفويل/صيانة): إلزامية لأنواع الوقود + الصيانة، اختيارية لباقي الأنواع ──
     PHOTO_REQUIRED_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil")
@@ -10185,25 +10286,44 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     if rec.type in PHOTO_REQUIRED_TYPES and not (rec.odometer_photo or "").strip():
         raise HTTPException(400, "صورة العداد مطلوبة لتسجيل هذه العملية")
 
-    odometer_photo_url = ""
-    if rec.odometer_photo:
+    # ── Virtual Inventory: مصدر الوقود (إلزامي لكل أنواع التفويل) ──
+    if IS_FUEL_TYPE:
+        if rec.fuel_source not in ("CompanyStation", "ExternalStation"):
+            raise HTTPException(400, "اختر مصدر الوقود: محطة الشركة أو محطة خارجية")
+        if rec.fuel_source == "ExternalStation" and not (rec.station_name or "").strip():
+            raise HTTPException(400, "اسم المحطة الخارجية مطلوب")
+
+    # ── Virtual Inventory: مصدر القطعة (إلزامي لكل أنواع الصيانة، إلا "أخرى") ──
+    if IS_PARTS_TYPE:
+        if rec.parts_source not in ("Inventory", "DirectPurchase", "InventoryPurchase"):
+            raise HTTPException(400, "اختر مصدر القطعة: من المخزن أو شراء مباشر أو شراء وإضافة للمخزن")
+        if rec.parts_source in ("Inventory", "InventoryPurchase") and not rec.inventory_product_id:
+            raise HTTPException(400, "اختر المنتج من المخزون")
+        if rec.parts_source == "DirectPurchase" and not (rec.direct_purchase_supplier or "").strip():
+            raise HTTPException(400, "اسم المورد أو المحل مطلوب للشراء المباشر")
+
+    def _save_b64_image(b64_data, prefix):
+        if not b64_data:
+            return ""
         import re as _re_ws
         try:
-            _raw_b64 = rec.odometer_photo
-            _m = _re_ws.match(r"data:image/(\w+);base64,(.+)", _raw_b64, _re_ws.DOTALL)
+            _m = _re_ws.match(r"data:image/(\w+);base64,(.+)", b64_data, _re_ws.DOTALL)
             _ext = _m.group(1) if _m else "jpg"
-            _b64data = _m.group(2) if _m else _raw_b64
+            _b64data = _m.group(2) if _m else b64_data
             _raw_bytes = base64.b64decode(_b64data)
             if len(_raw_bytes) >= 2 and _raw_bytes[0] == 0xFF and _raw_bytes[1] == 0xD8: _ext = "jpg"
             elif len(_raw_bytes) >= 4 and _raw_bytes[0] == 0x89 and _raw_bytes[1:4] == b"PNG": _ext = "png"
             elif len(_raw_bytes) >= 3 and _raw_bytes[:3] == b"GIF": _ext = "gif"
             elif len(_raw_bytes) >= 12 and _raw_bytes[:4] == b"RIFF" and _raw_bytes[8:12] == b"WEBP": _ext = "webp"
-            _photo_fname = f"odo_{rec.driver_id or 0}_{int(datetime.utcnow().timestamp()*1000)}.{_ext}"
-            (UPLOAD_DIR / _photo_fname).write_bytes(_raw_bytes)
-            odometer_photo_url = f"/uploads/{_photo_fname}"
+            _fname = f"{prefix}_{rec.driver_id or 0}_{int(datetime.utcnow().timestamp()*1000)}.{_ext}"
+            (UPLOAD_DIR / _fname).write_bytes(_raw_bytes)
+            return f"/uploads/{_fname}"
         except Exception as _photo_err:
-            log.error(f"[WORKSHOP] photo save failed: {_photo_err}")
-            raise HTTPException(400, "صورة العداد غير صالحة")
+            log.error(f"[WORKSHOP] photo save failed ({prefix}): {_photo_err}")
+            raise HTTPException(400, "صورة غير صالحة")
+
+    odometer_photo_url = _save_b64_image(rec.odometer_photo, "odo")
+    invoice_photo_url  = _save_b64_image(rec.invoice_photo, "invoice")
 
     with get_db() as conn:
         c = conn.cursor()
@@ -10226,16 +10346,24 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             srow = c.fetchone()
         unit_price_cfg = float(srow["value"]) if srow else 0.0
 
+    # ── شراء مباشر (تفويل خارجي أو قطعة من الخارج): التكلفة من المستخدم نفسه، مش من إعدادات الأسعار ──
+    if IS_FUEL_TYPE and rec.fuel_source == "ExternalStation" and rec.price and rec.price > 0:
+        unit_price_cfg = rec.price
+    if IS_PARTS_TYPE and rec.parts_source == "DirectPurchase" and rec.direct_purchase_cost:
+        unit_price_cfg = rec.direct_purchase_cost
+
     if cu["role"] in ("admin", "superuser"):
         # الأدمن يرسل price من الإعدادات (سعر/وحدة) — نضرب في الكمية
         unit_price = rec.price if rec.price and rec.price > 0 else unit_price_cfg
     else:
-        # السائق: دايماً سعر الإعدادات
+        # السائق: دايماً سعر الإعدادات (أو التكلفة المُدخلة في حالة الشراء المباشر)
         unit_price = unit_price_cfg
 
     qty = rec.quantity if rec.quantity and rec.quantity > 0 else 1.0
     # الإجمالي = سعر الوحدة × الكمية (للأنواع ذات الكمية) أو سعر الوحدة مباشرة
     final_price = unit_price * qty if HAS_QUANTITY else unit_price
+    if IS_PARTS_TYPE and rec.parts_source == "DirectPurchase" and rec.direct_purchase_cost:
+        final_price = rec.direct_purchase_cost
     if final_price < 0:
         raise HTTPException(400, "السعر لا يمكن أن يكون سالباً")
     now = datetime.utcnow().isoformat() + "Z"
@@ -10252,12 +10380,30 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             ("operator_id", "INTEGER"),
             ("is_operator", "INTEGER DEFAULT 0"),
             ("odometer_photo", "TEXT DEFAULT ''"),
+            ("fuel_source", "TEXT DEFAULT ''"),
+            ("station_name", "TEXT DEFAULT ''"),
+            ("pump_number", "TEXT DEFAULT ''"),
+            ("invoice_photo", "TEXT DEFAULT ''"),
+            ("parts_source", "TEXT DEFAULT ''"),
+            ("inventory_product_id", "INTEGER"),
+            ("direct_purchase_supplier", "TEXT DEFAULT ''"),
+            ("direct_purchase_cost", "REAL"),
+            ("approval_status", "TEXT DEFAULT 'pending'"),
         ]
         _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
         for _wc, _wd in _ws_extra_cols:
             if _wc not in _ws_existing:
                 try: c.execute(f"ALTER TABLE workshop_records ADD COLUMN {_wc} {_wd}")
                 except Exception: pass
+
+        # ── Virtual Inventory: لو المصدر "من المخزن" تأكد من توافر الكمية ──
+        if IS_PARTS_TYPE and rec.parts_source == "Inventory":
+            prow = c.execute("SELECT quantity, name FROM inventory_products WHERE id=?", (rec.inventory_product_id,)).fetchone()
+            if not prow:
+                raise HTTPException(404, "المنتج غير موجود في المخزون")
+            if (prow["quantity"] or 0) < qty:
+                raise HTTPException(400, f"الكمية المتاحة من «{prow['name']}» غير كافية (متاح {prow['quantity']})")
+
         # المشغل: driver_id يبقى NULL، نحفظ operator_id بشكل منفصل
         try:
             if cu["role"] == "operator":
@@ -10266,30 +10412,53 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,operator_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo)
-                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo,
+                              fuel_source,station_name,pump_number,invoice_photo,
+                              parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status)
+                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')""",
                           (op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
                            rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                            rec.description or "", rec.tire_action or "", rec.location or "",
                            rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
                            rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
-                           odometer_photo_url))
+                           odometer_photo_url,
+                           rec.fuel_source or "", rec.station_name or "", rec.pump_number or "", invoice_photo_url,
+                           rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost))
             else:
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
-                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo)
-                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo,
+                              fuel_source,station_name,pump_number,invoice_photo,
+                              parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status)
+                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')""",
                       (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
                        rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                        rec.description or "", rec.tire_action or "", rec.location or "",
                        rec.doc_number or "", rec.engine_hours, rec.supply_source or "",
                        rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
-                       odometer_photo_url))
+                       odometer_photo_url,
+                       rec.fuel_source or "", rec.station_name or "", rec.pump_number or "", invoice_photo_url,
+                       rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost))
             rid = c.lastrowid
         except Exception as _ws_err:
             log.error(f"[WORKSHOP] INSERT failed: {_ws_err}")
             raise HTTPException(500, f"خطأ في حفظ سجل الورشة: {str(_ws_err)}")
+
+        # ── Virtual Inventory: تنفيذ حركة المخزون حسب مصدر القطعة ──
+        if IS_PARTS_TYPE and rec.parts_source == "Inventory":
+            c.execute("UPDATE inventory_products SET quantity = quantity - ?, updated_at=? WHERE id=?",
+                      (qty, now, rec.inventory_product_id))
+            c.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
+                         VALUES(?,'out',?,'workshop',?,?,?,?)""",
+                      (rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", now))
+        elif IS_PARTS_TYPE and rec.parts_source == "InventoryPurchase":
+            c.execute("UPDATE inventory_products SET quantity = quantity + ?, updated_at=? WHERE id=?",
+                      (qty, now, rec.inventory_product_id))
+            c.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
+                         VALUES(?,'in',?,'workshop',?,?,?,?)""",
+                      (rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", now))
+
         vp = None
         if rec.vehicle_id:
             c.execute("SELECT plate FROM cars WHERE id=?", (rec.vehicle_id,))
@@ -10323,7 +10492,11 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 "operation_type":rec.operation_type or "","vehicle_id":rec.vehicle_id,
                 "odometer_reading":rec.odometer_reading,"description":rec.description or "",
                 "tire_action":rec.tire_action or "","vehicle_plate":vp,"location":rec.location or "",
-                "odometer_photo":odometer_photo_url}
+                "odometer_photo":odometer_photo_url,
+                "fuel_source":rec.fuel_source or "","station_name":rec.station_name or "",
+                "invoice_photo":invoice_photo_url,"parts_source":rec.parts_source or "",
+                "approval_status":"pending"}
+
 
 @app.get("/workshops")
 async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None, month: Optional[str] = None):
@@ -10347,21 +10520,21 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
                 conditions.append("w.created_at LIKE ?")
                 params.append(month + "%")
             where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
-            c.execute(q + where + " ORDER BY w.id DESC LIMIT 500", params)
+            c.execute(q + where + " ORDER BY w.id DESC", params)
         elif cu["role"] == "operator":
             op_id3 = cu.get("operator_id")
             if not op_id3: return []
             month_cond = " AND w.created_at LIKE ?" if month else ""
             month_params = [month + "%"] if month else []
             # المشغل: operator_id column أو driver_id=0 sentinel
-            c.execute(q + " WHERE (w.operator_id=? OR (w.driver_id=0 AND w.is_operator=1 AND w.operator_id IS NULL AND w.created_at IS NOT NULL))" + month_cond + " ORDER BY w.id DESC LIMIT 200",
+            c.execute(q + " WHERE (w.operator_id=? OR (w.driver_id=0 AND w.is_operator=1 AND w.operator_id IS NULL AND w.created_at IS NOT NULL))" + month_cond + " ORDER BY w.id DESC",
                       [op_id3] + month_params)
         else:
             did = cu.get("driver_id")
             if not did: return []
             month_cond = " AND w.created_at LIKE ?" if month else ""
             month_params = [month + "%"] if month else []
-            c.execute(q + " WHERE w.driver_id=?" + month_cond + " ORDER BY w.id DESC LIMIT 200", [did] + month_params)
+            c.execute(q + " WHERE w.driver_id=?" + month_cond + " ORDER BY w.id DESC", [did] + month_params)
         rows = []
         for r in c.fetchall():
             d = dict(r)
@@ -10401,7 +10574,7 @@ async def get_workshop_attachments(cu: dict = Depends(get_user), branch: Optiona
     if type:
         q += " AND w.type=?"
         params.append(type)
-    q += " ORDER BY w.id DESC LIMIT 500"
+    q += " ORDER BY w.id DESC"
     with get_db() as conn:
         c = conn.cursor()
         c.execute(q, params)
@@ -10648,11 +10821,11 @@ async def get_garage_records(cu: dict = Depends(get_user)):
                LEFT JOIN drivers d ON g.driver_id=d.id
                LEFT JOIN cars c ON g.car_id=c.id"""
         if cu["role"] in ("admin", "reporter", "superuser"):
-            c.execute(q + " ORDER BY g.id DESC LIMIT 500")
+            c.execute(q + " ORDER BY g.id DESC")
         else:
             did = cu.get("driver_id")
             if not did: return []
-            c.execute(q + " WHERE g.driver_id=? ORDER BY g.id DESC LIMIT 200", (did,))
+            c.execute(q + " WHERE g.driver_id=? ORDER BY g.id DESC", (did,))
         return [dict(r) for r in c.fetchall()]
 
 @app.get("/garage/latest")
@@ -10750,18 +10923,18 @@ async def get_emergency_reports(cu: dict = Depends(get_user), branch: Optional[s
         branch = _effective_branch(cu, branch)
         if cu["role"] in ("admin", "reporter", "superuser"):
             if branch:
-                c.execute(q + " WHERE d.branch=? ORDER BY e.id DESC LIMIT 500", (branch,))
+                c.execute(q + " WHERE d.branch=? ORDER BY e.id DESC", (branch,))
             else:
-                c.execute(q + " ORDER BY e.id DESC LIMIT 500")
+                c.execute(q + " ORDER BY e.id DESC")
         elif cu["role"] == "operator":
             # المشغل يشوف بلاغاته باستخدام operator_id (المخزّن كـ driver_id في emergency_reports)
             op_id = cu.get("operator_id")
             if not op_id: return []
-            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC LIMIT 200", (op_id,))
+            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC", (op_id,))
         else:
             did = cu.get("driver_id")
             if not did: return []
-            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC LIMIT 200", (did,))
+            c.execute(q + " WHERE e.driver_id=? ORDER BY e.id DESC", (did,))
         rows = []
         for r in c.fetchall():
             d = dict(r)
@@ -15073,6 +15246,7 @@ async def get_operator_stats(oid: int, cu: dict = Depends(get_user)):
 @app.get("/shifts")
 async def list_all_shifts(
     operator_id: int = Query(None),
+    equipment_id: str = Query(None),
     branch:      str = Query(None),
     project:     str = Query(None),
     status:      str = Query(None),
@@ -15100,6 +15274,8 @@ async def list_all_shifts(
             q += " AND (s.branch=? OR o.branch=?)"; params.extend([eff_branch, eff_branch])
         if operator_id:
             q += " AND s.operator_id=?"; params.append(operator_id)
+        if equipment_id:
+            q += " AND s.equipment_id=?"; params.append(equipment_id)
         if project:
             q += " AND s.project LIKE ?"; params.append(f"%{project}%")
         if status:
@@ -15663,3 +15839,319 @@ async def ocr_odometer(
     except Exception as e:
         log.error(f"[OCR] EasyOCR error: {e}")
         raise HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى أو إدخال الرقم يدوياً")
+
+# ══════════════════════════════════════════════════════════════════
+# VIRTUAL INVENTORY MODULE — إدارة المخزون
+# ══════════════════════════════════════════════════════════════════
+
+class InventoryCategoryCreate(BaseModel):
+    name: str; notes: Optional[str] = ""
+
+class InventorySupplierCreate(BaseModel):
+    name: str; phone: Optional[str] = ""; email: Optional[str] = ""
+    address: Optional[str] = ""; notes: Optional[str] = ""
+
+class InventoryProductCreate(BaseModel):
+    name: str; sku: Optional[str] = ""
+    category_id: Optional[int] = None; supplier_id: Optional[int] = None
+    purchase_price: float = 0; sale_price: float = 0
+    quantity: float = 0; min_quantity: float = 0
+    unit: Optional[str] = "قطعة"; notes: Optional[str] = ""
+
+class InventoryMovementCreate(BaseModel):
+    product_id: int; movement_type: str  # in | out | return | adjust
+    quantity: float; notes: Optional[str] = ""
+
+class InventoryPurchaseOrderCreate(BaseModel):
+    order_number: Optional[str] = ""; supplier_id: Optional[int] = None
+    order_date: Optional[str] = ""; status: Optional[str] = "draft"
+    total_value: Optional[float] = 0; items_json: Optional[str] = "[]"
+    notes: Optional[str] = ""
+
+class WorkshopApproval(BaseModel):
+    action: str  # approve | reject
+    note: Optional[str] = ""
+
+
+def _inv_product_row(r: dict, cat_map: dict, sup_map: dict) -> dict:
+    d = dict(r)
+    qty = d.get("quantity") or 0
+    minq = d.get("min_quantity") or 0
+    d["category_name"] = cat_map.get(d.get("category_id"), "")
+    d["supplier_name"] = sup_map.get(d.get("supplier_id"), "")
+    if qty <= 0:
+        d["status"] = "غير متوفر"
+    elif minq > 0 and qty <= minq:
+        d["status"] = "منخفض"
+    else:
+        d["status"] = "متوفر"
+    return d
+
+
+# ── الفئات ──
+@app.get("/inventory/categories")
+async def list_inventory_categories(cu: dict = Depends(get_user)):
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM inventory_categories ORDER BY name").fetchall()
+        return [dict(r) for r in rows]
+
+@app.post("/inventory/categories")
+async def create_inventory_category(body: InventoryCategoryCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        try:
+            cur = conn.execute("INSERT INTO inventory_categories(name,notes) VALUES(?,?)", (body.name.strip(), body.notes or ""))
+            return {"id": cur.lastrowid, "name": body.name, "notes": body.notes or ""}
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "الفئة موجودة مسبقاً")
+
+@app.put("/inventory/categories/{cid}")
+async def update_inventory_category(cid: int, body: InventoryCategoryCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        conn.execute("UPDATE inventory_categories SET name=?, notes=? WHERE id=?", (body.name.strip(), body.notes or "", cid))
+        return {"ok": True}
+
+@app.delete("/inventory/categories/{cid}")
+async def delete_inventory_category(cid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        in_use = conn.execute("SELECT COUNT(*) c FROM inventory_products WHERE category_id=?", (cid,)).fetchone()["c"]
+        if in_use:
+            raise HTTPException(400, f"لا يمكن حذف الفئة — مرتبطة بـ {in_use} منتج")
+        conn.execute("DELETE FROM inventory_categories WHERE id=?", (cid,))
+        return {"ok": True}
+
+
+# ── الموردون ──
+@app.get("/inventory/suppliers")
+async def list_inventory_suppliers(cu: dict = Depends(get_user)):
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM inventory_suppliers ORDER BY name").fetchall()
+        return [dict(r) for r in rows]
+
+@app.post("/inventory/suppliers")
+async def create_inventory_supplier(body: InventorySupplierCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        cur = conn.execute("INSERT INTO inventory_suppliers(name,phone,email,address,notes) VALUES(?,?,?,?,?)",
+                            (body.name.strip(), body.phone or "", body.email or "", body.address or "", body.notes or ""))
+        return {"id": cur.lastrowid}
+
+@app.put("/inventory/suppliers/{sid}")
+async def update_inventory_supplier(sid: int, body: InventorySupplierCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        conn.execute("UPDATE inventory_suppliers SET name=?,phone=?,email=?,address=?,notes=? WHERE id=?",
+                      (body.name.strip(), body.phone or "", body.email or "", body.address or "", body.notes or "", sid))
+        return {"ok": True}
+
+@app.delete("/inventory/suppliers/{sid}")
+async def delete_inventory_supplier(sid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        conn.execute("UPDATE inventory_products SET supplier_id=NULL WHERE supplier_id=?", (sid,))
+        conn.execute("DELETE FROM inventory_suppliers WHERE id=?", (sid,))
+        return {"ok": True}
+
+
+# ── المنتجات ──
+@app.get("/inventory/products")
+async def list_inventory_products(cu: dict = Depends(get_user), category_id: Optional[int] = None,
+                                   status: Optional[str] = None, search: Optional[str] = None):
+    with get_db() as conn:
+        cats = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_categories").fetchall()}
+        sups = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_suppliers").fetchall()}
+        q = "SELECT * FROM inventory_products WHERE 1=1"
+        params = []
+        if category_id:
+            q += " AND category_id=?"; params.append(category_id)
+        if search:
+            q += " AND (name LIKE ? OR sku LIKE ?)"; params += [f"%{search}%", f"%{search}%"]
+        q += " ORDER BY id DESC"
+        rows = [_inv_product_row(dict(r), cats, sups) for r in conn.execute(q, params).fetchall()]
+        if status:
+            rows = [r for r in rows if r["status"] == status]
+        return rows
+
+@app.post("/inventory/products")
+async def create_inventory_product(body: InventoryProductCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        now = datetime.utcnow().isoformat() + "Z"
+        cur = conn.execute("""INSERT INTO inventory_products
+                              (name,sku,category_id,supplier_id,purchase_price,sale_price,quantity,min_quantity,unit,notes,created_at,updated_at)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (body.name.strip(), body.sku or "", body.category_id, body.supplier_id,
+                             body.purchase_price, body.sale_price, body.quantity, body.min_quantity,
+                             body.unit or "قطعة", body.notes or "", now, now))
+        pid = cur.lastrowid
+        if body.quantity and body.quantity > 0:
+            conn.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,username,notes,created_at)
+                           VALUES(?,'in',?,'initial',?,?,?)""", (pid, body.quantity, cu.get("username",""), "رصيد افتتاحي", now))
+        return {"id": pid}
+
+@app.put("/inventory/products/{pid}")
+async def update_inventory_product(pid: int, body: InventoryProductCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        now = datetime.utcnow().isoformat() + "Z"
+        conn.execute("""UPDATE inventory_products SET name=?,sku=?,category_id=?,supplier_id=?,
+                       purchase_price=?,sale_price=?,min_quantity=?,unit=?,notes=?,updated_at=? WHERE id=?""",
+                      (body.name.strip(), body.sku or "", body.category_id, body.supplier_id,
+                       body.purchase_price, body.sale_price, body.min_quantity, body.unit or "قطعة",
+                       body.notes or "", now, pid))
+        return {"ok": True}
+
+@app.delete("/inventory/products/{pid}")
+async def delete_inventory_product(pid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM inventory_products WHERE id=?", (pid,))
+        conn.execute("DELETE FROM inventory_movements WHERE product_id=?", (pid,))
+        return {"ok": True}
+
+
+# ── حركات المخزون ──
+@app.get("/inventory/movements")
+async def list_inventory_movements(cu: dict = Depends(require_admin_or_reporter), product_id: Optional[int] = None, limit: int = 500):
+    with get_db() as conn:
+        q = """SELECT m.*, p.name as product_name, p.unit as product_unit
+               FROM inventory_movements m LEFT JOIN inventory_products p ON p.id=m.product_id WHERE 1=1"""
+        params = []
+        if product_id:
+            q += " AND m.product_id=?"; params.append(product_id)
+        q += " ORDER BY m.id DESC LIMIT ?"; params.append(limit)
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
+
+@app.post("/inventory/movements")
+async def create_inventory_movement(body: InventoryMovementCreate, cu: dict = Depends(require_admin)):
+    if body.movement_type not in ("in", "out", "return", "adjust"):
+        raise HTTPException(400, "نوع حركة غير صالح")
+    with get_db() as conn:
+        prow = conn.execute("SELECT quantity FROM inventory_products WHERE id=?", (body.product_id,)).fetchone()
+        if not prow:
+            raise HTTPException(404, "المنتج غير موجود")
+        now = datetime.utcnow().isoformat() + "Z"
+        if body.movement_type in ("in", "return"):
+            conn.execute("UPDATE inventory_products SET quantity=quantity+?, updated_at=? WHERE id=?", (body.quantity, now, body.product_id))
+        elif body.movement_type == "out":
+            if (prow["quantity"] or 0) < body.quantity:
+                raise HTTPException(400, "الكمية المتاحة غير كافية")
+            conn.execute("UPDATE inventory_products SET quantity=quantity-?, updated_at=? WHERE id=?", (body.quantity, now, body.product_id))
+        else:  # adjust → تعيين الكمية مباشرة
+            conn.execute("UPDATE inventory_products SET quantity=?, updated_at=? WHERE id=?", (body.quantity, now, body.product_id))
+        cur = conn.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,username,notes,created_at)
+                              VALUES(?,?,?,'manual',?,?,?)""",
+                            (body.product_id, body.movement_type, body.quantity, cu.get("username",""), body.notes or "", now))
+        return {"id": cur.lastrowid}
+
+
+# ── أوامر الشراء ──
+@app.get("/inventory/purchase-orders")
+async def list_purchase_orders(cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        sups = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_suppliers").fetchall()}
+        rows = [dict(r) for r in conn.execute("SELECT * FROM inventory_purchase_orders ORDER BY id DESC").fetchall()]
+        for r in rows:
+            r["supplier_name"] = sups.get(r.get("supplier_id"), "")
+        return rows
+
+@app.post("/inventory/purchase-orders")
+async def create_purchase_order(body: InventoryPurchaseOrderCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        now = datetime.utcnow().isoformat() + "Z"
+        order_number = body.order_number or f"PO-{int(datetime.utcnow().timestamp())}"
+        cur = conn.execute("""INSERT INTO inventory_purchase_orders
+                              (order_number,supplier_id,order_date,status,total_value,items_json,notes,created_at)
+                              VALUES(?,?,?,?,?,?,?,?)""",
+                            (order_number, body.supplier_id, body.order_date or now[:10], body.status or "draft",
+                             body.total_value or 0, body.items_json or "[]", body.notes or "", now))
+        return {"id": cur.lastrowid, "order_number": order_number}
+
+@app.put("/inventory/purchase-orders/{oid}")
+async def update_purchase_order(oid: int, body: InventoryPurchaseOrderCreate, cu: dict = Depends(require_admin)):
+    if body.status not in ("draft", "open", "received", "cancelled"):
+        raise HTTPException(400, "حالة غير صالحة")
+    with get_db() as conn:
+        conn.execute("""UPDATE inventory_purchase_orders SET order_number=?,supplier_id=?,order_date=?,
+                       status=?,total_value=?,items_json=?,notes=? WHERE id=?""",
+                      (body.order_number or "", body.supplier_id, body.order_date or "", body.status,
+                       body.total_value or 0, body.items_json or "[]", body.notes or "", oid))
+        return {"ok": True}
+
+@app.delete("/inventory/purchase-orders/{oid}")
+async def delete_purchase_order(oid: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM inventory_purchase_orders WHERE id=?", (oid,))
+        return {"ok": True}
+
+
+# ── التنبيهات (منتجات منخفضة/منتهية) ──
+@app.get("/inventory/alerts")
+async def inventory_alerts(cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        cats = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_categories").fetchall()}
+        sups = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_suppliers").fetchall()}
+        rows = conn.execute("""SELECT * FROM inventory_products
+                               WHERE min_quantity > 0 AND quantity <= min_quantity
+                               ORDER BY quantity ASC""").fetchall()
+        return [_inv_product_row(dict(r), cats, sups) for r in rows]
+
+
+# ── Dashboard ──
+@app.get("/inventory/dashboard")
+async def inventory_dashboard(cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        total_items = conn.execute("SELECT COUNT(*) c FROM inventory_products").fetchone()["c"]
+        stock_value = conn.execute("SELECT COALESCE(SUM(quantity*purchase_price),0) v FROM inventory_products").fetchone()["v"]
+        low_stock = conn.execute("SELECT COUNT(*) c FROM inventory_products WHERE min_quantity>0 AND quantity<=min_quantity").fetchone()["c"]
+        open_pos = conn.execute("SELECT COUNT(*) c FROM inventory_purchase_orders WHERE status='open'").fetchone()["c"]
+        top_used = conn.execute("""SELECT p.id, p.name, SUM(m.quantity) as total_out
+                                   FROM inventory_movements m JOIN inventory_products p ON p.id=m.product_id
+                                   WHERE m.movement_type='out'
+                                   GROUP BY m.product_id ORDER BY total_out DESC LIMIT 5""").fetchall()
+        return {
+            "total_items": total_items,
+            "stock_value": stock_value,
+            "low_stock_count": low_stock,
+            "open_purchase_orders": open_pos,
+            "top_used_products": [dict(r) for r in top_used],
+        }
+
+
+# ══════════════════════════════════════════════════════════════════
+# مراجعة العمليات — Workshop Approval Workflow (تفويل + صيانة معاً)
+# ══════════════════════════════════════════════════════════════════
+
+@app.get("/workshops/pending-review")
+async def list_pending_review(cu: dict = Depends(require_admin_or_reporter), status: Optional[str] = None,
+                               kind: Optional[str] = None, branch: Optional[str] = None):
+    """قائمة عمليات التفويل/الصيانة لشاشة مراجعة العمليات الموحدة."""
+    with get_db() as conn:
+        q = """SELECT w.*, COALESCE(d.name, op.name) as driver_name,
+                      c.plate as vehicle_plate, c.model as vehicle_model
+               FROM workshop_records w
+               LEFT JOIN drivers d ON w.driver_id=d.id AND (w.is_operator IS NULL OR w.is_operator=0)
+               LEFT JOIN equipment_operators op ON w.operator_id=op.id
+               LEFT JOIN cars c ON w.vehicle_id=c.id
+               WHERE w.type != 'other'"""
+        params = []
+        eff_branch = _branch_filter(cu) or branch
+        if eff_branch:
+            q += " AND (d.branch=? OR op.branch=?)"; params += [eff_branch, eff_branch]
+        if status:
+            q += " AND w.approval_status=?"; params.append(status)
+        if kind == "fuel":
+            q += " AND w.type LIKE 'fuel_%'"
+        elif kind == "maintenance":
+            q += " AND w.type NOT LIKE 'fuel_%'"
+        q += " ORDER BY w.id DESC LIMIT 1000"
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+        for r in rows:
+            r.setdefault("approval_status", "pending")
+        return rows
+
+@app.post("/workshops/{wid}/review")
+async def review_workshop_record(wid: int, body: WorkshopApproval, cu: dict = Depends(require_admin)):
+    if body.action not in ("approve", "reject"):
+        raise HTTPException(400, "إجراء غير صالح")
+    new_status = "approved" if body.action == "approve" else "rejected"
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM workshop_records WHERE id=?", (wid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "السجل غير موجود")
+        conn.execute("UPDATE workshop_records SET approval_status=? WHERE id=?", (new_status, wid))
+        log_event("workshop_review", record_id=wid, action=body.action, note=body.note or "")
+        return {"ok": True, "approval_status": new_status}
