@@ -2995,7 +2995,7 @@ async function renderOverview() {
   const carKmMap = {};
   trips.filter(t=>t.end_time&&t.end_odometer>t.start_odometer).forEach(t=>{ const c=cars.find(ca=>ca.id===t.car_id); if(c){carKmMap[c.plate]=(carKmMap[c.plate]||0)+(t.end_odometer-t.start_odometer);} });
   const topCarsKm = Object.entries(carKmMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const fuelPerDay = days7.map(day=>fuelRecords.filter(r=>(r.created_at||'').startsWith(day)).reduce((s,r)=>s+(parseFloat(r.price)||0),0));
+  const fuelPerDay = days7.map(day=>fuelRecords.filter(r=>getLocalDate(r.created_at)===day).reduce((s,r)=>s+(parseFloat(r.price)||0),0));
 
   const latestRows = trips.slice(0,8).map(t=>{
     const dName=drivers.find(d=>d.id===t.driver_id)?.name||'—';
@@ -3299,12 +3299,37 @@ async function renderOverview() {
       plugins:{legend:{display:false}},scales:{x:{grid:{color:gc},beginAtZero:true,ticks:{stepSize:1}},y:{grid:{display:false}}}}
   });
 
+  // ── Plugin بسيط لعرض القيمة الحقيقية فوق كل نقطة دايمًا ──
+  // (حتى لو الخط نفسه يبدو عند 0 بسبب قيمة شاذة كبيرة في يوم آخر على نفس المحور)
+  const valueLabelsPlugin = {
+    id: 'valueLabels',
+    afterDatasetsDraw(chart) {
+      const {ctx} = chart;
+      chart.data.datasets.forEach((ds, dsIndex) => {
+        const meta = chart.getDatasetMeta(dsIndex);
+        if (!meta || meta.hidden) return;
+        ctx.save();
+        ctx.font = '600 9px inherit';
+        ctx.fillStyle = ds.borderColor || '#333';
+        ctx.textAlign = 'center';
+        meta.data.forEach((point, i) => {
+          const val = ds.data[i];
+          if (val === null || val === undefined) return;
+          const label = val >= 1000 ? Math.round(val).toLocaleString('ar-EG') : (Math.round(val*10)/10).toString();
+          ctx.fillText(label, point.x, point.y - 8);
+        });
+        ctx.restore();
+      });
+    }
+  };
+
   new Chart(document.getElementById('chartFuelCost'), {
     type:'line',
     data:{labels:dayLabels,datasets:[{label:'التكلفة',data:fuelPerDay,
-      borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#10b981'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true}}}
+      borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',tension:0,fill:true,pointRadius:4,pointBackgroundColor:'#10b981'}]},
+    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14}},plugins:{legend:{display:false}},
+      scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true}}},
+    plugins:[valueLabelsPlugin]
   });
 
   new Chart(document.getElementById('chartCarsKm'), {
@@ -10623,7 +10648,7 @@ function togglePartsSourceFields() {
   const v = document.getElementById('wPartsSource')?.value;
   const inv = document.getElementById('wPartsInventoryFields');
   const direct = document.getElementById('wPartsDirectFields');
-  if (inv) inv.style.display = (v === 'Inventory' || v === 'InventoryPurchase') ? 'block' : 'none';
+  if (inv) inv.style.display = (v === 'Inventory') ? 'block' : 'none';
   if (direct) direct.style.display = (v === 'DirectPurchase') ? 'block' : 'none';
 }
 
@@ -10784,8 +10809,7 @@ async function dpWsModal(type) {
       '<div class="form-group"><label>📦 مصدر القطعة <span class="req">*</span></label>' +
       '<select id="wPartsSource" onchange="togglePartsSourceFields()"><option value="">-- اختر --</option>' +
       '<option value="Inventory">📦 من مخزون الشركة</option>' +
-      '<option value="DirectPurchase">🛒 شراء مباشر من الخارج</option>' +
-      '<option value="InventoryPurchase">📥 شراء وإضافة للمخزن</option></select></div>' +
+      '<option value="DirectPurchase">🛒 شراء مباشر من الخارج</option></select></div>' +
       '<div id="wPartsInventoryFields" style="display:none">' +
       '<div class="form-group"><label>المنتج <span class="req">*</span></label><select id="wInvProduct"><option value="">-- اختر المنتج --</option>' + invProductsOpts + '</select></div></div>' +
       '<div id="wPartsDirectFields" style="display:none">' +
@@ -10881,7 +10905,7 @@ async function dpWsModal(type) {
     if (!isFuelSubmit && type !== 'other') {
       partsSource = document.getElementById('wPartsSource')?.value || '';
       if (!partsSource) return showNotification('اختر مصدر القطعة', 'error');
-      if (partsSource === 'Inventory' || partsSource === 'InventoryPurchase') {
+      if (partsSource === 'Inventory') {
         invProductId = parseInt(document.getElementById('wInvProduct')?.value) || null;
         if (!invProductId) return showNotification('اختر المنتج من المخزون', 'error');
       } else if (partsSource === 'DirectPurchase') {
@@ -14930,25 +14954,21 @@ async function renderEquipmentOpCard() {
   let equipmentList = [];
   try { const r = await apiCall('/equipment'); equipmentList = r.equipment || []; } catch(e) {}
 
-  const eqOpts = `<option value="">— اختر المعدة —</option>` +
-    equipmentList.map(eq => `<option value="${eq.car_code}">${eq.equipment_name}${eq.car_code?' — '+eq.car_code:''}${eq.equipment_type?' ('+eq.equipment_type+')':''}</option>`).join('');
-
   const today = new Date().toISOString().slice(0,10);
   const monthStart = today.slice(0,8)+'01';
 
-  // ── جلب ورديات كل المعدات في الفترة الحالية (للداشبورد + الجدول العام) ──
-  let allShiftsResp = {shifts:[]};
-  try { allShiftsResp = await apiCall(`/shifts?date_from=${monthStart}&date_to=${today}&limit=10000`); } catch(e) {}
-  const allShifts = allShiftsResp.shifts || [];
+  // ── جلب ورديات كل المعدات في الفترة الحالية (للداشبورد) + كل الورديات (لفهرسة البحث بالمشغلين) ──
+  let monthShiftsResp = {shifts:[]}, allShiftsResp = {shifts:[]};
+  try { monthShiftsResp = await apiCall(`/shifts?date_from=${monthStart}&date_to=${today}&limit=10000`); } catch(e) {}
+  try { allShiftsResp = await apiCall(`/shifts?limit=10000`); } catch(e) {}
+  const monthShifts = monthShiftsResp.shifts || [];
+  const allShiftsForSearch = allShiftsResp.shifts || [];
 
-  // عدد الورديات (محسوبة) = ساعات التشغيل ÷ 8 — حسب التعريف المطلوب
-  const calcShiftsCount = (hours) => (hours || 0) / 8;
-  const calcUsagePct    = (hours) => ((hours || 0) / 8) * 100; // بدون سقف، ممكن تتجاوز 100%
+  const calcUsagePct = (hours) => ((hours || 0) / 8) * 100; // بدون سقف، ممكن تتجاوز 100%
 
-  const totalHoursAll = allShifts.reduce((s,r)=> s + (r.working_hours||0), 0);
-  const equipWithShifts = new Set(allShifts.map(r=>r.equipment_id)).size;
-  const workingNow = new Set(allShifts.filter(r=>r.status==='active').map(r=>r.equipment_id)).size;
-  const avgUsageAll = allShifts.length ? (allShifts.reduce((s,r)=> s + calcUsagePct(r.working_hours), 0) / allShifts.length) : 0;
+  const totalHoursAll = monthShifts.reduce((s,r)=> s + (r.working_hours||0), 0);
+  const workingNow = new Set(monthShifts.filter(r=>r.status==='active').map(r=>r.equipment_id)).size;
+  const avgUsageAll = monthShifts.length ? (monthShifts.reduce((s,r)=> s + calcUsagePct(r.working_hours), 0) / monthShifts.length) : 0;
 
   const dashboardCards = `
     <div class="eqop-summary-grid">
@@ -14958,19 +14978,19 @@ async function renderEquipmentOpCard() {
       <div class="eqop-summary-card"><div class="ic">📊</div><div class="lbl">متوسط نسبة الاستخدام</div><div class="val">${avgUsageAll.toFixed(1)}%</div></div>
     </div>`;
 
-  const globalRowsHtml = allShifts.length ? allShifts.slice().sort((a,b)=> new Date(b.start_time)-new Date(a.start_time)).map(s => {
-    const hrs = s.working_hours || 0;
-    const sh  = calcShiftsCount(hrs);
-    const pct = calcUsagePct(hrs);
-    return `<tr>
-      <td>${s.equipment_id || '—'}</td>
-      <td>${s.operator_name || '—'}</td>
-      <td>${fmtDate(s.start_time)}</td>
-      <td><strong>${hrs.toFixed(1)}</strong></td>
-      <td>${sh.toFixed(2)}</td>
-      <td><span style="font-weight:700;color:${pct>100?'#dc2626':pct>=75?'#16a34a':'#f59e0b'}">${pct.toFixed(1)}%</span></td>
-    </tr>`;
-  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد ورديات هذا الشهر</p></div></td></tr>`;
+  // ── فهرس بحث: لكل معدة، اسمها + كودها + كل المشغلين اللي شغّلوها (الاسم + الرقم الثابت) ──
+  const operatorsByEq = {};
+  allShiftsForSearch.forEach(s => {
+    if (!s.equipment_id) return;
+    (operatorsByEq[s.equipment_id] = operatorsByEq[s.equipment_id] || new Set())
+      .add([s.operator_name||'', s.operator_fixed||''].filter(Boolean).join(' — '));
+  });
+  window._eqOpSearchIndex = equipmentList.map(eq => {
+    const ops = Array.from(operatorsByEq[eq.car_code] || []);
+    const label = `${eq.equipment_name}${eq.car_code?' — '+eq.car_code:''}${eq.equipment_type?' ('+eq.equipment_type+')':''}`;
+    const searchText = [eq.equipment_name, eq.car_code, eq.equipment_type, ...ops].filter(Boolean).join(' ').toLowerCase();
+    return {car_code: eq.car_code, label, ops, searchText};
+  });
 
   c.innerHTML = `
     <style>
@@ -14997,31 +15017,33 @@ async function renderEquipmentOpCard() {
       .eqop-table tr:nth-child(even) td{background:#f8fafc}
       .eqop-usage-bar-wrap{background:#e2e8f0;border-radius:20px;height:8px;width:80px;margin:0 auto;overflow:hidden}
       .eqop-usage-bar{height:100%;border-radius:20px;background:linear-gradient(90deg,#3b82f6,#06b6d4)}
+      .eqop-search-wrap{position:relative}
+      .eqop-search-results{
+        position:absolute;top:calc(100% + 4px);right:0;left:0;background:#fff;border:1.5px solid var(--border);
+        border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:260px;overflow-y:auto;z-index:50;display:none;
+      }
+      .eqop-search-results.show{display:block}
+      .eqop-search-item{padding:.55rem .8rem;cursor:pointer;border-bottom:1px solid var(--border);font-size:.82rem}
+      .eqop-search-item:last-child{border-bottom:none}
+      .eqop-search-item:hover{background:var(--surface-2)}
+      .eqop-search-item .eq-ops{font-size:.7rem;color:#64748b;margin-top:.15rem}
     </style>
 
     <div class="page-header no-print"><div class="page-title">📋 بطاقة تشغيل المعدات</div></div>
 
     ${dashboardCards}
 
-    <div class="card no-print" style="margin-bottom:1rem">
-      <div class="card-header"><div class="card-title">📊 جدول التشغيل (كل المعدات — الشهر الحالي)</div></div>
-      <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
-        <table class="eqop-table">
-          <thead><tr><th>المعدة</th><th>المشغل</th><th>التاريخ</th><th>ساعات التشغيل</th><th>عدد الورديات</th><th>نسبة الاستخدام</th></tr></thead>
-          <tbody>${globalRowsHtml}</tbody>
-        </table>
-      </div>
-    </div>
-
     <div class="card no-print">
       <div class="card-header"><div class="card-title">🔍 بطاقة تفصيلية لمعدة واحدة</div></div>
       <div style="padding:1rem 1.2rem 1.4rem">
         <div class="filter-grid" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:.8rem;align-items:end">
-          <div class="form-group" style="margin:0">
+          <div class="form-group eqop-search-wrap" style="margin:0">
             <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">المعدة <span class="req">*</span></label>
-            <select id="eqOpEquipment" style="width:100%;padding:.55rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
-              ${eqOpts}
-            </select>
+            <input type="text" id="eqOpSearch" placeholder="ابحث بالمعدة، رقمها، اسم المشغل أو رقمه الثابت..."
+              autocomplete="off" oninput="filterEqOpSearch()" onfocus="filterEqOpSearch()"
+              style="width:100%;padding:.55rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
+            <input type="hidden" id="eqOpEquipment">
+            <div id="eqOpSearchResults" class="eqop-search-results"></div>
           </div>
           <div class="form-group" style="margin:0">
             <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">من تاريخ</label>
@@ -15038,6 +15060,32 @@ async function renderEquipmentOpCard() {
 
     <div id="eqOpResult"></div>
   `;
+
+  document.addEventListener('click', (e) => {
+    const wrap = document.querySelector('.eqop-search-wrap');
+    const results = document.getElementById('eqOpSearchResults');
+    if (wrap && results && !wrap.contains(e.target)) results.classList.remove('show');
+  });
+}
+
+function filterEqOpSearch() {
+  const q = (document.getElementById('eqOpSearch')?.value || '').trim().toLowerCase();
+  const resultsEl = document.getElementById('eqOpSearchResults');
+  if (!resultsEl) return;
+  const index = window._eqOpSearchIndex || [];
+  const matches = (q ? index.filter(i => i.searchText.includes(q)) : index).slice(0, 30);
+  resultsEl.innerHTML = matches.length ? matches.map(m => `
+    <div class="eqop-search-item" onclick='selectEqOpSearchResult(${JSON.stringify(m.car_code)}, ${JSON.stringify(m.label)})'>
+      <div>${m.label}</div>
+      ${m.ops.length ? `<div class="eq-ops">👷 ${m.ops.join(' • ')}</div>` : ''}
+    </div>`).join('') : `<div class="eqop-search-item" style="color:var(--muted);cursor:default">لا توجد نتائج</div>`;
+  resultsEl.classList.add('show');
+}
+
+function selectEqOpSearchResult(carCode, label) {
+  document.getElementById('eqOpEquipment').value = carCode;
+  document.getElementById('eqOpSearch').value = label;
+  document.getElementById('eqOpSearchResults').classList.remove('show');
 }
 
 async function generateEquipmentOpCard() {
