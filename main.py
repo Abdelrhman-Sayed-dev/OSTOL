@@ -9104,7 +9104,7 @@ class WorkshopCreate(BaseModel):
     pump_number:   Optional[str]   = ""    # رقم المضخة (محطة الشركة)
     invoice_photo: Optional[str]   = ""    # base64 صورة الفاتورة
     # ── Virtual Inventory: مصدر القطعة (للصيانة) ──
-    parts_source:  Optional[str]   = ""    # Inventory | DirectPurchase | InventoryPurchase
+    parts_source:  Optional[str]   = ""    # Inventory | DirectPurchase
     inventory_product_id: Optional[int] = None   # المنتج المصروف من المخزن
     direct_purchase_supplier: Optional[str] = ""  # المورد/المحل (شراء مباشر)
     direct_purchase_cost: Optional[float] = None  # تكلفة الشراء المباشر
@@ -10295,9 +10295,9 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
 
     # ── Virtual Inventory: مصدر القطعة (إلزامي لكل أنواع الصيانة، إلا "أخرى") ──
     if IS_PARTS_TYPE:
-        if rec.parts_source not in ("Inventory", "DirectPurchase", "InventoryPurchase"):
-            raise HTTPException(400, "اختر مصدر القطعة: من المخزن أو شراء مباشر أو شراء وإضافة للمخزن")
-        if rec.parts_source in ("Inventory", "InventoryPurchase") and not rec.inventory_product_id:
+        if rec.parts_source not in ("Inventory", "DirectPurchase"):
+            raise HTTPException(400, "اختر مصدر القطعة: من المخزن أو شراء مباشر من الخارج")
+        if rec.parts_source == "Inventory" and not rec.inventory_product_id:
             raise HTTPException(400, "اختر المنتج من المخزون")
         if rec.parts_source == "DirectPurchase" and not (rec.direct_purchase_supplier or "").strip():
             raise HTTPException(400, "اسم المورد أو المحل مطلوب للشراء المباشر")
@@ -10451,12 +10451,6 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                       (qty, now, rec.inventory_product_id))
             c.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
                          VALUES(?,'out',?,'workshop',?,?,?,?)""",
-                      (rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", now))
-        elif IS_PARTS_TYPE and rec.parts_source == "InventoryPurchase":
-            c.execute("UPDATE inventory_products SET quantity = quantity + ?, updated_at=? WHERE id=?",
-                      (qty, now, rec.inventory_product_id))
-            c.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
-                         VALUES(?,'in',?,'workshop',?,?,?,?)""",
                       (rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", now))
 
         vp = None
