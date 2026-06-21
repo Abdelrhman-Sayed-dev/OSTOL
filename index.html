@@ -15002,7 +15002,8 @@ async function renderEquipmentOpCard() {
         .page-content { padding:0!important }
         .card { box-shadow:none!important; border:none!important; margin:0!important; padding:0!important }
         .eqop-print-header { display:block!important; text-align:center;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #0f2027 }
-        @page { size:A4 landscape; margin:8mm 10mm }
+        @page { size:A4 landscape; margin:10mm 12mm }
+        [style*="overflow-x:auto"]{ overflow:visible!important; }
       }
       .eqop-print-header { display:none }
       .eqop-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.1rem}
@@ -15318,16 +15319,26 @@ async function generateEquipmentOpCard() {
         .main-content{margin:0!important;padding:0!important}
         .page-content{padding:0!important}
         .card{box-shadow:none!important;border:none!important;margin:0!important;padding:0!important}
-        .eqop-print-header{display:block!important;text-align:center;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #0f2027}
-        @page{size:A4 landscape;margin:8mm 10mm}
-        .eqop-page-break{page-break-after:always}
+        /* ✅ إظهار رأس الطباعة */
+        .eqop-print-header{display:block!important;text-align:center;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:2px solid #0f2027}
+        @page{size:A4 landscape;margin:10mm 12mm}
+        /* ✅ فاصل الصفحات */
+        .eqop-page-break{page-break-before:always!important;break-before:page!important;display:block!important}
+        /* ✅ إزالة الـ scrollbar وإظهار المحتوى كاملاً */
+        [style*="overflow-x:auto"], .op-section-block [style*="overflow-x:auto"], div[style*="overflow-x: auto"]{
+          overflow:visible!important;
+        }
+        /* ✅ منع قطع الجداول من جوّاها */
+        .op-table{page-break-inside:auto}
+        .op-table tr{page-break-inside:avoid;break-inside:avoid}
+        /* ✅ الصفحة الثانية تبدأ من أول السطر */
+        .eqop-page2-card{margin-top:0!important;padding-top:0!important}
       }
       .eqop-print-header{display:none}
       .eqop-page-break{display:none}
-      @media print{.eqop-page-break{display:block}}
     </style>
 
-    <!-- رأس الطباعة -->
+    <!-- ✅ رأس الطباعة — يظهر فقط عند الطباعة فوق كل صفحة -->
     <div class="eqop-print-header">
       <div style="font-size:16pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
       <div style="font-size:13pt;font-weight:700;margin-top:.3rem">بطاقة تشغيل المعدات</div>
@@ -15360,17 +15371,18 @@ async function generateEquipmentOpCard() {
       </div>
     </div>
 
-    <!-- ════ فاصل صفحة ════ -->
+    <!-- ✅ فاصل صفحة صريح — يشتغل وقت الطباعة بس -->
     <div class="eqop-page-break"></div>
 
     <!-- ════ الصفحة الثانية: ثانياً + ثالثاً + رابعاً + خامساً ════ -->
-    <div class="card" style="margin-top:1rem">
+    <div class="card eqop-page2-card" style="margin-top:1rem">
       <div style="padding:.5rem 1.2rem 1.4rem">
 
-        <!-- رأس طباعة مكرر للصفحة الثانية -->
+        <!-- ✅ رأس طباعة مكرر للصفحة الثانية — يظهر عند الطباعة فقط -->
         <div class="eqop-print-header" style="margin-bottom:.5rem">
           <div style="font-size:12pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
           <div style="font-size:10pt;font-weight:700">بطاقة تشغيل المعدات — ${eqInfoLine}</div>
+          <div style="font-size:9pt;color:#64748b">الفترة: ${fmtDt(from)} — ${fmtDt(to)}</div>
         </div>
 
         <!-- ثانياً: الزيوت والشحوم -->
