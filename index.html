@@ -2530,6 +2530,7 @@ const NAV_MODULES = [
   {key:'fleet',      icon:'🚗', label:'إدارة الأسطول',        collapsible:true},
   {key:'ops',        icon:'🛠️', label:'التشغيل',             collapsible:true},
   {key:'equipment',  icon:'🏗️', label:'إدارة المعدات',       collapsible:true},
+  {key:'inventory',  icon:'📦', label:'إدارة المخزون',       collapsible:true},
   {key:'reports',    icon:'📊', label:'التقارير',            collapsible:true},
   {key:'ai',         icon:'🤖', label:'التحليلات والذكاء',   collapsible:true},
   {key:'admin',      icon:'⚙️', label:'الإدارة',             collapsible:true},
@@ -2538,8 +2539,10 @@ const NAV_MODULES = [
 const NAV_ITEM_MODULE = {
   overview:'dashboard',
   trips:'fleet', map:'fleet', drivers:'fleet', cars:'fleet', requests:'fleet',
-  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops', 'ws-attachments':'ops',
-  'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment',
+  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops', 'ws-attachments':'ops', 'ops-review':'ops',
+  'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment', 'equipment-op-card':'equipment',
+  'inv-overview':'inventory', 'inv-products':'inventory', 'inv-categories':'inventory', 'inv-suppliers':'inventory',
+  'inv-movements':'inventory', 'inv-purchase-orders':'inventory', 'inv-alerts':'inventory',
   'monthly-report':'reports', 'driver-kpi':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
@@ -2585,6 +2588,7 @@ function buildAdminNav() {
     {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
     {id:'ws-attachments', icon:'📎', label:'تتبع المرفقات'},
+    {id:'ops-review', icon:'📝', label:'مراجعة العمليات'},
     {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
@@ -2592,7 +2596,16 @@ function buildAdminNav() {
     {id:'equipment-list',        icon:'⚙️',  label:'قائمة المعدات'},
     {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
     {id:'shifts-table',          icon:'⏱️',  label:'جدول الورديات'},
+    {id:'equipment-op-card',     icon:'📋',  label:'بطاقة تشغيل المعدات'},
     /* equipment-trips tab removed */
+    {id:'inventory-mgmt', icon:'📦', label:'إدارة المخزون', separator:true},
+    {id:'inv-overview',        icon:'📦', label:'نظرة عامة'},
+    {id:'inv-products',        icon:'🧰', label:'المنتجات'},
+    {id:'inv-categories',      icon:'🏷️', label:'الفئات'},
+    {id:'inv-suppliers',       icon:'🚚', label:'الموردون'},
+    {id:'inv-movements',       icon:'🔄', label:'حركات المخزون'},
+    {id:'inv-purchase-orders', icon:'🧾', label:'أوامر الشراء'},
+    {id:'inv-alerts',          icon:'🚨', label:'التنبيهات'},
   ];
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
@@ -2749,6 +2762,14 @@ async function renderSection(id) {
     case 'super-sarky':     await renderSuperSarky(); break;
     case 'driver-photos': await renderDriverPhotosSection(); break;
     case 'ws-attachments': await renderWsAttachments(); break;
+    case 'ops-review': await renderOpsReview(); break;
+    case 'inv-overview': await renderInventoryOverview(); break;
+    case 'inv-products': await renderInventoryProducts(); break;
+    case 'inv-categories': await renderInventoryCategories(); break;
+    case 'inv-suppliers': await renderInventorySuppliers(); break;
+    case 'inv-movements': await renderInventoryMovements(); break;
+    case 'inv-purchase-orders': await renderInventoryPurchaseOrders(); break;
+    case 'inv-alerts': await renderInventoryAlerts(); break;
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
     case 'shifts-table':         await renderShiftsTable(); break;
@@ -2760,6 +2781,7 @@ async function renderSection(id) {
     case 'equipment-mgmt':      renderEquipmentMgmtOverview(); break;
     /* equipment-trips case removed */
     case 'equipment-list':    await renderEquipmentSection(); break;
+    case 'equipment-op-card': await renderEquipmentOpCard(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -8891,7 +8913,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','super-sarky','import-data','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','_sep_fleet','_sep_ops','_sep_reports'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','super-sarky','import-data','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-purchase-orders','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -10590,8 +10612,28 @@ function toggleOilQty(key) {
 // ═══════════════════════════════════════════════════════════════
 // dpWsModal — Workshop Modal — يدعم السائق والمشغل بدون conflicts
 // ═══════════════════════════════════════════════════════════════
-function dpWsModal(type) {
+function toggleFuelSourceFields() {
+  const v = document.getElementById('wFuelSource')?.value;
+  const company = document.getElementById('wFuelCompanyFields');
+  const external = document.getElementById('wFuelExternalFields');
+  if (company) company.style.display = (v === 'CompanyStation') ? 'block' : 'none';
+  if (external) external.style.display = (v === 'ExternalStation') ? 'block' : 'none';
+}
+function togglePartsSourceFields() {
+  const v = document.getElementById('wPartsSource')?.value;
+  const inv = document.getElementById('wPartsInventoryFields');
+  const direct = document.getElementById('wPartsDirectFields');
+  if (inv) inv.style.display = (v === 'Inventory' || v === 'InventoryPurchase') ? 'block' : 'none';
+  if (direct) direct.style.display = (v === 'DirectPurchase') ? 'block' : 'none';
+}
+
+async function dpWsModal(type) {
   const _isOp = currentUser?.role === 'operator';
+
+  // ── Virtual Inventory: تحميل قائمة المنتجات (للاستخدام في مصدر القطعة) ──
+  if (type !== 'fuel' && !type.startsWith('fuel_') && type !== 'other' && !window._invProducts) {
+    try { window._invProducts = await apiCall('/inventory/products'); } catch(e) { window._invProducts = []; }
+  }
 
   // ── Operator: نجيب بيانات المعدة من _opData أو active shift ──
   const _opEquipName = window._opData?.current_equipment_name || '';
@@ -10715,11 +10757,53 @@ function dpWsModal(type) {
     specific = '<div class="form-group"><label>وصف العملية <span class="req">*</span></label><textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>';
   }
 
+  // ── Virtual Inventory: مصدر الوقود (لكل أنواع التفويل) ──
+  let fuelSourceBlock = '';
+  if (isFuelType) {
+    fuelSourceBlock =
+      '<div class="form-group"><label>⛽ مصدر الوقود <span class="req">*</span></label>' +
+      '<select id="wFuelSource" onchange="toggleFuelSourceFields()"><option value="">-- اختر --</option>' +
+      '<option value="CompanyStation">🏢 محطة الشركة</option><option value="ExternalStation">🏪 محطة خارجية</option></select></div>' +
+      '<div id="wFuelCompanyFields" style="display:none">' +
+      '<div class="form-group"><label>رقم المضخة</label><input type="text" id="wPumpNumber" placeholder="اختياري"></div></div>' +
+      '<div id="wFuelExternalFields" style="display:none">' +
+      '<div class="form-group"><label>اسم المحطة <span class="req">*</span></label><input type="text" id="wStationName" placeholder="مثال: محطة مصر للبترول"></div>' +
+      '<div class="form-group"><label>قيمة التفويلة (جنيه) <span class="req">*</span></label><input type="number" id="wExternalPrice" placeholder="0.00" step="0.01" min="0"></div>' +
+      '<div class="form-group"><label>📷 صورة الفاتورة (اختياري)</label>' +
+      '<div id="wInvoicePhotoPreviewWrap" style="display:none;margin-bottom:.5rem"><img id="wInvoicePhotoPreview" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)"></div>' +
+      '<label for="wInvoicePhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;border:1.5px dashed var(--border);border-radius:10px;padding:.6rem;cursor:pointer;color:var(--text-2);font-size:.8rem;font-weight:600;background:var(--surface-2)"><span id="wInvoicePhotoBtnLabel">📷 رفع صورة الفاتورة</span></label>' +
+      '<input type="file" id="wInvoicePhotoInput" accept="image/*" capture="environment" style="display:none"></div></div>';
+  }
+
+  // ── Virtual Inventory: مصدر القطعة (لكل أنواع الصيانة، إلا "أخرى") ──
+  let partsSourceBlock = '';
+  if (!isFuelType && type !== 'other') {
+    const invProductsOpts = (window._invProducts || []).map(p =>
+      '<option value="' + p.id + '">' + p.name + ' (متاح: ' + p.quantity + ' ' + (p.unit||'') + ')</option>').join('');
+    partsSourceBlock =
+      '<div class="form-group"><label>📦 مصدر القطعة <span class="req">*</span></label>' +
+      '<select id="wPartsSource" onchange="togglePartsSourceFields()"><option value="">-- اختر --</option>' +
+      '<option value="Inventory">📦 من مخزون الشركة</option>' +
+      '<option value="DirectPurchase">🛒 شراء مباشر من الخارج</option>' +
+      '<option value="InventoryPurchase">📥 شراء وإضافة للمخزن</option></select></div>' +
+      '<div id="wPartsInventoryFields" style="display:none">' +
+      '<div class="form-group"><label>المنتج <span class="req">*</span></label><select id="wInvProduct"><option value="">-- اختر المنتج --</option>' + invProductsOpts + '</select></div></div>' +
+      '<div id="wPartsDirectFields" style="display:none">' +
+      '<div class="form-group"><label>المورد أو المحل <span class="req">*</span></label><input type="text" id="wDirectSupplier" placeholder="اسم المحل/المورد"></div>' +
+      '<div class="form-group"><label>التكلفة <span class="req">*</span></label><input type="number" id="wDirectCost" placeholder="0.00" step="0.01" min="0"></div>' +
+      '<div class="form-group"><label>📷 صورة الفاتورة</label>' +
+      '<div id="wInvoicePhotoPreviewWrap2" style="display:none;margin-bottom:.5rem"><img id="wInvoicePhotoPreview2" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)"></div>' +
+      '<label for="wInvoicePhotoInput2" style="display:flex;align-items:center;justify-content:center;gap:.5rem;border:1.5px dashed var(--border);border-radius:10px;padding:.6rem;cursor:pointer;color:var(--text-2);font-size:.8rem;font-weight:600;background:var(--surface-2)"><span id="wInvoicePhotoBtnLabel2">📷 رفع صورة الفاتورة</span></label>' +
+      '<input type="file" id="wInvoicePhotoInput2" accept="image/*" capture="environment" style="display:none"></div></div>';
+  }
+
   const priceVal = (window._typePrices && window._typePrices[type]) || 0;
 
   openModal(
     '<div class="modal-header"><div class="modal-title">' + wt.icon + ' ' + wt.label + '</div><button class="modal-close" onclick="closeModal()">✕</button></div>' +
     assetBlock +
+    fuelSourceBlock +
+    partsSourceBlock +
     specific +
     '<div class="form-group"><label>' + odoLabel + ' <span class="req">*</span></label>' +
     '<input type="number" id="wOdo" placeholder="' + odoPlaceholder + '" min="0" step="' + odoStep + '"></div>' +
@@ -10738,27 +10822,32 @@ function dpWsModal(type) {
   );
 
   window._wsOdoPhotoData = '';
-  const _wsPhotoInputEl = document.getElementById('wOdoPhotoInput');
-  if (_wsPhotoInputEl) {
-    _wsPhotoInputEl.onchange = (e) => {
+  window._wsInvoicePhotoData = '';
+  const _wireWsPhoto = (inputId, previewId, wrapId, btnLabelId, storeKey) => {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.onchange = (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
-        window._wsOdoPhotoData = reader.result;
-        const preview = document.getElementById('wOdoPhotoPreview');
-        const wrap    = document.getElementById('wOdoPhotoPreviewWrap');
+        window[storeKey] = reader.result;
+        const preview = document.getElementById(previewId);
+        const wrap    = document.getElementById(wrapId);
         if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
-        const lbl = document.getElementById('wOdoPhotoBtnLabel');
+        const lbl = document.getElementById(btnLabelId);
         if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
       };
       reader.readAsDataURL(file);
     };
-  }
+  };
+  _wireWsPhoto('wOdoPhotoInput', 'wOdoPhotoPreview', 'wOdoPhotoPreviewWrap', 'wOdoPhotoBtnLabel', '_wsOdoPhotoData');
+  _wireWsPhoto('wInvoicePhotoInput', 'wInvoicePhotoPreview', 'wInvoicePhotoPreviewWrap', 'wInvoicePhotoBtnLabel', '_wsInvoicePhotoData');
+  _wireWsPhoto('wInvoicePhotoInput2', 'wInvoicePhotoPreview2', 'wInvoicePhotoPreviewWrap2', 'wInvoicePhotoBtnLabel2', '_wsInvoicePhotoData');
 
   document.getElementById('wsSubmitBtn').onclick = async () => {
     const odo   = parseFloat(document.getElementById('wOdo')?.value) || null;
-    const price = parseFloat(document.getElementById('wPrice')?.value) || 0;
+    let price = parseFloat(document.getElementById('wPrice')?.value) || 0;
     const notes = document.getElementById('wNotes')?.value?.trim() || '';
     const btn   = document.getElementById('wsSubmitBtn');
 
@@ -10768,6 +10857,39 @@ function dpWsModal(type) {
     // ── Validation: صورة العداد مطلوبة (إلزامية) لكل العمليات إلا "أخرى" ──
     if (type !== 'other' && !window._wsOdoPhotoData) {
       return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل الحفظ', 'error');
+    }
+
+    // ── Virtual Inventory: مصدر الوقود (إلزامي للتفويل) ──
+    const isFuelSubmit = selWsType.startsWith('fuel_');
+    let fuelSource = '', stationName = '', pumpNumber = '';
+    if (isFuelSubmit) {
+      fuelSource = document.getElementById('wFuelSource')?.value || '';
+      if (!fuelSource) return showNotification('اختر مصدر الوقود: محطة الشركة أو محطة خارجية', 'error');
+      if (fuelSource === 'ExternalStation') {
+        stationName = document.getElementById('wStationName')?.value?.trim() || '';
+        if (!stationName) return showNotification('أدخل اسم المحطة الخارجية', 'error');
+        const extPrice = parseFloat(document.getElementById('wExternalPrice')?.value) || 0;
+        if (!extPrice || extPrice <= 0) return showNotification('أدخل قيمة التفويلة', 'error');
+        price = extPrice;
+      } else {
+        pumpNumber = document.getElementById('wPumpNumber')?.value?.trim() || '';
+      }
+    }
+
+    // ── Virtual Inventory: مصدر القطعة (إلزامي للصيانة، إلا "أخرى") ──
+    let partsSource = '', invProductId = null, directSupplier = '', directCost = null;
+    if (!isFuelSubmit && type !== 'other') {
+      partsSource = document.getElementById('wPartsSource')?.value || '';
+      if (!partsSource) return showNotification('اختر مصدر القطعة', 'error');
+      if (partsSource === 'Inventory' || partsSource === 'InventoryPurchase') {
+        invProductId = parseInt(document.getElementById('wInvProduct')?.value) || null;
+        if (!invProductId) return showNotification('اختر المنتج من المخزون', 'error');
+      } else if (partsSource === 'DirectPurchase') {
+        directSupplier = document.getElementById('wDirectSupplier')?.value?.trim() || '';
+        directCost = parseFloat(document.getElementById('wDirectCost')?.value) || null;
+        if (!directSupplier) return showNotification('أدخل اسم المورد أو المحل', 'error');
+        if (!directCost || directCost <= 0) return showNotification('أدخل تكلفة القطعة', 'error');
+      }
     }
 
     // ── تحديد driver_id وvehicle_id حسب الدور ──
@@ -10789,6 +10911,10 @@ function dpWsModal(type) {
       vehicle_id: _vidFinal,
       odometer_reading: odo,
       odometer_photo: window._wsOdoPhotoData || '',
+      invoice_photo: window._wsInvoicePhotoData || '',
+      fuel_source: fuelSource, station_name: stationName, pump_number: pumpNumber,
+      parts_source: partsSource, inventory_product_id: invProductId,
+      direct_purchase_supplier: directSupplier, direct_purchase_cost: directCost,
       location: ''
     };
 
@@ -14793,6 +14919,221 @@ window.CS = { upgrade: function(){}, upgradeAll: function(){} };
 // ══════════════════════════════════════════════════════════════════
 
 // ══════════════════════════════════════════════════════
+// EQUIPMENT OPERATIONAL CARD — بطاقة تشغيل المعدات
+// نفس فكرة البطاقة التشغيلية للمركبات، بس الداتا من equipment + operator_shifts
+// + 3 مقاييس إضافية: ساعات التشغيل الفعلية، عدد الورديات، نسبة الاستخدام اليومية
+// ══════════════════════════════════════════════════════
+async function renderEquipmentOpCard() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+
+  let equipmentList = [];
+  try { const r = await apiCall('/equipment'); equipmentList = r.equipment || []; } catch(e) {}
+
+  const eqOpts = `<option value="">— اختر المعدة —</option>` +
+    equipmentList.map(eq => `<option value="${eq.car_code}">${eq.equipment_name}${eq.car_code?' — '+eq.car_code:''}${eq.equipment_type?' ('+eq.equipment_type+')':''}</option>`).join('');
+
+  const today = new Date().toISOString().slice(0,10);
+  const monthStart = today.slice(0,8)+'01';
+
+  // ── جلب ورديات كل المعدات في الفترة الحالية (للداشبورد + الجدول العام) ──
+  let allShiftsResp = {shifts:[]};
+  try { allShiftsResp = await apiCall(`/shifts?date_from=${monthStart}&date_to=${today}&limit=10000`); } catch(e) {}
+  const allShifts = allShiftsResp.shifts || [];
+
+  // عدد الورديات (محسوبة) = ساعات التشغيل ÷ 8 — حسب التعريف المطلوب
+  const calcShiftsCount = (hours) => (hours || 0) / 8;
+  const calcUsagePct    = (hours) => ((hours || 0) / 8) * 100; // بدون سقف، ممكن تتجاوز 100%
+
+  const totalHoursAll = allShifts.reduce((s,r)=> s + (r.working_hours||0), 0);
+  const equipWithShifts = new Set(allShifts.map(r=>r.equipment_id)).size;
+  const workingNow = new Set(allShifts.filter(r=>r.status==='active').map(r=>r.equipment_id)).size;
+  const avgUsageAll = allShifts.length ? (allShifts.reduce((s,r)=> s + calcUsagePct(r.working_hours), 0) / allShifts.length) : 0;
+
+  const dashboardCards = `
+    <div class="eqop-summary-grid">
+      <div class="eqop-summary-card"><div class="ic">🏗️</div><div class="lbl">إجمالي المعدات</div><div class="val">${equipmentList.length}</div></div>
+      <div class="eqop-summary-card"><div class="ic">🟢</div><div class="lbl">المعدات العاملة الآن</div><div class="val">${workingNow}</div></div>
+      <div class="eqop-summary-card"><div class="ic">⏱️</div><div class="lbl">إجمالي ساعات التشغيل (الشهر)</div><div class="val">${totalHoursAll.toFixed(1)}</div></div>
+      <div class="eqop-summary-card"><div class="ic">📊</div><div class="lbl">متوسط نسبة الاستخدام</div><div class="val">${avgUsageAll.toFixed(1)}%</div></div>
+    </div>`;
+
+  const globalRowsHtml = allShifts.length ? allShifts.slice().sort((a,b)=> new Date(b.start_time)-new Date(a.start_time)).map(s => {
+    const hrs = s.working_hours || 0;
+    const sh  = calcShiftsCount(hrs);
+    const pct = calcUsagePct(hrs);
+    return `<tr>
+      <td>${s.equipment_id || '—'}</td>
+      <td>${s.operator_name || '—'}</td>
+      <td>${fmtDate(s.start_time)}</td>
+      <td><strong>${hrs.toFixed(1)}</strong></td>
+      <td>${sh.toFixed(2)}</td>
+      <td><span style="font-weight:700;color:${pct>100?'#dc2626':pct>=75?'#16a34a':'#f59e0b'}">${pct.toFixed(1)}%</span></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد ورديات هذا الشهر</p></div></td></tr>`;
+
+  c.innerHTML = `
+    <style>
+      @media print {
+        .sidebar, .topbar, .sidebar-overlay, #sidebarOverlay, .no-print { display:none!important }
+        body, html { background:#fff!important }
+        #appShell { display:block!important }
+        .main-content { margin:0!important; padding:0!important }
+        .page-content { padding:0!important }
+        .card { box-shadow:none!important; border:none!important; margin:0!important; padding:0!important }
+        .eqop-print-header { display:block!important; text-align:center;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid #0f2027 }
+        @page { size:A4 landscape; margin:8mm 10mm }
+      }
+      .eqop-print-header { display:none }
+      .eqop-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.1rem}
+      @media(max-width:900px){.eqop-summary-grid{grid-template-columns:repeat(2,1fr)}}
+      .eqop-summary-card{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:1rem;text-align:center}
+      .eqop-summary-card .ic{font-size:1.4rem}
+      .eqop-summary-card .lbl{font-size:.72rem;color:#64748b;font-weight:600;margin:.3rem 0}
+      .eqop-summary-card .val{font-size:1.25rem;font-weight:900;color:#0f172a}
+      .eqop-table{width:100%;border-collapse:collapse;font-size:.85rem}
+      .eqop-table th{background:#0f2027;color:#fff;padding:.55rem .8rem;text-align:center;font-weight:700;white-space:nowrap}
+      .eqop-table td{padding:.5rem .8rem;border-bottom:1px solid #e2e8f0;text-align:center}
+      .eqop-table tr:nth-child(even) td{background:#f8fafc}
+      .eqop-usage-bar-wrap{background:#e2e8f0;border-radius:20px;height:8px;width:80px;margin:0 auto;overflow:hidden}
+      .eqop-usage-bar{height:100%;border-radius:20px;background:linear-gradient(90deg,#3b82f6,#06b6d4)}
+    </style>
+
+    <div class="page-header no-print"><div class="page-title">📋 بطاقة تشغيل المعدات</div></div>
+
+    ${dashboardCards}
+
+    <div class="card no-print" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">📊 جدول التشغيل (كل المعدات — الشهر الحالي)</div></div>
+      <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
+        <table class="eqop-table">
+          <thead><tr><th>المعدة</th><th>المشغل</th><th>التاريخ</th><th>ساعات التشغيل</th><th>عدد الورديات</th><th>نسبة الاستخدام</th></tr></thead>
+          <tbody>${globalRowsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card no-print">
+      <div class="card-header"><div class="card-title">🔍 بطاقة تفصيلية لمعدة واحدة</div></div>
+      <div style="padding:1rem 1.2rem 1.4rem">
+        <div class="filter-grid" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:.8rem;align-items:end">
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">المعدة <span class="req">*</span></label>
+            <select id="eqOpEquipment" style="width:100%;padding:.55rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
+              ${eqOpts}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">من تاريخ</label>
+            <input type="date" id="eqOpFrom" value="${monthStart}" style="width:100%;padding:.55rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label style="font-size:.8rem;font-weight:700;color:#475569;margin-bottom:.3rem;display:block">إلى تاريخ</label>
+            <input type="date" id="eqOpTo" value="${today}" style="width:100%;padding:.55rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
+          </div>
+          <button class="btn btn-primary" onclick="generateEquipmentOpCard()">📊 إنشاء البطاقة</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="eqOpResult"></div>
+  `;
+}
+
+async function generateEquipmentOpCard() {
+  const eqCode = document.getElementById('eqOpEquipment')?.value;
+  const from   = document.getElementById('eqOpFrom')?.value;
+  const to     = document.getElementById('eqOpTo')?.value;
+  const resEl  = document.getElementById('eqOpResult');
+
+  if (!eqCode) return showNotification('اختر المعدة أولاً', 'error');
+
+  resEl.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تجهيز البطاقة...</p></div>`;
+
+  let equipmentList = [];
+  try { const r = await apiCall('/equipment'); equipmentList = r.equipment || []; } catch(e) {}
+  const eq = equipmentList.find(e => e.car_code === eqCode);
+
+  let shiftsResp = {shifts:[]};
+  try {
+    shiftsResp = await apiCall(`/shifts?equipment_id=${encodeURIComponent(eqCode)}&date_from=${from}&date_to=${to}&limit=10000`);
+  } catch(e) {}
+  const shifts = (shiftsResp.shifts || []).slice().sort((a,b)=> new Date(a.start_time) - new Date(b.start_time));
+
+  // ── المقاييس حسب التعريف المطلوب: ──
+  // عدد الورديات = عدد ساعات التشغيل ÷ 8  (مثال: 8 ساعات = 1 وردية، 16 ساعة = 2 وردية)
+  // نسبة الاستخدام اليومية = (عدد ساعات التشغيل ÷ 8) × 100  (بدون سقف — ممكن تتجاوز 100%)
+  const totalHours = shifts.reduce((sum, s) => sum + (s.working_hours || 0), 0);
+  const totalFuel  = shifts.reduce((sum, s) => sum + (parseFloat(s.fuel_liters) || 0), 0);
+  const shiftsCount = totalHours / 8;
+  const usagePct     = (totalHours / 8) * 100;
+
+  const eqInfoLine = eq
+    ? `${eq.equipment_name} ${eq.car_code?'— '+eq.car_code:''} ${eq.equipment_type?'| '+eq.equipment_type:''} ${eq.brand?'| '+eq.brand:''} ${eq.branch?'| الفرع: '+eq.branch:''}`
+    : eqCode;
+
+  const summaryCards = `
+    <div class="eqop-summary-grid">
+      <div class="eqop-summary-card"><div class="ic">⏱️</div><div class="lbl">عدد ساعات التشغيل الفعلي</div><div class="val">${totalHours.toFixed(1)}</div></div>
+      <div class="eqop-summary-card"><div class="ic">📋</div><div class="lbl">عدد الورديات (الساعات÷8)</div><div class="val">${shiftsCount.toFixed(2)}</div></div>
+      <div class="eqop-summary-card"><div class="ic">📊</div><div class="lbl">نسبة الاستخدام اليومية</div><div class="val" style="color:${usagePct>100?'#dc2626':'#0f172a'}">${usagePct.toFixed(1)}%</div></div>
+      <div class="eqop-summary-card"><div class="ic">⛽</div><div class="lbl">إجمالي الوقود</div><div class="val">${totalFuel.toFixed(1)} لتر</div></div>
+    </div>`;
+
+  const rowsHtml = shifts.length ? shifts.map(s => {
+    const hrs = s.working_hours || 0;
+    const rowShifts = hrs / 8;
+    const rowUsagePct = (hrs / 8) * 100;
+    return `<tr>
+      <td>${fmtDate(s.start_time)}</td>
+      <td>${s.operator_name || '—'}</td>
+      <td>${s.start_time ? new Date(s.start_time).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+      <td>${s.end_time ? new Date(s.end_time).toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}) : (s.status==='active' ? '🟢 جارية' : '—')}</td>
+      <td>${s.start_hours ?? '—'}</td>
+      <td>${s.end_hours ?? '—'}</td>
+      <td><strong>${hrs.toFixed(1)}</strong></td>
+      <td>${rowShifts.toFixed(2)}</td>
+      <td><span style="font-weight:700;color:${rowUsagePct>100?'#dc2626':'#0f172a'}">${rowUsagePct.toFixed(1)}%</span></td>
+      <td>${s.fuel_liters ? s.fuel_liters+' لتر' : '—'}</td>
+      <td>${s.project || '—'}</td>
+      <td>${s.notes || '—'}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد ورديات في هذه الفترة</p></div></td></tr>`;
+
+  resEl.innerHTML = `
+    <div class="eqop-print-header">
+      <div style="font-size:16pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
+      <div style="font-size:13pt;font-weight:700;margin-top:.3rem">بطاقة تشغيل المعدات</div>
+      <div style="font-size:10pt;color:#64748b;margin-top:.2rem">${eqInfoLine} &nbsp;|&nbsp; الفترة: ${fmtDate(from)} — ${fmtDate(to)}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:.5rem">
+        <div>
+          <div class="card-title">🏗️ ${eqInfoLine}</div>
+          <div style="font-size:.78rem;color:#64748b;margin-top:.2rem">${fmtDate(from)} — ${fmtDate(to)}</div>
+        </div>
+        <div style="display:flex;gap:.5rem" class="no-print">
+          <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨️ طباعة</button>
+        </div>
+      </div>
+      <div style="padding:0 1.2rem 1.4rem">
+        ${summaryCards}
+        <div style="overflow-x:auto">
+          <table class="eqop-table">
+            <thead><tr>
+              <th>التاريخ</th><th>المشغل</th><th>بداية الوردية</th><th>نهاية الوردية</th>
+              <th>عداد البداية</th><th>عداد النهاية</th><th>ساعات التشغيل</th>
+              <th>عدد الورديات</th><th>نسبة الاستخدام</th><th>الوقود</th><th>المشروع</th><th>ملاحظات</th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════
 // EQUIPMENT TRIPS — سجل تشغيل المعدات
 // ══════════════════════════════════════════════════════
 
@@ -17928,6 +18269,541 @@ window.ocrOdoFromFile = async function(fileInput, targetInputId, msgId, cropRect
     URL.revokeObjectURL(imgURL);
   }
 };
+
+// ══════════════════════════════════════════════════════════════════
+// 📦 إدارة المخزون — Virtual Inventory Module
+// ══════════════════════════════════════════════════════════════════
+
+function invStatusBadge(status) {
+  const map = {'متوفر':'#16a34a','منخفض':'#f59e0b','غير متوفر':'#dc2626'};
+  const c = map[status] || '#64748b';
+  return `<span style="background:${c}1a;color:${c};border:1px solid ${c}55;border-radius:8px;padding:.15rem .55rem;font-size:.72rem;font-weight:700">${status}</span>`;
+}
+
+// ── نظرة عامة ──
+async function renderInventoryOverview() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [dash, alerts] = await Promise.all([
+    apiCall('/inventory/dashboard').catch(()=>({})),
+    apiCall('/inventory/alerts').catch(()=>[])
+  ]);
+  const cards = [
+    {icon:'📦', label:'إجمالي الأصناف', val:dash.total_items ?? 0},
+    {icon:'💰', label:'قيمة المخزون', val:(dash.stock_value||0).toLocaleString('ar-EG',{maximumFractionDigits:0})+' جنيه'},
+    {icon:'⚠️', label:'منتجات منخفضة المخزون', val:dash.low_stock_count ?? 0},
+    {icon:'🧾', label:'أوامر الشراء المفتوحة', val:dash.open_purchase_orders ?? 0},
+  ];
+  c.innerHTML = `
+    <div class="page-header"><div class="page-title">📦 نظرة عامة على المخزون</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem;margin-bottom:1.2rem">
+      ${cards.map(cd=>`<div class="card" style="padding:1rem;text-align:center">
+        <div style="font-size:1.4rem">${cd.icon}</div>
+        <div style="font-size:.74rem;color:var(--muted);margin:.3rem 0;font-weight:600">${cd.label}</div>
+        <div style="font-size:1.25rem;font-weight:900">${cd.val}</div>
+      </div>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:1rem">
+      <div class="card">
+        <div class="card-header"><div class="card-title">🏆 أكثر المنتجات استخداماً</div></div>
+        <div style="padding:0 1.2rem 1.2rem">
+          ${(dash.top_used_products||[]).length ? `<table style="width:100%"><thead><tr><th>المنتج</th><th>الكمية المصروفة</th></tr></thead><tbody>
+            ${dash.top_used_products.map(p=>`<tr><td>${p.name}</td><td><strong>${p.total_out}</strong></td></tr>`).join('')}
+          </tbody></table>` : `<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد بيانات استخدام بعد</p></div>`}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">🚨 تنبيهات المخزون المنخفض</div></div>
+        <div style="padding:0 1.2rem 1.2rem">
+          ${alerts.length ? alerts.slice(0,8).map(p=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--border)">
+              <span>${p.name}</span>${invStatusBadge(p.status)}
+            </div>`).join('') : `<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد تنبيهات حالياً</p></div>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── الفئات ──
+async function renderInventoryCategories() {
+  await renderInventorySimpleCrud({
+    section:'inv-categories', title:'🏷️ فئات المخزون', apiPath:'/inventory/categories',
+    columns:[{key:'name',label:'اسم الفئة'},{key:'notes',label:'ملاحظات'}],
+    fields:[{key:'name',label:'اسم الفئة',required:true},{key:'notes',label:'ملاحظات',type:'textarea'}],
+  });
+}
+
+// ── الموردون ──
+async function renderInventorySuppliers() {
+  await renderInventorySimpleCrud({
+    section:'inv-suppliers', title:'🚚 موردو المخزون', apiPath:'/inventory/suppliers',
+    columns:[{key:'name',label:'الاسم'},{key:'phone',label:'الهاتف'},{key:'email',label:'البريد الإلكتروني'},{key:'address',label:'العنوان'}],
+    fields:[{key:'name',label:'اسم المورد',required:true},{key:'phone',label:'الهاتف'},{key:'email',label:'البريد الإلكتروني'},
+            {key:'address',label:'العنوان'},{key:'notes',label:'ملاحظات',type:'textarea'}],
+  });
+}
+
+// ── محرك CRUD عام بسيط (للفئات والموردين) ──
+async function renderInventorySimpleCrud(cfg) {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const rows = await apiCall(cfg.apiPath).catch(()=>[]);
+  window._invCrudCfg = cfg;
+  window._invCrudRows = rows;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${cfg.title}</div>
+        <button class="btn btn-primary btn-sm" onclick="openInvCrudModal(null)">➕ إضافة</button>
+      </div>
+      <div style="padding:0 1.2rem 1.2rem">
+        <input type="text" id="invCrudSearch" placeholder="🔎 بحث..." oninput="renderInvCrudRows()"
+          style="width:100%;max-width:320px;padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;margin-bottom:.8rem">
+        <div style="overflow-x:auto"><table style="width:100%"><thead><tr>
+          ${cfg.columns.map(col=>`<th>${col.label}</th>`).join('')}<th></th>
+        </tr></thead><tbody id="invCrudTbody"></tbody></table></div>
+      </div>
+    </div>`;
+  renderInvCrudRows();
+}
+
+function renderInvCrudRows() {
+  const cfg = window._invCrudCfg, rows = window._invCrudRows || [];
+  const q = (document.getElementById('invCrudSearch')?.value || '').trim().toLowerCase();
+  const filtered = q ? rows.filter(r => cfg.columns.some(col => (r[col.key]||'').toString().toLowerCase().includes(q))) : rows;
+  document.getElementById('invCrudTbody').innerHTML = filtered.length ? filtered.map(r => `
+    <tr>
+      ${cfg.columns.map(col=>`<td>${r[col.key] || '—'}</td>`).join('')}
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick='openInvCrudModal(${JSON.stringify(r).replace(/'/g,"&#39;")})'>✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteInvCrudRow(${r.id})" style="color:#dc2626">🗑️</button>
+      </td>
+    </tr>`).join('') : `<tr><td colspan="${cfg.columns.length+1}"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد عناصر</p></div></td></tr>`;
+}
+
+function openInvCrudModal(row) {
+  const cfg = window._invCrudCfg;
+  openModal(`
+    <div class="modal-header"><div class="modal-title">${row?'✏️ تعديل':'➕ إضافة'} — ${cfg.title}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    ${cfg.fields.map(f => `
+      <div class="form-group">
+        <label>${f.label} ${f.required?'<span class="req">*</span>':''}</label>
+        ${f.type==='textarea'
+          ? `<textarea id="invF_${f.key}">${row?.[f.key]||''}</textarea>`
+          : `<input type="text" id="invF_${f.key}" value="${row?.[f.key]||''}">`}
+      </div>`).join('')}
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="invCrudSaveBtn">💾 حفظ</button>
+    </div>`);
+  document.getElementById('invCrudSaveBtn').onclick = async () => {
+    const body = {};
+    for (const f of cfg.fields) body[f.key] = document.getElementById(`invF_${f.key}`)?.value?.trim() || '';
+    if (cfg.fields.some(f=>f.required) && !body[cfg.fields.find(f=>f.required).key]) {
+      return showNotification('املأ الحقول المطلوبة', 'error');
+    }
+    try {
+      if (row) await apiCall(`${cfg.apiPath}/${row.id}`, 'PUT', body);
+      else await apiCall(cfg.apiPath, 'POST', body);
+      showNotification('✅ تم الحفظ', 'success');
+      closeModal();
+      switchSection(cfg.section);
+    } catch (e) { showNotification(e.message, 'error'); }
+  };
+}
+
+async function deleteInvCrudRow(id) {
+  if (!confirm('تأكيد الحذف؟')) return;
+  try {
+    await apiCall(`${window._invCrudCfg.apiPath}/${id}`, 'DELETE');
+    showNotification('✅ تم الحذف', 'success');
+    switchSection(window._invCrudCfg.section);
+  } catch (e) { showNotification(e.message, 'error'); }
+}
+
+// ── المنتجات ──
+async function renderInventoryProducts() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [products, cats, sups] = await Promise.all([
+    apiCall('/inventory/products').catch(()=>[]),
+    apiCall('/inventory/categories').catch(()=>[]),
+    apiCall('/inventory/suppliers').catch(()=>[]),
+  ]);
+  window._invProducts = products; window._invCats = cats; window._invSups = sups;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🧰 المنتجات</div>
+        <button class="btn btn-primary btn-sm" onclick="openInvProductModal(null)">➕ إضافة منتج</button>
+      </div>
+      <div style="padding:0 1.2rem 1.2rem">
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem">
+          <input type="text" id="invProdSearch" placeholder="🔎 بحث بالاسم أو SKU" oninput="renderInvProductRows()"
+            style="flex:1;min-width:200px;padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
+          <select id="invProdCatFilter" onchange="renderInvProductRows()" style="padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
+            <option value="">كل الفئات</option>
+            ${cats.map(ct=>`<option value="${ct.id}">${ct.name}</option>`).join('')}
+          </select>
+          <select id="invProdStatusFilter" onchange="renderInvProductRows()" style="padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit">
+            <option value="">كل الحالات</option>
+            <option value="متوفر">متوفر</option><option value="منخفض">منخفض</option><option value="غير متوفر">غير متوفر</option>
+          </select>
+        </div>
+        <div style="overflow-x:auto"><table style="width:100%"><thead><tr>
+          <th>المنتج</th><th>SKU</th><th>الفئة</th><th>المورد</th><th>سعر الشراء</th><th>سعر البيع</th><th>الكمية</th><th>الحد الأدنى</th><th>الحالة</th><th></th>
+        </tr></thead><tbody id="invProdTbody"></tbody></table></div>
+      </div>
+    </div>`;
+  renderInvProductRows();
+}
+
+function renderInvProductRows() {
+  let rows = window._invProducts || [];
+  const q = (document.getElementById('invProdSearch')?.value||'').trim().toLowerCase();
+  const catF = document.getElementById('invProdCatFilter')?.value;
+  const stF  = document.getElementById('invProdStatusFilter')?.value;
+  if (q) rows = rows.filter(r => (r.name||'').toLowerCase().includes(q) || (r.sku||'').toLowerCase().includes(q));
+  if (catF) rows = rows.filter(r => String(r.category_id)===catF);
+  if (stF) rows = rows.filter(r => r.status===stF);
+  document.getElementById('invProdTbody').innerHTML = rows.length ? rows.map(p=>`
+    <tr>
+      <td><strong>${p.name}</strong></td><td>${p.sku||'—'}</td><td>${p.category_name||'—'}</td><td>${p.supplier_name||'—'}</td>
+      <td>${(p.purchase_price||0).toFixed(2)}</td><td>${(p.sale_price||0).toFixed(2)}</td>
+      <td>${p.quantity} ${p.unit||''}</td><td>${p.min_quantity||0}</td><td>${invStatusBadge(p.status)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick='openInvProductModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteInvProduct(${p.id})" style="color:#dc2626">🗑️</button>
+      </td>
+    </tr>`).join('') : `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد منتجات</p></div></td></tr>`;
+}
+
+function openInvProductModal(p) {
+  const cats = window._invCats||[], sups = window._invSups||[];
+  openModal(`
+    <div class="modal-header"><div class="modal-title">${p?'✏️ تعديل منتج':'➕ إضافة منتج'}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>اسم المنتج <span class="req">*</span></label><input type="text" id="ipName" value="${p?.name||''}"></div>
+    <div class="form-group"><label>SKU</label><input type="text" id="ipSku" value="${p?.sku||''}"></div>
+    <div class="form-group"><label>الفئة</label><select id="ipCat"><option value="">—</option>
+      ${cats.map(ct=>`<option value="${ct.id}" ${p?.category_id===ct.id?'selected':''}>${ct.name}</option>`).join('')}</select></div>
+    <div class="form-group"><label>المورد</label><select id="ipSup"><option value="">—</option>
+      ${sups.map(s=>`<option value="${s.id}" ${p?.supplier_id===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group"><label>سعر الشراء</label><input type="number" id="ipPP" value="${p?.purchase_price||0}" step="0.01"></div>
+      <div class="form-group"><label>سعر البيع</label><input type="number" id="ipSP" value="${p?.sale_price||0}" step="0.01"></div>
+      <div class="form-group"><label>الكمية الحالية ${p?'(للتعديل المباشر استخدم حركات المخزون)':''}</label>
+        <input type="number" id="ipQty" value="${p?.quantity||0}" ${p?'disabled':''} step="0.01"></div>
+      <div class="form-group"><label>الحد الأدنى للمخزون</label><input type="number" id="ipMinQ" value="${p?.min_quantity||0}" step="0.01"></div>
+      <div class="form-group"><label>وحدة القياس</label><input type="text" id="ipUnit" value="${p?.unit||'قطعة'}"></div>
+    </div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="ipNotes">${p?.notes||''}</textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="ipSaveBtn">💾 حفظ</button>
+    </div>`);
+  document.getElementById('ipSaveBtn').onclick = async () => {
+    const name = document.getElementById('ipName').value.trim();
+    if (!name) return showNotification('اسم المنتج مطلوب', 'error');
+    const body = {
+      name, sku: document.getElementById('ipSku').value.trim(),
+      category_id: parseInt(document.getElementById('ipCat').value)||null,
+      supplier_id: parseInt(document.getElementById('ipSup').value)||null,
+      purchase_price: parseFloat(document.getElementById('ipPP').value)||0,
+      sale_price: parseFloat(document.getElementById('ipSP').value)||0,
+      quantity: parseFloat(document.getElementById('ipQty').value)||0,
+      min_quantity: parseFloat(document.getElementById('ipMinQ').value)||0,
+      unit: document.getElementById('ipUnit').value.trim()||'قطعة',
+      notes: document.getElementById('ipNotes').value.trim(),
+    };
+    try {
+      if (p) await apiCall(`/inventory/products/${p.id}`, 'PUT', body);
+      else await apiCall('/inventory/products', 'POST', body);
+      showNotification('✅ تم الحفظ', 'success'); closeModal(); renderInventoryProducts();
+    } catch(e) { showNotification(e.message, 'error'); }
+  };
+}
+
+async function deleteInvProduct(id) {
+  if (!confirm('تأكيد حذف المنتج؟ سيتم حذف حركاته أيضاً')) return;
+  try { await apiCall(`/inventory/products/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderInventoryProducts(); }
+  catch(e) { showNotification(e.message, 'error'); }
+}
+
+// ── حركات المخزون ──
+async function renderInventoryMovements() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [movements, products] = await Promise.all([
+    apiCall('/inventory/movements').catch(()=>[]),
+    apiCall('/inventory/products').catch(()=>[]),
+  ]);
+  window._invProducts = products;
+  const typeLabels = {in:'➕ إضافة', out:'➖ صرف', return:'↩️ مرتجع', adjust:'⚖️ تعديل كمية'};
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔄 حركات المخزون</div>
+        <button class="btn btn-primary btn-sm" onclick="openInvMovementModal()">➕ حركة جديدة</button>
+      </div>
+      <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
+        <table style="width:100%"><thead><tr>
+          <th>المنتج</th><th>النوع</th><th>الكمية</th><th>المستخدم</th><th>التاريخ</th><th>ملاحظات</th>
+        </tr></thead><tbody>
+          ${movements.length ? movements.map(m=>`
+            <tr>
+              <td>${m.product_name||'—'}</td><td>${typeLabels[m.movement_type]||m.movement_type}</td>
+              <td><strong>${m.quantity}</strong> ${m.product_unit||''}</td><td>${m.username||'—'}</td>
+              <td style="font-size:.78rem;color:var(--muted)">${fmtDate(m.created_at)}</td><td>${m.notes||'—'}</td>
+            </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد حركات</p></div></td></tr>`}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+
+function openInvMovementModal() {
+  const products = window._invProducts || [];
+  openModal(`
+    <div class="modal-header"><div class="modal-title">🔄 حركة مخزون جديدة</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>المنتج <span class="req">*</span></label>
+      <select id="imProd"><option value="">— اختر —</option>${products.map(p=>`<option value="${p.id}">${p.name} (متاح: ${p.quantity})</option>`).join('')}</select></div>
+    <div class="form-group"><label>نوع الحركة <span class="req">*</span></label>
+      <select id="imType"><option value="in">➕ إضافة مخزون</option><option value="out">➖ صرف مخزون</option>
+        <option value="return">↩️ مرتجع</option><option value="adjust">⚖️ تعديل كمية (تعيين القيمة الجديدة)</option></select></div>
+    <div class="form-group"><label>الكمية <span class="req">*</span></label><input type="number" id="imQty" step="0.01"></div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="imNotes"></textarea></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" id="imSaveBtn">💾 حفظ</button></div>`);
+  document.getElementById('imSaveBtn').onclick = async () => {
+    const product_id = parseInt(document.getElementById('imProd').value);
+    const quantity = parseFloat(document.getElementById('imQty').value);
+    if (!product_id) return showNotification('اختر المنتج', 'error');
+    if (!quantity || quantity<=0) return showNotification('أدخل كمية صحيحة', 'error');
+    try {
+      await apiCall('/inventory/movements', 'POST', {
+        product_id, movement_type: document.getElementById('imType').value,
+        quantity, notes: document.getElementById('imNotes').value.trim()
+      });
+      showNotification('✅ تم تسجيل الحركة', 'success'); closeModal(); renderInventoryMovements();
+    } catch(e) { showNotification(e.message, 'error'); }
+  };
+}
+
+// ── أوامر الشراء ──
+async function renderInventoryPurchaseOrders() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [orders, sups] = await Promise.all([
+    apiCall('/inventory/purchase-orders').catch(()=>[]),
+    apiCall('/inventory/suppliers').catch(()=>[]),
+  ]);
+  window._invSups = sups; window._invPOs = orders;
+  const statusLabels = {draft:'📝 مسودة', open:'🟢 مفتوح', received:'✅ مستلم', cancelled:'❌ ملغي'};
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🧾 أوامر الشراء</div>
+        <button class="btn btn-primary btn-sm" onclick="openInvPOModal(null)">➕ أمر شراء جديد</button>
+      </div>
+      <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
+        <table style="width:100%"><thead><tr>
+          <th>رقم الأمر</th><th>المورد</th><th>التاريخ</th><th>الحالة</th><th>الإجمالي</th><th></th>
+        </tr></thead><tbody>
+          ${orders.length ? orders.map(o=>`
+            <tr>
+              <td><strong>${o.order_number}</strong></td><td>${o.supplier_name||'—'}</td>
+              <td>${o.order_date||'—'}</td><td>${statusLabels[o.status]||o.status}</td>
+              <td>${(o.total_value||0).toLocaleString('ar-EG')} جنيه</td>
+              <td><button class="btn btn-ghost btn-sm" onclick='openInvPOModal(${JSON.stringify(o).replace(/'/g,"&#39;")})'>✏️</button>
+                  <button class="btn btn-ghost btn-sm" onclick="deleteInvPO(${o.id})" style="color:#dc2626">🗑️</button></td>
+            </tr>`).join('') : `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد أوامر شراء</p></div></td></tr>`}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+
+function openInvPOModal(o) {
+  const sups = window._invSups || [];
+  openModal(`
+    <div class="modal-header"><div class="modal-title">${o?'✏️ تعديل أمر شراء':'➕ أمر شراء جديد'}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>رقم الأمر</label><input type="text" id="poNum" value="${o?.order_number||''}" placeholder="يُنشأ تلقائياً لو تُرك فاضي"></div>
+    <div class="form-group"><label>المورد</label><select id="poSup"><option value="">—</option>
+      ${sups.map(s=>`<option value="${s.id}" ${o?.supplier_id===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
+    <div class="form-group"><label>التاريخ</label><input type="date" id="poDate" value="${o?.order_date||new Date().toISOString().slice(0,10)}"></div>
+    <div class="form-group"><label>الحالة</label><select id="poStatus">
+      ${['draft','open','received','cancelled'].map(s=>`<option value="${s}" ${o?.status===s?'selected':''}>${{draft:'📝 مسودة',open:'🟢 مفتوح',received:'✅ مستلم',cancelled:'❌ ملغي'}[s]}</option>`).join('')}
+    </select></div>
+    <div class="form-group"><label>إجمالي القيمة</label><input type="number" id="poTotal" value="${o?.total_value||0}" step="0.01"></div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="poNotes">${o?.notes||''}</textarea></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" id="poSaveBtn">💾 حفظ</button></div>`);
+  document.getElementById('poSaveBtn').onclick = async () => {
+    const body = {
+      order_number: document.getElementById('poNum').value.trim(),
+      supplier_id: parseInt(document.getElementById('poSup').value)||null,
+      order_date: document.getElementById('poDate').value,
+      status: document.getElementById('poStatus').value,
+      total_value: parseFloat(document.getElementById('poTotal').value)||0,
+      notes: document.getElementById('poNotes').value.trim(),
+    };
+    try {
+      if (o) await apiCall(`/inventory/purchase-orders/${o.id}`, 'PUT', body);
+      else await apiCall('/inventory/purchase-orders', 'POST', body);
+      showNotification('✅ تم الحفظ', 'success'); closeModal(); renderInventoryPurchaseOrders();
+    } catch(e) { showNotification(e.message, 'error'); }
+  };
+}
+
+async function deleteInvPO(id) {
+  if (!confirm('تأكيد حذف أمر الشراء؟')) return;
+  try { await apiCall(`/inventory/purchase-orders/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderInventoryPurchaseOrders(); }
+  catch(e) { showNotification(e.message, 'error'); }
+}
+
+// ── التنبيهات ──
+async function renderInventoryAlerts() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const alerts = await apiCall('/inventory/alerts').catch(()=>[]);
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header"><div class="card-title">🚨 تنبيهات المخزون المنخفض</div></div>
+      <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
+        <table style="width:100%"><thead><tr><th>المنتج</th><th>الفئة</th><th>الكمية الحالية</th><th>الحد الأدنى</th><th>الحالة</th></tr></thead><tbody>
+          ${alerts.length ? alerts.map(p=>`
+            <tr><td><strong>${p.name}</strong></td><td>${p.category_name||'—'}</td>
+              <td>${p.quantity} ${p.unit||''}</td><td>${p.min_quantity}</td><td>${invStatusBadge(p.status)}</td></tr>`).join('')
+          : `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد تنبيهات حالياً — كل المخزون في المستوى الطبيعي</p></div></td></tr>`}
+        </tbody></table>
+      </div>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 📝 مراجعة العمليات — Workshop Operations Review (تفويل + صيانة)
+// ══════════════════════════════════════════════════════════════════
+async function renderOpsReview() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const rows = await apiCall('/workshops/pending-review').catch(()=>[]);
+  window._opsReviewRows = rows;
+
+  const today = new Date().toISOString().slice(0,10);
+  const totalOps = rows.length;
+  const pendingOps = rows.filter(r=>(r.approval_status||'pending')==='pending').length;
+  const todayOps = rows.filter(r=>(r.created_at||'').slice(0,10)===today).length;
+  const approvedOps = rows.filter(r=>r.approval_status==='approved').length;
+
+  c.innerHTML = `
+    <div class="page-header"><div class="page-title">📝 مراجعة العمليات</div></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.9rem;margin-bottom:1.1rem">
+      <div class="card" style="padding:1rem;text-align:center"><div style="font-size:1.3rem">📋</div><div style="font-size:.74rem;color:var(--muted);font-weight:600;margin:.3rem 0">إجمالي العمليات</div><div style="font-size:1.25rem;font-weight:900">${totalOps}</div></div>
+      <div class="card" style="padding:1rem;text-align:center"><div style="font-size:1.3rem">⏳</div><div style="font-size:.74rem;color:var(--muted);font-weight:600;margin:.3rem 0">العمليات المعلقة</div><div style="font-size:1.25rem;font-weight:900;color:#f59e0b">${pendingOps}</div></div>
+      <div class="card" style="padding:1rem;text-align:center"><div style="font-size:1.3rem">📅</div><div style="font-size:.74rem;color:var(--muted);font-weight:600;margin:.3rem 0">عمليات اليوم</div><div style="font-size:1.25rem;font-weight:900">${todayOps}</div></div>
+      <div class="card" style="padding:1rem;text-align:center"><div style="font-size:1.3rem">✅</div><div style="font-size:.74rem;color:var(--muted);font-weight:600;margin:.3rem 0">العمليات المعتمدة</div><div style="font-size:1.25rem;font-weight:900;color:#16a34a">${approvedOps}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">سجل العمليات</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <select id="orKindFilter" onchange="renderOpsReviewRows()" style="padding:.4rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem">
+            <option value="">الكل</option><option value="fuel">⛽ تفويل</option><option value="maintenance">🔧 صيانة</option>
+          </select>
+          <select id="orStatusFilter" onchange="renderOpsReviewRows()" style="padding:.4rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem">
+            <option value="">كل الحالات</option><option value="pending">⏳ معلق</option><option value="approved">✅ معتمد</option><option value="rejected">❌ مرفوض</option>
+          </select>
+        </div>
+      </div>
+      <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
+        <table style="width:100%"><thead><tr>
+          <th>النوع</th><th>المركبة/المعدة</th><th>السائق/المشغل</th><th>التاريخ</th><th>قراءة العداد</th><th>الصور</th><th>الحالة</th><th></th>
+        </tr></thead><tbody id="orTbody"></tbody></table>
+      </div>
+    </div>`;
+  renderOpsReviewRows();
+}
+
+function renderOpsReviewRows() {
+  let rows = window._opsReviewRows || [];
+  const kind = document.getElementById('orKindFilter')?.value;
+  const status = document.getElementById('orStatusFilter')?.value;
+  if (kind==='fuel') rows = rows.filter(r=>r.type.startsWith('fuel_'));
+  else if (kind==='maintenance') rows = rows.filter(r=>!r.type.startsWith('fuel_'));
+  if (status) rows = rows.filter(r=>(r.approval_status||'pending')===status);
+
+  const statusBadge = {pending:'⏳ معلق', approved:'✅ معتمد', rejected:'❌ مرفوض'};
+  const statusColor  = {pending:'#f59e0b', approved:'#16a34a', rejected:'#dc2626'};
+
+  document.getElementById('orTbody').innerHTML = rows.length ? rows.map(r => {
+    const wt = WT[r.type] || {icon:'🔧', label:r.type};
+    const st = r.approval_status || 'pending';
+    const photos = [r.odometer_photo, r.invoice_photo].filter(Boolean);
+    return `<tr>
+      <td>${wt.icon} ${wt.label}</td>
+      <td>${r.vehicle_plate || r.vehicle_model || '—'}</td>
+      <td>${r.driver_name || '—'}</td>
+      <td style="font-size:.78rem;color:var(--muted)">${fmtDate(r.created_at)}</td>
+      <td>${r.odometer_reading ?? '—'}</td>
+      <td>${photos.length ? photos.map(p=>`<img src="${p}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin-left:2px">`).join('') : '—'}</td>
+      <td><span style="color:${statusColor[st]};font-weight:700;font-size:.8rem">${statusBadge[st]}</span></td>
+      <td><button class="btn btn-primary btn-sm" onclick='openOpsReviewDetail(${r.id})'>🔍 التفاصيل</button></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد عمليات مطابقة</p></div></td></tr>`;
+}
+
+function openOpsReviewDetail(id) {
+  const r = (window._opsReviewRows||[]).find(x=>x.id===id);
+  if (!r) return;
+  const isFuel = r.type.startsWith('fuel_');
+  const wt = WT[r.type] || {icon:'🔧', label:r.type};
+  const st = r.approval_status || 'pending';
+  const FUEL_SRC_LABELS = {CompanyStation:'⛽ محطة الشركة', ExternalStation:'🏪 محطة خارجية'};
+  const PARTS_SRC_LABELS = {Inventory:'📦 من مخزون الشركة', DirectPurchase:'🛒 شراء مباشر من الخارج', InventoryPurchase:'📥 شراء وإضافة للمخزن'};
+
+  const rowsHtml = isFuel ? `
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة:</strong> ${r.vehicle_plate||'—'}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">👨 <strong>السائق:</strong> ${r.driver_name||'—'}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">⛽ <strong>مصدر الوقود:</strong> ${FUEL_SRC_LABELS[r.fuel_source]||'—'} ${r.station_name?'('+r.station_name+')':''}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🧪 <strong>عدد اللترات:</strong> ${r.quantity??'—'}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">💰 <strong>قيمة التفويلة:</strong> ${(r.price||0).toFixed(2)} جنيه</div>
+  ` : `
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة/المعدة:</strong> ${r.vehicle_plate||r.vehicle_model||'—'}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔧 <strong>نوع الصيانة:</strong> ${wt.icon} ${wt.label}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">📦 <strong>مصدر القطعة:</strong> ${PARTS_SRC_LABELS[r.parts_source]||'—'}</div>
+    ${r.parts_source==='DirectPurchase' ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🏪 <strong>المورد/المحل:</strong> ${r.direct_purchase_supplier||'—'}</div>` : ''}
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">💰 <strong>التكلفة:</strong> ${(r.price||0).toFixed(2)} جنيه</div>
+  `;
+
+  const photosHtml = [
+    r.odometer_photo ? `<div><div style="font-size:.72rem;color:var(--muted);margin-bottom:.3rem">صورة العداد</div><img src="${r.odometer_photo}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:1px solid var(--border)"></div>` : '',
+    r.invoice_photo ? `<div><div style="font-size:.72rem;color:var(--muted);margin-bottom:.3rem">صورة الفاتورة</div><img src="${r.invoice_photo}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:1px solid var(--border)"></div>` : '',
+  ].filter(Boolean).join('');
+
+  openModal(`
+    <div class="modal-header"><div class="modal-title">${wt.icon} ${wt.label} — مراجعة العملية</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.85rem;margin-bottom:1rem">${rowsHtml}</div>
+    ${photosHtml ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:1rem">${photosHtml}</div>` : ''}
+    ${r.notes ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;margin-bottom:1rem"><strong>💬 ملاحظات:</strong> ${r.notes}</div>` : ''}
+    <div class="modal-footer">
+      ${st==='pending' ? `
+        <button class="btn btn-ghost" style="color:#dc2626" onclick="reviewOpsRecord(${r.id},'reject')">❌ رفض</button>
+        <button class="btn btn-primary" onclick="reviewOpsRecord(${r.id},'approve')">✅ اعتماد</button>
+      ` : `<span style="font-weight:700">الحالة الحالية: ${st==='approved'?'✅ معتمد':'❌ مرفوض'}</span>`}
+      <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
+    </div>`);
+}
+
+async function reviewOpsRecord(id, action) {
+  try {
+    await apiCall(`/workshops/${id}/review`, 'POST', {action});
+    showNotification(action==='approve' ? '✅ تم اعتماد العملية' : '❌ تم رفض العملية', 'success');
+    closeModal();
+    renderOpsReview();
+  } catch(e) { showNotification(e.message, 'error'); }
+}
 </script>
 
 </body>
