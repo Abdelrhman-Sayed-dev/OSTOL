@@ -3323,12 +3323,37 @@ async function renderOverview() {
     }
   };
 
+  // استخدام مقياس لوغاريتمي إذا كان الفرق بين أكبر وأصغر قيمة > 50x
+  // هذا يضمن ظهور الكيرف حتى لو كان في يوم قيمة ضخمة جداً وبقية الأيام صغيرة
+  const fuelMax = Math.max(...fuelPerDay.filter(v=>v>0));
+  const fuelMin = Math.min(...fuelPerDay.filter(v=>v>0));
+  const useFuelLog = fuelMax > 0 && fuelMin > 0 && (fuelMax / fuelMin) > 50;
+  // إذا في قيم صفر مع لوغاريتمي نضع قيمة صغيرة بدل الصفر (اللوغاريتم لا يقبل 0)
+  const fuelPerDayAdj = useFuelLog ? fuelPerDay.map(v => v > 0 ? v : null) : fuelPerDay;
+
   new Chart(document.getElementById('chartFuelCost'), {
     type:'line',
-    data:{labels:dayLabels,datasets:[{label:'التكلفة',data:fuelPerDay,
-      borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',tension:0,fill:true,pointRadius:4,pointBackgroundColor:'#10b981'}]},
-    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14}},plugins:{legend:{display:false}},
-      scales:{x:{grid:{color:gc}},y:{grid:{color:gc},beginAtZero:true}}},
+    data:{labels:dayLabels,datasets:[{label:'التكلفة',data:fuelPerDayAdj,
+      borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',tension:0,fill:true,
+      pointRadius:5,pointBackgroundColor:'#10b981',spanGaps:true}]},
+    options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:18}},
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>'التكلفة: '+Math.round(ctx.parsed.y).toLocaleString('ar-EG')+' ج'}}
+      },
+      scales:{
+        x:{grid:{color:gc},ticks:{font:{size:9},maxRotation:0}},
+        y:{
+          type: useFuelLog ? 'logarithmic' : 'linear',
+          grid:{color:gc},
+          beginAtZero: !useFuelLog,
+          ticks:{
+            font:{size:9},
+            callback: v => v>=1000000 ? (v/1000000).toFixed(1)+'م' : v>=1000 ? Math.round(v/1000)+'ك' : v
+          }
+        }
+      }
+    },
     plugins:[valueLabelsPlugin]
   });
 
