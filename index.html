@@ -19127,7 +19127,7 @@ async function renderOpsReview() {
       </div>
       <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
         <table style="width:100%"><thead><tr>
-          <th>النوع</th><th>المركبة/المعدة</th><th>السائق/المشغل</th><th>التاريخ</th><th>قراءة العداد</th><th>الصور</th><th>الحالة</th><th></th>
+          <th>النوع</th><th>المركبة/المعدة</th><th>السائق/المشغل</th><th>التاريخ</th><th>قراءة العداد</th><th>💰 السعر</th><th>الصور</th><th>الحالة</th><th>اعتمدها</th><th></th>
         </tr></thead><tbody id="orTbody"></tbody></table>
       </div>
     </div>`;
@@ -19155,11 +19155,13 @@ function renderOpsReviewRows() {
       <td>${r.driver_name || '—'}</td>
       <td style="font-size:.78rem;color:var(--muted)">${fmtDate(r.created_at)}</td>
       <td>${r.odometer_reading ?? '—'}</td>
+      <td style="font-weight:700">${(r.price||0).toFixed(2)} ج${r.price_edited_by ? ' <span title="تم تعديل السعر بواسطة '+r.price_edited_by+'" style="cursor:help">✏️</span>' : ''}</td>
       <td>${photos.length ? photos.map(p=>`<img src="${p}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin-left:2px">`).join('') : '—'}</td>
       <td><span style="color:${statusColor[st]};font-weight:700;font-size:.8rem">${statusBadge[st]}</span></td>
+      <td style="font-size:.78rem;color:var(--muted)">${r.reviewed_by ? '👤 '+r.reviewed_by : '—'}</td>
       <td><button class="btn btn-primary btn-sm" onclick='openOpsReviewDetail(${r.id})'>🔍 التفاصيل</button></td>
     </tr>`;
-  }).join('') : `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد عمليات مطابقة</p></div></td></tr>`;
+  }).join('') : `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد عمليات مطابقة</p></div></td></tr>`;
 }
 
 function openOpsReviewDetail(id) {
@@ -19171,20 +19173,33 @@ function openOpsReviewDetail(id) {
   const FUEL_SRC_LABELS = {CompanyStation:'⛽ محطة الشركة', ExternalStation:'🏪 محطة خارجية'};
   const PARTS_SRC_LABELS = {Inventory:'📦 من مخزون الشركة', DirectPurchase:'🛒 شراء مباشر من الخارج', InventoryPurchase:'📥 شراء وإضافة للمخزن'};
 
+  const priceFieldId = 'orPriceInput_' + r.id;
+  const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة';
+  const priceRowHtml = `
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
+      💰 <strong>${priceLabel}:</strong>
+      <span id="orPriceView_${r.id}">${(r.price||0).toFixed(2)} جنيه</span>
+      <input id="${priceFieldId}" type="number" step="0.01" min="0" value="${r.price||0}"
+        style="display:none;width:90px;padding:.2rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;margin-right:.4rem">
+      <button class="btn btn-ghost btn-sm" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" style="margin-right:.4rem;padding:.15rem .5rem">✏️ تعديل</button>
+      <button class="btn btn-primary btn-sm" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" style="display:none;margin-right:.3rem;padding:.15rem .5rem">💾 حفظ</button>
+      ${r.price_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.25rem">آخر تعديل: ${r.price_edited_by} ${r.price_edited_at?'— '+fmtDate(r.price_edited_at):''}</div>` : ''}
+    </div>`;
+
   const rowsHtml = isFuel ? `
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة:</strong> ${r.vehicle_plate||'—'}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">👨 <strong>السائق:</strong> ${r.driver_name||'—'}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">⛽ <strong>مصدر الوقود:</strong> ${FUEL_SRC_LABELS[r.fuel_source]||'—'} ${r.station_name?'('+r.station_name+')':''}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🧪 <strong>عدد اللترات:</strong> ${r.quantity??'—'}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">💰 <strong>قيمة التفويلة:</strong> ${(r.price||0).toFixed(2)} جنيه</div>
+    ${priceRowHtml}
   ` : `
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة/المعدة:</strong> ${r.vehicle_plate||r.vehicle_model||'—'}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔧 <strong>نوع الصيانة:</strong> ${wt.icon} ${wt.label}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">📦 <strong>مصدر القطعة:</strong> ${PARTS_SRC_LABELS[r.parts_source]||'—'}</div>
     ${r.parts_source==='DirectPurchase' ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🏪 <strong>المورد/المحل:</strong> ${r.direct_purchase_supplier||'—'}</div>` : ''}
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">💰 <strong>التكلفة:</strong> ${(r.price||0).toFixed(2)} جنيه</div>
+    ${priceRowHtml}
   `;
 
   const photosHtml = [
@@ -19197,6 +19212,7 @@ function openOpsReviewDetail(id) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.85rem;margin-bottom:1rem">${rowsHtml}</div>
     ${photosHtml ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:1rem">${photosHtml}</div>` : ''}
     ${r.notes ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;margin-bottom:1rem"><strong>💬 ملاحظات:</strong> ${r.notes}</div>` : ''}
+    ${r.reviewed_by ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;margin-bottom:1rem;font-size:.82rem">👤 <strong>${st==='approved'?'اعتمدها':'رفضها'}:</strong> ${r.reviewed_by} ${r.reviewed_at?'— '+fmtDate(r.reviewed_at):''}</div>` : ''}
     <div class="modal-footer">
       ${st==='pending' ? `
         <button class="btn btn-ghost" style="color:#dc2626" onclick="reviewOpsRecord(${r.id},'reject')">❌ رفض</button>
@@ -19204,6 +19220,31 @@ function openOpsReviewDetail(id) {
       ` : `<span style="font-weight:700">الحالة الحالية: ${st==='approved'?'✅ معتمد':'❌ مرفوض'}</span>`}
       <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
     </div>`);
+}
+
+function toggleOrPriceEdit(id) {
+  const input = document.getElementById('orPriceInput_' + id);
+  const view  = document.getElementById('orPriceView_' + id);
+  const editBtn = document.getElementById('orPriceEditBtn_' + id);
+  const saveBtn = document.getElementById('orPriceSaveBtn_' + id);
+  if (!input) return;
+  input.style.display = '';
+  view.style.display = 'none';
+  editBtn.style.display = 'none';
+  saveBtn.style.display = '';
+  input.focus();
+}
+
+async function saveOrPrice(id) {
+  const input = document.getElementById('orPriceInput_' + id);
+  const newPrice = parseFloat(input?.value);
+  if (isNaN(newPrice) || newPrice < 0) return showNotification('قيمة غير صالحة', 'error');
+  try {
+    await apiCall(`/workshops/${id}/price`, 'PUT', {price: newPrice});
+    showNotification('✅ تم تحديث السعر', 'success');
+    closeModal();
+    renderOpsReview();
+  } catch(e) { showNotification(e.message, 'error'); }
 }
 
 async function reviewOpsRecord(id, action) {
