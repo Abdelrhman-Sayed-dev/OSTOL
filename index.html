@@ -14971,7 +14971,7 @@ async function renderEquipmentOpCard() {
   const avgUsageAll = monthShifts.length ? (monthShifts.reduce((s,r)=> s + calcUsagePct(r.working_hours), 0) / monthShifts.length) : 0;
 
   const dashboardCards = `
-    <div class="eqop-summary-grid">
+    <div class="eqop-summary-grid no-print">
       <div class="eqop-summary-card"><div class="ic">🏗️</div><div class="lbl">إجمالي المعدات</div><div class="val">${equipmentList.length}</div></div>
       <div class="eqop-summary-card"><div class="ic">🟢</div><div class="lbl">المعدات العاملة الآن</div><div class="val">${workingNow}</div></div>
       <div class="eqop-summary-card"><div class="ic">⏱️</div><div class="lbl">إجمالي ساعات التشغيل (الشهر)</div><div class="val">${totalHoursAll.toFixed(1)}</div></div>
@@ -15152,8 +15152,8 @@ async function generateEquipmentOpCard() {
 
   // ── إجماليات ──
   const totalHours  = shifts.reduce((s,r) => s + (r.working_hours||0), 0);
-  const shiftsCount = totalHours / 8;
-  const usagePct    = (totalHours / 8) * 100;
+  const shiftsCount = shifts.length;
+  const usagePct    = shifts.length ? (shifts.reduce((s,r) => s + ((r.working_hours||0) / 8) * 100, 0) / shifts.length) : 0;
   const totalFuelLt = wsFuel.reduce((s,r) => s + (parseFloat(r.quantity)||0), 0);
   const totalFuelCost = wsFuel.reduce((s,r) => s + (parseFloat(r.price)||0), 0);
 
@@ -15169,7 +15169,7 @@ async function generateEquipmentOpCard() {
   const summaryCards = `
     <div class="eqop-summary-grid" style="grid-template-columns:repeat(6,1fr)">
       <div class="eqop-summary-card"><div class="ic">⏱️</div><div class="lbl">ساعات التشغيل</div><div class="val">${totalHours.toFixed(1)}</div></div>
-      <div class="eqop-summary-card"><div class="ic">📋</div><div class="lbl">عدد الورديات</div><div class="val">${shiftsCount.toFixed(2)}</div></div>
+      <div class="eqop-summary-card"><div class="ic">📋</div><div class="lbl">عدد الورديات</div><div class="val">${shiftsCount}</div></div>
       <div class="eqop-summary-card"><div class="ic">📊</div><div class="lbl">نسبة الاستخدام</div><div class="val" style="color:${usagePct>100?'#dc2626':'#0f172a'}">${usagePct.toFixed(1)}%</div></div>
       <div class="eqop-summary-card"><div class="ic">⛽</div><div class="lbl">إجمالي الوقود</div><div class="val">${totalFuelLt.toLocaleString('ar-EG')} لتر</div></div>
       <div class="eqop-summary-card"><div class="ic">💰</div><div class="lbl">تكلفة الوقود</div><div class="val" style="color:#ea580c">${totalFuelCost.toLocaleString('ar-EG')} ج</div></div>
@@ -15278,7 +15278,7 @@ async function generateEquipmentOpCard() {
       <td>&nbsp;</td><td>${o.driver_name||'&nbsp;'}</td><td>&nbsp;</td><td>&nbsp;</td>
     </tr>`;
   });
-  const EMPTY_OIL = 8;
+  const EMPTY_OIL = 3;
   while(oilsRows.length < EMPTY_OIL) oilsRows.push('<tr>'+'<td>&nbsp;</td>'.repeat(16)+'</tr>');
 
   // ── ثالثاً: جدول الكاوتش والبطاريات ──
@@ -15292,7 +15292,7 @@ async function generateEquipmentOpCard() {
     <td>${parseFloat(t.price)>0?parseFloat(t.price).toLocaleString('ar-EG'):'&nbsp;'}</td>
     <td>&nbsp;</td><td>${t.driver_name||'&nbsp;'}</td><td style="min-width:40px">&nbsp;</td><td>&nbsp;</td>
   </tr>`);
-  const EMPTY_TIRES = 6;
+  const EMPTY_TIRES = 3;
   while(tiresRows.length < EMPTY_TIRES) tiresRows.push('<tr>'+'<td>&nbsp;</td>'.repeat(12)+'</tr>');
 
   // ── رابعاً: جدول الصيانة ──
@@ -15306,7 +15306,7 @@ async function generateEquipmentOpCard() {
     <td>${parseFloat(w.price)>0?parseFloat(w.price).toLocaleString('ar-EG'):'&nbsp;'}</td>
     <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td>
   </tr>`);
-  const EMPTY_MAINT = 10;
+  const EMPTY_MAINT = 3;
   while(maintRows.length < EMPTY_MAINT) maintRows.push('<tr>'+'<td>&nbsp;</td>'.repeat(11)+'</tr>');
 
   // ── البناء الكامل للبطاقة ──
@@ -15377,13 +15377,6 @@ async function generateEquipmentOpCard() {
     <!-- ════ الصفحة الثانية: ثانياً + ثالثاً + رابعاً + خامساً ════ -->
     <div class="card eqop-page2-card" style="margin-top:1rem">
       <div style="padding:.5rem 1.2rem 1.4rem">
-
-        <!-- ✅ رأس طباعة مكرر للصفحة الثانية — يظهر عند الطباعة فقط -->
-        <div class="eqop-print-header" style="margin-bottom:.5rem">
-          <div style="font-size:12pt;font-weight:800">المقاولون العرب — عثمان أحمد عثمان وشركاه</div>
-          <div style="font-size:10pt;font-weight:700">بطاقة تشغيل المعدات — ${eqInfoLine}</div>
-          <div style="font-size:9pt;color:#64748b">الفترة: ${fmtDt(from)} — ${fmtDt(to)}</div>
-        </div>
 
         <!-- ثانياً: الزيوت والشحوم -->
         <div class="op-section-block">
@@ -15487,7 +15480,7 @@ async function generateEquipmentOpCard() {
                 <tr><th>رقم</th><th>تاريخ</th><th>الوحدة</th><th>الإجمالي</th><th>الاسم</th><th>التوقيع</th></tr>
               </thead>
               <tbody>
-                ${'<tr>'+'<td>&nbsp;</td>'.repeat(10)+'</tr>'.repeat(12)}
+                ${'<tr>'+'<td>&nbsp;</td>'.repeat(10)+'</tr>'.repeat(3)}
               </tbody>
             </table>
           </div>
@@ -15857,18 +15850,18 @@ async function loadOperators(){
 
     tbody.innerHTML = _operatorsData.map((op,i)=>{
       const statusBadge = op.status==='active'
-        ? `<span style="display:inline-flex;align-items:center;gap:.35rem;background:#f0fdf4;color:#16a34a;padding:.25rem .75rem;border-radius:20px;font-size:.78rem;font-weight:700">
+        ? `<span style="display:inline-flex;align-items:center;gap:.4rem;color:#16a34a;font-size:.82rem;font-weight:600">
             <span style="width:7px;height:7px;border-radius:50%;background:#16a34a"></span> نشط
            </span>`
-        : `<span style="display:inline-flex;align-items:center;gap:.35rem;background:#fef2f2;color:#ef4444;padding:.25rem .75rem;border-radius:20px;font-size:.78rem;font-weight:700">
-            <span style="width:7px;height:7px;border-radius:50%;background:#ef4444"></span> غير نشط
+        : `<span style="display:inline-flex;align-items:center;gap:.4rem;color:#94a3b8;font-size:.82rem;font-weight:600">
+            <span style="width:7px;height:7px;border-radius:50%;background:#cbd5e1"></span> غير نشط
            </span>`;
 
       // المعدة المعيّنة للمشغل (current_equipment)
       const shiftCell = op.current_equipment_name
-        ? `<span style="display:inline-flex;align-items:center;gap:.4rem;background:#eff6ff;color:#2563eb;padding:.25rem .75rem;border-radius:8px;font-size:.78rem;font-weight:600">
-            <span>⚙️</span> ${op.current_equipment_name}
-            ${op.current_equipment_id ? `<span style="font-family:monospace;font-size:.72rem;opacity:.7">(${op.current_equipment_id})</span>` : ''}
+        ? `<span style="display:inline-flex;align-items:center;gap:.4rem;color:#334155;font-size:.83rem;font-weight:500">
+            <span style="opacity:.6">⚙️</span> ${op.current_equipment_name}
+            ${op.current_equipment_id ? `<span style="color:#94a3b8;font-size:.74rem">(${op.current_equipment_id})</span>` : ''}
            </span>`
         : `<span style="color:#cbd5e1;font-size:.85rem">—</span>`;
 
@@ -15893,26 +15886,25 @@ async function loadOperators(){
         <td style="padding:.85rem 1rem">${shiftCell}</td>
         <td style="padding:.85rem 1rem;text-align:center">${statusBadge}</td>
         ${!isReporter()?`<td style="padding:.85rem 1rem;text-align:center">
-          <div style="display:flex;align-items:center;justify-content:center;gap:.4rem">
-            <button onclick="viewShiftHistory(${op.id},'${op.name}')"
-              style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;font-size:.8rem;color:#475569;font-family:inherit;white-space:nowrap">
-              <span>📅</span> السجل
-            </button>
-            <button onclick="openPermissionsModal(${op.id},'${op.name}','${(op.current_equipment_id||'').replace(/'/g,"\\'")}','${(op.current_equipment_name||'').replace(/'/g,"\\'")}')  "
-              style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:none;border-radius:8px;background:#f0fdf4;cursor:pointer;font-size:.8rem;color:#16a34a;font-family:inherit;font-weight:600;white-space:nowrap">
-              🔐 الصلاحيات
-            </button>
-            <button onclick="openAssignEquipment(${op.id},'${op.name}','${op.current_equipment_id||''}','${op.current_equipment_name||''}')"
-              style="display:inline-flex;align-items:center;gap:.35rem;padding:.4rem .75rem;border:none;border-radius:8px;background:#eff6ff;cursor:pointer;font-size:.8rem;color:#2563eb;font-family:inherit;font-weight:600;white-space:nowrap">
-              🔗 تعيين معدة
-            </button>
-            <button onclick="openOpForm(${op.id})"
-              style="width:32px;height:32px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#475569">✏️</button>
+          <div style="display:flex;align-items:center;justify-content:center;gap:.3rem">
+            <button onclick="viewShiftHistory(${op.id},'${op.name}')" title="السجل"
+              style="width:34px;height:34px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:.9rem;transition:.15s"
+              onmouseover="this.style.background='#f8fafc';this.style.color='#0f172a'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">📅</button>
+            <button onclick="openPermissionsModal(${op.id},'${op.name}','${(op.current_equipment_id||'').replace(/'/g,"\\'")}','${(op.current_equipment_name||'').replace(/'/g,"\\'")}')  " title="الصلاحيات"
+              style="width:34px;height:34px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:.9rem;transition:.15s"
+              onmouseover="this.style.background='#f8fafc';this.style.color='#0f172a'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">🔐</button>
+            <button onclick="openAssignEquipment(${op.id},'${op.name}','${op.current_equipment_id||''}','${op.current_equipment_name||''}')" title="تعيين معدة"
+              style="width:34px;height:34px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:.9rem;transition:.15s"
+              onmouseover="this.style.background='#f8fafc';this.style.color='#0f172a'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">🔗</button>
+            <button onclick="openOpForm(${op.id})" title="تعديل"
+              style="width:34px;height:34px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:.9rem;transition:.15s"
+              onmouseover="this.style.background='#f8fafc';this.style.color='#0f172a'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">✏️</button>
             ${!op.user_id ? `<button onclick="openLinkUserModal(${op.id},'${op.name}')" title="ربط بحساب للدخول"
-              style="width:32px;height:32px;border:none;border-radius:8px;background:#eff6ff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#2563eb;font-size:.75rem;font-weight:700">🔑</button>` : ''}
-            <button onclick="deleteOperator(${op.id})"
-              style="width:32px;height:32px;border:none;border-radius:8px;background:#fef2f2;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#ef4444">🗑️</button>
-
+              style="width:34px;height:34px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:.9rem;transition:.15s"
+              onmouseover="this.style.background='#f8fafc';this.style.color='#0f172a'" onmouseout="this.style.background='#fff';this.style.color='#64748b'">🔑</button>` : ''}
+            <button onclick="deleteOperator(${op.id})" title="حذف"
+              style="width:34px;height:34px;border:1px solid #e5e7eb;border-radius:9px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:.9rem;transition:.15s"
+              onmouseover="this.style.background='#fef2f2';this.style.color='#ef4444';this.style.borderColor='#fecaca'" onmouseout="this.style.background='#fff';this.style.color='#94a3b8';this.style.borderColor='#e5e7eb'">🗑️</button>
           </div>
         </td>`:''}
       </tr>`;
@@ -17736,37 +17728,37 @@ async function loadShiftsData(){
       return;
     }
     const tl={day:'☀️ نهارية',night:'🌙 ليلية',extended:'⏱️ ممتدة'};
-    const fl={'fuel_solar':'⛽ سولار','fuel_92':'⛽ 92','fuel_95':'⛽ 95','fuel_80':'⛽ 80','fuel_cng':'🟢 غاز'};
-    const ownColor={'مملوكة':'#16a34a','مؤجرة':'#d97706','مستأجرة':'#d97706'};
+    const fl={'fuel_solar':'سولار','fuel_92':'92','fuel_95':'95','fuel_80':'80','fuel_cng':'غاز'};
     if(tbody)tbody.innerHTML=_shiftsData.map((s,i)=>{
       const wh=s.working_hours>0?s.working_hours.toFixed(1):'—';
-      const st=s.status==='active'?'<span class="shift-badge-active">🟢 نشطة</span>':'<span class="shift-badge-ended">⏹ منتهية</span>';
+      const st=s.status==='active'
+        ?'<span style="display:inline-flex;align-items:center;gap:.4rem;color:#16a34a;font-size:.8rem;font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:#16a34a"></span>نشطة</span>'
+        :'<span style="display:inline-flex;align-items:center;gap:.4rem;color:#94a3b8;font-size:.8rem;font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:#cbd5e1"></span>منتهية</span>';
       const sT=s.start_time?s.start_time.slice(0,16).replace('T',' '):'—';
       const eT=s.end_time?s.end_time.slice(0,16).replace('T',' '):'—';
       const eqType = s.equipment_type_label || '—';
       const own = s.ownership_type || 'مملوكة';
-      const ownCol = ownColor[own] || '#64748b';
       const fuelLabel = fl[s.fuel_type] || (s.fuel_type ? s.fuel_type : '');
       const fuelCell = s.fuel_liters > 0
-        ? '<div style="font-weight:700;color:#0369a1">'+s.fuel_liters+' ل</div>'+(fuelLabel?'<div style="font-size:.72rem;color:#64748b">'+fuelLabel+'</div>':'')
-        : '—';
+        ? '<span style="color:#334155;font-size:.83rem">'+s.fuel_liters+' ل'+(fuelLabel?' <span style="color:#94a3b8">('+fuelLabel+')</span>':'')+'</span>'
+        : '<span style="color:#cbd5e1">—</span>';
       return '<tr>'+
         '<td style="padding:.65rem 1rem;color:#94a3b8;font-size:.78rem">'+(offset+i+1)+'</td>'+
-        '<td style="padding:.65rem 1rem"><div style="font-weight:700;color:#0f172a">'+(s.operator_name||'—')+'</div>'+(s.operator_fixed?'<div style="font-size:.74rem;color:#64748b">رقم: '+s.operator_fixed+'</div>':'')+
-        '</td><td style="padding:.65rem 1rem"><div style="font-weight:600;color:#334155">'+(s.equipment_name||'—')+'</div>'+(s.equipment_id?'<div style="font-size:.74rem;color:#64748b">كود: '+s.equipment_id+'</div>':'')+
-        '</td><td style="padding:.65rem 1rem;font-size:.82rem;color:#475569">'+eqType+
-        '</td><td style="padding:.65rem 1rem"><span style="display:inline-block;padding:.2rem .55rem;border-radius:20px;font-size:.74rem;font-weight:700;color:#fff;background:'+ownCol+'">'+own+'</span>'+
-        '</td><td style="padding:.65rem 1rem;white-space:nowrap;font-size:.83rem">'+sT+
-        '</td><td style="padding:.65rem 1rem;white-space:nowrap;font-size:.83rem">'+eT+
-        '</td><td style="padding:.65rem 1rem;text-align:center;font-weight:700;color:#0369a1">'+(s.start_hours>0?s.start_hours.toFixed(1):'—')+
-        '</td><td style="padding:.65rem 1rem;text-align:center;font-weight:700;color:#dc2626">'+(s.end_hours>0?s.end_hours.toFixed(1):'—')+
-        '</td><td style="padding:.65rem 1rem;text-align:center;font-weight:700;color:'+(wh!=='—'?'#0f172a':'#94a3b8')+'">'+wh+
+        '<td style="padding:.65rem 1rem"><div style="font-weight:600;color:#0f172a">'+(s.operator_name||'—')+'</div>'+(s.operator_fixed?'<div style="font-size:.74rem;color:#94a3b8">'+s.operator_fixed+'</div>':'')+
+        '</td><td style="padding:.65rem 1rem"><div style="font-weight:500;color:#334155">'+(s.equipment_name||'—')+'</div>'+(s.equipment_id?'<div style="font-size:.74rem;color:#94a3b8">'+s.equipment_id+'</div>':'')+
+        '</td><td style="padding:.65rem 1rem;font-size:.82rem;color:#64748b">'+eqType+
+        '</td><td style="padding:.65rem 1rem;font-size:.82rem;color:#64748b">'+own+
+        '</td><td style="padding:.65rem 1rem;white-space:nowrap;font-size:.82rem;color:#475569">'+sT+
+        '</td><td style="padding:.65rem 1rem;white-space:nowrap;font-size:.82rem;color:#475569">'+eT+
+        '</td><td style="padding:.65rem 1rem;text-align:center;font-weight:600;color:#475569">'+(s.start_hours>0?s.start_hours.toFixed(1):'—')+
+        '</td><td style="padding:.65rem 1rem;text-align:center;font-weight:600;color:#475569">'+(s.end_hours>0?s.end_hours.toFixed(1):'—')+
+        '</td><td style="padding:.65rem 1rem;text-align:center;font-weight:700;color:'+(wh!=='—'?'#0f172a':'#cbd5e1')+'">'+wh+
         '</td><td style="padding:.65rem 1rem;text-align:center">'+fuelCell+
-        '</td><td style="padding:.65rem 1rem;font-size:.82rem;color:#475569">'+(s.branch||s.operator_branch||'—')+
-        '</td><td style="padding:.65rem 1rem;font-size:.78rem">'+(s.start_location?'<a href="https://maps.google.com/?q='+s.start_location+'" target="_blank" style="color:#2563eb;text-decoration:none">📍 '+s.start_location+'</a>':'—')+
-        '</td><td style="padding:.65rem 1rem;font-size:.78rem">'+(s.end_location?'<a href="https://maps.google.com/?q='+s.end_location+'" target="_blank" style="color:#dc2626;text-decoration:none">📍 '+s.end_location+'</a>':'—')+
+        '</td><td style="padding:.65rem 1rem;font-size:.82rem;color:#64748b">'+(s.branch||s.operator_branch||'—')+
+        '</td><td style="padding:.65rem 1rem;font-size:.78rem">'+(s.start_location?'<a href="https://maps.google.com/?q='+s.start_location+'" target="_blank" style="color:#64748b;text-decoration:none">📍 '+s.start_location+'</a>':'<span style="color:#cbd5e1">—</span>')+
+        '</td><td style="padding:.65rem 1rem;font-size:.78rem">'+(s.end_location?'<a href="https://maps.google.com/?q='+s.end_location+'" target="_blank" style="color:#64748b;text-decoration:none">📍 '+s.end_location+'</a>':'<span style="color:#cbd5e1">—</span>')+
         '</td><td style="padding:.65rem 1rem;text-align:center">'+st+'</td>'+
-        (isSuperOrAdmin ? '<td style="padding:.65rem 1rem;text-align:center"><button onclick="openShiftHoursEdit('+s.id+','+s.start_hours+','+(s.end_hours||0)+')" style="padding:.3rem .6rem;font-size:.75rem;border:1.5px solid #6366f1;border-radius:7px;background:#f5f3ff;color:#6366f1;cursor:pointer;font-family:inherit;font-weight:700">✏️ تعديل</button></td>' : '')+
+        (isSuperOrAdmin ? '<td style="padding:.65rem 1rem;text-align:center"><button onclick="openShiftHoursEdit('+s.id+','+s.start_hours+','+(s.end_hours||0)+')" title="تعديل" style="width:32px;height:32px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;color:#64748b;font-size:.85rem" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'#fff\'">✏️</button></td>' : '')+
         '</tr>';
     }).join('');
     _renderShiftPagination();
