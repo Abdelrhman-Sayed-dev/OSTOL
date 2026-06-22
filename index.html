@@ -10710,7 +10710,7 @@ async function dpWsModal(type) {
   const isFuelType = type.startsWith('fuel_');
 
   if (isFuelType) {
-    specific = '<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" step="0.1"></div>';
+    specific = '<div class="form-group"><label>الكمية (لتر) <span class="req">*</span></label><input type="number" id="wQty" placeholder="مثال: 40" min="0.1" max="200" step="0.1"></div>';
   } else if (type === 'oil') {
     specific =
       '<div class="form-group"><label>نوع الزيت <span class="req">*</span></label>' +
@@ -10971,6 +10971,7 @@ async function dpWsModal(type) {
     if (isFuel) {
       const q = parseFloat(document.getElementById('wQty')?.value);
       if (!q || q <= 0) return showNotification('أدخل الكمية', 'error');
+      if (q > 200) return showNotification('الحد الأقصى لكمية الوقود للسيارات هو 200 لتر', 'error');
       payload.quantity = q;
     }
 
@@ -14507,7 +14508,7 @@ async function renderRentalEquipment() {
           <div class="form-group"><label>أيام العمل</label><input id="rnDays" class="form-control" type="number"></div>
           <div class="form-group"><label>القيمة اليومية (ج)</label><input id="rnDaily" class="form-control" type="number"></div>
           <div class="form-group"><label>القيمة الشهرية (ج)</label><input id="rnMonthly" class="form-control" type="number"></div>
-          <div class="form-group"><label>السولار (لتر)</label><input id="rnFuel" class="form-control" type="number"></div>
+          <div class="form-group"><label>السولار (لتر)</label><input id="rnFuel" class="form-control" type="number" max="400" min="0"></div>
           <div class="form-group"><label>عداد أول الشهر</label><input id="rnHoursStart" class="form-control"></div>
           <div class="form-group"><label>عداد آخر الشهر</label><input id="rnHoursEnd" class="form-control"></div>
           <div class="form-group"><label>الفرق</label><input id="rnDiff" class="form-control"></div>
@@ -14817,6 +14818,7 @@ async function saveRentalRecord() {
     consumption_rate: '',
   };
   if(!body.branch) return showNotification('الفرع مطلوب','error');
+  if(body.fuel_liters && parseFloat(body.fuel_liters) > 400) return showNotification('الحد الأقصى لكمية الوقود للمعدات هو 400 لتر','error');
   if(!body.equipment_name) return showNotification('اسم المعدة مطلوب','error');
   try {
     if(_rentalEditId) {
