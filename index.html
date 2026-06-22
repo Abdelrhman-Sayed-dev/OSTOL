@@ -19176,14 +19176,16 @@ function openOpsReviewDetail(id) {
   const priceFieldId = 'orPriceInput_' + r.id;
   const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة';
   const priceRowHtml = `
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
-      💰 <strong>${priceLabel}:</strong>
-      <span id="orPriceView_${r.id}">${(r.price||0).toFixed(2)} جنيه</span>
-      <input id="${priceFieldId}" type="number" step="0.01" min="0" value="${r.price||0}"
-        style="display:none;width:90px;padding:.2rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;margin-right:.4rem">
-      <button class="btn btn-ghost btn-sm" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" style="margin-right:.4rem;padding:.15rem .5rem">✏️ تعديل</button>
-      <button class="btn btn-primary btn-sm" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" style="display:none;margin-right:.3rem;padding:.15rem .5rem">💾 حفظ</button>
-      ${r.price_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.25rem">آخر تعديل: ${r.price_edited_by} ${r.price_edited_at?'— '+fmtDate(r.price_edited_at):''}</div>` : ''}
+    <div style="background:var(--surface-2);border-radius:10px;padding:.7rem .9rem;grid-column:1/-1">
+      <div style="font-size:.72rem;color:var(--muted);margin-bottom:.4rem;font-weight:700">💰 ${priceLabel}</div>
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+        <span id="orPriceView_${r.id}" style="font-size:1.05rem;font-weight:800">${(r.price||0).toFixed(2)} جنيه</span>
+        <input id="${priceFieldId}" type="number" step="0.01" min="0" value="${r.price||0}"
+          style="display:none;width:120px;padding:.45rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.95rem">
+        <button class="btn btn-ghost btn-sm" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})">✏️ تعديل</button>
+        <button class="btn btn-primary btn-sm" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" style="display:none">💾 حفظ</button>
+      </div>
+      ${r.price_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.45rem">✎ آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
     </div>`;
 
   const rowsHtml = isFuel ? `
