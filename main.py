@@ -10410,6 +10410,10 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             ("direct_purchase_supplier", "TEXT DEFAULT ''"),
             ("direct_purchase_cost", "REAL"),
             ("approval_status", "TEXT DEFAULT 'pending'"),
+            ("reviewed_by", "TEXT DEFAULT ''"),
+            ("reviewed_at", "TEXT DEFAULT ''"),
+            ("price_edited_by", "TEXT DEFAULT ''"),
+            ("price_edited_at", "TEXT DEFAULT ''"),
         ]
         _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
         for _wc, _wd in _ws_extra_cols:
@@ -16182,10 +16186,36 @@ async def review_workshop_record(wid: int, body: WorkshopApproval, cu: dict = De
     if body.action not in ("approve", "reject"):
         raise HTTPException(400, "إجراء غير صالح")
     new_status = "approved" if body.action == "approve" else "rejected"
+    reviewer_name = cu.get("username") or cu.get("name") or ""
     with get_db() as conn:
         row = conn.execute("SELECT id FROM workshop_records WHERE id=?", (wid,)).fetchone()
         if not row:
             raise HTTPException(404, "السجل غير موجود")
-        conn.execute("UPDATE workshop_records SET approval_status=? WHERE id=?", (new_status, wid))
+        conn.execute(
+            "UPDATE workshop_records SET approval_status=?, reviewed_by=?, reviewed_at=? WHERE id=?",
+            (new_status, reviewer_name, datetime.utcnow().isoformat(), wid)
+        )
         log_event("workshop_review", record_id=wid, action=body.action, note=body.note or "")
-        return {"ok": True, "approval_status": new_status}
+        return {"ok": True, "approval_status": new_status, "reviewed_by": reviewer_name}
+
+
+class WorkshopPriceUpdate(BaseModel):
+    price: float
+
+
+@app.put("/workshops/{wid}/price")
+async def update_workshop_price(wid: int, body: WorkshopPriceUpdate, cu: dict = Depends(require_admin)):
+    """تصحيح سعر/تكلفة سجل تفويل أو صيانة بعد المراجعة، لو مش مطابق للفاتورة."""
+    if body.price is None or body.price < 0:
+        raise HTTPException(400, "قيمة غير صالحة")
+    editor_name = cu.get("username") or cu.get("name") or ""
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM workshop_records WHERE id=?", (wid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "السجل غير موجود")
+        conn.execute(
+            "UPDATE workshop_records SET price=?, price_edited_by=?, price_edited_at=? WHERE id=?",
+            (body.price, editor_name, datetime.utcnow().isoformat(), wid)
+        )
+        log_event("workshop_price_edit", record_id=wid, note=f"new_price={body.price}")
+        return {"ok": True, "price": body.price, "price_edited_by": editor_name}
