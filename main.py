@@ -6335,6 +6335,12 @@ class RentalCreate(BaseModel):
 async def create_rental(body: RentalCreate, cu: dict = Depends(require_admin)):
     if not body.equipment_name.strip(): raise HTTPException(400, "اسم المعدة مطلوب")
     if not body.branch.strip(): raise HTTPException(400, "الفرع مطلوب")
+    if body.fuel_liters and body.fuel_liters.strip():
+        try:
+            if float(body.fuel_liters) > 400:
+                raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
+        except ValueError:
+            pass
     # تطبيع الشهر: 2026-05-01 → 2026-05 (لا نعدّل body مباشرةً لتفادي مشكلة Pydantic v2)
     month_val = body.month.strip()[:7] if body.month and len(body.month) > 7 else body.month
     start_date_val = body.start_date.strip() if body.start_date and body.start_date.strip() else datetime.utcnow().strftime("%Y-%m-%d")
@@ -6360,6 +6366,12 @@ async def create_rental(body: RentalCreate, cu: dict = Depends(require_admin)):
 @app.put("/rental-equipment/{rec_id}")
 async def update_rental(rec_id: int, body: RentalCreate, cu: dict = Depends(require_admin)):
     month_val = body.month.strip()[:7] if body.month and len(body.month) > 7 else body.month
+    if body.fuel_liters and body.fuel_liters.strip():
+        try:
+            if float(body.fuel_liters) > 400:
+                raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
+        except ValueError:
+            pass
     try:
         with get_db() as conn:
             if not conn.execute("SELECT id FROM rental_equipment WHERE id=?", (rec_id,)).fetchone():
@@ -7436,6 +7448,8 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             (body.operator_id,)).fetchone()
         if active:
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
+        if body.fuel_liters and body.fuel_liters > 400:
+            raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
         # اسحب نوع الملكية الحقيقي من جدول المعدات (مش من الـ body) — الملكية خاصية المعدة نفسها
         eq_row = conn.execute("SELECT ownership_type FROM equipment WHERE car_code=?", (body.equipment_id,)).fetchone()
         real_ownership = (eq_row["ownership_type"] if eq_row and eq_row["ownership_type"] else None) or body.ownership_type
@@ -7458,6 +7472,8 @@ async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
         shift = conn.execute("SELECT * FROM operator_shifts WHERE id=?", (sid,)).fetchone()
         if not shift: raise HTTPException(404, "الوردية غير موجودة")
         if shift["status"] == "ended": raise HTTPException(400, "الوردية منتهية بالفعل")
+        if body.fuel_liters and body.fuel_liters > 400:
+            raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
         # المشغل يقدر ينهي وردية نفسه فقط
         if cu["role"] == "operator":
             if cu.get("operator_id") != shift["operator_id"]:
@@ -10282,6 +10298,10 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     HAS_QUANTITY   = rec.type in QUANTITY_TYPES
     IS_FUEL_TYPE   = rec.type.startswith("fuel_")
     IS_PARTS_TYPE  = (not IS_FUEL_TYPE) and rec.type != "other"
+
+    # ── حد أقصى لكمية الوقود للسيارات: 200 لتر في التفويلة الواحدة ──
+    if IS_FUEL_TYPE and rec.quantity and rec.quantity > 200:
+        raise HTTPException(400, "الحد الأقصى لكمية الوقود للسيارات هو 200 لتر")
 
     # ── صورة العداد (تفويل/صيانة): إلزامية لأنواع الوقود + الصيانة، اختيارية لباقي الأنواع ──
     PHOTO_REQUIRED_TYPES = {t for t in WORKSHOP_TYPES if t.startswith("fuel_") or t.startswith("oil")
@@ -14302,6 +14322,12 @@ class RentalCreate(BaseModel):
 async def create_rental(body: RentalCreate, cu: dict = Depends(require_admin)):
     if not body.equipment_name.strip(): raise HTTPException(400, "اسم المعدة مطلوب")
     if not body.branch.strip(): raise HTTPException(400, "الفرع مطلوب")
+    if body.fuel_liters and body.fuel_liters.strip():
+        try:
+            if float(body.fuel_liters) > 400:
+                raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
+        except ValueError:
+            pass
     # تطبيع الشهر: 2026-05-01 → 2026-05 (لا نعدّل body مباشرةً لتفادي مشكلة Pydantic v2)
     month_val = body.month.strip()[:7] if body.month and len(body.month) > 7 else body.month
     start_date_val = body.start_date.strip() if body.start_date and body.start_date.strip() else datetime.utcnow().strftime("%Y-%m-%d")
@@ -14327,6 +14353,12 @@ async def create_rental(body: RentalCreate, cu: dict = Depends(require_admin)):
 @app.put("/rental-equipment/{rec_id}")
 async def update_rental(rec_id: int, body: RentalCreate, cu: dict = Depends(require_admin)):
     month_val = body.month.strip()[:7] if body.month and len(body.month) > 7 else body.month
+    if body.fuel_liters and body.fuel_liters.strip():
+        try:
+            if float(body.fuel_liters) > 400:
+                raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
+        except ValueError:
+            pass
     try:
         with get_db() as conn:
             if not conn.execute("SELECT id FROM rental_equipment WHERE id=?", (rec_id,)).fetchone():
@@ -15403,6 +15435,8 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             (body.operator_id,)).fetchone()
         if active:
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
+        if body.fuel_liters and body.fuel_liters > 400:
+            raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
         # اسحب نوع الملكية الحقيقي من جدول المعدات (مش من الـ body) — الملكية خاصية المعدة نفسها
         eq_row = conn.execute("SELECT ownership_type FROM equipment WHERE car_code=?", (body.equipment_id,)).fetchone()
         real_ownership = (eq_row["ownership_type"] if eq_row and eq_row["ownership_type"] else None) or body.ownership_type
@@ -15425,6 +15459,8 @@ async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
         shift = conn.execute("SELECT * FROM operator_shifts WHERE id=?", (sid,)).fetchone()
         if not shift: raise HTTPException(404, "الوردية غير موجودة")
         if shift["status"] == "ended": raise HTTPException(400, "الوردية منتهية بالفعل")
+        if body.fuel_liters and body.fuel_liters > 400:
+            raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
         # المشغل يقدر ينهي وردية نفسه فقط
         if cu["role"] == "operator":
             if cu.get("operator_id") != shift["operator_id"]:
