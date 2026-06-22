@@ -10313,8 +10313,6 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
     if IS_FUEL_TYPE:
         if rec.fuel_source not in ("CompanyStation", "ExternalStation"):
             raise HTTPException(400, "اختر مصدر الوقود: محطة الشركة أو محطة خارجية")
-        if rec.fuel_source == "ExternalStation" and not (rec.station_name or "").strip():
-            raise HTTPException(400, "اسم المحطة الخارجية مطلوب")
 
     # ── Virtual Inventory: مصدر القطعة (إلزامي لكل أنواع الصيانة، إلا "أخرى") ──
     if IS_PARTS_TYPE:
