@@ -10789,11 +10789,8 @@ async function dpWsModal(type) {
       '<div class="form-group"><label>⛽ مصدر الوقود <span class="req">*</span></label>' +
       '<select id="wFuelSource" onchange="toggleFuelSourceFields()"><option value="">-- اختر --</option>' +
       '<option value="CompanyStation">🏢 محطة الشركة</option><option value="ExternalStation">🏪 محطة خارجية</option></select></div>' +
-      '<div id="wFuelCompanyFields" style="display:none">' +
-      '<div class="form-group"><label>رقم المضخة</label><input type="text" id="wPumpNumber" placeholder="اختياري"></div></div>' +
+      '<div id="wFuelCompanyFields" style="display:none"></div>' +
       '<div id="wFuelExternalFields" style="display:none">' +
-      '<div class="form-group"><label>اسم المحطة <span class="req">*</span></label><input type="text" id="wStationName" placeholder="مثال: محطة مصر للبترول"></div>' +
-      '<div class="form-group"><label>قيمة التفويلة (جنيه) <span class="req">*</span></label><input type="number" id="wExternalPrice" placeholder="0.00" step="0.01" min="0"></div>' +
       '<div class="form-group"><label>📷 صورة الفاتورة (اختياري)</label>' +
       '<div id="wInvoicePhotoPreviewWrap" style="display:none;margin-bottom:.5rem"><img id="wInvoicePhotoPreview" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)"></div>' +
       '<label for="wInvoicePhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;border:1.5px dashed var(--border);border-radius:10px;padding:.6rem;cursor:pointer;color:var(--text-2);font-size:.8rem;font-weight:600;background:var(--surface-2)"><span id="wInvoicePhotoBtnLabel">📷 رفع صورة الفاتورة</span></label>' +
@@ -10890,13 +10887,9 @@ async function dpWsModal(type) {
       fuelSource = document.getElementById('wFuelSource')?.value || '';
       if (!fuelSource) return showNotification('اختر مصدر الوقود: محطة الشركة أو محطة خارجية', 'error');
       if (fuelSource === 'ExternalStation') {
-        stationName = document.getElementById('wStationName')?.value?.trim() || '';
-        if (!stationName) return showNotification('أدخل اسم المحطة الخارجية', 'error');
-        const extPrice = parseFloat(document.getElementById('wExternalPrice')?.value) || 0;
-        if (!extPrice || extPrice <= 0) return showNotification('أدخل قيمة التفويلة', 'error');
-        price = extPrice;
+        price = 0; // تحدد القيمة لاحقاً من الإدارة
       } else {
-        pumpNumber = document.getElementById('wPumpNumber')?.value?.trim() || '';
+        // محطة الشركة — لا حاجة لإدخال إضافي
       }
     }
 
