@@ -13927,6 +13927,7 @@ async function renderEquipmentSection() {
           <div style="display:flex;align-items:center;gap:.65rem">
             <span id="eqFormOwnerBadge" style="font-size:.75rem;font-weight:700;padding:.25rem .65rem;border-radius:20px;background:#dcfce7;color:#15803d">🏗️ مملوكة</span>
             <h3 id="eqFormTitle" style="margin:0;font-size:1rem;font-weight:800;color:var(--text)">➕ إضافة معدة مملوكة</h3>
+            <button id="eqToggleOwnershipBtn" type="button" onclick="toggleEqOwnership()" style="display:none;font-size:.72rem;font-weight:700;padding:.25rem .6rem;border-radius:20px;border:1px solid #cbd5e1;background:#f1f5f9;color:#475569;cursor:pointer">🔄 تحويل الملكية</button>
           </div>
           <button onclick="closeEquipmentForm()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--muted)">✕</button>
         </div>
@@ -14184,7 +14185,7 @@ function showEquipmentForm(id=null) {
   if(e) _openEqFormWithOwnership(e.ownership_type || 'مملوكة', e);
 }
 
-function _openEqFormWithOwnership(ownershipType, existingData=null) {
+function _openEqFormWithOwnership(ownershipType, existingData=null, preserveFields=false) {
   // أغلق بوب اب الاختيار
   document.getElementById('eqOwnershipPickModal').style.display = 'none';
 
@@ -14192,6 +14193,7 @@ function _openEqFormWithOwnership(ownershipType, existingData=null) {
   const badge     = document.getElementById('eqFormOwnerBadge');
   const title     = document.getElementById('eqFormTitle');
   const hiddenOwn = document.getElementById('eqOwnership');
+  const toggleBtn = document.getElementById('eqToggleOwnershipBtn');
 
   // تحديث الـ badge والعنوان
   badge.textContent = isRented ? '🔑 مؤجرة' : '🏗️ مملوكة';
@@ -14202,11 +14204,20 @@ function _openEqFormWithOwnership(ownershipType, existingData=null) {
     : (isRented ? '➕ إضافة معدة مؤجرة' : '➕ إضافة معدة مملوكة');
   hiddenOwn.value = ownershipType;
 
+  // زرار تحويل الملكية يظهر فقط في حالة التعديل (مش الإضافة الجديدة)
+  if(toggleBtn) {
+    toggleBtn.style.display = _eqEditId ? '' : 'none';
+    toggleBtn.textContent = isRented ? '🔄 تحويل إلى مملوكة' : '🔄 تحويل إلى مؤجرة';
+  }
+
   // إظهار/إخفاء الحقول حسب النوع
   document.querySelectorAll('.owned-only').forEach(el => el.style.display = isRented ? 'none' : '');
   document.querySelectorAll('.rented-only').forEach(el => el.style.display = isRented ? '' : 'none');
 
-  // مسح الحقول
+  // عند التحويل اليدوي وقت التعديل: سيب القيم المُدخلة فعلاً زي ما هي، غير الملكية فقط
+  if(preserveFields) return;
+
+  // مسح الحقول (وضع الإضافة الجديدة، أو فتح فورم التعديل لأول مرة)
   ['eqCode','eqName','eqBrand','eqModel','eqYear','eqChassis',
    'eqBranch','eqSector','eqProject','eqLicense','eqNotes',
    'eqRentalSource','eqMonthlyRate','eqRentalStart','eqRentalEnd']
@@ -14238,6 +14249,13 @@ function _openEqFormWithOwnership(ownershipType, existingData=null) {
   }
 
   document.getElementById('eqFormModal').style.display = 'flex';
+}
+
+function toggleEqOwnership() {
+  // تبديل نوع الملكية أثناء التعديل بدون مسح البيانات اللي المستخدم كاتبها
+  const current = document.getElementById('eqOwnership').value || 'مملوكة';
+  const next = current === 'مؤجرة' ? 'مملوكة' : 'مؤجرة';
+  _openEqFormWithOwnership(next, null, true);
 }
 
 async function closeEquipmentForm() {
