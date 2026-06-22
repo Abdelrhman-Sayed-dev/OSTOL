@@ -7326,7 +7326,7 @@ async def list_all_shifts(
                 r["working_hours"] = round(r["end_hours"] - r["start_hours"], 2)
             else:
                 r["working_hours"] = None
-            r["ownership_type"] = r.get("ownership_type") or r.get("eq_ownership_type") or "مملوكة"
+            r["ownership_type"] = r.get("eq_ownership_type") or r.get("ownership_type") or "مملوكة"
             r["equipment_type_label"] = r.get("eq_type_label") or ""
     return {"total": total, "shifts": rows}
 
@@ -7436,13 +7436,16 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             (body.operator_id,)).fetchone()
         if active:
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
+        # اسحب نوع الملكية الحقيقي من جدول المعدات (مش من الـ body) — الملكية خاصية المعدة نفسها
+        eq_row = conn.execute("SELECT ownership_type FROM equipment WHERE car_code=?", (body.equipment_id,)).fetchone()
+        real_ownership = (eq_row["ownership_type"] if eq_row and eq_row["ownership_type"] else None) or body.ownership_type
         conn.execute("""INSERT INTO operator_shifts
             (operator_id,equipment_id,equipment_name,shift_type,start_time,
              start_hours,fuel_liters,fuel_type,ownership_type,project,branch,notes,start_location,status)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active')""",
             (body.operator_id, body.equipment_id, body.equipment_name, body.shift_type,
              datetime.utcnow().isoformat(), body.start_hours, body.fuel_liters,
-             body.fuel_type, body.ownership_type,
+             body.fuel_type, real_ownership,
              body.project, body.branch, body.notes, body.start_location or ""))
         sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return {"id": sid, "message": "بدأت الوردية"}
@@ -15290,7 +15293,7 @@ async def list_all_shifts(
                 r["working_hours"] = round(r["end_hours"] - r["start_hours"], 2)
             else:
                 r["working_hours"] = None
-            r["ownership_type"] = r.get("ownership_type") or r.get("eq_ownership_type") or "مملوكة"
+            r["ownership_type"] = r.get("eq_ownership_type") or r.get("ownership_type") or "مملوكة"
             r["equipment_type_label"] = r.get("eq_type_label") or ""
     return {"total": total, "shifts": rows}
 
@@ -15400,13 +15403,16 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             (body.operator_id,)).fetchone()
         if active:
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
+        # اسحب نوع الملكية الحقيقي من جدول المعدات (مش من الـ body) — الملكية خاصية المعدة نفسها
+        eq_row = conn.execute("SELECT ownership_type FROM equipment WHERE car_code=?", (body.equipment_id,)).fetchone()
+        real_ownership = (eq_row["ownership_type"] if eq_row and eq_row["ownership_type"] else None) or body.ownership_type
         conn.execute("""INSERT INTO operator_shifts
             (operator_id,equipment_id,equipment_name,shift_type,start_time,
              start_hours,fuel_liters,fuel_type,ownership_type,project,branch,notes,start_location,status)
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active')""",
             (body.operator_id, body.equipment_id, body.equipment_name, body.shift_type,
              datetime.utcnow().isoformat(), body.start_hours, body.fuel_liters,
-             body.fuel_type, body.ownership_type,
+             body.fuel_type, real_ownership,
              body.project, body.branch, body.notes, body.start_location or ""))
         sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     return {"id": sid, "message": "بدأت الوردية"}
