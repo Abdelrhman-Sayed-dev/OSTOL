@@ -10504,6 +10504,17 @@ async function renderWsAttachments() {
     </div>`;
 }
 
+function locationLinkHtml(loc) {
+  if (!loc) return '—';
+  const m = String(loc).trim().match(/^(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)$/);
+  if (m) {
+    const lat = m[1], lng = m[3];
+    return `<a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener"
+      style="color:var(--gold);text-decoration:none;font-weight:700" onclick="event.stopPropagation()">📍 ${loc}</a>`;
+  }
+  return '📍 ' + loc;
+}
+
 function renderWsAttachmentsRows(records) {
   if(!records.length) return `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد مرفقات مطابقة</p></div></td></tr>`;
   return records.map(r => {
@@ -10515,16 +10526,23 @@ function renderWsAttachmentsRows(records) {
     return `
       <tr>
         <td>
-          <img src="${r.odometer_photo}" alt="صورة العداد"
-            style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer"
-            onclick="openWsAttachmentModal(${r.id})"
-            onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'48\\' height=\\'48\\'><rect fill=\\'%23f1f5f9\\' width=\\'48\\' height=\\'48\\'></rect><text x=\\'24\\' y=\\'30\\' text-anchor=\\'middle\\' font-size=\\'18\\'>🖼️</text></svg>'">
+          <div style="display:flex;gap:.35rem">
+            <img src="${r.odometer_photo}" alt="صورة العداد" title="صورة العداد"
+              style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer"
+              onclick="openWsAttachmentModal(${r.id})"
+              onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'48\\' height=\\'48\\'><rect fill=\\'%23f1f5f9\\' width=\\'48\\' height=\\'48\\'></rect><text x=\\'24\\' y=\\'30\\' text-anchor=\\'middle\\' font-size=\\'18\\'>🖼️</text></svg>'">
+            ${r.invoice_photo ? `
+            <img src="${r.invoice_photo}" alt="صورة الفاتورة" title="صورة الفاتورة"
+              style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer"
+              onclick="openWsAttachmentModal(${r.id})"
+              onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'48\\' height=\\'48\\'><rect fill=\\'%23f1f5f9\\' width=\\'48\\' height=\\'48\\'></rect><text x=\\'24\\' y=\\'30\\' text-anchor=\\'middle\\' font-size=\\'18\\'>🧾</text></svg>'">` : ''}
+          </div>
         </td>
         <td><span style="font-weight:700">${wt.icon} ${wt.label}</span></td>
         <td>${r.vehicle_plate ? `🚗 ${r.vehicle_plate}` : '—'}</td>
         <td>👨 ${r.driver_name||'—'}</td>
         <td>${qtyStr}</td>
-        <td style="font-size:.78rem;color:var(--muted)">${r.location ? '📍 '+r.location : '—'}</td>
+        <td style="font-size:.78rem;color:var(--muted)">${locationLinkHtml(r.location)}</td>
         <td style="font-size:.78rem;color:var(--muted)">${dateStr}<br>${timeStr}</td>
         <td><button class="btn btn-primary btn-sm" onclick="openWsAttachmentModal(${r.id})">🔍 عرض</button></td>
       </tr>`;
@@ -10556,10 +10574,20 @@ function openWsAttachmentModal(id) {
       <div class="modal-title">${wt.icon} ${wt.label} — مراجعة المرفق</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    <div style="text-align:center;margin-bottom:1rem">
-      <img src="${r.odometer_photo}" alt="صورة العداد"
-        style="max-width:100%;max-height:340px;border-radius:12px;border:1.5px solid var(--border);object-fit:contain;background:var(--surface-2)"
-        onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'150\\'><rect fill=\\'%23f1f5f9\\' width=\\'200\\' height=\\'150\\'></rect><text x=\\'100\\' y=\\'80\\' text-anchor=\\'middle\\' font-size=\\'40\\'>🖼️</text></svg>'">
+    <div style="display:grid;grid-template-columns:${r.invoice_photo ? '1fr 1fr' : '1fr'};gap:.7rem;margin-bottom:1rem">
+      <div style="text-align:center">
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:.3rem;font-weight:700">🔢 صورة العداد</div>
+        <img src="${r.odometer_photo}" alt="صورة العداد"
+          style="max-width:100%;max-height:300px;border-radius:12px;border:1.5px solid var(--border);object-fit:contain;background:var(--surface-2)"
+          onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'150\\'><rect fill=\\'%23f1f5f9\\' width=\\'200\\' height=\\'150\\'></rect><text x=\\'100\\' y=\\'80\\' text-anchor=\\'middle\\' font-size=\\'40\\'>🖼️</text></svg>'">
+      </div>
+      ${r.invoice_photo ? `
+      <div style="text-align:center">
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:.3rem;font-weight:700">🧾 صورة الفاتورة</div>
+        <img src="${r.invoice_photo}" alt="صورة الفاتورة"
+          style="max-width:100%;max-height:300px;border-radius:12px;border:1.5px solid var(--border);object-fit:contain;background:var(--surface-2)"
+          onerror="this.src='data:image/svg+xml,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'150\\'><rect fill=\\'%23f1f5f9\\' width=\\'200\\' height=\\'150\\'></rect><text x=\\'100\\' y=\\'80\\' text-anchor=\\'middle\\' font-size=\\'40\\'>🖼️</text></svg>'">
+      </div>` : ''}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;font-size:.85rem">
       <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
@@ -10580,7 +10608,7 @@ function openWsAttachmentModal(id) {
       </div>
       <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;grid-column:1/-1">
         <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">📍 الموقع</div>
-        <div style="font-weight:700">${r.location || 'غير متاح'}</div>
+        <div style="font-weight:700">${r.location ? locationLinkHtml(r.location) : 'غير متاح'}</div>
       </div>
       <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;grid-column:1/-1">
         <div style="font-size:.7rem;color:var(--muted);margin-bottom:.2rem">🕒 الوقت</div>
@@ -10592,7 +10620,8 @@ function openWsAttachmentModal(id) {
       </div>` : ''}
     </div>
     <div class="modal-footer">
-      <a href="${r.odometer_photo}" download class="btn btn-primary">⬇️ تحميل الصورة</a>
+      <a href="${r.odometer_photo}" download class="btn btn-primary">⬇️ تحميل صورة العداد</a>
+      ${r.invoice_photo ? `<a href="${r.invoice_photo}" download class="btn btn-primary">⬇️ تحميل الفاتورة</a>` : ''}
       <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
     </div>`);
 }
