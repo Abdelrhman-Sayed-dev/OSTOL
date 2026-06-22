@@ -10569,7 +10569,7 @@ async def get_workshop_attachments(cu: dict = Depends(get_user), branch: Optiona
         raise HTTPException(403, "غير مصرح")
     q = """SELECT w.id, w.type, w.quantity, w.price, w.notes, w.created_at,
                   w.operation_type, w.vehicle_id, w.odometer_reading, w.description,
-                  w.tire_action, w.location, w.odometer_photo,
+                  w.tire_action, w.location, w.odometer_photo, w.invoice_photo,
                   COALESCE(d.name, op.name) as driver_name,
                   c.plate as vehicle_plate, c.model as vehicle_model,
                   d.branch as branch
