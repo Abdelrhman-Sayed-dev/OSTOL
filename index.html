@@ -19176,24 +19176,37 @@ function openOpsReviewDetail(id) {
   const priceFieldId = 'orPriceInput_' + r.id;
   const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة';
   const priceRowHtml = `
-    <div style="background:var(--surface-2);border-radius:10px;padding:.7rem .9rem;grid-column:1/-1">
-      <div style="font-size:.72rem;color:var(--muted);margin-bottom:.4rem;font-weight:700">💰 ${priceLabel}</div>
-      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
-        <span id="orPriceView_${r.id}" style="font-size:1.05rem;font-weight:800">${(r.price||0).toFixed(2)} جنيه</span>
-        <input id="${priceFieldId}" type="number" step="0.01" min="0" value="${r.price||0}"
-          style="display:none;width:120px;padding:.45rem .6rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.95rem">
-        <button class="btn btn-ghost btn-sm" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})">✏️ تعديل</button>
-        <button class="btn btn-primary btn-sm" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" style="display:none">💾 حفظ</button>
-      </div>
-      ${r.price_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.45rem">✎ آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
+      💰 <strong>${priceLabel}:</strong>
+      <span id="orPriceView_${r.id}">${(r.price||0).toFixed(2)} جنيه</span>
+      <input id="${priceFieldId}" type="number" step="0.01" min="0" value="${r.price||0}"
+        style="display:none;width:90px;padding:.2rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;margin-right:.4rem">
+      <button class="btn btn-ghost btn-sm" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" style="margin-right:.4rem;padding:.15rem .5rem">✏️ تعديل</button>
+      <button class="btn btn-primary btn-sm" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" style="display:none;margin-right:.3rem;padding:.15rem .5rem">💾 حفظ</button>
+      ${r.price_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.25rem">آخر تعديل: ${r.price_edited_by} ${r.price_edited_at?'— '+fmtDate(r.price_edited_at):''}</div>` : ''}
     </div>`;
+
+  const qtyFieldId = 'orQtyInput_' + r.id;
+  const qtyUnit = (isFuel || r.type==='oil') ? 'لتر' : (r.type==='tire' ? 'إطار' : 'وحدة');
+  const qtyLabel = isFuel ? 'عدد اللترات' : 'الكمية';
+  const hasQty = r.quantity !== null && r.quantity !== undefined;
+  const qtyRowHtml = hasQty ? `
+    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
+      🧪 <strong>${qtyLabel}:</strong>
+      <span id="orQtyView_${r.id}">${r.quantity} ${qtyUnit}</span>
+      <input id="${qtyFieldId}" type="number" step="0.01" min="0" value="${r.quantity||0}"
+        style="display:none;width:90px;padding:.2rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;margin-right:.4rem">
+      <button class="btn btn-ghost btn-sm" id="orQtyEditBtn_${r.id}" onclick="toggleOrQtyEdit(${r.id})" style="margin-right:.4rem;padding:.15rem .5rem">✏️ تعديل</button>
+      <button class="btn btn-primary btn-sm" id="orQtySaveBtn_${r.id}" onclick="saveOrQty(${r.id})" style="display:none;margin-right:.3rem;padding:.15rem .5rem">💾 حفظ</button>
+      ${r.quantity_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.25rem">آخر تعديل: ${r.quantity_edited_by} ${r.quantity_edited_at?'— '+fmtDate(r.quantity_edited_at):''}</div>` : ''}
+    </div>` : '';
 
   const rowsHtml = isFuel ? `
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة:</strong> ${r.vehicle_plate||'—'}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">👨 <strong>السائق:</strong> ${r.driver_name||'—'}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">⛽ <strong>مصدر الوقود:</strong> ${FUEL_SRC_LABELS[r.fuel_source]||'—'} ${r.station_name?'('+r.station_name+')':''}</div>
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🧪 <strong>عدد اللترات:</strong> ${r.quantity??'—'}</div>
+    ${qtyRowHtml}
     ${priceRowHtml}
   ` : `
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة/المعدة:</strong> ${r.vehicle_plate||r.vehicle_model||'—'}</div>
@@ -19201,6 +19214,7 @@ function openOpsReviewDetail(id) {
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">📦 <strong>مصدر القطعة:</strong> ${PARTS_SRC_LABELS[r.parts_source]||'—'}</div>
     ${r.parts_source==='DirectPurchase' ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🏪 <strong>المورد/المحل:</strong> ${r.direct_purchase_supplier||'—'}</div>` : ''}
     <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
+    ${qtyRowHtml}
     ${priceRowHtml}
   `;
 
@@ -19244,6 +19258,31 @@ async function saveOrPrice(id) {
   try {
     await apiCall(`/workshops/${id}/price`, 'PUT', {price: newPrice});
     showNotification('✅ تم تحديث السعر', 'success');
+    closeModal();
+    renderOpsReview();
+  } catch(e) { showNotification(e.message, 'error'); }
+}
+
+function toggleOrQtyEdit(id) {
+  const input = document.getElementById('orQtyInput_' + id);
+  const view  = document.getElementById('orQtyView_' + id);
+  const editBtn = document.getElementById('orQtyEditBtn_' + id);
+  const saveBtn = document.getElementById('orQtySaveBtn_' + id);
+  if (!input) return;
+  input.style.display = '';
+  view.style.display = 'none';
+  editBtn.style.display = 'none';
+  saveBtn.style.display = '';
+  input.focus();
+}
+
+async function saveOrQty(id) {
+  const input = document.getElementById('orQtyInput_' + id);
+  const newQty = parseFloat(input?.value);
+  if (isNaN(newQty) || newQty < 0) return showNotification('قيمة غير صالحة', 'error');
+  try {
+    await apiCall(`/workshops/${id}/quantity`, 'PUT', {quantity: newQty});
+    showNotification('✅ تم تحديث الكمية', 'success');
     closeModal();
     renderOpsReview();
   } catch(e) { showNotification(e.message, 'error'); }
