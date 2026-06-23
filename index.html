@@ -16255,8 +16255,7 @@ function _initPagination(paginId, allData, pageSize, pageKey, renderFn) {
   renderFn();
 }
 
-
-showLogin();
+/* showLogin() moved to end of file after all scripts are loaded */
 
 /* ══════════════════════════════════════════════
    AVATAR MODAL — رفع صورة البروفايل
@@ -19455,6 +19454,11 @@ async function reviewOpsRecord(id, action) {
     renderOpsReview();
   } catch(e) { showNotification(e.message, 'error'); }
 }
+</script>
+
+<script>
+/* ── Entry Point — بعد تحميل كل السكريبتات ── */
+showLogin();
 </script>
 
 </body>
