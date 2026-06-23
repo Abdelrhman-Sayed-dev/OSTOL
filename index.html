@@ -764,6 +764,92 @@ tbody tr:hover{background:#F8FAFC;transition:.1s}
   border-top:1px solid var(--border);
 }
 
+/* ── OPS REVIEW — Premium Enterprise Modal ── */
+.opsr-modal{background:#FFFFFF;border-radius:20px;padding:0;width:94%;max-width:1080px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;border:1px solid #E2E8F0;box-shadow:0 30px 80px -20px rgba(15,23,42,.35),0 10px 30px rgba(15,23,42,.08);animation:slideUp .22s cubic-bezier(.34,1.56,.64,1)}
+.opsr-header{padding:1.6rem 2rem 1.3rem;background:linear-gradient(180deg,#FAFBFD,#FFFFFF);border-bottom:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-shrink:0}
+.opsr-title{font-size:1.22rem;font-weight:800;color:#0F172A;letter-spacing:-.2px;margin-bottom:.3rem}
+.opsr-subtitle{font-size:.84rem;color:#64748B;font-weight:600}
+.opsr-badges{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.65rem}
+.opsr-badge{display:inline-flex;align-items:center;gap:.35rem;font-size:.74rem;font-weight:700;padding:.32rem .75rem;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+.opsr-badge.pending{background:rgba(245,158,11,.12);color:#B45309;border-color:rgba(245,158,11,.25)}
+.opsr-badge.approved{background:rgba(16,185,129,.12);color:#047857;border-color:rgba(16,185,129,.25)}
+.opsr-badge.rejected{background:rgba(239,68,68,.12);color:#B91C1C;border-color:rgba(239,68,68,.25)}
+.opsr-badge.vehicle{background:#F1F5F9;color:#334155;border-color:#E2E8F0}
+.opsr-close{width:38px;height:38px;border-radius:12px;border:1px solid #E2E8F0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#64748B;transition:.15s;flex-shrink:0;font-size:.95rem}
+.opsr-close:hover{background:#F1F5F9;color:#0F172A;border-color:#CBD5E1}
+.opsr-body{padding:1.6rem 2rem 1.8rem;display:flex;flex-direction:column;gap:1.3rem;overflow-y:auto;flex:1}
+.opsr-section-label{font-size:.78rem;font-weight:700;color:#64748B;display:flex;align-items:center;gap:.4rem}
+.opsr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.85rem}
+.opsr-card{background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:1rem 1.1rem;position:relative;transition:.18s;display:flex;flex-direction:column;gap:.55rem}
+.opsr-card:hover{box-shadow:0 10px 26px rgba(15,23,42,.07);transform:translateY(-1px);border-color:#CBD5E1}
+.opsr-card-icon{width:34px;height:34px;border-radius:10px;background:#EFF6FF;color:#2563EB;display:flex;align-items:center;justify-content:center;font-size:1rem}
+.opsr-card-label{font-size:.72rem;color:#64748B;font-weight:600}
+.opsr-card-value{font-size:.96rem;font-weight:800;color:#0F172A;word-break:break-word;line-height:1.35}
+.opsr-edit-btn{position:absolute;top:.7rem;left:.7rem;width:26px;height:26px;border-radius:8px;border:1px solid #E2E8F0;background:#F8FAFC;color:#2563EB;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.74rem;transition:.15s}
+.opsr-edit-btn:hover{background:#EFF6FF;border-color:#BFDBFE}
+.opsr-inline-edit{display:flex;align-items:center;gap:.4rem;margin-top:.1rem}
+.opsr-inline-edit input{flex:1;min-width:0;border:1.5px solid #CBD5E1;border-radius:8px;padding:.35rem .55rem;font-family:inherit;font-size:.88rem;font-weight:700;color:#0F172A}
+.opsr-inline-edit input:focus{outline:none;border-color:#2563EB;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.opsr-save-btn{width:30px;height:30px;border-radius:8px;border:none;background:#2563EB;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.8rem;flex-shrink:0;transition:.15s}
+.opsr-save-btn:hover{background:#1d4ed8}
+.opsr-edit-meta{font-size:.66rem;color:#94A3B8}
+.opsr-cost-card{background:linear-gradient(135deg,#0F172A,#1E293B);border-radius:18px;padding:1.3rem 1.6rem;display:flex;align-items:center;justify-content:space-between;color:#fff;position:relative;overflow:hidden}
+.opsr-cost-card::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 100% 0%,rgba(37,99,235,.35),transparent 60%);pointer-events:none}
+.opsr-cost-main{position:relative;z-index:1}
+.opsr-cost-label{font-size:.82rem;color:#94A3B8;font-weight:600;margin-bottom:.4rem;display:flex;align-items:center;gap:.4rem}
+.opsr-cost-value{font-size:2rem;font-weight:900;letter-spacing:-1px;display:flex;align-items:baseline;gap:.4rem}
+.opsr-cost-value span{font-size:1rem;font-weight:700;color:#CBD5E1}
+.opsr-cost-icon{width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:1.45rem;position:relative;z-index:1;border:1px solid rgba(255,255,255,.12);flex-shrink:0}
+.opsr-cost-actions{position:relative;z-index:1;display:flex;align-items:center;gap:.5rem}
+.opsr-cost-edit-btn{width:32px;height:32px;border-radius:9px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.78rem;transition:.15s}
+.opsr-cost-edit-btn:hover{background:rgba(255,255,255,.16)}
+.opsr-cost-card input{border:1.5px solid rgba(255,255,255,.3);background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:.4rem .6rem;font-family:inherit;font-weight:800;font-size:1.3rem;width:140px}
+.opsr-cost-card input:focus{outline:none;border-color:#60A5FA}
+.opsr-timeline{background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:1.1rem 1.3rem}
+.opsr-tl-item{display:flex;gap:.8rem;position:relative;padding-bottom:1.05rem}
+.opsr-tl-item:last-child{padding-bottom:0}
+.opsr-tl-item::before{content:'';position:absolute;right:8px;top:19px;bottom:-2px;width:1.5px;background:#E2E8F0}
+.opsr-tl-item:last-child::before{display:none}
+.opsr-tl-dot{width:17px;height:17px;border-radius:50%;background:#EFF6FF;border:2px solid #2563EB;flex-shrink:0;margin-top:.1rem;z-index:1}
+.opsr-tl-content{flex:1}
+.opsr-tl-title{font-size:.85rem;font-weight:700;color:#0F172A}
+.opsr-tl-meta{font-size:.72rem;color:#64748B;margin-top:.15rem}
+.opsr-media-card{background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:1.1rem 1.2rem}
+.opsr-media-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem;gap:.6rem;flex-wrap:wrap}
+.opsr-media-title{font-size:.85rem;font-weight:700;color:#0F172A;display:flex;align-items:center;gap:.4rem}
+.opsr-media-actions{display:flex;gap:.4rem}
+.opsr-media-btn{width:32px;height:32px;border-radius:9px;border:1px solid #E2E8F0;background:#F8FAFC;color:#475569;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.84rem;transition:.15s}
+.opsr-media-btn:hover{background:#EFF6FF;color:#2563EB;border-color:#BFDBFE}
+.opsr-media-wrap{position:relative;border-radius:14px;overflow:hidden;cursor:zoom-in}
+.opsr-media-wrap img{width:100%;max-height:260px;object-fit:cover;display:block;transition:.35s}
+.opsr-media-wrap:hover img{transform:scale(1.035)}
+.opsr-media-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.opsr-notes{background:#FFFBEB;border:1px solid #FDE68A;border-radius:14px;padding:.9rem 1.1rem;font-size:.84rem;color:#78350F;display:flex;gap:.5rem;align-items:flex-start}
+.opsr-footer{position:relative;flex-shrink:0;background:#fff;border-top:1px solid #E2E8F0;padding:1rem 2rem;display:flex;justify-content:flex-end;align-items:center;gap:.7rem}
+.opsr-btn{height:48px;padding:0 1.5rem;border-radius:12px;font-weight:700;font-size:.86rem;display:flex;align-items:center;gap:.4rem;cursor:pointer;transition:.15s;border:1.5px solid transparent;font-family:inherit}
+.opsr-btn-close{background:#F1F5F9;color:#334155;border-color:#E2E8F0}
+.opsr-btn-close:hover{background:#E2E8F0}
+.opsr-btn-reject{background:#fff;color:#EF4444;border-color:#FCA5A5}
+.opsr-btn-reject:hover{background:#FEF2F2}
+.opsr-btn-approve{background:#10B981;color:#fff;box-shadow:0 6px 16px rgba(16,185,129,.32)}
+.opsr-btn-approve:hover{background:#0ea571}
+.opsr-status-final{font-weight:700;font-size:.85rem;color:#334155;margin-right:auto;display:flex;align-items:center;gap:.4rem}
+.opsr-lightbox{position:fixed;inset:0;background:rgba(15,23,42,.88);z-index:900;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s;cursor:zoom-out}
+.opsr-lightbox img{max-width:92vw;max-height:90vh;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+@media (max-width:720px){
+  .opsr-grid{grid-template-columns:repeat(2,1fr)}
+  .opsr-media-grid{grid-template-columns:1fr}
+  .opsr-header{padding:1.2rem 1.2rem 1rem}
+  .opsr-body{padding:1.2rem}
+  .opsr-footer{padding:.8rem 1.2rem;flex-wrap:wrap}
+  .opsr-btn{flex:1;justify-content:center}
+  .opsr-status-final{width:100%;margin-right:0;order:-1}
+  .opsr-cost-value{font-size:1.6rem}
+}
+@media (max-width:480px){
+  .opsr-grid{grid-template-columns:1fr 1fr}
+}
+
 /* ── WORKSHOP ── */
 .workshop-items{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.2rem}
 .workshop-item{background:var(--surface-2);border:1.5px solid var(--border);border-radius:12px;padding:.85rem;text-align:center;cursor:pointer;transition:.18s}
@@ -2509,11 +2595,11 @@ function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('o
 function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('show'); }
 
 /* ── MODAL ── */
-function openModal(html) {
+function openModal(html, extraClass) {
   closeModal();
   const ov = document.createElement('div');
   ov.className='modal-overlay'; ov.id='activeModal';
-  ov.innerHTML=`<div class="modal">${html}</div>`;
+  ov.innerHTML=`<div class="modal${extraClass ? ' '+extraClass : ''}">${html}</div>`;
   ov.addEventListener('click', e=>{ if(e.target===ov) closeModal(); });
   document.body.appendChild(ov);
   // تحديث الـ custom selects بعد فتح الـ modal
@@ -19172,82 +19258,159 @@ function openOpsReviewDetail(id) {
   const st = r.approval_status || 'pending';
   const FUEL_SRC_LABELS = {CompanyStation:'⛽ محطة الشركة', ExternalStation:'🏪 محطة خارجية'};
   const PARTS_SRC_LABELS = {Inventory:'📦 من مخزون الشركة', DirectPurchase:'🛒 شراء مباشر من الخارج', InventoryPurchase:'📥 شراء وإضافة للمخزن'};
+  const STATUS_BADGE = {pending:'⏳ معلق', approved:'✅ معتمد', rejected:'❌ مرفوض'};
 
-  const priceFieldId = 'orPriceInput_' + r.id;
-  const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة';
-  const priceRowHtml = `
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
-      💰 <strong>${priceLabel}:</strong>
-      <span id="orPriceView_${r.id}">${(r.price||0).toFixed(2)} جنيه</span>
-      <input id="${priceFieldId}" type="number" step="0.01" min="0" value="${r.price||0}"
-        style="display:none;width:90px;padding:.2rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;margin-right:.4rem">
-      <button class="btn btn-ghost btn-sm" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" style="margin-right:.4rem;padding:.15rem .5rem">✏️ تعديل</button>
-      <button class="btn btn-primary btn-sm" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" style="display:none;margin-right:.3rem;padding:.15rem .5rem">💾 حفظ</button>
-      ${r.price_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.25rem">آخر تعديل: ${r.price_edited_by} ${r.price_edited_at?'— '+fmtDate(r.price_edited_at):''}</div>` : ''}
-    </div>`;
-
-  const qtyFieldId = 'orQtyInput_' + r.id;
+  /* ── كرت الكمية القابل للتعديل ── */
   const qtyUnit = (isFuel || r.type==='oil') ? 'لتر' : (r.type==='tire' ? 'إطار' : 'وحدة');
   const qtyLabel = isFuel ? 'عدد اللترات' : 'الكمية';
   const hasQty = r.quantity !== null && r.quantity !== undefined;
-  const qtyRowHtml = hasQty ? `
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">
-      🧪 <strong>${qtyLabel}:</strong>
-      <span id="orQtyView_${r.id}">${r.quantity} ${qtyUnit}</span>
-      <input id="${qtyFieldId}" type="number" step="0.01" min="0" value="${r.quantity||0}"
-        style="display:none;width:90px;padding:.2rem .4rem;border:1.5px solid var(--border);border-radius:6px;font-family:inherit;margin-right:.4rem">
-      <button class="btn btn-ghost btn-sm" id="orQtyEditBtn_${r.id}" onclick="toggleOrQtyEdit(${r.id})" style="margin-right:.4rem;padding:.15rem .5rem">✏️ تعديل</button>
-      <button class="btn btn-primary btn-sm" id="orQtySaveBtn_${r.id}" onclick="saveOrQty(${r.id})" style="display:none;margin-right:.3rem;padding:.15rem .5rem">💾 حفظ</button>
-      ${r.quantity_edited_by ? `<div style="font-size:.68rem;color:var(--muted);margin-top:.25rem">آخر تعديل: ${r.quantity_edited_by} ${r.quantity_edited_at?'— '+fmtDate(r.quantity_edited_at):''}</div>` : ''}
+  const qtyCardHtml = hasQty ? `
+    <div class="opsr-card">
+      <button class="opsr-edit-btn" id="orQtyEditBtn_${r.id}" onclick="toggleOrQtyEdit(${r.id})" title="تعديل الكمية">✏️</button>
+      <div class="opsr-card-icon">📋</div>
+      <div class="opsr-card-label">${qtyLabel}</div>
+      <div class="opsr-card-value" id="orQtyView_${r.id}">${r.quantity} ${qtyUnit}</div>
+      <div class="opsr-inline-edit" id="orQtyEditWrap_${r.id}" style="display:none">
+        <input id="orQtyInput_${r.id}" type="number" step="0.01" min="0" value="${r.quantity||0}">
+        <button class="opsr-save-btn" id="orQtySaveBtn_${r.id}" onclick="saveOrQty(${r.id})" title="حفظ">✔</button>
+      </div>
+      ${r.quantity_edited_by ? `<div class="opsr-edit-meta">آخر تعديل: ${r.quantity_edited_by}${r.quantity_edited_at?' — '+fmtDate(r.quantity_edited_at):''}</div>` : ''}
     </div>` : '';
 
-  const rowsHtml = isFuel ? `
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة:</strong> ${r.vehicle_plate||'—'}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">👨 <strong>السائق:</strong> ${r.driver_name||'—'}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">⛽ <strong>مصدر الوقود:</strong> ${FUEL_SRC_LABELS[r.fuel_source]||'—'} ${r.station_name?'('+r.station_name+')':''}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
-    ${qtyRowHtml}
-    ${priceRowHtml}
+  /* ── شبكة الملخص ── */
+  const summaryCardsHtml = isFuel ? `
+    <div class="opsr-card"><div class="opsr-card-icon">🚚</div><div class="opsr-card-label">المركبة</div><div class="opsr-card-value">${r.vehicle_plate||'—'}</div></div>
+    <div class="opsr-card"><div class="opsr-card-icon">👨</div><div class="opsr-card-label">السائق</div><div class="opsr-card-value">${r.driver_name||'—'}</div></div>
+    <div class="opsr-card"><div class="opsr-card-icon">⛽</div><div class="opsr-card-label">مصدر الوقود</div><div class="opsr-card-value">${FUEL_SRC_LABELS[r.fuel_source]||'—'}${r.station_name?' ('+r.station_name+')':''}</div></div>
+    <div class="opsr-card"><div class="opsr-card-icon">📊</div><div class="opsr-card-label">قراءة العداد</div><div class="opsr-card-value">${r.odometer_reading??'—'}</div></div>
+    ${qtyCardHtml}
   ` : `
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🚗 <strong>المركبة/المعدة:</strong> ${r.vehicle_plate||r.vehicle_model||'—'}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔧 <strong>نوع الصيانة:</strong> ${wt.icon} ${wt.label}</div>
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">📦 <strong>مصدر القطعة:</strong> ${PARTS_SRC_LABELS[r.parts_source]||'—'}</div>
-    ${r.parts_source==='DirectPurchase' ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🏪 <strong>المورد/المحل:</strong> ${r.direct_purchase_supplier||'—'}</div>` : ''}
-    <div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem">🔢 <strong>قراءة العداد:</strong> ${r.odometer_reading??'—'}</div>
-    ${qtyRowHtml}
-    ${priceRowHtml}
+    <div class="opsr-card"><div class="opsr-card-icon">🚚</div><div class="opsr-card-label">المركبة / المعدة</div><div class="opsr-card-value">${r.vehicle_plate||r.vehicle_model||'—'}</div></div>
+    <div class="opsr-card"><div class="opsr-card-icon">🔧</div><div class="opsr-card-label">نوع الصيانة</div><div class="opsr-card-value">${wt.icon} ${wt.label}</div></div>
+    <div class="opsr-card"><div class="opsr-card-icon">📦</div><div class="opsr-card-label">مصدر القطعة</div><div class="opsr-card-value">${PARTS_SRC_LABELS[r.parts_source]||'—'}</div></div>
+    ${r.parts_source==='DirectPurchase' ? `<div class="opsr-card"><div class="opsr-card-icon">🏪</div><div class="opsr-card-label">المورد / المحل</div><div class="opsr-card-value">${r.direct_purchase_supplier||'—'}</div></div>` : ''}
+    <div class="opsr-card"><div class="opsr-card-icon">📊</div><div class="opsr-card-label">قراءة العداد</div><div class="opsr-card-value">${r.odometer_reading??'—'}</div></div>
+    ${qtyCardHtml}
   `;
 
-  const photosHtml = [
-    r.odometer_photo ? `<div><div style="font-size:.72rem;color:var(--muted);margin-bottom:.3rem">صورة العداد</div><img src="${r.odometer_photo}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:1px solid var(--border)"></div>` : '',
-    r.invoice_photo ? `<div><div style="font-size:.72rem;color:var(--muted);margin-bottom:.3rem">صورة الفاتورة</div><img src="${r.invoice_photo}" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:1px solid var(--border)"></div>` : '',
-  ].filter(Boolean).join('');
+  /* ── كرت التكلفة ── */
+  const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة الإجمالية';
+  const costCardHtml = `
+    <div class="opsr-cost-card">
+      <div class="opsr-cost-main">
+        <div class="opsr-cost-label">💰 ${priceLabel}</div>
+        <div class="opsr-cost-value" id="orPriceView_${r.id}">${(r.price||0).toFixed(2)}<span>جنيه</span></div>
+        <div class="opsr-inline-edit" id="orPriceEditWrap_${r.id}" style="display:none;margin-top:.5rem">
+          <input id="orPriceInput_${r.id}" type="number" step="0.01" min="0" value="${r.price||0}">
+          <button class="opsr-save-btn" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" title="حفظ">✔</button>
+        </div>
+        ${r.price_edited_by ? `<div class="opsr-edit-meta" style="color:#94A3B8;margin-top:.4rem">آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
+      </div>
+      <div class="opsr-cost-actions">
+        <button class="opsr-cost-edit-btn" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" title="تعديل التكلفة">✏️</button>
+        <div class="opsr-cost-icon">💰</div>
+      </div>
+    </div>`;
+
+  /* ── سجل النشاط ── */
+  const tlItems = [];
+  tlItems.push({title:'📝 إنشاء الطلب', user: r.driver_name || '—', date: r.created_at});
+  if (r.odometer_photo) tlItems.push({title:'📷 رفع صورة العداد', user: r.driver_name || '—', date: r.created_at});
+  if (r.quantity_edited_by) tlItems.push({title:'📋 تعديل الكمية', user: r.quantity_edited_by, date: r.quantity_edited_at});
+  if (r.price_edited_by) tlItems.push({title:'💰 تعديل التكلفة', user: r.price_edited_by, date: r.price_edited_at});
+  if (r.reviewed_by) tlItems.push({title: st==='approved' ? '✅ اعتماد الطلب' : '❌ رفض الطلب', user: r.reviewed_by, date: r.reviewed_at});
+  const timelineHtml = `
+    <div class="opsr-timeline">
+      <div class="opsr-section-label" style="margin-bottom:.85rem">🕒 سجل النشاط</div>
+      ${tlItems.map(it => `
+        <div class="opsr-tl-item">
+          <div class="opsr-tl-dot"></div>
+          <div class="opsr-tl-content">
+            <div class="opsr-tl-title">${it.title}</div>
+            <div class="opsr-tl-meta">${it.user}${it.date ? ' — ' + fmtDate(it.date) : ''}</div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+
+  /* ── صور ── */
+  const mediaCard = (title, url, filename) => `
+    <div class="opsr-media-card">
+      <div class="opsr-media-head">
+        <div class="opsr-media-title">📷 ${title}</div>
+        <div class="opsr-media-actions">
+          <button class="opsr-media-btn" onclick="opsrZoomImage('${url}')" title="تكبير">🔍</button>
+          <button class="opsr-media-btn" onclick="opsrZoomImage('${url}')" title="ملء الشاشة">⛶</button>
+          <button class="opsr-media-btn" onclick="opsrDownloadImage('${url}','${filename}')" title="تنزيل">⬇️</button>
+        </div>
+      </div>
+      <div class="opsr-media-wrap" onclick="opsrZoomImage('${url}')"><img src="${url}" loading="lazy"></div>
+    </div>`;
+  const mediaItems = [
+    r.odometer_photo ? mediaCard('صورة العداد', r.odometer_photo, `odometer_${r.id}.jpg`) : '',
+    r.invoice_photo  ? mediaCard('صورة الفاتورة', r.invoice_photo, `invoice_${r.id}.jpg`) : '',
+  ].filter(Boolean);
 
   openModal(`
-    <div class="modal-header"><div class="modal-title">${wt.icon} ${wt.label} — مراجعة العملية</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.85rem;margin-bottom:1rem">${rowsHtml}</div>
-    ${photosHtml ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:1rem">${photosHtml}</div>` : ''}
-    ${r.notes ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;margin-bottom:1rem"><strong>💬 ملاحظات:</strong> ${r.notes}</div>` : ''}
-    ${r.reviewed_by ? `<div style="background:var(--surface-2);border-radius:10px;padding:.6rem .8rem;margin-bottom:1rem;font-size:.82rem">👤 <strong>${st==='approved'?'اعتمدها':'رفضها'}:</strong> ${r.reviewed_by} ${r.reviewed_at?'— '+fmtDate(r.reviewed_at):''}</div>` : ''}
-    <div class="modal-footer">
+    <div class="opsr-header">
+      <div>
+        <div class="opsr-title">${wt.icon} ${wt.label} — مراجعة العملية</div>
+        <div class="opsr-subtitle">${isFuel ? 'طلب تفويل وقود' : 'طلب صرف قطعة غيار وصيانة'}</div>
+        <div class="opsr-badges">
+          <span class="opsr-badge ${st}">${STATUS_BADGE[st]}</span>
+          <span class="opsr-badge vehicle">🚚 ${r.vehicle_plate||r.vehicle_model||'—'}</span>
+        </div>
+      </div>
+      <button class="opsr-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="opsr-body">
+      <div>
+        <div class="opsr-section-label" style="margin-bottom:.6rem">📊 ملخص العملية</div>
+        <div class="opsr-grid">${summaryCardsHtml}</div>
+      </div>
+      ${costCardHtml}
+      ${timelineHtml}
+      ${mediaItems.length ? `<div class="opsr-media-grid">${mediaItems.join('')}</div>` : ''}
+      ${r.notes ? `<div class="opsr-notes">💬 <div><strong>ملاحظات: </strong>${r.notes}</div></div>` : ''}
+    </div>
+    <div class="opsr-footer">
       ${st==='pending' ? `
-        <button class="btn btn-ghost" style="color:#dc2626" onclick="reviewOpsRecord(${r.id},'reject')">❌ رفض</button>
-        <button class="btn btn-primary" onclick="reviewOpsRecord(${r.id},'approve')">✅ اعتماد</button>
-      ` : `<span style="font-weight:700">الحالة الحالية: ${st==='approved'?'✅ معتمد':'❌ مرفوض'}</span>`}
-      <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
-    </div>`);
+        <span></span>
+        <button class="opsr-btn opsr-btn-close" onclick="closeModal()">إغلاق</button>
+        <button class="opsr-btn opsr-btn-reject" onclick="reviewOpsRecord(${r.id},'reject')">رفض الطلب</button>
+        <button class="opsr-btn opsr-btn-approve" onclick="reviewOpsRecord(${r.id},'approve')">اعتماد الطلب</button>
+      ` : `
+        <span class="opsr-status-final">الحالة الحالية: ${STATUS_BADGE[st]}</span>
+        <button class="opsr-btn opsr-btn-close" onclick="closeModal()">إغلاق</button>
+      `}
+    </div>`, 'opsr-modal');
+}
+
+function opsrZoomImage(url) {
+  const box = document.createElement('div');
+  box.className = 'opsr-lightbox';
+  box.innerHTML = `<img src="${url}">`;
+  box.addEventListener('click', () => box.remove());
+  document.body.appendChild(box);
+}
+
+function opsrDownloadImage(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || 'image.jpg';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function toggleOrPriceEdit(id) {
+  const wrap  = document.getElementById('orPriceEditWrap_' + id);
   const input = document.getElementById('orPriceInput_' + id);
   const view  = document.getElementById('orPriceView_' + id);
   const editBtn = document.getElementById('orPriceEditBtn_' + id);
-  const saveBtn = document.getElementById('orPriceSaveBtn_' + id);
-  if (!input) return;
-  input.style.display = '';
+  if (!input || !wrap) return;
+  wrap.style.display = 'flex';
   view.style.display = 'none';
   editBtn.style.display = 'none';
-  saveBtn.style.display = '';
   input.focus();
 }
 
@@ -19264,15 +19427,14 @@ async function saveOrPrice(id) {
 }
 
 function toggleOrQtyEdit(id) {
+  const wrap  = document.getElementById('orQtyEditWrap_' + id);
   const input = document.getElementById('orQtyInput_' + id);
   const view  = document.getElementById('orQtyView_' + id);
   const editBtn = document.getElementById('orQtyEditBtn_' + id);
-  const saveBtn = document.getElementById('orQtySaveBtn_' + id);
-  if (!input) return;
-  input.style.display = '';
+  if (!input || !wrap) return;
+  wrap.style.display = 'flex';
   view.style.display = 'none';
   editBtn.style.display = 'none';
-  saveBtn.style.display = '';
   input.focus();
 }
 
