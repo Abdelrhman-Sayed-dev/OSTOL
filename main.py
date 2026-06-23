@@ -16234,6 +16234,12 @@ async def update_workshop_quantity(wid: int, body: WorkshopQuantityUpdate, cu: d
         raise HTTPException(400, "قيمة غير صالحة")
     editor_name = cu.get("username") or cu.get("name") or ""
     with get_db() as conn:
+        # تأكد من وجود الأعمدة (لو السيرفر اتعمل له deploy جديد ولسه محدش أنشأ سجل صيانة يفعّل الـ migration)
+        _existing_cols = {r["name"] for r in conn.execute("PRAGMA table_info(workshop_records)").fetchall()}
+        for _col, _def in (("quantity_edited_by", "TEXT DEFAULT ''"), ("quantity_edited_at", "TEXT DEFAULT ''")):
+            if _col not in _existing_cols:
+                try: conn.execute(f"ALTER TABLE workshop_records ADD COLUMN {_col} {_def}")
+                except Exception: pass
         row = conn.execute("SELECT id FROM workshop_records WHERE id=?", (wid,)).fetchone()
         if not row:
             raise HTTPException(404, "السجل غير موجود")
