@@ -19277,6 +19277,21 @@ function openOpsReviewDetail(id) {
       ${r.quantity_edited_by ? `<div class="opsr-edit-meta">آخر تعديل: ${r.quantity_edited_by}${r.quantity_edited_at?' — '+fmtDate(r.quantity_edited_at):''}</div>` : ''}
     </div>` : '';
 
+  /* ── كرت التكلفة (نفس ستايل كروت الملخص) ── */
+  const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة الإجمالية';
+  const priceCardHtml = `
+    <div class="opsr-card">
+      <button class="opsr-edit-btn" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" title="تعديل التكلفة">✏️</button>
+      <div class="opsr-card-icon">💰</div>
+      <div class="opsr-card-label">${priceLabel}</div>
+      <div class="opsr-card-value" id="orPriceView_${r.id}">${(r.price||0).toFixed(2)} جنيه</div>
+      <div class="opsr-inline-edit" id="orPriceEditWrap_${r.id}" style="display:none">
+        <input id="orPriceInput_${r.id}" type="number" step="0.01" min="0" value="${r.price||0}">
+        <button class="opsr-save-btn" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" title="حفظ">✔</button>
+      </div>
+      ${r.price_edited_by ? `<div class="opsr-edit-meta">آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
+    </div>`;
+
   /* ── شبكة الملخص ── */
   const summaryCardsHtml = isFuel ? `
     <div class="opsr-card"><div class="opsr-card-icon">🚚</div><div class="opsr-card-label">المركبة</div><div class="opsr-card-value">${r.vehicle_plate||'—'}</div></div>
@@ -19294,21 +19309,6 @@ function openOpsReviewDetail(id) {
     ${qtyCardHtml}
     ${priceCardHtml}
   `;
-
-  /* ── كرت التكلفة (نفس ستايل كروت الملخص) ── */
-  const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة الإجمالية';
-  const priceCardHtml = `
-    <div class="opsr-card">
-      <button class="opsr-edit-btn" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" title="تعديل التكلفة">✏️</button>
-      <div class="opsr-card-icon">💰</div>
-      <div class="opsr-card-label">${priceLabel}</div>
-      <div class="opsr-card-value" id="orPriceView_${r.id}">${(r.price||0).toFixed(2)} جنيه</div>
-      <div class="opsr-inline-edit" id="orPriceEditWrap_${r.id}" style="display:none">
-        <input id="orPriceInput_${r.id}" type="number" step="0.01" min="0" value="${r.price||0}">
-        <button class="opsr-save-btn" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" title="حفظ">✔</button>
-      </div>
-      ${r.price_edited_by ? `<div class="opsr-edit-meta">آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
-    </div>`;
 
   /* ── سجل النشاط ── */
   const tlItems = [];
