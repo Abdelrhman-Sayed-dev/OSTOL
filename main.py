@@ -10414,6 +10414,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             ("reviewed_at", "TEXT DEFAULT ''"),
             ("price_edited_by", "TEXT DEFAULT ''"),
             ("price_edited_at", "TEXT DEFAULT ''"),
+            ("quantity_edited_by", "TEXT DEFAULT ''"),
+            ("quantity_edited_at", "TEXT DEFAULT ''"),
         ]
         _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
         for _wc, _wd in _ws_extra_cols:
@@ -16219,3 +16221,25 @@ async def update_workshop_price(wid: int, body: WorkshopPriceUpdate, cu: dict = 
         )
         log_event("workshop_price_edit", record_id=wid, note=f"new_price={body.price}")
         return {"ok": True, "price": body.price, "price_edited_by": editor_name}
+
+
+class WorkshopQuantityUpdate(BaseModel):
+    quantity: float
+
+
+@app.put("/workshops/{wid}/quantity")
+async def update_workshop_quantity(wid: int, body: WorkshopQuantityUpdate, cu: dict = Depends(require_admin)):
+    """تصحيح الكمية (لترات الوقود/عدد الإطارات...إلخ) لسجل بعد المراجعة، لو مش مطابقة للفاتورة أو صورة العداد."""
+    if body.quantity is None or body.quantity < 0:
+        raise HTTPException(400, "قيمة غير صالحة")
+    editor_name = cu.get("username") or cu.get("name") or ""
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM workshop_records WHERE id=?", (wid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "السجل غير موجود")
+        conn.execute(
+            "UPDATE workshop_records SET quantity=?, quantity_edited_by=?, quantity_edited_at=? WHERE id=?",
+            (body.quantity, editor_name, datetime.utcnow().isoformat(), wid)
+        )
+        log_event("workshop_quantity_edit", record_id=wid, note=f"new_quantity={body.quantity}")
+        return {"ok": True, "quantity": body.quantity, "quantity_edited_by": editor_name}
