@@ -19284,6 +19284,7 @@ function openOpsReviewDetail(id) {
     <div class="opsr-card"><div class="opsr-card-icon">⛽</div><div class="opsr-card-label">مصدر الوقود</div><div class="opsr-card-value">${FUEL_SRC_LABELS[r.fuel_source]||'—'}${r.station_name?' ('+r.station_name+')':''}</div></div>
     <div class="opsr-card"><div class="opsr-card-icon">📊</div><div class="opsr-card-label">قراءة العداد</div><div class="opsr-card-value">${r.odometer_reading??'—'}</div></div>
     ${qtyCardHtml}
+    ${priceCardHtml}
   ` : `
     <div class="opsr-card"><div class="opsr-card-icon">🚚</div><div class="opsr-card-label">المركبة / المعدة</div><div class="opsr-card-value">${r.vehicle_plate||r.vehicle_model||'—'}</div></div>
     <div class="opsr-card"><div class="opsr-card-icon">🔧</div><div class="opsr-card-label">نوع الصيانة</div><div class="opsr-card-value">${wt.icon} ${wt.label}</div></div>
@@ -19291,25 +19292,22 @@ function openOpsReviewDetail(id) {
     ${r.parts_source==='DirectPurchase' ? `<div class="opsr-card"><div class="opsr-card-icon">🏪</div><div class="opsr-card-label">المورد / المحل</div><div class="opsr-card-value">${r.direct_purchase_supplier||'—'}</div></div>` : ''}
     <div class="opsr-card"><div class="opsr-card-icon">📊</div><div class="opsr-card-label">قراءة العداد</div><div class="opsr-card-value">${r.odometer_reading??'—'}</div></div>
     ${qtyCardHtml}
+    ${priceCardHtml}
   `;
 
-  /* ── كرت التكلفة ── */
+  /* ── كرت التكلفة (نفس ستايل كروت الملخص) ── */
   const priceLabel = isFuel ? 'قيمة التفويلة' : 'التكلفة الإجمالية';
-  const costCardHtml = `
-    <div class="opsr-cost-card">
-      <div class="opsr-cost-main">
-        <div class="opsr-cost-label">💰 ${priceLabel}</div>
-        <div class="opsr-cost-value" id="orPriceView_${r.id}">${(r.price||0).toFixed(2)}<span>جنيه</span></div>
-        <div class="opsr-inline-edit" id="orPriceEditWrap_${r.id}" style="display:none;margin-top:.5rem">
-          <input id="orPriceInput_${r.id}" type="number" step="0.01" min="0" value="${r.price||0}">
-          <button class="opsr-save-btn" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" title="حفظ">✔</button>
-        </div>
-        ${r.price_edited_by ? `<div class="opsr-edit-meta" style="color:#94A3B8;margin-top:.4rem">آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
+  const priceCardHtml = `
+    <div class="opsr-card">
+      <button class="opsr-edit-btn" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" title="تعديل التكلفة">✏️</button>
+      <div class="opsr-card-icon">💰</div>
+      <div class="opsr-card-label">${priceLabel}</div>
+      <div class="opsr-card-value" id="orPriceView_${r.id}">${(r.price||0).toFixed(2)} جنيه</div>
+      <div class="opsr-inline-edit" id="orPriceEditWrap_${r.id}" style="display:none">
+        <input id="orPriceInput_${r.id}" type="number" step="0.01" min="0" value="${r.price||0}">
+        <button class="opsr-save-btn" id="orPriceSaveBtn_${r.id}" onclick="saveOrPrice(${r.id})" title="حفظ">✔</button>
       </div>
-      <div class="opsr-cost-actions">
-        <button class="opsr-cost-edit-btn" id="orPriceEditBtn_${r.id}" onclick="toggleOrPriceEdit(${r.id})" title="تعديل التكلفة">✏️</button>
-        <div class="opsr-cost-icon">💰</div>
-      </div>
+      ${r.price_edited_by ? `<div class="opsr-edit-meta">آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
     </div>`;
 
   /* ── سجل النشاط ── */
@@ -19367,7 +19365,6 @@ function openOpsReviewDetail(id) {
         <div class="opsr-section-label" style="margin-bottom:.6rem">📊 ملخص العملية</div>
         <div class="opsr-grid">${summaryCardsHtml}</div>
       </div>
-      ${costCardHtml}
       ${timelineHtml}
       ${mediaItems.length ? `<div class="opsr-media-grid">${mediaItems.join('')}</div>` : ''}
       ${r.notes ? `<div class="opsr-notes">💬 <div><strong>ملاحظات: </strong>${r.notes}</div></div>` : ''}
