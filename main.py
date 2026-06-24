@@ -8522,6 +8522,9 @@ def _safe_add_columns(c):
         email TEXT DEFAULT '',
         address TEXT DEFAULT '',
         notes TEXT DEFAULT '',
+        company_name TEXT DEFAULT '',
+        manager_name TEXT DEFAULT '',
+        business_sector TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now'))
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS inventory_products(
@@ -8530,6 +8533,7 @@ def _safe_add_columns(c):
         sku TEXT DEFAULT '',
         category_id INTEGER,
         supplier_id INTEGER,
+        brand TEXT DEFAULT '',
         purchase_price REAL DEFAULT 0,
         sale_price REAL DEFAULT 0,
         quantity REAL DEFAULT 0,
@@ -8565,14 +8569,36 @@ def _safe_add_columns(c):
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY(supplier_id) REFERENCES inventory_suppliers(id) ON DELETE SET NULL
     )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS workshop_repair_quotes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quote_number TEXT DEFAULT '',
+        car_id INTEGER NOT NULL,
+        driver_id INTEGER NOT NULL,
+        quote_date TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft' CHECK(status IN ('draft','approved','done','cancelled')),
+        items_json TEXT DEFAULT '[]',
+        total_value REAL DEFAULT 0,
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
+        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL
+    )""")
     for idx_sql in [
         "CREATE INDEX IF NOT EXISTS idx_inv_products_cat ON inventory_products(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_inv_products_sup ON inventory_products(supplier_id)",
         "CREATE INDEX IF NOT EXISTS idx_inv_movements_prod ON inventory_movements(product_id)",
         "CREATE INDEX IF NOT EXISTS idx_inv_po_supplier ON inventory_purchase_orders(supplier_id)",
+        "CREATE INDEX IF NOT EXISTS idx_rq_car ON workshop_repair_quotes(car_id)",
+        "CREATE INDEX IF NOT EXISTS idx_rq_driver ON workshop_repair_quotes(driver_id)",
         "CREATE INDEX IF NOT EXISTS idx_ws_approval ON workshop_records(approval_status)",
     ]:
         try: c.execute(idx_sql)
+        except Exception: pass
+    # ── Migration: أعمدة جديدة للمنتجات والموردين (لقواعد البيانات المنشورة مسبقاً) ──
+    try: c.execute("ALTER TABLE inventory_products ADD COLUMN brand TEXT DEFAULT ''")
+    except Exception: pass
+    for _sup_col, _sup_def in [("company_name", "TEXT DEFAULT ''"), ("manager_name", "TEXT DEFAULT ''"), ("business_sector", "TEXT DEFAULT ''")]:
+        try: c.execute(f"ALTER TABLE inventory_suppliers ADD COLUMN {_sup_col} {_sup_def}")
         except Exception: pass
     # تصنيفات أساسية افتراضية (مرة واحدة فقط لو الجدول فاضي)
     try:
@@ -15890,10 +15916,12 @@ class InventoryCategoryCreate(BaseModel):
 class InventorySupplierCreate(BaseModel):
     name: str; phone: Optional[str] = ""; email: Optional[str] = ""
     address: Optional[str] = ""; notes: Optional[str] = ""
+    company_name: Optional[str] = ""; manager_name: Optional[str] = ""; business_sector: Optional[str] = ""
 
 class InventoryProductCreate(BaseModel):
     name: str; sku: Optional[str] = ""
     category_id: Optional[int] = None; supplier_id: Optional[int] = None
+    brand: Optional[str] = ""
     purchase_price: float = 0; sale_price: float = 0
     quantity: float = 0; min_quantity: float = 0
     unit: Optional[str] = "قطعة"; notes: Optional[str] = ""
@@ -15902,10 +15930,10 @@ class InventoryMovementCreate(BaseModel):
     product_id: int; movement_type: str  # in | out | return | adjust
     quantity: float; notes: Optional[str] = ""
 
-class InventoryPurchaseOrderCreate(BaseModel):
-    order_number: Optional[str] = ""; supplier_id: Optional[int] = None
-    order_date: Optional[str] = ""; status: Optional[str] = "draft"
-    total_value: Optional[float] = 0; items_json: Optional[str] = "[]"
+class RepairQuoteCreate(BaseModel):
+    quote_number: Optional[str] = ""; car_id: int; driver_id: int
+    quote_date: Optional[str] = ""; status: Optional[str] = "draft"
+    items_json: Optional[str] = "[]"; total_value: Optional[float] = 0
     notes: Optional[str] = ""
 
 class WorkshopApproval(BaseModel):
@@ -15970,15 +15998,19 @@ async def list_inventory_suppliers(cu: dict = Depends(get_user)):
 @app.post("/inventory/suppliers")
 async def create_inventory_supplier(body: InventorySupplierCreate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
-        cur = conn.execute("INSERT INTO inventory_suppliers(name,phone,email,address,notes) VALUES(?,?,?,?,?)",
-                            (body.name.strip(), body.phone or "", body.email or "", body.address or "", body.notes or ""))
+        cur = conn.execute("""INSERT INTO inventory_suppliers(name,phone,email,address,notes,company_name,manager_name,business_sector)
+                              VALUES(?,?,?,?,?,?,?,?)""",
+                            (body.name.strip(), body.phone or "", body.email or "", body.address or "", body.notes or "",
+                             body.company_name or "", body.manager_name or "", body.business_sector or ""))
         return {"id": cur.lastrowid}
 
 @app.put("/inventory/suppliers/{sid}")
 async def update_inventory_supplier(sid: int, body: InventorySupplierCreate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
-        conn.execute("UPDATE inventory_suppliers SET name=?,phone=?,email=?,address=?,notes=? WHERE id=?",
-                      (body.name.strip(), body.phone or "", body.email or "", body.address or "", body.notes or "", sid))
+        conn.execute("""UPDATE inventory_suppliers SET name=?,phone=?,email=?,address=?,notes=?,
+                       company_name=?,manager_name=?,business_sector=? WHERE id=?""",
+                      (body.name.strip(), body.phone or "", body.email or "", body.address or "", body.notes or "",
+                       body.company_name or "", body.manager_name or "", body.business_sector or "", sid))
         return {"ok": True}
 
 @app.delete("/inventory/suppliers/{sid}")
@@ -16013,9 +16045,9 @@ async def create_inventory_product(body: InventoryProductCreate, cu: dict = Depe
     with get_db() as conn:
         now = datetime.utcnow().isoformat() + "Z"
         cur = conn.execute("""INSERT INTO inventory_products
-                              (name,sku,category_id,supplier_id,purchase_price,sale_price,quantity,min_quantity,unit,notes,created_at,updated_at)
-                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (body.name.strip(), body.sku or "", body.category_id, body.supplier_id,
+                              (name,sku,category_id,supplier_id,brand,purchase_price,sale_price,quantity,min_quantity,unit,notes,created_at,updated_at)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (body.name.strip(), body.sku or "", body.category_id, body.supplier_id, body.brand or "",
                              body.purchase_price, body.sale_price, body.quantity, body.min_quantity,
                              body.unit or "قطعة", body.notes or "", now, now))
         pid = cur.lastrowid
@@ -16028,9 +16060,9 @@ async def create_inventory_product(body: InventoryProductCreate, cu: dict = Depe
 async def update_inventory_product(pid: int, body: InventoryProductCreate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         now = datetime.utcnow().isoformat() + "Z"
-        conn.execute("""UPDATE inventory_products SET name=?,sku=?,category_id=?,supplier_id=?,
+        conn.execute("""UPDATE inventory_products SET name=?,sku=?,category_id=?,supplier_id=?,brand=?,
                        purchase_price=?,sale_price=?,min_quantity=?,unit=?,notes=?,updated_at=? WHERE id=?""",
-                      (body.name.strip(), body.sku or "", body.category_id, body.supplier_id,
+                      (body.name.strip(), body.sku or "", body.category_id, body.supplier_id, body.brand or "",
                        body.purchase_price, body.sale_price, body.min_quantity, body.unit or "قطعة",
                        body.notes or "", now, pid))
         return {"ok": True}
@@ -16078,43 +16110,45 @@ async def create_inventory_movement(body: InventoryMovementCreate, cu: dict = De
         return {"id": cur.lastrowid}
 
 
-# ── أوامر الشراء ──
-@app.get("/inventory/purchase-orders")
-async def list_purchase_orders(cu: dict = Depends(require_admin_or_reporter)):
+# ── مقايسات الإصلاح (الورشة) ──
+@app.get("/workshop/repair-quotes")
+async def list_repair_quotes(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
-        sups = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_suppliers").fetchall()}
-        rows = [dict(r) for r in conn.execute("SELECT * FROM inventory_purchase_orders ORDER BY id DESC").fetchall()]
+        cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
+        drvs = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM drivers").fetchall()}
+        rows = [dict(r) for r in conn.execute("SELECT * FROM workshop_repair_quotes ORDER BY id DESC").fetchall()]
         for r in rows:
-            r["supplier_name"] = sups.get(r.get("supplier_id"), "")
+            r["car_plate"] = cars.get(r.get("car_id"), "")
+            r["driver_name"] = drvs.get(r.get("driver_id"), "")
         return rows
 
-@app.post("/inventory/purchase-orders")
-async def create_purchase_order(body: InventoryPurchaseOrderCreate, cu: dict = Depends(require_admin)):
+@app.post("/workshop/repair-quotes")
+async def create_repair_quote(body: RepairQuoteCreate, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         now = datetime.utcnow().isoformat() + "Z"
-        order_number = body.order_number or f"PO-{int(datetime.utcnow().timestamp())}"
-        cur = conn.execute("""INSERT INTO inventory_purchase_orders
-                              (order_number,supplier_id,order_date,status,total_value,items_json,notes,created_at)
-                              VALUES(?,?,?,?,?,?,?,?)""",
-                            (order_number, body.supplier_id, body.order_date or now[:10], body.status or "draft",
-                             body.total_value or 0, body.items_json or "[]", body.notes or "", now))
-        return {"id": cur.lastrowid, "order_number": order_number}
+        quote_number = body.quote_number or f"RQ-{int(datetime.utcnow().timestamp())}"
+        cur = conn.execute("""INSERT INTO workshop_repair_quotes
+                              (quote_number,car_id,driver_id,quote_date,status,items_json,total_value,notes,created_at)
+                              VALUES(?,?,?,?,?,?,?,?,?)""",
+                            (quote_number, body.car_id, body.driver_id, body.quote_date or now[:10], body.status or "draft",
+                             body.items_json or "[]", body.total_value or 0, body.notes or "", now))
+        return {"id": cur.lastrowid, "quote_number": quote_number}
 
-@app.put("/inventory/purchase-orders/{oid}")
-async def update_purchase_order(oid: int, body: InventoryPurchaseOrderCreate, cu: dict = Depends(require_admin)):
-    if body.status not in ("draft", "open", "received", "cancelled"):
+@app.put("/workshop/repair-quotes/{qid}")
+async def update_repair_quote(qid: int, body: RepairQuoteCreate, cu: dict = Depends(require_admin)):
+    if body.status not in ("draft", "approved", "done", "cancelled"):
         raise HTTPException(400, "حالة غير صالحة")
     with get_db() as conn:
-        conn.execute("""UPDATE inventory_purchase_orders SET order_number=?,supplier_id=?,order_date=?,
-                       status=?,total_value=?,items_json=?,notes=? WHERE id=?""",
-                      (body.order_number or "", body.supplier_id, body.order_date or "", body.status,
-                       body.total_value or 0, body.items_json or "[]", body.notes or "", oid))
+        conn.execute("""UPDATE workshop_repair_quotes SET quote_number=?,car_id=?,driver_id=?,quote_date=?,
+                       status=?,items_json=?,total_value=?,notes=? WHERE id=?""",
+                      (body.quote_number or "", body.car_id, body.driver_id, body.quote_date or "", body.status,
+                       body.items_json or "[]", body.total_value or 0, body.notes or "", qid))
         return {"ok": True}
 
-@app.delete("/inventory/purchase-orders/{oid}")
-async def delete_purchase_order(oid: int, cu: dict = Depends(require_admin)):
+@app.delete("/workshop/repair-quotes/{qid}")
+async def delete_repair_quote(qid: int, cu: dict = Depends(require_admin)):
     with get_db() as conn:
-        conn.execute("DELETE FROM inventory_purchase_orders WHERE id=?", (oid,))
+        conn.execute("DELETE FROM workshop_repair_quotes WHERE id=?", (qid,))
         return {"ok": True}
 
 
@@ -16137,7 +16171,6 @@ async def inventory_dashboard(cu: dict = Depends(require_admin_or_reporter)):
         total_items = conn.execute("SELECT COUNT(*) c FROM inventory_products").fetchone()["c"]
         stock_value = conn.execute("SELECT COALESCE(SUM(quantity*purchase_price),0) v FROM inventory_products").fetchone()["v"]
         low_stock = conn.execute("SELECT COUNT(*) c FROM inventory_products WHERE min_quantity>0 AND quantity<=min_quantity").fetchone()["c"]
-        open_pos = conn.execute("SELECT COUNT(*) c FROM inventory_purchase_orders WHERE status='open'").fetchone()["c"]
         top_used = conn.execute("""SELECT p.id, p.name, SUM(m.quantity) as total_out
                                    FROM inventory_movements m JOIN inventory_products p ON p.id=m.product_id
                                    WHERE m.movement_type='out'
@@ -16146,7 +16179,6 @@ async def inventory_dashboard(cu: dict = Depends(require_admin_or_reporter)):
             "total_items": total_items,
             "stock_value": stock_value,
             "low_stock_count": low_stock,
-            "open_purchase_orders": open_pos,
             "top_used_products": [dict(r) for r in top_used],
         }
 
