@@ -19266,22 +19266,8 @@ function openRepairQuoteModal(q) {
         </select>
       </div>
       <div class="form-group">
-        <label>السائق</label>
-        <select id="rqDriver">
-          <option value="0">— اختياري —</option>
-          ${drvs.map(d=>`<option value="${d.id}" ${q?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
         <label>رقم التشغيل</label>
         <input type="text" id="rqOpNum" value="${meta.operation_number||q?.operation_number||''}" placeholder="مثال: 3/6114">
-      </div>
-      <div class="form-group">
-        <label>الحالة</label>
-        <select id="rqStatus2_placeholder" style="display:none"></select>
       </div>
     </div>
 
@@ -19381,10 +19367,6 @@ function openRepairQuoteModal(q) {
     const adminAmt = subtotal * adminPct / 100;
     const totalValue = subtotal + adminAmt;
 
-    // driver_id: نجيبه من المركبة المختارة أو نبعت 0 لو مش موجود
-    const carSel = document.getElementById('rqCar');
-    const carOpt = carSel.options[carSel.selectedIndex];
-
     // كل البيانات الإضافية بنخزنها جوا items_json كـ payload كامل
     const fullPayload = {
       sections:        sectionsData,
@@ -19409,7 +19391,6 @@ function openRepairQuoteModal(q) {
     const body = {
       quote_number: document.getElementById('rqNum').value.trim(),
       car_id:       carId,
-      driver_id:    parseInt(document.getElementById('rqDriver')?.value) || 0,
       quote_date:   document.getElementById('rqDate').value,
       status:       document.getElementById('rqStatus').value,
       items_json:   JSON.stringify(fullPayload),
