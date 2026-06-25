@@ -19192,8 +19192,20 @@ async function renderWorkshopRepairQuotes() {
 function openRepairQuoteModal(q) {
   const cars = window._rqCars || [];
   const drvs = window._rqDrivers || [];
-  let sections = [];
-  try { sections = q?.items_json ? JSON.parse(q.items_json) : []; } catch(e) { sections = []; }
+  let sections = [], meta = {};
+  try {
+    if (q?.items_json) {
+      const parsed = JSON.parse(q.items_json);
+      if (parsed && typeof parsed === 'object' && parsed.sections) {
+        // الصيغة الجديدة: fullPayload
+        meta = parsed;
+        sections = parsed.sections || [];
+      } else if (Array.isArray(parsed)) {
+        // صيغة قديمة: array مباشر
+        sections = parsed;
+      }
+    }
+  } catch(e) { sections = []; meta = {}; }
 
   openModal(`
     <div class="modal-header">
@@ -19215,33 +19227,33 @@ function openRepairQuoteModal(q) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group">
         <label>اسم الشركة / المؤسسة</label>
-        <input type="text" id="rqCompanyAr" value="${q?.company_name_ar||''}" placeholder="مثال: المقاولون العرب">
+        <input type="text" id="rqCompanyAr" value="${meta.company_name_ar||q?.company_name_ar||''}" placeholder="مثال: المقاولون العرب">
       </div>
       <div class="form-group">
         <label>اسم الشركة بالإنجليزية</label>
-        <input type="text" id="rqCompanyEn" value="${q?.company_name_en||''}" placeholder="مثال: Arab Contractors">
+        <input type="text" id="rqCompanyEn" value="${meta.company_name_en||q?.company_name_en||''}" placeholder="مثال: Arab Contractors">
       </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group">
         <label>اسم القطاع / الشعبة</label>
-        <input type="text" id="rqSector" value="${q?.sector_name||''}" placeholder="مثال: قطاع المعدات">
+        <input type="text" id="rqSector" value="${meta.sector_name||q?.sector_name||''}" placeholder="مثال: قطاع المعدات">
       </div>
       <div class="form-group">
         <label>اسم الإدارة</label>
-        <input type="text" id="rqDeptName" value="${q?.dept_name||''}" placeholder="مثال: إدارة ورش العمرات">
+        <input type="text" id="rqDeptName" value="${meta.dept_name||q?.dept_name||''}" placeholder="مثال: إدارة ورش العمرات">
       </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group">
         <label>الجهة / الإدارة (طالبة التنفيذ)</label>
-        <input type="text" id="rqDept" value="${q?.department||''}" placeholder="مثال: صيانة القصور والآثار">
+        <input type="text" id="rqDept" value="${meta.department||q?.department||''}" placeholder="مثال: صيانة القصور والآثار">
       </div>
       <div class="form-group">
         <label>الورشة المنفذة</label>
-        <input type="text" id="rqWorkshop" value="${q?.workshop_name||''}" placeholder="مثال: عمرة السيارات">
+        <input type="text" id="rqWorkshop" value="${meta.workshop_name||q?.workshop_name||''}" placeholder="مثال: عمرة السيارات">
       </div>
     </div>
 
@@ -19254,15 +19266,29 @@ function openRepairQuoteModal(q) {
         </select>
       </div>
       <div class="form-group">
+        <label>السائق</label>
+        <select id="rqDriver">
+          <option value="0">— اختياري —</option>
+          ${drvs.map(d=>`<option value="${d.id}" ${q?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
         <label>رقم التشغيل</label>
-        <input type="text" id="rqOpNum" value="${q?.operation_number||''}" placeholder="مثال: 3/6114">
+        <input type="text" id="rqOpNum" value="${meta.operation_number||q?.operation_number||''}" placeholder="مثال: 3/6114">
+      </div>
+      <div class="form-group">
+        <label>الحالة</label>
+        <select id="rqStatus2_placeholder" style="display:none"></select>
       </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group">
         <label>نوع / وصف المركبة</label>
-        <input type="text" id="rqCarDesc" value="${q?.car_desc||''}" placeholder="مثال: سيارة متسوبيشي كانتر قلاب ر385">
+        <input type="text" id="rqCarDesc" value="${meta.car_desc||q?.car_desc||''}" placeholder="مثال: سيارة متسوبيشي كانتر قلاب ر385">
       </div>
       <div class="form-group">
         <label>الحالة</label>
@@ -19288,7 +19314,7 @@ function openRepairQuoteModal(q) {
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.4rem">
         <span>نسبة المصاريف الإدارية %</span>
-        <input type="number" id="rqAdminPct" value="${q?.admin_pct??15}" min="0" max="100" step="0.5" style="width:80px;text-align:center" oninput="_rqRecalcTotal()">
+        <input type="number" id="rqAdminPct" value="${meta.admin_pct??q?.admin_pct??15}" min="0" max="100" step="0.5" style="width:80px;text-align:center" oninput="_rqRecalcTotal()">
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.4rem">
         <span style="font-size:8.5pt;color:#666">المصاريف الإدارية:</span>
@@ -19306,21 +19332,21 @@ function openRepairQuoteModal(q) {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
         <div class="form-group">
           <label>المسمى الوظيفي 1</label>
-          <input type="text" id="rqSig1Title" value="${q?.sig1_title||'مدير ورش الكهرباء'}" placeholder="مدير ورش الكهرباء">
+          <input type="text" id="rqSig1Title" value="${meta.sig1_title||q?.sig1_title||'مدير ورش الكهرباء'}" placeholder="مدير ورش الكهرباء">
           <label style="margin-top:.3rem">الاسم 1</label>
-          <input type="text" id="rqSig1Name" value="${q?.sig1_name||''}" placeholder="مهندس / ...">
+          <input type="text" id="rqSig1Name" value="${meta.sig1_name||q?.sig1_name||''}" placeholder="مهندس / ...">
         </div>
         <div class="form-group">
           <label>المسمى الوظيفي 2</label>
-          <input type="text" id="rqSig2Title" value="${q?.sig2_title||'مدير ورش'}" placeholder="مدير ورش">
+          <input type="text" id="rqSig2Title" value="${meta.sig2_title||q?.sig2_title||'مدير ورش'}" placeholder="مدير ورش">
           <label style="margin-top:.3rem">الاسم 2</label>
-          <input type="text" id="rqSig2Name" value="${q?.sig2_name||''}" placeholder="مهندس / ...">
+          <input type="text" id="rqSig2Name" value="${meta.sig2_name||q?.sig2_name||''}" placeholder="مهندس / ...">
         </div>
         <div class="form-group">
           <label>المسمى الوظيفي 3</label>
-          <input type="text" id="rqSig3Title" value="${q?.sig3_title||'مدير شئون المعدات'}" placeholder="مدير شئون المعدات">
+          <input type="text" id="rqSig3Title" value="${meta.sig3_title||q?.sig3_title||'مدير شئون المعدات'}" placeholder="مدير شئون المعدات">
           <label style="margin-top:.3rem">الاسم 3</label>
-          <input type="text" id="rqSig3Name" value="${q?.sig3_name||''}" placeholder="مهندس / ...">
+          <input type="text" id="rqSig3Name" value="${meta.sig3_name||q?.sig3_name||''}" placeholder="مهندس / ...">
         </div>
       </div>
     </div>
@@ -19355,29 +19381,40 @@ function openRepairQuoteModal(q) {
     const adminAmt = subtotal * adminPct / 100;
     const totalValue = subtotal + adminAmt;
 
+    // driver_id: نجيبه من المركبة المختارة أو نبعت 0 لو مش موجود
+    const carSel = document.getElementById('rqCar');
+    const carOpt = carSel.options[carSel.selectedIndex];
+
+    // كل البيانات الإضافية بنخزنها جوا items_json كـ payload كامل
+    const fullPayload = {
+      sections:        sectionsData,
+      company_name_ar: document.getElementById('rqCompanyAr').value.trim(),
+      company_name_en: document.getElementById('rqCompanyEn').value.trim(),
+      sector_name:     document.getElementById('rqSector').value.trim(),
+      dept_name:       document.getElementById('rqDeptName').value.trim(),
+      department:      document.getElementById('rqDept').value.trim(),
+      workshop_name:   document.getElementById('rqWorkshop').value.trim(),
+      operation_number:document.getElementById('rqOpNum').value.trim(),
+      car_desc:        document.getElementById('rqCarDesc').value.trim(),
+      admin_pct:       adminPct,
+      sig1_title:      document.getElementById('rqSig1Title').value.trim(),
+      sig1_name:       document.getElementById('rqSig1Name').value.trim(),
+      sig2_title:      document.getElementById('rqSig2Title').value.trim(),
+      sig2_name:       document.getElementById('rqSig2Name').value.trim(),
+      sig3_title:      document.getElementById('rqSig3Title').value.trim(),
+      sig3_name:       document.getElementById('rqSig3Name').value.trim(),
+    };
+
+    // الـ backend بيقبل فقط هذه الحقول
     const body = {
-      quote_number:     document.getElementById('rqNum').value.trim(),
-      quote_date:       document.getElementById('rqDate').value,
-      company_name_ar:  document.getElementById('rqCompanyAr').value.trim(),
-      company_name_en:  document.getElementById('rqCompanyEn').value.trim(),
-      sector_name:      document.getElementById('rqSector').value.trim(),
-      dept_name:        document.getElementById('rqDeptName').value.trim(),
-      department:       document.getElementById('rqDept').value.trim(),
-      workshop_name:    document.getElementById('rqWorkshop').value.trim(),
-      car_id:           carId,
-      operation_number: document.getElementById('rqOpNum').value.trim(),
-      car_desc:         document.getElementById('rqCarDesc').value.trim(),
-      status:           document.getElementById('rqStatus').value,
-      admin_pct:        adminPct,
-      items_json:       JSON.stringify(sectionsData),
-      total_value:      totalValue,
-      sig1_title:       document.getElementById('rqSig1Title').value.trim(),
-      sig1_name:        document.getElementById('rqSig1Name').value.trim(),
-      sig2_title:       document.getElementById('rqSig2Title').value.trim(),
-      sig2_name:        document.getElementById('rqSig2Name').value.trim(),
-      sig3_title:       document.getElementById('rqSig3Title').value.trim(),
-      sig3_name:        document.getElementById('rqSig3Name').value.trim(),
-      notes:            document.getElementById('rqNotes').value.trim(),
+      quote_number: document.getElementById('rqNum').value.trim(),
+      car_id:       carId,
+      driver_id:    parseInt(document.getElementById('rqDriver')?.value) || 0,
+      quote_date:   document.getElementById('rqDate').value,
+      status:       document.getElementById('rqStatus').value,
+      items_json:   JSON.stringify(fullPayload),
+      total_value:  totalValue,
+      notes:        document.getElementById('rqNotes').value.trim(),
     };
     try {
       if (q) await apiCall(`/workshop/repair-quotes/${q.id}`, 'PUT', body);
@@ -19480,10 +19517,23 @@ function _rqRecalcTotal() {
    دالة الطباعة — تولد الـ HTML مطابق للصورة
 ══════════════════════════════════════════ */
 function printRepairQuote(q) {
-  let sections = [];
-  try { sections = q.items_json ? JSON.parse(q.items_json) : []; } catch(e) { sections = []; }
+  let sections = [], meta = {};
+  try {
+    if (q.items_json) {
+      const parsed = JSON.parse(q.items_json);
+      if (parsed && typeof parsed === 'object' && parsed.sections) {
+        meta = parsed;
+        sections = parsed.sections || [];
+      } else if (Array.isArray(parsed)) {
+        sections = parsed;
+      }
+    }
+  } catch(e) { sections = []; meta = {}; }
 
-  const adminPct = q.admin_pct ?? 15;
+  // دمج meta مع q عشان نقدر نستخدم meta.xxx || q.xxx
+  const d = Object.assign({}, q, meta);
+
+  const adminPct = d.admin_pct ?? 15;
   let subtotal = 0;
   sections.forEach(sec => (sec.items||[]).forEach(it => { subtotal += (it.mfg||0) + (it.parts||0); }));
   const adminAmt  = subtotal * adminPct / 100;
@@ -19521,41 +19571,41 @@ function printRepairQuote(q) {
     <!-- ─ هيدر الشركة ─ -->
     <div class="rq-doc-header">
       <div class="hcol hcol-right">
-        <div class="co-ar">${q.company_name_ar || 'المقاولون العرب'}</div>
-        <div style="font-size:8pt">${q.company_name_ar ? '' : 'عثمان أحمد عثمان &amp; شركاه'}</div>
-        <div class="sector">${q.sector_name || 'قطاع المعدات'}</div>
-        <div>${q.dept_name || 'إدارة ورش العمرات'}</div>
+        <div class="co-ar">${d.company_name_ar || 'المقاولون العرب'}</div>
+        <div style="font-size:8pt">${d.company_name_ar ? '' : 'عثمان أحمد عثمان &amp; شركاه'}</div>
+        <div class="sector">${d.sector_name || 'قطاع المعدات'}</div>
+        <div>${d.dept_name || 'إدارة ورش العمرات'}</div>
       </div>
       <div class="hcol hcol-center">
         <div class="logo-box">AC</div>
       </div>
       <div class="hcol hcol-left">
-        <div class="co-en">${q.company_name_en || 'Arab Contractors'}</div>
-        <div style="font-size:8pt">${q.company_name_en ? '' : 'Osman Ahmed Osman &amp; Co.'}</div>
-        <div class="sector">${q.sector_name || "Equipment's Sector"}</div>
-        <div>${q.dept_name || 'Overhauling Workshops Dept.'}</div>
+        <div class="co-en">${d.company_name_en || 'Arab Contractors'}</div>
+        <div style="font-size:8pt">${d.company_name_en ? '' : 'Osman Ahmed Osman &amp; Co.'}</div>
+        <div class="sector">${d.sector_name || "Equipment's Sector"}</div>
+        <div>${d.dept_name || 'Overhauling Workshops Dept.'}</div>
       </div>
     </div>
 
     <!-- ─ العنوان ─ -->
     <div class="rq-title-bar">مقايسة اصلاح ابتدائية</div>
-    <div class="rq-date-bar">تاريخ : <span>${q.quote_date || ''}</span></div>
+    <div class="rq-date-bar">تاريخ : <span>${d.quote_date || ''}</span></div>
 
     <!-- ─ جدول البيانات ─ -->
     <table class="rq-meta-table">
       <tr>
         <td class="lbl">الجهة / إدارة</td>
-        <td class="val">${q.department || ''}</td>
+        <td class="val">${d.department || ''}</td>
         <td class="lbl">الورشة المنفذة</td>
-        <td class="val">${q.workshop_name || ''}</td>
+        <td class="val">${d.workshop_name || ''}</td>
       </tr>
       <tr>
         <td class="lbl">النوع</td>
-        <td class="val" colspan="3">${q.car_desc || ''}</td>
+        <td class="val" colspan="3">${d.car_desc || ''}</td>
       </tr>
       <tr>
         <td class="lbl">رقم التشغيل</td>
-        <td class="val" colspan="3">${q.operation_number || ''}</td>
+        <td class="val" colspan="3">${d.operation_number || ''}</td>
       </tr>
     </table>
 
@@ -19591,31 +19641,31 @@ function printRepairQuote(q) {
       </tfoot>
     </table>
 
-    ${q.notes ? `<div style="margin:10px 0;font-size:8.5pt">ملاحظات: ${q.notes}</div>` : ''}
+    ${d.notes ? `<div style="margin:10px 0;font-size:8.5pt">ملاحظات: ${d.notes}</div>` : ''}
 
     <!-- ─ التوقيعات ─ -->
     <div class="rq-sigs">
       <div class="rq-sig">
-        <div class="sig-title">${q.sig1_title || 'مدير ورش الكهرباء'}</div>
+        <div class="sig-title">${d.sig1_title || 'مدير ورش الكهرباء'}</div>
         <div class="sig-role">مهندس /</div>
         <div class="sig-space"></div>
-        <div class="sig-name">${q.sig1_name || ''}</div>
+        <div class="sig-name">${d.sig1_name || ''}</div>
       </div>
       <div class="rq-sig">
-        <div class="sig-title">${q.sig2_title || 'مدير ورش'}</div>
+        <div class="sig-title">${d.sig2_title || 'مدير ورش'}</div>
         <div class="sig-role">مهندس /</div>
         <div class="sig-space"></div>
-        <div class="sig-name">${q.sig2_name || ''}</div>
+        <div class="sig-name">${d.sig2_name || ''}</div>
       </div>
       <div class="rq-sig">
-        <div class="sig-title">${q.sig3_title || 'مدير شئون المعدات'}</div>
+        <div class="sig-title">${d.sig3_title || 'مدير شئون المعدات'}</div>
         <div class="sig-role">مهندس /</div>
         <div class="sig-space"></div>
-        <div class="sig-name">${q.sig3_name || ''}</div>
+        <div class="sig-name">${d.sig3_name || ''}</div>
       </div>
     </div>
 
-    <div class="rq-qnum">مقايسة رقم ( ${q.quote_number || ''} )</div>`;
+    <div class="rq-qnum">مقايسة رقم ( ${d.quote_number || ''} )</div>`;
 
   const area = document.getElementById('rqPrintArea');
   if (area) {
