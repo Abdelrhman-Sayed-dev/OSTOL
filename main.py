@@ -8573,7 +8573,7 @@ def _safe_add_columns(c):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         quote_number TEXT DEFAULT '',
         car_id INTEGER NOT NULL,
-        driver_id INTEGER NOT NULL,
+        driver_id INTEGER DEFAULT NULL,
         quote_date TEXT DEFAULT '',
         status TEXT DEFAULT 'draft' CHECK(status IN ('draft','approved','done','cancelled')),
         items_json TEXT DEFAULT '[]',
@@ -8583,6 +8583,9 @@ def _safe_add_columns(c):
         FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
         FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL
     )""")
+    # migration: fix driver_id=0 (invalid FK) to NULL on existing rows
+    try: c.execute("UPDATE workshop_repair_quotes SET driver_id=NULL WHERE driver_id=0")
+    except Exception: pass
     for idx_sql in [
         "CREATE INDEX IF NOT EXISTS idx_inv_products_cat ON inventory_products(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_inv_products_sup ON inventory_products(supplier_id)",
@@ -15931,7 +15934,7 @@ class InventoryMovementCreate(BaseModel):
     quantity: float; notes: Optional[str] = ""
 
 class RepairQuoteCreate(BaseModel):
-    quote_number: Optional[str] = ""; car_id: int; driver_id: int
+    quote_number: Optional[str] = ""; car_id: int; driver_id: Optional[int] = None
     quote_date: Optional[str] = ""; status: Optional[str] = "draft"
     items_json: Optional[str] = "[]"; total_value: Optional[float] = 0
     notes: Optional[str] = ""
