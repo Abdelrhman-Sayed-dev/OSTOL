@@ -4,6 +4,7 @@ Author: Refactored for enterprise use
 """
 
 
+import asyncio
 import base64
 import csv
 import io
@@ -2505,7 +2506,12 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             cv = c.fetchone()
             vp = cv["plate"] if cv else None
         # ── تحديث جدول الصيانة الدورية تلقائياً ──
-        if rec.vehicle_id and rec.odometer_reading:
+        _override_km = rec.odometer_reading
+        if rec.vehicle_id and not _override_km:
+            # اجيب آخر عداد من الرحلات لو السائق ما حطش قراءة
+            _km_row = c.execute("SELECT MAX(end_odometer) FROM trips WHERE car_id=? AND end_odometer IS NOT NULL", (rec.vehicle_id,)).fetchone()
+            if _km_row and _km_row[0]: _override_km = _km_row[0]
+        if rec.vehicle_id and _override_km:
             MAINT_MAP = {
                 # ── زيوت ──
                 "oil":        ["تغيير زيت", "فلتر زيت"],
@@ -2542,11 +2548,11 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 c.execute(f"""UPDATE maintenance_schedule
                               SET last_done_km=?, last_done_date=?, updated_at=?
                               WHERE car_id=? AND maintenance_type IN ({placeholders_m})""",
-                          [rec.odometer_reading, now[:10], now, rec.vehicle_id] + related_types)
+                          [_override_km, now[:10], now, rec.vehicle_id] + related_types)
                 updated_m = conn.execute("SELECT changes()").fetchone()[0]
                 if updated_m:
                     log_event("maintenance_auto_updated",
-                              car_id=rec.vehicle_id, types=related_types, km=rec.odometer_reading)
+                              car_id=rec.vehicle_id, types=related_types, km=_override_km)
 
         eff_driver_id = None if cu["role"] == "operator" else rec.driver_id
         return {"id":rid,"driver_id":eff_driver_id,"operator_id":cu.get("operator_id") if cu["role"]=="operator" else None,
@@ -10577,7 +10583,12 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             cv = c.fetchone()
             vp = cv["plate"] if cv else None
         # ── تحديث جدول الصيانة الدورية تلقائياً ──
-        if rec.vehicle_id and rec.odometer_reading:
+        _override_km = rec.odometer_reading
+        if rec.vehicle_id and not _override_km:
+            # اجيب آخر عداد من الرحلات لو السائق ما حطش قراءة
+            _km_row = c.execute("SELECT MAX(end_odometer) FROM trips WHERE car_id=? AND end_odometer IS NOT NULL", (rec.vehicle_id,)).fetchone()
+            if _km_row and _km_row[0]: _override_km = _km_row[0]
+        if rec.vehicle_id and _override_km:
             MAINT_MAP = {
                 # ── زيوت ──
                 "oil":        ["تغيير زيت", "فلتر زيت"],
@@ -10614,11 +10625,11 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 c.execute(f"""UPDATE maintenance_schedule
                               SET last_done_km=?, last_done_date=?, updated_at=?
                               WHERE car_id=? AND maintenance_type IN ({placeholders_m})""",
-                          [rec.odometer_reading, now[:10], now, rec.vehicle_id] + related_types)
+                          [_override_km, now[:10], now, rec.vehicle_id] + related_types)
                 updated_m = conn.execute("SELECT changes()").fetchone()[0]
                 if updated_m:
                     log_event("maintenance_auto_updated",
-                              car_id=rec.vehicle_id, types=related_types, km=rec.odometer_reading)
+                              car_id=rec.vehicle_id, types=related_types, km=_override_km)
 
         eff_driver_id = None if cu["role"] == "operator" else rec.driver_id
         return {"id":rid,"driver_id":eff_driver_id,"operator_id":cu.get("operator_id") if cu["role"]=="operator" else None,
@@ -16240,6 +16251,155 @@ async def delete_repair_quote(qid: int, cu: dict = Depends(require_admin)):
     with get_db() as conn:
         conn.execute("DELETE FROM workshop_repair_quotes WHERE id=?", (qid,))
         return {"ok": True}
+
+# ── تصحيح تلقائي عند الـ startup لأي سجل ورش لم يتم تطبيق override عليه ──
+FULL_MAINT_MAP_GLOBAL = {
+    "oil":        ["تغيير زيت", "فلتر زيت"],
+    "oil_motor":  ["تغيير زيت", "زيت محرك"],
+    "oil_gear":   ["زيت تروس"],
+    "oil_brake":  ["زيت فرامل"],
+    "oil_hydro":  ["زيت هيدروليك"],
+    "oil_grease": ["شحم", "تشحيم"],
+    "filter":         ["فلتر هواء", "فلتر وقود", "فلتر مكيف"],
+    "filter_oil":     ["فلتر زيت"],
+    "filter_solar":   ["فلتر وقود", "فلتر سولار"],
+    "filter_petrol":  ["فلتر بنزين", "فلتر وقود"],
+    "filter_air":     ["فلتر هواء"],
+    "filter_separator":["فلتر فاصل"],
+    "filter_ac":      ["فلتر مكيف", "فلتر تكيف"],
+    "filter_dryer":   ["فلتر مجفف"],
+    "filter_breather":["فلتر منفس"],
+    "filter_hydraulic":["فلتر هيدروليك"],
+    "tire":    ["إطارات"],
+    "battery": ["بطارية"],
+    "belt":    ["سير توزيع", "سيور"],
+    "timing_belt":           ["سير كاتينة", "سير توزيع"],
+    "engine_overhaul":       ["عمرة محرك", "عمرة كاملة"],
+    "engine_half_overhaul":  ["نصف عمرة محرك", "عمرة نصفية"],
+    "head_gasket":           ["جوان وش سلندر", "سلندر"],
+    "fuel_pump_overhaul":    ["عمرة طرمبة وقود", "طرمبة وقود", "وحدات الحقن"],
+}
+
+def _apply_override_for_record(c, rec_dict, now_str):
+    """يطبق override على سجل ورش واحد — يُستخدم من الـ startup والـ endpoint"""
+    ws_type = rec_dict.get("type", "")
+    car_id  = rec_dict.get("vehicle_id")
+    km      = rec_dict.get("odometer_reading")
+    if not car_id:
+        return 0
+    # لو مفيش عداد، نجيب آخر عداد من الرحلات
+    if not km:
+        km_row = c.execute(
+            "SELECT MAX(end_odometer) FROM trips WHERE car_id=? AND end_odometer IS NOT NULL",
+            (car_id,)
+        ).fetchone()
+        if km_row and km_row[0]:
+            km = km_row[0]
+    if not km:
+        return 0
+    related = FULL_MAINT_MAP_GLOBAL.get(ws_type, [])
+    if not related:
+        return 0
+    placeholders = ",".join("?" * len(related))
+    c.execute(
+        f"""UPDATE maintenance_schedule
+              SET last_done_km=?, last_done_date=?, updated_at=?
+              WHERE car_id=? AND maintenance_type IN ({placeholders})
+              AND (last_done_km IS NULL OR last_done_km < ?)""",
+        [km, now_str[:10], now_str, car_id] + related + [km]
+    )
+    return c.execute("SELECT changes()").fetchone()[0]
+
+@app.on_event("startup")
+async def fix_missing_overrides():
+    """عند الـ startup: يمسح كل سجلات الورش اللي عندها مركبة وعداد ويطبق override لو ما اتطبقش"""
+    await asyncio.sleep(3)  # نستنى شوية حتى الـ DB يكون جاهز
+    try:
+        now = datetime.utcnow().isoformat() + "Z"
+        with get_db() as conn:
+            c = conn.cursor()
+            rows = c.execute(
+                """SELECT id, type, vehicle_id, odometer_reading FROM workshop_records
+                   WHERE vehicle_id IS NOT NULL
+                   AND type IN ({})
+                   ORDER BY id ASC""".format(
+                    ",".join(f"'{t}'" for t in FULL_MAINT_MAP_GLOBAL.keys())
+                )
+            ).fetchall()
+            total = 0
+            for row in rows:
+                total += _apply_override_for_record(c, dict(row), now)
+            if total:
+                log.info(f"[STARTUP] Applied maintenance override for {total} schedule rows from {len(rows)} workshop records")
+    except Exception as e:
+        log.error(f"[STARTUP] fix_missing_overrides failed: {e}")
+
+@app.post("/workshop/records/{rid}/apply-maintenance-override")
+async def apply_maintenance_override(rid: int, cu: dict = Depends(require_admin)):
+    """يطبق override يدوي لسجل ورش على الصيانات الدورية"""
+    FULL_MAINT_MAP = {
+        "oil":        ["تغيير زيت", "فلتر زيت"],
+        "oil_motor":  ["تغيير زيت", "زيت محرك"],
+        "oil_gear":   ["زيت تروس"],
+        "oil_brake":  ["زيت فرامل"],
+        "oil_hydro":  ["زيت هيدروليك"],
+        "oil_grease": ["شحم", "تشحيم"],
+        "filter":         ["فلتر هواء", "فلتر وقود", "فلتر مكيف"],
+        "filter_oil":     ["فلتر زيت"],
+        "filter_solar":   ["فلتر وقود", "فلتر سولار"],
+        "filter_petrol":  ["فلتر بنزين", "فلتر وقود"],
+        "filter_air":     ["فلتر هواء"],
+        "filter_separator":["فلتر فاصل"],
+        "filter_ac":      ["فلتر مكيف", "فلتر تكيف"],
+        "filter_dryer":   ["فلتر مجفف"],
+        "filter_breather":["فلتر منفس"],
+        "filter_hydraulic":["فلتر هيدروليك"],
+        "tire":    ["إطارات"],
+        "battery": ["بطارية"],
+        "belt":    ["سير توزيع", "سيور"],
+        "timing_belt":           ["سير كاتينة", "سير توزيع"],
+        "engine_overhaul":       ["عمرة محرك", "عمرة كاملة"],
+        "engine_half_overhaul":  ["نصف عمرة محرك", "عمرة نصفية"],
+        "head_gasket":           ["جوان وش سلندر", "سلندر"],
+        "fuel_pump_overhaul":    ["عمرة طرمبة وقود", "طرمبة وقود", "وحدات الحقن"],
+    }
+    with get_db() as conn:
+        c = conn.cursor()
+        row = c.execute("SELECT * FROM workshop_records WHERE id=?", (rid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "سجل غير موجود")
+        rec = dict(row)
+        ws_type = rec.get("type","")
+        car_id  = rec.get("vehicle_id")
+        km      = rec.get("odometer_reading")
+        now     = datetime.utcnow().isoformat() + "Z"
+
+        if not car_id:
+            raise HTTPException(400, "السجل لا يحتوي على مركبة — لا يمكن التطبيق")
+
+        # لو مفيش عداد، نجيب آخر عداد من الرحلات
+        if not km:
+            km_row = c.execute("SELECT MAX(end_odometer) FROM trips WHERE car_id=? AND end_odometer IS NOT NULL", (car_id,)).fetchone()
+            if km_row and km_row[0]: km = km_row[0]
+
+        if not km:
+            raise HTTPException(400, "لا توجد قراءة عداد — أضف قراءة العداد للسجل أولاً")
+
+        related = FULL_MAINT_MAP.get(ws_type, [])
+        if not related:
+            raise HTTPException(400, f"نوع الورش '{ws_type}' لا يرتبط بأي صيانة دورية")
+
+        placeholders = ",".join("?" * len(related))
+        c.execute(f"""UPDATE maintenance_schedule
+                      SET last_done_km=?, last_done_date=?, updated_at=?
+                      WHERE car_id=? AND maintenance_type IN ({placeholders})""",
+                  [km, now[:10], now, car_id] + related)
+        updated = conn.execute("SELECT changes()").fetchone()[0]
+        log_event("maintenance_manual_override", car_id=car_id,
+                  ws_record_id=rid, types=related, km=km, by=cu["username"])
+        return {"ok": True, "updated_rows": updated, "km": km, "types": related}
+
+
 
 
 # ── التنبيهات (منتجات منخفضة/منتهية) ──
