@@ -4923,7 +4923,7 @@ function buildWSTable(records) {
     <th>#</th><th>السائق</th><th>النوع</th><th>التفاصيل</th><th>المركبة</th>
     <th>العداد</th><th>ساعات المحرك</th><th>الكمية</th><th>الإجمالي</th>
     <th>اسم الصنف</th><th>المقاس</th><th>رقم المستند</th><th>جهة الصرف</th>
-    <th>الموقع</th><th>المتسلم</th><th>ملاحظات</th><th>التاريخ</th>
+    <th>الموقع</th><th>المتسلم</th><th>ملاحظات</th><th>التاريخ</th><th>إجراء</th>
   </tr></thead><tbody>
   ${records.map(r=>{
     const wt=WT[r.type]||{icon:'🔨',label:r.type};
@@ -4962,9 +4962,39 @@ function buildWSTable(records) {
       <td style="font-size:.82rem">${r.receiver_name||'—'}</td>
       <td style="max-width:120px;font-size:.8rem">${r.notes||'—'}</td>
       <td>${r.created_at?fmtDT(r.created_at):'—'}</td>
+      <td><button class="btn btn-ghost btn-sm" title="تطبيق override على الصيانة الدورية"
+        onclick="applyWsOverride(${r.id},'${r.type||''}','${r.vehicle_plate||''}')">🔁</button></td>
     </tr>`;
   }).join('')}</tbody></table>
       `;
+}
+
+async function applyWsOverride(rid, wsType, plate) {
+  const MAINT_TYPES_WITH_OVERRIDE = new Set([
+    'oil','oil_motor','oil_gear','oil_brake','oil_hydro','oil_grease',
+    'filter','filter_oil','filter_solar','filter_petrol','filter_air',
+    'filter_separator','filter_ac','filter_dryer','filter_breather','filter_hydraulic',
+    'tire','battery','belt','timing_belt',
+    'engine_overhaul','engine_half_overhaul','head_gasket','fuel_pump_overhaul'
+  ]);
+  if (!MAINT_TYPES_WITH_OVERRIDE.has(wsType)) {
+    showNotification('هذا النوع لا يرتبط بصيانة دورية', 'error'); return;
+  }
+  const label = (WT[wsType]||{label:wsType}).label;
+  const confirmed = confirm(`تطبيق override على الصيانة الدورية؟
+
+المركبة: ${plate||'—'}
+العملية: ${label}
+
+هذا سيحدّث آخر تاريخ وكيلومتر لهذه الصيانة.`);
+  if (!confirmed) return;
+  try {
+    const res = await apiCall(`/workshop/records/${rid}/apply-maintenance-override`, 'POST');
+    showNotification(`✅ تم تحديث ${res.updated_rows} صيانة بنجاح (${res.km} كم)`, 'success');
+    await renderAdminWorkshops();
+  } catch(e) {
+    showNotification('❌ ' + e.message, 'error');
+  }
 }
 
 async function reloadWorkshopsByMonth() {
@@ -5118,11 +5148,18 @@ async function renderMapSection() {
       });
 
       const mapsUrl=`https://www.google.com/maps?q=${coords[0]},${coords[1]}`;
-      L.marker(coords,{icon}).addTo(map).bindPopup(`<div dir="rtl" style="min-width:200px;font-family:Cairo,sans-serif;line-height:1.7">
+      const driverPhone = driver?.phone || '';
+      const phoneHtml = driverPhone
+        ? `<a href="tel:${driverPhone}" style="display:inline-flex;align-items:center;gap:.3rem;margin-top:.35rem;padding:.28rem .65rem;background:#16a34a;color:white;border-radius:7px;text-decoration:none;font-size:.78rem;font-weight:700">
+             📞 ${driverPhone}
+           </a>`
+        : `<span style="font-size:.75rem;color:#94a3b8">لا يوجد رقم مسجل</span>`;
+      L.marker(coords,{icon}).addTo(map).bindPopup(`<div dir="rtl" style="min-width:210px;font-family:Cairo,sans-serif;line-height:1.7">
         <strong style="font-size:.92rem">${isGarage?'🅿️':'🚗'} ${car.plate}</strong><br>
         <span style="color:#666;font-size:.8rem">${car.model}</span>
         <hr style="margin:.4rem 0;border:none;border-top:1px solid #e2e8f0">
         <span style="font-size:.82rem">👨‍✈️ <strong>${driver?.name||'—'}</strong></span><br>
+        ${phoneHtml}<br>
         <span style="color:${color};font-weight:700;font-size:.8rem">${label}</span><br>
         <a href="${mapsUrl}" target="_blank"
            style="display:inline-flex;align-items:center;gap:.3rem;margin-top:.4rem;padding:.3rem .7rem;background:${color};color:white;border-radius:7px;text-decoration:none;font-size:.78rem;font-weight:700">
@@ -8934,11 +8971,16 @@ function makeLiveIcon(heading, speed) {
 function buildLivePopupHtml(loc) {
   const ago = loc.updated_at ? Math.round((Date.now()-new Date(loc.updated_at).getTime())/1000) : 0;
   const kmh = loc.speed ? (loc.speed*3.6).toFixed(1) : '0';
-  return `<div dir="rtl" style="min-width:180px;font-family:Cairo,sans-serif;line-height:1.8">
+  const phone = loc.driver_phone || '';
+  const phoneHtml = phone
+    ? `<a href="tel:${phone}" style="display:inline-flex;align-items:center;gap:.3rem;margin-top:.3rem;padding:.25rem .6rem;background:#16a34a;color:white;border-radius:7px;text-decoration:none;font-size:.75rem;font-weight:700">📞 ${phone}</a><br>`
+    : '';
+  return `<div dir="rtl" style="min-width:190px;font-family:Cairo,sans-serif;line-height:1.8">
     <strong style="font-size:.92rem">🚗 ${loc.car_plate||'—'}</strong><br>
     <span style="font-size:.8rem;color:#666">${loc.car_model||''}</span>
     <hr style="margin:.3rem 0;border:none;border-top:1px solid #e2e8f0">
     <span style="font-size:.82rem">👨‍✈️ <strong>${loc.driver_name||'—'}</strong></span><br>
+    ${phoneHtml}
     <span style="font-size:.8rem">🏃 السرعة: <strong>${kmh} كم/س</strong></span><br>
     <span id="lp_ago_${loc.driver_id}" style="font-size:.75rem;color:#94a3b8">🕐 منذ ${ago} ثانية</span>
     <br>
