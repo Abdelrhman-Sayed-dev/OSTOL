@@ -1104,6 +1104,12 @@ WORKSHOP_TYPES = [
     "filter_breather",  # فلتر منفس
     "filter_hydraulic", # فلتر هيدروليك
     "tire", "battery", "belt", "other",
+    # أنواع العمرة والصيانة الكبيرة
+    "timing_belt",        # سير كاتينة / توزيع
+    "engine_overhaul",    # عمرة محرك كاملة
+    "engine_half_overhaul", # نصف عمرة محرك
+    "head_gasket",        # جوان وش سلندر
+    "fuel_pump_overhaul", # عمرة طرمبة وقود ووحدات الحقن
 ]
 
 # أنواع الزيت التفصيلية
@@ -2501,11 +2507,34 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
         # ── تحديث جدول الصيانة الدورية تلقائياً ──
         if rec.vehicle_id and rec.odometer_reading:
             MAINT_MAP = {
-                "oil":    ["تغيير زيت","فلتر زيت"],
-                "filter": ["فلتر هواء","فلتر وقود","فلتر مكيف"],
-                "tire":   ["إطارات"],
-                "battery":["بطارية"],
-                "belt":   ["سير توزيع"],
+                # ── زيوت ──
+                "oil":        ["تغيير زيت", "فلتر زيت"],
+                "oil_motor":  ["تغيير زيت", "زيت محرك"],
+                "oil_gear":   ["زيت تروس"],
+                "oil_brake":  ["زيت فرامل"],
+                "oil_hydro":  ["زيت هيدروليك"],
+                "oil_grease": ["شحم", "تشحيم"],
+                # ── فلاتر ──
+                "filter":         ["فلتر هواء", "فلتر وقود", "فلتر مكيف"],
+                "filter_oil":     ["فلتر زيت"],
+                "filter_solar":   ["فلتر وقود", "فلتر سولار"],
+                "filter_petrol":  ["فلتر بنزين", "فلتر وقود"],
+                "filter_air":     ["فلتر هواء"],
+                "filter_separator":["فلتر فاصل"],
+                "filter_ac":      ["فلتر مكيف", "فلتر تكيف"],
+                "filter_dryer":   ["فلتر مجفف"],
+                "filter_breather":["فلتر منفس"],
+                "filter_hydraulic":["فلتر هيدروليك"],
+                # ── قطع وإطارات ──
+                "tire":    ["إطارات"],
+                "battery": ["بطارية"],
+                "belt":    ["سير توزيع", "سيور"],
+                # ── عمرات وصيانة كبيرة ──
+                "timing_belt":           ["سير كاتينة", "سير توزيع"],
+                "engine_overhaul":       ["عمرة محرك", "عمرة كاملة"],
+                "engine_half_overhaul":  ["نصف عمرة محرك", "عمرة نصفية"],
+                "head_gasket":           ["جوان وش سلندر", "سلندر"],
+                "fuel_pump_overhaul":    ["عمرة طرمبة وقود", "طرمبة وقود", "وحدات الحقن"],
             }
             related_types = MAINT_MAP.get(rec.type, [])
             if related_types:
@@ -8583,9 +8612,42 @@ def _safe_add_columns(c):
         FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
         FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL
     )""")
-    # migration: fix driver_id=0 (invalid FK) to NULL on existing rows
-    try: c.execute("UPDATE workshop_repair_quotes SET driver_id=NULL WHERE driver_id=0")
-    except Exception: pass
+    # Migration: handle existing DB where driver_id was NOT NULL
+    try:
+        # Check if driver_id column allows NULL by trying to update
+        # If the table exists with NOT NULL constraint, we need to recreate it
+        col_info = c.execute("PRAGMA table_info(workshop_repair_quotes)").fetchall()
+        driver_col = next((col for col in col_info if col[1] == 'driver_id'), None)
+        if driver_col and driver_col[3] == 1:  # notnull=1 means NOT NULL constraint
+            # Recreate table without NOT NULL on driver_id
+            c.execute("ALTER TABLE workshop_repair_quotes RENAME TO workshop_repair_quotes_old")
+            c.execute("""CREATE TABLE workshop_repair_quotes(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                quote_number TEXT DEFAULT '',
+                car_id INTEGER NOT NULL,
+                driver_id INTEGER DEFAULT NULL,
+                quote_date TEXT DEFAULT '',
+                status TEXT DEFAULT 'draft' CHECK(status IN ('draft','approved','done','cancelled')),
+                items_json TEXT DEFAULT '[]',
+                total_value REAL DEFAULT 0,
+                notes TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
+                FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL
+            )""")
+            c.execute("""INSERT INTO workshop_repair_quotes
+                SELECT id,quote_number,car_id,
+                       CASE WHEN driver_id=0 THEN NULL
+                            WHEN driver_id NOT IN (SELECT id FROM drivers) THEN NULL
+                            ELSE driver_id END,
+                       quote_date,status,items_json,total_value,notes,created_at
+                FROM workshop_repair_quotes_old""")
+            c.execute("DROP TABLE workshop_repair_quotes_old")
+        else:
+            # Already nullable, just clean up zeros
+            c.execute("UPDATE workshop_repair_quotes SET driver_id=NULL WHERE driver_id=0")
+    except Exception as _e:
+        pass
     for idx_sql in [
         "CREATE INDEX IF NOT EXISTS idx_inv_products_cat ON inventory_products(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_inv_products_sup ON inventory_products(supplier_id)",
@@ -10517,11 +10579,34 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
         # ── تحديث جدول الصيانة الدورية تلقائياً ──
         if rec.vehicle_id and rec.odometer_reading:
             MAINT_MAP = {
-                "oil":    ["تغيير زيت","فلتر زيت"],
-                "filter": ["فلتر هواء","فلتر وقود","فلتر مكيف"],
-                "tire":   ["إطارات"],
-                "battery":["بطارية"],
-                "belt":   ["سير توزيع"],
+                # ── زيوت ──
+                "oil":        ["تغيير زيت", "فلتر زيت"],
+                "oil_motor":  ["تغيير زيت", "زيت محرك"],
+                "oil_gear":   ["زيت تروس"],
+                "oil_brake":  ["زيت فرامل"],
+                "oil_hydro":  ["زيت هيدروليك"],
+                "oil_grease": ["شحم", "تشحيم"],
+                # ── فلاتر ──
+                "filter":         ["فلتر هواء", "فلتر وقود", "فلتر مكيف"],
+                "filter_oil":     ["فلتر زيت"],
+                "filter_solar":   ["فلتر وقود", "فلتر سولار"],
+                "filter_petrol":  ["فلتر بنزين", "فلتر وقود"],
+                "filter_air":     ["فلتر هواء"],
+                "filter_separator":["فلتر فاصل"],
+                "filter_ac":      ["فلتر مكيف", "فلتر تكيف"],
+                "filter_dryer":   ["فلتر مجفف"],
+                "filter_breather":["فلتر منفس"],
+                "filter_hydraulic":["فلتر هيدروليك"],
+                # ── قطع وإطارات ──
+                "tire":    ["إطارات"],
+                "battery": ["بطارية"],
+                "belt":    ["سير توزيع", "سيور"],
+                # ── عمرات وصيانة كبيرة ──
+                "timing_belt":           ["سير كاتينة", "سير توزيع"],
+                "engine_overhaul":       ["عمرة محرك", "عمرة كاملة"],
+                "engine_half_overhaul":  ["نصف عمرة محرك", "عمرة نصفية"],
+                "head_gasket":           ["جوان وش سلندر", "سلندر"],
+                "fuel_pump_overhaul":    ["عمرة طرمبة وقود", "طرمبة وقود", "وحدات الحقن"],
             }
             related_types = MAINT_MAP.get(rec.type, [])
             if related_types:
@@ -16130,10 +16215,11 @@ async def create_repair_quote(body: RepairQuoteCreate, cu: dict = Depends(requir
     with get_db() as conn:
         now = datetime.utcnow().isoformat() + "Z"
         quote_number = body.quote_number or f"RQ-{int(datetime.utcnow().timestamp())}"
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
         cur = conn.execute("""INSERT INTO workshop_repair_quotes
                               (quote_number,car_id,driver_id,quote_date,status,items_json,total_value,notes,created_at)
                               VALUES(?,?,?,?,?,?,?,?,?)""",
-                            (quote_number, body.car_id, body.driver_id, body.quote_date or now[:10], body.status or "draft",
+                            (quote_number, body.car_id, driver_id_val, body.quote_date or now[:10], body.status or "draft",
                              body.items_json or "[]", body.total_value or 0, body.notes or "", now))
         return {"id": cur.lastrowid, "quote_number": quote_number}
 
@@ -16142,9 +16228,10 @@ async def update_repair_quote(qid: int, body: RepairQuoteCreate, cu: dict = Depe
     if body.status not in ("draft", "approved", "done", "cancelled"):
         raise HTTPException(400, "حالة غير صالحة")
     with get_db() as conn:
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
         conn.execute("""UPDATE workshop_repair_quotes SET quote_number=?,car_id=?,driver_id=?,quote_date=?,
                        status=?,items_json=?,total_value=?,notes=? WHERE id=?""",
-                      (body.quote_number or "", body.car_id, body.driver_id, body.quote_date or "", body.status,
+                      (body.quote_number or "", body.car_id, driver_id_val, body.quote_date or "", body.status,
                        body.items_json or "[]", body.total_value or 0, body.notes or "", qid))
         return {"ok": True}
 
