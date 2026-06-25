@@ -2147,7 +2147,7 @@ async def get_live_locations(cu: dict = Depends(require_admin_or_reporter)):
             c.execute("""SELECT ll.driver_id, ll.car_id, ll.lat, ll.lng,
                                 ll.accuracy, ll.heading, ll.speed,
                                 ll.updated_at, ll.trip_id,
-                                d.name as driver_name,
+                                d.name as driver_name, d.phone as driver_phone,
                                 c.plate as car_plate, c.model as car_model
                          FROM live_locations ll
                          LEFT JOIN drivers d ON d.id = ll.driver_id
@@ -2158,7 +2158,7 @@ async def get_live_locations(cu: dict = Depends(require_admin_or_reporter)):
             c.execute("""SELECT ll.driver_id, ll.car_id, ll.lat, ll.lng,
                                 ll.accuracy, ll.heading, ll.speed,
                                 ll.updated_at, ll.trip_id,
-                                d.name as driver_name,
+                                d.name as driver_name, d.phone as driver_phone,
                                 c.plate as car_plate, c.model as car_model
                          FROM live_locations ll
                          LEFT JOIN drivers d ON d.id = ll.driver_id
