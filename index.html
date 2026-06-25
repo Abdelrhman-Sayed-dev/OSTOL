@@ -4629,6 +4629,11 @@ const WT = {
   battery:   {icon:'🔋',label:'بطارية'},
   belt:      {icon:'🔩',label:'سيور'},
   other:     {icon:'🔨',label:'أخرى'},
+  timing_belt:         {icon:'⚙️', label:'سير كاتينة'},
+  engine_overhaul:     {icon:'🔩', label:'عمرة محرك'},
+  engine_half_overhaul:{icon:'🔧', label:'نصف عمرة محرك'},
+  head_gasket:         {icon:'🛠️', label:'جوان وش سلندر'},
+  fuel_pump_overhaul:  {icon:'⛽', label:'عمرة طرمبة وقود'},
 };
 
 // أنواع الزيت التفصيلية
@@ -8227,6 +8232,11 @@ function openMaintenanceGroupModal() {
     {key:'tire',    icon:'⚫', label:'كوتش'},
     {key:'battery', icon:'🔋', label:'بطارية'},
     {key:'belt',    icon:'🔩', label:'سيور'},
+    {key:'timing_belt',          icon:'⚙️', label:'سير كاتينة'},
+    {key:'engine_overhaul',       icon:'🔩', label:'عمرة محرك'},
+    {key:'engine_half_overhaul',  icon:'🔧', label:'نصف عمرة محرك'},
+    {key:'head_gasket',           icon:'🛠️', label:'جوان وش سلندر'},
+    {key:'fuel_pump_overhaul',    icon:'⛽', label:'عمرة طرمبة وقود'},
   ];
   openModal(`
     <div class="modal-header">
@@ -8309,6 +8319,15 @@ function openWsModal(type) {
         <option value="maintenance">🔧 صيانة</option>
         <option value="replacement">🔄 استبدال</option>
       </select></div>`;
+  else if(['timing_belt','engine_overhaul','engine_half_overhaul','head_gasket','fuel_pump_overhaul'].includes(type)) specific=`
+    <div class="form-group"><label>نوع العملية <span class="req">*</span></label>
+      <select id="wOpType">
+        <option value="maintenance">🔧 صيانة</option>
+        <option value="replacement" selected>🔄 استبدال / تنفيذ</option>
+        <option value="inspection">🔍 فحص</option>
+      </select></div>
+    <div class="form-group"><label>ملاحظات إضافية</label>
+      <textarea id="wDesc" placeholder="تفاصيل العمل المنفذ..."></textarea></div>`;
   else if(type==='other') specific=`
     <div class="form-group"><label>وصف العملية <span class="req">*</span></label>
       <textarea id="wDesc" placeholder="اشرح العملية..."></textarea></div>`;
@@ -10719,6 +10738,11 @@ function openDpMaintenanceGroup() {
     {key:'battery', icon:'🔋', label:'بطارية'},
     {key:'belt',    icon:'🔩', label:'سيور'},
     {key:'other',   icon:'🔨', label:'أخرى'},
+    {key:'timing_belt',          icon:'⚙️', label:'سير كاتينة'},
+    {key:'engine_overhaul',       icon:'🔩', label:'عمرة محرك'},
+    {key:'engine_half_overhaul',  icon:'🔧', label:'نصف عمرة محرك'},
+    {key:'head_gasket',           icon:'🛠️', label:'جوان وش سلندر'},
+    {key:'fuel_pump_overhaul',    icon:'⛽', label:'عمرة طرمبة وقود'},
   ];
   openModal(`
     <div class="modal-header">
