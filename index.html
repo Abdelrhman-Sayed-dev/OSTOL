@@ -19103,107 +19103,531 @@ async function renderWorkshopRepairQuotes() {
   const statusLabels = {draft:'📝 مسودة', approved:'🟢 معتمدة', done:'✅ منفذة', cancelled:'❌ ملغاة'};
 
   c.innerHTML = `
-    <div class="card">
+    <style>
+      @media print {
+        .no-print, .sidebar, .topbar, .sidebar-overlay, #sidebarOverlay,
+        .btn, button { display:none!important; }
+        @page { size: A4 portrait; margin: 10mm 14mm; }
+        body, html { background:#fff!important; }
+        #appShell { display:block!important; }
+        .main-content { margin:0!important; padding:0!important; }
+        .page-content { padding:0!important; }
+        .rq-print-doc { display:block!important; }
+      }
+      .rq-print-doc { display:none; font-family:'Cairo',Arial,sans-serif; direction:rtl; color:#000; font-size:10pt; }
+
+      .rq-doc-header { display:flex; align-items:stretch; border:2px solid #333; margin-bottom:0; }
+      .rq-doc-header .hcol { padding:8px 12px; display:flex; flex-direction:column; justify-content:center; }
+      .rq-doc-header .hcol-right { flex:1.2; border-left:1.5px solid #333; text-align:right; font-size:8pt; line-height:1.8; }
+      .rq-doc-header .hcol-center { flex:0.7; border-left:1.5px solid #333; align-items:center; text-align:center; }
+      .rq-doc-header .hcol-left { flex:1.2; text-align:right; font-size:8pt; line-height:1.8; }
+      .rq-doc-header .co-en { font-weight:900; font-size:10pt; color:#8B0000; }
+      .rq-doc-header .co-ar { font-weight:900; font-size:10pt; color:#8B0000; }
+      .rq-doc-header .sector { font-weight:700; }
+      .rq-doc-header .logo-box { width:70px; height:70px; border-radius:50%; border:2px solid #8B0000; display:flex; align-items:center; justify-content:center; font-size:13pt; font-weight:900; color:#8B0000; margin:0 auto; }
+
+      .rq-title-bar { border:2px solid #333; border-top:none; text-align:center; padding:6px; font-size:16pt; font-weight:900; letter-spacing:2px; }
+      .rq-date-bar { border:2px solid #333; border-top:none; display:flex; justify-content:flex-end; padding:4px 16px; font-size:9pt; }
+      .rq-date-bar span { font-weight:700; margin-right:6px; }
+
+      .rq-meta-table { width:100%; border-collapse:collapse; }
+      .rq-meta-table td { border:1.5px solid #333; padding:5px 10px; font-size:9pt; }
+      .rq-meta-table .lbl { background:#d8d8d8; font-weight:800; white-space:nowrap; width:130px; text-align:center; }
+      .rq-meta-table .val { background:#fff; }
+
+      .rq-items-table { width:100%; border-collapse:collapse; margin-top:-1px; }
+      .rq-items-table th { background:#1e3a5f; color:#fff; padding:6px 4px; text-align:center; border:1.5px solid #1e3a5f; font-size:9pt; }
+      .rq-items-table td { border:1.5px solid #333; padding:5px 6px; min-height:24px; font-size:9pt; }
+      .rq-items-table td.desc { text-align:right; padding:5px 10px; }
+      .rq-items-table tbody tr:nth-child(even) td { background:#f8f8f8; }
+      .rq-items-table .section-header td { background:#e8e8e8; font-weight:800; text-align:right; padding:4px 10px; font-size:9pt; border:1.5px solid #333; }
+      .rq-items-table .total-row td { background:#e0e0e0; font-weight:800; border:1.5px solid #333; text-align:center; }
+      .rq-items-table .grand-row td { background:#c8d4e8; font-weight:900; font-size:10.5pt; border:2px solid #333; text-align:center; }
+
+      .rq-sigs { display:flex; justify-content:space-around; margin-top:28px; gap:16px; }
+      .rq-sig { text-align:center; flex:1; }
+      .rq-sig .sig-title { font-weight:800; font-size:9.5pt; border-bottom:1.5px solid #333; padding-bottom:4px; margin-bottom:4px; }
+      .rq-sig .sig-role { font-size:8.5pt; margin-bottom:40px; }
+      .rq-sig .sig-name { font-size:9pt; border-top:1.5px solid #333; padding-top:4px; min-height:20px; }
+      .rq-qnum { text-align:center; font-size:8pt; margin-top:12px; color:#555; }
+    </style>
+
+    <!-- قائمة المقايسات -->
+    <div class="card no-print">
       <div class="card-header">
         <div class="card-title">🧾 مقايسات الإصلاح</div>
         <button class="btn btn-primary btn-sm" onclick="openRepairQuoteModal(null)">➕ مقايسة جديدة</button>
       </div>
       <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
         <table style="width:100%"><thead><tr>
-          <th>رقم المقايسة</th><th>المركبة</th><th>السائق</th><th>التاريخ</th><th>الحالة</th><th>الإجمالي</th><th></th>
+          <th>رقم المقايسة</th><th>المركبة</th><th>الورشة المنفذة</th><th>التاريخ</th><th>الحالة</th><th>الإجمالي الكلي</th><th></th>
         </tr></thead><tbody>
           ${quotes.length ? quotes.map(q=>`
             <tr>
-              <td><strong>${q.quote_number}</strong></td><td>${q.car_plate||'—'}</td><td>${q.driver_name||'—'}</td>
-              <td>${q.quote_date||'—'}</td><td>${statusLabels[q.status]||q.status}</td>
-              <td>${(q.total_value||0).toLocaleString('ar-EG')} جنيه</td>
-              <td><button class="btn btn-ghost btn-sm" onclick='openRepairQuoteModal(${JSON.stringify(q).replace(/'/g,"&#39;")})'>✏️</button>
-                  <button class="btn btn-ghost btn-sm" onclick="deleteRepairQuote(${q.id})" style="color:#dc2626">🗑️</button></td>
+              <td><strong>${q.quote_number||'—'}</strong></td>
+              <td>${q.car_plate||'—'}</td>
+              <td>${q.workshop_name||'—'}</td>
+              <td>${q.quote_date||'—'}</td>
+              <td>${statusLabels[q.status]||q.status}</td>
+              <td><strong>${(q.total_value||0).toLocaleString('ar-EG')} جنيه</strong></td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-ghost btn-sm" onclick='openRepairQuoteModal(${JSON.stringify(q).replace(/'/g,"&#39;")})'>✏️</button>
+                <button class="btn btn-accent btn-sm" onclick='printRepairQuote(${JSON.stringify(q).replace(/'/g,"&#39;")})'>🖨️ طباعة</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteRepairQuote(${q.id})" style="color:#dc2626">🗑️</button>
+              </td>
             </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد مقايسات إصلاح</p></div></td></tr>`}
         </tbody></table>
       </div>
-    </div>`;
+    </div>
+
+    <!-- منطقة الطباعة — مخفية حتى يضغط الأدمن زر الطباعة -->
+    <div class="rq-print-doc" id="rqPrintArea"></div>`;
 }
 
-function _rqRecalcTotal() {
-  let total = 0;
-  document.querySelectorAll('#rqItemsBody tr').forEach(tr => {
-    const qty = parseFloat(tr.querySelector('.rqQty').value) || 0;
-    const price = parseFloat(tr.querySelector('.rqPrice').value) || 0;
-    total += qty * price;
-  });
-  document.getElementById('rqTotalDisplay').textContent = total.toLocaleString('ar-EG') + ' جنيه';
-  return total;
-}
-function rqAddItemRow(item) {
-  const tbody = document.getElementById('rqItemsBody');
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td><input type="text" class="rqName" placeholder="القطعة/الخدمة" value="${item?.name||''}" style="width:100%"></td>
-    <td><input type="number" class="rqQty" value="${item?.quantity??1}" step="0.01" style="width:80px" oninput="_rqRecalcTotal()"></td>
-    <td><input type="number" class="rqPrice" value="${item?.price??0}" step="0.01" style="width:100px" oninput="_rqRecalcTotal()"></td>
-    <td><button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('tr').remove(); _rqRecalcTotal()" style="color:#dc2626">🗑️</button></td>`;
-  tbody.appendChild(tr);
-}
+/* ══════════════════════════════════════════
+   فورم إضافة / تعديل مقايسة — كل حاجة بإنبوت
+══════════════════════════════════════════ */
 function openRepairQuoteModal(q) {
-  const cars = window._rqCars || []; const drvs = window._rqDrivers || [];
-  let items = [];
-  try { items = q?.items_json ? JSON.parse(q.items_json) : []; } catch(e) { items = []; }
+  const cars = window._rqCars || [];
+  const drvs = window._rqDrivers || [];
+  let sections = [];
+  try { sections = q?.items_json ? JSON.parse(q.items_json) : []; } catch(e) { sections = []; }
+
   openModal(`
-    <div class="modal-header"><div class="modal-title">${q?'✏️ تعديل مقايسة إصلاح':'➕ مقايسة إصلاح جديدة'}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div class="form-group"><label>رقم المقايسة</label><input type="text" id="rqNum" value="${q?.quote_number||''}" placeholder="يُنشأ تلقائياً لو تُرك فاضي"></div>
-    <div class="form-group"><label>المركبة *</label><select id="rqCar"><option value="">—</option>
-      ${cars.map(c=>`<option value="${c.id}" ${q?.car_id===c.id?'selected':''}>${c.plate} ${c.model?'- '+c.model:''}</option>`).join('')}</select></div>
-    <div class="form-group"><label>السائق *</label><select id="rqDriver"><option value="">—</option>
-      ${drvs.map(d=>`<option value="${d.id}" ${q?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}</select></div>
-    <div class="form-group"><label>التاريخ</label><input type="date" id="rqDate" value="${q?.quote_date||new Date().toISOString().slice(0,10)}"></div>
-    <div class="form-group"><label>الحالة</label><select id="rqStatus">
-      ${['draft','approved','done','cancelled'].map(s=>`<option value="${s}" ${q?.status===s?'selected':''}>${{draft:'📝 مسودة',approved:'🟢 معتمدة',done:'✅ منفذة',cancelled:'❌ ملغاة'}[s]}</option>`).join('')}
-    </select></div>
-    <div class="form-group"><label>بنود المقايسة (قطع غيار / خدمات)</label>
-      <table style="width:100%"><thead><tr><th>الوصف</th><th>الكمية</th><th>السعر</th><th></th></tr></thead>
-      <tbody id="rqItemsBody"></tbody></table>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="rqAddItemRow()" style="margin-top:.5rem">➕ إضافة بند</button>
+    <div class="modal-header">
+      <div class="modal-title">${q ? '✏️ تعديل مقايسة إصلاح' : '➕ مقايسة إصلاح جديدة'}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    <div class="form-group" style="text-align:left;font-weight:700">الإجمالي: <span id="rqTotalDisplay">0 جنيه</span></div>
-    <div class="form-group"><label>ملاحظات</label><textarea id="rqNotes">${q?.notes||''}</textarea></div>
-    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" id="rqSaveBtn">💾 حفظ</button></div>`);
-  if (items.length) items.forEach(it => rqAddItemRow(it));
-  else rqAddItemRow();
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>رقم المقايسة *</label>
+        <input type="text" id="rqNum" value="${q?.quote_number||''}" placeholder="مثال: 24/576">
+      </div>
+      <div class="form-group">
+        <label>التاريخ *</label>
+        <input type="date" id="rqDate" value="${q?.quote_date||new Date().toISOString().slice(0,10)}">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>اسم الشركة / المؤسسة</label>
+        <input type="text" id="rqCompanyAr" value="${q?.company_name_ar||''}" placeholder="مثال: المقاولون العرب">
+      </div>
+      <div class="form-group">
+        <label>اسم الشركة بالإنجليزية</label>
+        <input type="text" id="rqCompanyEn" value="${q?.company_name_en||''}" placeholder="مثال: Arab Contractors">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>اسم القطاع / الشعبة</label>
+        <input type="text" id="rqSector" value="${q?.sector_name||''}" placeholder="مثال: قطاع المعدات">
+      </div>
+      <div class="form-group">
+        <label>اسم الإدارة</label>
+        <input type="text" id="rqDeptName" value="${q?.dept_name||''}" placeholder="مثال: إدارة ورش العمرات">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>الجهة / الإدارة (طالبة التنفيذ)</label>
+        <input type="text" id="rqDept" value="${q?.department||''}" placeholder="مثال: صيانة القصور والآثار">
+      </div>
+      <div class="form-group">
+        <label>الورشة المنفذة</label>
+        <input type="text" id="rqWorkshop" value="${q?.workshop_name||''}" placeholder="مثال: عمرة السيارات">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>المركبة *</label>
+        <select id="rqCar">
+          <option value="">— اختر —</option>
+          ${cars.map(c=>`<option value="${c.id}" ${q?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}${c.model?' | '+c.model:''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>رقم التشغيل</label>
+        <input type="text" id="rqOpNum" value="${q?.operation_number||''}" placeholder="مثال: 3/6114">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>نوع / وصف المركبة</label>
+        <input type="text" id="rqCarDesc" value="${q?.car_desc||''}" placeholder="مثال: سيارة متسوبيشي كانتر قلاب ر385">
+      </div>
+      <div class="form-group">
+        <label>الحالة</label>
+        <select id="rqStatus">
+          ${['draft','approved','done','cancelled'].map(s=>`<option value="${s}" ${q?.status===s?'selected':''}>${{draft:'📝 مسودة',approved:'🟢 معتمدة',done:'✅ منفذة',cancelled:'❌ ملغاة'}[s]}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <!-- ─── بنود الأعمال ─── -->
+    <div class="form-group">
+      <label style="font-size:.95rem;font-weight:700;display:flex;justify-content:space-between;align-items:center">
+        <span>🔧 بنود الأعمال (أقسام + بنود)</span>
+        <button type="button" class="btn btn-primary btn-sm" onclick="rqAddSection()">➕ إضافة قسم</button>
+      </label>
+      <div id="rqSectionsContainer" style="margin-top:.5rem;display:flex;flex-direction:column;gap:.8rem"></div>
+    </div>
+
+    <div style="background:#f0f4f8;border-radius:8px;padding:.8rem;margin-bottom:.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:700">إجمالي قطع الغيار والمصنعيات:</span>
+        <span id="rqSubTotal" style="font-size:1rem;font-weight:700">0 جنيه</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.4rem">
+        <span>نسبة المصاريف الإدارية %</span>
+        <input type="number" id="rqAdminPct" value="${q?.admin_pct??15}" min="0" max="100" step="0.5" style="width:80px;text-align:center" oninput="_rqRecalcTotal()">
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.4rem">
+        <span style="font-size:8.5pt;color:#666">المصاريف الإدارية:</span>
+        <span id="rqAdminAmt" style="font-size:.9rem">0 جنيه</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.5rem;padding-top:.5rem;border-top:1.5px solid #ccc">
+        <span style="font-weight:800;font-size:1rem">الإجمالي الكلي:</span>
+        <span id="rqTotalDisplay" style="font-size:1.1rem;font-weight:900;color:#1e3a5f">0 جنيه</span>
+      </div>
+    </div>
+
+    <!-- ─── بيانات التوقيعات ─── -->
+    <div style="border-top:1.5px dashed #ccc;padding-top:.8rem;margin-top:.2rem">
+      <div style="font-weight:700;margin-bottom:.5rem">✍️ بيانات التوقيعات</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
+        <div class="form-group">
+          <label>المسمى الوظيفي 1</label>
+          <input type="text" id="rqSig1Title" value="${q?.sig1_title||'مدير ورش الكهرباء'}" placeholder="مدير ورش الكهرباء">
+          <label style="margin-top:.3rem">الاسم 1</label>
+          <input type="text" id="rqSig1Name" value="${q?.sig1_name||''}" placeholder="مهندس / ...">
+        </div>
+        <div class="form-group">
+          <label>المسمى الوظيفي 2</label>
+          <input type="text" id="rqSig2Title" value="${q?.sig2_title||'مدير ورش'}" placeholder="مدير ورش">
+          <label style="margin-top:.3rem">الاسم 2</label>
+          <input type="text" id="rqSig2Name" value="${q?.sig2_name||''}" placeholder="مهندس / ...">
+        </div>
+        <div class="form-group">
+          <label>المسمى الوظيفي 3</label>
+          <input type="text" id="rqSig3Title" value="${q?.sig3_title||'مدير شئون المعدات'}" placeholder="مدير شئون المعدات">
+          <label style="margin-top:.3rem">الاسم 3</label>
+          <input type="text" id="rqSig3Name" value="${q?.sig3_name||''}" placeholder="مهندس / ...">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>ملاحظات</label>
+      <textarea id="rqNotes" rows="2">${q?.notes||''}</textarea>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="rqSaveBtn">💾 حفظ</button>
+    </div>`);
+
+  // تحميل الأقسام الموجودة أو قسم فارغ
+  if (sections.length) {
+    sections.forEach(sec => rqAddSection(sec));
+  } else {
+    rqAddSection();
+  }
   _rqRecalcTotal();
+
   document.getElementById('rqSaveBtn').onclick = async () => {
     const carId = parseInt(document.getElementById('rqCar').value) || null;
-    const driverId = parseInt(document.getElementById('rqDriver').value) || null;
-    if (!carId || !driverId) { showNotification('من فضلك اختر المركبة والسائق', 'error'); return; }
-    const itemsArr = [];
-    document.querySelectorAll('#rqItemsBody tr').forEach(tr => {
-      const name = tr.querySelector('.rqName').value.trim();
-      const quantity = parseFloat(tr.querySelector('.rqQty').value) || 0;
-      const price = parseFloat(tr.querySelector('.rqPrice').value) || 0;
-      if (name) itemsArr.push({name, quantity, price});
-    });
+    if (!carId) { showNotification('من فضلك اختر المركبة', 'error'); return; }
+    if (!document.getElementById('rqNum').value.trim()) { showNotification('من فضلك أدخل رقم المقايسة', 'error'); return; }
+
+    const sectionsData = _rqCollectSections();
+    let subtotal = 0;
+    sectionsData.forEach(sec => sec.items.forEach(it => { subtotal += (it.mfg||0) + (it.parts||0); }));
+    const adminPct = parseFloat(document.getElementById('rqAdminPct').value) || 0;
+    const adminAmt = subtotal * adminPct / 100;
+    const totalValue = subtotal + adminAmt;
+
     const body = {
-      quote_number: document.getElementById('rqNum').value.trim(),
-      car_id: carId, driver_id: driverId,
-      quote_date: document.getElementById('rqDate').value,
-      status: document.getElementById('rqStatus').value,
-      items_json: JSON.stringify(itemsArr),
-      total_value: _rqRecalcTotal(),
-      notes: document.getElementById('rqNotes').value.trim(),
+      quote_number:     document.getElementById('rqNum').value.trim(),
+      quote_date:       document.getElementById('rqDate').value,
+      company_name_ar:  document.getElementById('rqCompanyAr').value.trim(),
+      company_name_en:  document.getElementById('rqCompanyEn').value.trim(),
+      sector_name:      document.getElementById('rqSector').value.trim(),
+      dept_name:        document.getElementById('rqDeptName').value.trim(),
+      department:       document.getElementById('rqDept').value.trim(),
+      workshop_name:    document.getElementById('rqWorkshop').value.trim(),
+      car_id:           carId,
+      operation_number: document.getElementById('rqOpNum').value.trim(),
+      car_desc:         document.getElementById('rqCarDesc').value.trim(),
+      status:           document.getElementById('rqStatus').value,
+      admin_pct:        adminPct,
+      items_json:       JSON.stringify(sectionsData),
+      total_value:      totalValue,
+      sig1_title:       document.getElementById('rqSig1Title').value.trim(),
+      sig1_name:        document.getElementById('rqSig1Name').value.trim(),
+      sig2_title:       document.getElementById('rqSig2Title').value.trim(),
+      sig2_name:        document.getElementById('rqSig2Name').value.trim(),
+      sig3_title:       document.getElementById('rqSig3Title').value.trim(),
+      sig3_name:        document.getElementById('rqSig3Name').value.trim(),
+      notes:            document.getElementById('rqNotes').value.trim(),
     };
     try {
       if (q) await apiCall(`/workshop/repair-quotes/${q.id}`, 'PUT', body);
-      else await apiCall('/workshop/repair-quotes', 'POST', body);
-      showNotification('✅ تم الحفظ', 'success'); closeModal(); renderWorkshopRepairQuotes();
+      else    await apiCall('/workshop/repair-quotes', 'POST', body);
+      showNotification('✅ تم الحفظ', 'success');
+      closeModal();
+      renderWorkshopRepairQuotes();
     } catch(e) { showNotification(e.message, 'error'); }
   };
 }
+
+/* ── إضافة قسم جديد (مثل: أعمال ورش المحركات) ── */
+function rqAddSection(sec) {
+  const container = document.getElementById('rqSectionsContainer');
+  const secId = 'rqSec_' + Date.now() + Math.random().toString(36).slice(2,5);
+  const div = document.createElement('div');
+  div.id = secId;
+  div.style.cssText = 'border:1.5px solid #c0cfe0;border-radius:8px;padding:.7rem;background:#fafcff';
+  div.innerHTML = `
+    <div style="display:flex;gap:.6rem;align-items:center;margin-bottom:.6rem">
+      <input type="text" class="rqSecTitle" value="${sec?.title||''}" placeholder="عنوان القسم (مثال: أعمال ورش المحركات)" style="flex:1;font-weight:700">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="rqAddItem('${secId}')" title="إضافة بند">➕ بند</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('${secId}').remove(); _rqRecalcTotal()" style="color:#dc2626" title="حذف القسم">🗑️</button>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead style="background:#1e3a5f;color:#fff">
+        <tr>
+          <th style="padding:.35rem .5rem;text-align:right">بيان الأعمال</th>
+          <th style="padding:.35rem;width:90px">قيمة المصنعيات</th>
+          <th style="padding:.35rem;width:90px">قطع الغيار</th>
+          <th style="padding:.35rem;width:30px"></th>
+        </tr>
+      </thead>
+      <tbody class="rqItemsBody" data-sec="${secId}"></tbody>
+    </table>`;
+  container.appendChild(div);
+  // تحميل البنود إن وجدت
+  if (sec?.items?.length) sec.items.forEach(it => rqAddItem(secId, it));
+  else rqAddItem(secId);
+}
+
+/* ── إضافة بند داخل قسم ── */
+function rqAddItem(secId, item) {
+  const tbody = document.querySelector(`[data-sec="${secId}"]`);
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <input type="text" class="rqItemName" value="${item?.name||''}" placeholder="وصف العمل أو القطعة" style="width:100%">
+    </td>
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <input type="number" class="rqItemMfg" value="${item?.mfg??''}" placeholder="0" step="0.01" style="width:100%" oninput="_rqRecalcTotal()">
+    </td>
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <input type="number" class="rqItemParts" value="${item?.parts??''}" placeholder="0" step="0.01" style="width:100%" oninput="_rqRecalcTotal()">
+    </td>
+    <td style="border:1px solid #ddd;text-align:center">
+      <button type="button" onclick="this.closest('tr').remove(); _rqRecalcTotal()" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:14px">✕</button>
+    </td>`;
+  tbody.appendChild(tr);
+}
+
+/* ── تجميع بيانات الأقسام من الـ DOM ── */
+function _rqCollectSections() {
+  const result = [];
+  document.querySelectorAll('#rqSectionsContainer > div').forEach(secDiv => {
+    const title = secDiv.querySelector('.rqSecTitle')?.value.trim() || '';
+    const items = [];
+    secDiv.querySelectorAll('tbody tr').forEach(tr => {
+      const name  = tr.querySelector('.rqItemName')?.value.trim()  || '';
+      const mfg   = parseFloat(tr.querySelector('.rqItemMfg')?.value)   || 0;
+      const parts = parseFloat(tr.querySelector('.rqItemParts')?.value) || 0;
+      if (name || mfg || parts) items.push({name, mfg, parts});
+    });
+    if (title || items.length) result.push({title, items});
+  });
+  return result;
+}
+
+/* ── إعادة حساب الإجمالي ── */
+function _rqRecalcTotal() {
+  let subtotal = 0;
+  document.querySelectorAll('.rqItemMfg, .rqItemParts').forEach(el => {
+    subtotal += parseFloat(el.value) || 0;
+  });
+  const adminPct = parseFloat(document.getElementById('rqAdminPct')?.value) || 0;
+  const adminAmt = subtotal * adminPct / 100;
+  const grand = subtotal + adminAmt;
+
+  const sub = document.getElementById('rqSubTotal');
+  const adm = document.getElementById('rqAdminAmt');
+  const tot = document.getElementById('rqTotalDisplay');
+  if (sub) sub.textContent = subtotal.toLocaleString('ar-EG') + ' جنيه';
+  if (adm) adm.textContent = adminAmt.toLocaleString('ar-EG') + ' جنيه';
+  if (tot) tot.textContent = grand.toLocaleString('ar-EG') + ' جنيه';
+  return grand;
+}
+
+/* ══════════════════════════════════════════
+   دالة الطباعة — تولد الـ HTML مطابق للصورة
+══════════════════════════════════════════ */
+function printRepairQuote(q) {
+  let sections = [];
+  try { sections = q.items_json ? JSON.parse(q.items_json) : []; } catch(e) { sections = []; }
+
+  const adminPct = q.admin_pct ?? 15;
+  let subtotal = 0;
+  sections.forEach(sec => (sec.items||[]).forEach(it => { subtotal += (it.mfg||0) + (it.parts||0); }));
+  const adminAmt  = subtotal * adminPct / 100;
+  const grandTotal = subtotal + adminAmt;
+
+  // ── صفوف الأعمال ──
+  let rowsHtml = '';
+  let rowNum = 1;
+  sections.forEach((sec, si) => {
+    if (sec.title) {
+      rowsHtml += `<tr class="section-header"><td colspan="2" style="text-align:right;padding:5px 10px">
+        <strong>${si+1 <= 9 ? si+1 : ''} — ${sec.title} :</strong>
+      </td><td></td><td></td></tr>`;
+    }
+    (sec.items||[]).forEach(it => {
+      rowsHtml += `<tr>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${rowNum++}</td>
+        <td class="desc" style="border:1.5px solid #333;padding:5px 10px;text-align:right">${it.name||''}</td>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${(it.mfg||0)>0?(it.mfg).toLocaleString('ar-EG'):''}</td>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${(it.parts||0)>0?(it.parts).toLocaleString('ar-EG'):''}</td>
+      </tr>`;
+    });
+  });
+  // صفوف فارغة
+  const emptyCount = Math.max(0, 5 - rowNum + 1);
+  for (let i = 0; i < emptyCount; i++) {
+    rowsHtml += `<tr><td style="border:1.5px solid #333;padding:7px">&nbsp;</td><td style="border:1.5px solid #333"></td><td style="border:1.5px solid #333"></td><td style="border:1.5px solid #333"></td></tr>`;
+  }
+
+  // ── إجمالي قطع الغيار والمصنعيات (بالعمودين) ──
+  let totalMfg = 0, totalParts = 0;
+  sections.forEach(sec => (sec.items||[]).forEach(it => { totalMfg += it.mfg||0; totalParts += it.parts||0; }));
+
+  const printHtml = `
+    <!-- ─ هيدر الشركة ─ -->
+    <div class="rq-doc-header">
+      <div class="hcol hcol-right">
+        <div class="co-ar">${q.company_name_ar || 'المقاولون العرب'}</div>
+        <div style="font-size:8pt">${q.company_name_ar ? '' : 'عثمان أحمد عثمان &amp; شركاه'}</div>
+        <div class="sector">${q.sector_name || 'قطاع المعدات'}</div>
+        <div>${q.dept_name || 'إدارة ورش العمرات'}</div>
+      </div>
+      <div class="hcol hcol-center">
+        <div class="logo-box">AC</div>
+      </div>
+      <div class="hcol hcol-left">
+        <div class="co-en">${q.company_name_en || 'Arab Contractors'}</div>
+        <div style="font-size:8pt">${q.company_name_en ? '' : 'Osman Ahmed Osman &amp; Co.'}</div>
+        <div class="sector">${q.sector_name || "Equipment's Sector"}</div>
+        <div>${q.dept_name || 'Overhauling Workshops Dept.'}</div>
+      </div>
+    </div>
+
+    <!-- ─ العنوان ─ -->
+    <div class="rq-title-bar">مقايسة اصلاح ابتدائية</div>
+    <div class="rq-date-bar">تاريخ : <span>${q.quote_date || ''}</span></div>
+
+    <!-- ─ جدول البيانات ─ -->
+    <table class="rq-meta-table">
+      <tr>
+        <td class="lbl">الجهة / إدارة</td>
+        <td class="val">${q.department || ''}</td>
+        <td class="lbl">الورشة المنفذة</td>
+        <td class="val">${q.workshop_name || ''}</td>
+      </tr>
+      <tr>
+        <td class="lbl">النوع</td>
+        <td class="val" colspan="3">${q.car_desc || ''}</td>
+      </tr>
+      <tr>
+        <td class="lbl">رقم التشغيل</td>
+        <td class="val" colspan="3">${q.operation_number || ''}</td>
+      </tr>
+    </table>
+
+    <!-- ─ جدول الأعمال ─ -->
+    <table class="rq-items-table">
+      <thead>
+        <tr>
+          <th style="width:36px">م</th>
+          <th style="text-align:right;padding:6px 10px">بيان الأعمال</th>
+          <th style="width:120px">قيمة المصنعيات</th>
+          <th style="width:120px">قطع الغيار</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        <tr class="total-row">
+          <td colspan="2" style="text-align:right;padding:5px 10px;border:1.5px solid #333">قيمة قطع الغيار والمصنعيات</td>
+          <td style="border:1.5px solid #333">${totalMfg>0?totalMfg.toLocaleString('ar-EG'):''}</td>
+          <td style="border:1.5px solid #333">${totalParts>0?totalParts.toLocaleString('ar-EG'):''}</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">إجمالي قيمة قطع الغيار والمصنعيات</td>
+          <td style="border:1.5px solid #333">${subtotal>0?subtotal.toLocaleString('ar-EG'):''}</td>
+        </tr>
+        <tr class="total-row">
+          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">يضاف ${adminPct}٪ مستلزمات تشغيل واختبارات جودة ومصاريف ادارية</td>
+          <td style="border:1.5px solid #333">${adminAmt>0?adminAmt.toLocaleString('ar-EG'):''}</td>
+        </tr>
+        <tr class="grand-row">
+          <td colspan="3" style="text-align:right;padding:6px 10px;border:2px solid #333">الإجمالي الكلي</td>
+          <td style="border:2px solid #333">${grandTotal>0?grandTotal.toLocaleString('ar-EG'):''}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    ${q.notes ? `<div style="margin:10px 0;font-size:8.5pt">ملاحظات: ${q.notes}</div>` : ''}
+
+    <!-- ─ التوقيعات ─ -->
+    <div class="rq-sigs">
+      <div class="rq-sig">
+        <div class="sig-title">${q.sig1_title || 'مدير ورش الكهرباء'}</div>
+        <div class="sig-role">مهندس /</div>
+        <div class="sig-name">${q.sig1_name || ''}</div>
+      </div>
+      <div class="rq-sig">
+        <div class="sig-title">${q.sig2_title || 'مدير ورش'}</div>
+        <div class="sig-role">مهندس /</div>
+        <div class="sig-name">${q.sig2_name || ''}</div>
+      </div>
+      <div class="rq-sig">
+        <div class="sig-title">${q.sig3_title || 'مدير شئون المعدات'}</div>
+        <div class="sig-role">مهندس /</div>
+        <div class="sig-name">${q.sig3_name || ''}</div>
+      </div>
+    </div>
+
+    <div class="rq-qnum">مقايسة رقم ( ${q.quote_number || ''} )</div>`;
+
+  const area = document.getElementById('rqPrintArea');
+  if (area) {
+    area.innerHTML = printHtml;
+    area.style.display = 'block';
+  }
+  window.print();
+  setTimeout(() => { if (area) { area.innerHTML = ''; area.style.display = 'none'; } }, 1500);
+}
+
 
 async function deleteRepairQuote(id) {
   if (!confirm('تأكيد حذف مقايسة الإصلاح؟')) return;
   try { await apiCall(`/workshop/repair-quotes/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderWorkshopRepairQuotes(); }
   catch(e) { showNotification(e.message, 'error'); }
 }
+
 
 // ── التنبيهات ──
 async function renderInventoryAlerts() {
