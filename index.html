@@ -19144,12 +19144,14 @@ async function renderWorkshopRepairQuotes() {
       .rq-items-table .total-row td { background:#e0e0e0; font-weight:800; border:1.5px solid #333; text-align:center; }
       .rq-items-table .grand-row td { background:#c8d4e8; font-weight:900; font-size:10.5pt; border:2px solid #333; text-align:center; }
 
-      .rq-sigs { display:flex; justify-content:space-around; margin-top:28px; gap:16px; }
-      .rq-sig { text-align:center; flex:1; }
-      .rq-sig .sig-title { font-weight:800; font-size:9.5pt; border-bottom:1.5px solid #333; padding-bottom:4px; margin-bottom:4px; }
-      .rq-sig .sig-role { font-size:8.5pt; margin-bottom:40px; }
-      .rq-sig .sig-name { font-size:9pt; border-top:1.5px solid #333; padding-top:4px; min-height:20px; }
-      .rq-qnum { text-align:center; font-size:8pt; margin-top:12px; color:#555; }
+      .rq-sigs { display:table; width:100%; margin-top:28px; border-collapse:collapse; }
+      .rq-sig { display:table-cell; width:33.33%; text-align:center; padding:0 12px; vertical-align:top; border-right:1px dashed #ccc; }
+      .rq-sig:last-child { border-right:none; }
+      .rq-sig .sig-title { font-weight:800; font-size:9pt; padding-bottom:5px; margin-bottom:4px; border-bottom:1.5px solid #333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .rq-sig .sig-role { font-size:8pt; margin-top:4px; margin-bottom:0; }
+      .rq-sig .sig-space { height:48px; }
+      .rq-sig .sig-name { font-size:9pt; border-top:1.5px solid #333; padding-top:4px; min-height:18px; margin-top:0; }
+      .rq-qnum { text-align:center; font-size:8pt; margin-top:14px; color:#555; }
     </style>
 
     <!-- قائمة المقايسات -->
@@ -19596,16 +19598,19 @@ function printRepairQuote(q) {
       <div class="rq-sig">
         <div class="sig-title">${q.sig1_title || 'مدير ورش الكهرباء'}</div>
         <div class="sig-role">مهندس /</div>
+        <div class="sig-space"></div>
         <div class="sig-name">${q.sig1_name || ''}</div>
       </div>
       <div class="rq-sig">
         <div class="sig-title">${q.sig2_title || 'مدير ورش'}</div>
         <div class="sig-role">مهندس /</div>
+        <div class="sig-space"></div>
         <div class="sig-name">${q.sig2_name || ''}</div>
       </div>
       <div class="rq-sig">
         <div class="sig-title">${q.sig3_title || 'مدير شئون المعدات'}</div>
         <div class="sig-role">مهندس /</div>
+        <div class="sig-space"></div>
         <div class="sig-name">${q.sig3_name || ''}</div>
       </div>
     </div>
