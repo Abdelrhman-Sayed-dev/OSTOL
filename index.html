@@ -20124,112 +20124,276 @@ function fcShowOne(carId) {
 }
 
 function fcRenderCarCard(c, fmt) {
-  const conf     = Math.round((c.confidence||0)*100);
-  const cpill    = conf>=70?'conf-high':conf>=40?'conf-med':'conf-low';
-  const confColor= conf>=70?'#16a34a':conf>=40?'#f97316':'#dc2626';
-  const trendTxt = (c.km_trend||0)>50?`↑ ${fmt(Math.round(c.km_trend))} كم/شهر زيادة`
-                 :(c.km_trend||0)<-50?`↓ ${fmt(Math.round(Math.abs(c.km_trend)))} كم/شهر نقص`
-                 :'→ مستقر';
+  const conf      = Math.round((c.confidence||0)*100);
+  const cpill     = conf>=70?'conf-high':conf>=40?'conf-med':'conf-low';
+  const confColor = conf>=70?'#16a34a':conf>=40?'#f97316':'#dc2626';
+  const trendTxt  = (c.km_trend||0)>50
+    ? '↑ '+fmt(Math.round(c.km_trend))+' كم/شهر زيادة'
+    : (c.km_trend||0)<-50
+    ? '↓ '+fmt(Math.round(Math.abs(c.km_trend)))+' كم/شهر نقص'
+    : '→ مستقر';
 
-  // قطع الغيار
-  const _partsFiltered = (c.parts||[]).filter(p=>(p.prob||0)>0.05);
+  /* ── قطع الغيار ── */
+  const _partsFiltered = (c.parts||[]).filter(function(p){return (p.prob||0)>0.05;});
   const partsHtml = _partsFiltered.length === 0
-    ? '<div style="color:var(--text-3);font-size:.8rem;padding:.5rem 0;text-align:center">✅ لا توجد قطع غيار مستحقة هذا الشهر</div>'
+    ? '<tr><td colspan="5" style="text-align:center;color:#6b7280;font-size:.8rem;padding:.8rem">✅ لا توجد قطع غيار مستحقة هذا الشهر</td></tr>'
     : _partsFiltered.map(function(p){
         const pct   = Math.round((p.prob||0)*100);
-        const color = pct>=85?'#ef4444':pct>=60?'#f97316':pct>=30?'#eab308':'#10b981';
-        const urgency = pct>=85?'عاجل':pct>=60?'هذا الشهر':pct>=30?'قريب':'مراقبة';
-        const daysLeft  = p.days_until!=null ? Math.round(p.days_until) : null;
-        const kmLeft    = p.km_remaining!=null ? Math.round(p.km_remaining) : null;
-        const dueInfo   = daysLeft!=null
-          ? (daysLeft<=0 ? '<span style="color:#ef4444;font-weight:700">⚠️ فات الموعد</span>'
-            : '<span>📅 خلال '+daysLeft+' يوم · '+fmt(kmLeft)+' كم متبقية</span>')
-          : (p.due_date ? '<span>📅 '+p.due_date+'</span>' : '');
-        const dueLine   = p.due_km ? '<span style="color:var(--text-4)"> (عند '+fmt(p.due_km)+' كم)</span>' : '';
-
-        return '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:.5rem 1rem;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--border-light)">'
-          // العمود 1: الاسم + badge
-          + '<div>'
-            + '<div style="font-weight:700;font-size:.84rem">'+( p.part_label||p.part_type )+'</div>'
-            + '<div style="margin-top:.15rem"><span style="font-size:.68rem;font-weight:700;padding:.1rem .45rem;border-radius:20px;background:'+(pct>=85?'#fee2e2':pct>=60?'#ffedd5':pct>=30?'#fef9c3':'#dcfce7')+';color:'+color+'">'+urgency+'</span></div>'
-          + '</div>'
-          // العمود 2: شريط + موعد
-          + '<div>'
-            + '<div style="height:6px;background:var(--border);border-radius:3px;margin-bottom:.3rem;overflow:hidden"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+color+'"></div></div>'
-            + '<div style="font-size:.73rem;color:var(--text-3)">'+dueInfo+dueLine+'</div>'
-          + '</div>'
-          // العمود 3: التكلفة + نسبة
-          + '<div style="text-align:left">'
-            + '<div style="font-weight:800;font-size:.85rem;color:var(--gold)">'+fmt(p.est_cost)+' ج</div>'
-            + '<div style="font-size:.72rem;color:'+color+';font-weight:700">'+pct+'%</div>'
-          + '</div>'
-          + '</div>';
+        const color = pct>=85?'#dc2626':pct>=60?'#ea580c':pct>=30?'#ca8a04':'#16a34a';
+        const urgency = pct>=85?'عاجل جداً':pct>=60?'هذا الشهر':pct>=30?'قريب':'مراقبة';
+        const daysLeft = p.days_until!=null ? Math.round(p.days_until) : null;
+        const kmLeft   = p.km_remaining!=null ? Math.round(p.km_remaining) : null;
+        const timing   = daysLeft!=null
+          ? (daysLeft<=0
+              ? '<span style="color:#dc2626;font-weight:700">⚠️ فات الموعد</span>'
+              : 'خلال <strong>'+daysLeft+'</strong> يوم &nbsp;·&nbsp; متبقي <strong>'+fmt(kmLeft)+'</strong> كم')
+          : (p.due_date||'—');
+        return '<tr style="border-bottom:1px solid #e5e7eb">'
+          + '<td style="padding:.55rem .7rem;font-weight:700;color:#1e293b">'+( p.part_label||p.part_type )+'</td>'
+          + '<td style="padding:.55rem .7rem;text-align:center">'
+            + '<span style="display:inline-block;padding:.15rem .55rem;border-radius:20px;font-size:.7rem;font-weight:700;background:'
+            + (pct>=85?'#fee2e2':pct>=60?'#ffedd5':pct>=30?'#fef9c3':'#dcfce7')
+            + ';color:'+color+'">'+urgency+'</span>'
+          + '</td>'
+          + '<td style="padding:.55rem .7rem;font-size:.78rem;color:#475569">'+timing+'</td>'
+          + '<td style="padding:.55rem .7rem;text-align:center;font-size:.78rem;color:#6b7280">'
+            + (p.due_km ? fmt(p.due_km)+' كم' : '—')
+          + '</td>'
+          + '<td style="padding:.55rem .7rem;text-align:left;font-weight:700;color:#b8860b">'+fmt(p.est_cost)+' ج</td>'
+          + '</tr>';
       }).join('');
 
-  // جدول الصيانة
+  /* ── جدول الصيانة الدورية ── */
   const _mRows = (c.maintenance_plan||[]).map(function(m){
-    return '<tr>'
-      + '<td>'+( m.maintenance_type||'' )+'</td>'
-      + '<td>'+(m.interval_km  ? fmt(m.interval_km)+' كم'  : '—')+'</td>'
-      + '<td>'+(m.interval_days? m.interval_days+' يوم'     : '—')+'</td>'
-      + '<td>'+(m.last_done_km ? fmt(m.last_done_km)+' كم' : '—')+'</td>'
-      + '<td>'+(m.last_done_date||'—')+'</td>'
+    return '<tr style="border-bottom:1px solid #e5e7eb">'
+      + '<td style="padding:.5rem .7rem;font-weight:600;color:#1e293b">'+( m.maintenance_type||'' )+'</td>'
+      + '<td style="padding:.5rem .7rem;text-align:center">'+( m.interval_km ? fmt(m.interval_km)+' كم' : '—' )+'</td>'
+      + '<td style="padding:.5rem .7rem;text-align:center">'+( m.interval_days ? m.interval_days+' يوم' : '—' )+'</td>'
+      + '<td style="padding:.5rem .7rem;text-align:center">'+( m.last_done_km ? fmt(m.last_done_km)+' كم' : '—' )+'</td>'
+      + '<td style="padding:.5rem .7rem;text-align:center">'+( m.last_done_date||'—' )+'</td>'
       + '</tr>';
   }).join('');
-  const maintHtml = _mRows
-    ? '<table class="fc-maint-table"><thead><tr>'
-      + '<th>نوع الصيانة</th><th>كل كم</th><th>أو أيام</th><th>آخر كم</th><th>آخر تاريخ</th>'
-      + '</tr></thead><tbody>' + _mRows + '</tbody></table>'
-    : '<div style="color:var(--text-3);font-size:.8rem">لا يوجد جدول صيانة مسجل لهذه المركبة</div>';
+
+  const now = new Date();
+  const printDate = now.toLocaleDateString('ar-EG',{year:'numeric',month:'long',day:'numeric'});
 
   return `
-    <div class="fc-car-card">
-      <!-- Header -->
-      <div class="fc-car-header">
+  <!-- ══ PRINT STYLES ══ -->
+  <style>
+    @media print {
+      .no-print,.sidebar,.topbar,#sidebarOverlay,.fc-selector,#fcResults .fc-selector { display:none!important; }
+      @page { size:A4 portrait; margin:15mm 18mm; }
+      body,html { background:#fff!important; }
+      .fc-report { box-shadow:none!important; border:none!important; }
+      .fc-report-section { break-inside:avoid; }
+    }
+    .fc-report {
+      background:#fff;
+      border:1px solid #e2e8f0;
+      border-radius:12px;
+      overflow:hidden;
+      font-family:'Cairo',Arial,sans-serif;
+      direction:rtl;
+      color:#1e293b;
+    }
+    /* هيدر التقرير */
+    .fc-rpt-header {
+      background:linear-gradient(135deg,#1e3a5f 0%,#2d5a8e 100%);
+      color:#fff;
+      padding:1.4rem 1.8rem;
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+    }
+    .fc-rpt-title { font-size:1.15rem; font-weight:900; margin-bottom:.3rem; }
+    .fc-rpt-sub   { font-size:.78rem; opacity:.8; }
+    .fc-rpt-meta  { text-align:left; font-size:.75rem; opacity:.8; line-height:1.7; }
+
+    /* شريط الملخص */
+    .fc-rpt-summary {
+      display:grid;
+      grid-template-columns:repeat(4,1fr);
+      border-bottom:2px solid #e2e8f0;
+    }
+    .fc-rpt-sum-cell {
+      padding:.9rem 1.2rem;
+      border-left:1px solid #e2e8f0;
+      text-align:center;
+    }
+    .fc-rpt-sum-cell:last-child { border-left:none; }
+    .fc-rpt-sum-val  { font-size:1.1rem; font-weight:900; color:#b8860b; }
+    .fc-rpt-sum-lbl  { font-size:.72rem; color:#64748b; margin-top:.15rem; }
+
+    /* sections */
+    .fc-report-section { border-bottom:1px solid #e2e8f0; }
+    .fc-report-section:last-child { border-bottom:none; }
+    .fc-sec-title {
+      background:#f8fafc;
+      border-bottom:1px solid #e2e8f0;
+      padding:.6rem 1.4rem;
+      font-size:.78rem;
+      font-weight:800;
+      color:#64748b;
+      letter-spacing:.4px;
+      text-transform:uppercase;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .fc-2col {
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:0;
+    }
+    .fc-item {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:.5rem 1.4rem;
+      border-bottom:1px solid #f1f5f9;
+      font-size:.83rem;
+    }
+    .fc-item:last-child { border-bottom:none; }
+    .fc-item .lbl { color:#64748b; }
+    .fc-item .val { font-weight:700; color:#1e293b; }
+    .fc-item .val.gold { color:#b8860b; }
+
+    /* جدول */
+    .fc-tbl { width:100%; border-collapse:collapse; font-size:.78rem; }
+    .fc-tbl th {
+      background:#f8fafc;
+      color:#64748b;
+      font-weight:700;
+      padding:.5rem .7rem;
+      border-bottom:2px solid #e2e8f0;
+      text-align:center;
+      white-space:nowrap;
+    }
+    .fc-tbl th:first-child { text-align:right; }
+
+    /* confidence badge */
+    .conf-chip {
+      display:inline-block;
+      padding:.2rem .65rem;
+      border-radius:20px;
+      font-size:.72rem;
+      font-weight:700;
+    }
+    .conf-high-chip { background:#dcfce7; color:#15803d; }
+    .conf-med-chip  { background:#fef9c3; color:#92400e; }
+    .conf-low-chip  { background:#fee2e2; color:#b91c1c; }
+
+    @media(max-width:640px){
+      .fc-rpt-summary { grid-template-columns:1fr 1fr; }
+      .fc-2col { grid-template-columns:1fr; }
+      .fc-rpt-header { flex-direction:column; gap:.5rem; }
+    }
+  </style>
+
+  <!-- ══ زرار الطباعة ══ -->
+  <div class="no-print" style="display:flex;justify-content:flex-end;margin-bottom:.8rem">
+    <button class="btn btn-primary" onclick="window.print()" style="gap:.4rem">
+      🖨️ طباعة / PDF
+    </button>
+  </div>
+
+  <!-- ══ التقرير ══ -->
+  <div class="fc-report">
+
+    <!-- هيدر -->
+    <div class="fc-rpt-header">
+      <div>
+        <div class="fc-rpt-title">🗓️ خطة الصيانة والإصلاح</div>
+        <div class="fc-rpt-sub">المركبة: ${c.plate||'—'} &nbsp;·&nbsp; ${[c.model,c.branch,c.project].filter(Boolean).join(' · ')}</div>
+        <div class="fc-rpt-sub" style="margin-top:.3rem">شهر: ${c.forecast_month||_fcMonth||'—'} &nbsp;·&nbsp; الخوارزمية: ${c.algorithm||'WMA_v1'}</div>
+      </div>
+      <div class="fc-rpt-meta">
+        <div>تاريخ الإصدار: ${printDate}</div>
+        <div>نقاط البيانات: ${c.data_points||0} رحلة</div>
         <div>
-          <div class="plate">🚗 ${c.plate||'—'}</div>
-          <div class="meta">${[c.model,c.branch,c.project].filter(Boolean).join(' · ')}</div>
-        </div>
-        <span class="conf-pill ${cpill}">ثقة ${conf}%</span>
-      </div>
-
-      <!-- ميزانية -->
-      <div class="fc-section">
-        <div class="fc-section-title">💰 الميزانية الشهرية المتوقعة</div>
-        <div class="fc-row"><span class="name">⛽ وقود</span><span class="val2">${fmt(c.fuel_cost)} جنيه</span></div>
-        <div class="fc-row"><span class="name">🛠️ صيانة وإصلاح</span><span class="val2">${fmt(c.maint_cost)} جنيه</span></div>
-        <div class="fc-row"><span class="name">🔩 قطع غيار متوقعة</span><span class="val2">${fmt(Math.round((c.parts||[]).reduce((s,p)=>s+(p.est_cost||0)*(p.prob||0),0)))} جنيه</span></div>
-        <div class="fc-row" style="font-size:.95rem">
-          <span class="name" style="font-weight:800">الإجمالي</span>
-          <span class="val2" style="font-size:1.05rem;color:var(--gold)">${fmt(c.budget_total)} جنيه</span>
+          <span class="conf-chip ${conf>=70?'conf-high-chip':conf>=40?'conf-med-chip':'conf-low-chip'}">
+            نسبة الثقة ${conf}%
+          </span>
         </div>
       </div>
+    </div>
 
-      <!-- كيلومترات ووقود -->
-      <div class="fc-section">
-        <div class="fc-section-title">📏 الحركة والوقود</div>
-        <div class="fc-row"><span class="name">العداد الحالي</span><span class="val2">${fmt(c.current_km)} كم</span></div>
-        <div class="fc-row"><span class="name">الكيلومترات المتوقعة</span><span class="val2">${fmt(c.km_predicted)} كم</span></div>
-        <div class="fc-row"><span class="name">الاتجاه</span><span class="val2">${trendTxt}</span></div>
-        <div class="fc-row"><span class="name">استهلاك الوقود</span><span class="val2">${fmt(c.fuel_liters,1)} لتر &nbsp;·&nbsp; ${fmt(c.fuel_l_per_100,1)} L/100كم</span></div>
-        <div class="fc-row"><span class="name">زيارات الورشة المتوقعة</span><span class="val2">${fmt(c.maint_visits,1)} مرة</span></div>
-        <div class="fc-row"><span class="name">تكلفة الصيانة لكل 1000كم</span><span class="val2">${c.maint_cost_per_km?((c.maint_cost_per_km||0)*1000).toFixed(1)+' جنيه':'—'}</span></div>
-        <div class="fc-row"><span class="name">نقاط بيانات</span><span class="val2">${c.data_points||0} رحلة مسجلة</span></div>
+    <!-- ملخص الميزانية -->
+    <div class="fc-rpt-summary">
+      <div class="fc-rpt-sum-cell">
+        <div class="fc-rpt-sum-val">${fmt(c.fuel_cost)} ج</div>
+        <div class="fc-rpt-sum-lbl">⛽ ميزانية الوقود</div>
       </div>
+      <div class="fc-rpt-sum-cell">
+        <div class="fc-rpt-sum-val">${fmt(c.maint_cost)} ج</div>
+        <div class="fc-rpt-sum-lbl">🛠️ ميزانية الصيانة</div>
+      </div>
+      <div class="fc-rpt-sum-cell">
+        <div class="fc-rpt-sum-val">${fmt(Math.round(_partsFiltered.reduce(function(s,p){return s+(p.est_cost||0)*(p.prob||0);},0)))} ج</div>
+        <div class="fc-rpt-sum-lbl">🔩 قطع الغيار المتوقعة</div>
+      </div>
+      <div class="fc-rpt-sum-cell" style="background:#fffbeb">
+        <div class="fc-rpt-sum-val" style="font-size:1.2rem">${fmt(c.budget_total)} ج</div>
+        <div class="fc-rpt-sum-lbl" style="font-weight:700;color:#92400e">💰 الإجمالي الكلي</div>
+      </div>
+    </div>
 
-      <!-- قطع الغيار -->
-      <div class="fc-section">
-        <div class="fc-section-title">🔩 قطع الغيار المتوقع احتياجها</div>
-        ${partsHtml}
+    <!-- الحركة والوقود -->
+    <div class="fc-report-section">
+      <div class="fc-sec-title"><span>📏 الحركة والوقود</span></div>
+      <div class="fc-2col">
+        <div class="fc-item"><span class="lbl">العداد الحالي</span><span class="val">${fmt(c.current_km)} كم</span></div>
+        <div class="fc-item"><span class="lbl">الكيلومترات المتوقعة</span><span class="val gold">${fmt(c.km_predicted)} كم</span></div>
+        <div class="fc-item"><span class="lbl">اتجاه الحركة</span><span class="val">${trendTxt}</span></div>
+        <div class="fc-item"><span class="lbl">متوسط الحركة اليومية</span><span class="val">${fmt(Math.round((c.km_predicted||0)/30))} كم/يوم</span></div>
+        <div class="fc-item"><span class="lbl">الوقود المتوقع</span><span class="val">${fmt(c.fuel_liters,1)} لتر</span></div>
+        <div class="fc-item"><span class="lbl">معدل الاستهلاك</span><span class="val">${fmt(c.fuel_l_per_100,1)} لتر/100كم</span></div>
+        <div class="fc-item"><span class="lbl">زيارات الورشة المتوقعة</span><span class="val">${fmt(c.maint_visits,1)} مرة</span></div>
+        <div class="fc-item"><span class="lbl">تكلفة الصيانة / 1000كم</span><span class="val">${c.maint_cost_per_km?((c.maint_cost_per_km)*1000).toFixed(0)+' ج':'—'}</span></div>
       </div>
+    </div>
 
-      <!-- جدول الصيانة -->
-      <div class="fc-section">
-        <div class="fc-section-title">📅 جدول الصيانة الدورية</div>
-        ${maintHtml}
+    <!-- قطع الغيار -->
+    <div class="fc-report-section">
+      <div class="fc-sec-title">
+        <span>🔩 قطع الغيار المتوقع احتياجها</span>
+        <span style="font-size:.72rem;font-weight:400;color:#94a3b8">مرتبة حسب الأقرب موعداً</span>
       </div>
-    </div>`;
+      <div style="overflow-x:auto">
+        <table class="fc-tbl">
+          <thead>
+            <tr>
+              <th style="text-align:right">القطعة</th>
+              <th>الأولوية</th>
+              <th>الموعد المتوقع</th>
+              <th>عداد الاستحقاق</th>
+              <th style="text-align:left">التكلفة</th>
+            </tr>
+          </thead>
+          <tbody>${partsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- جدول الصيانة الدورية -->
+    <div class="fc-report-section">
+      <div class="fc-sec-title"><span>📅 جدول الصيانة الدورية المسجل</span></div>
+      ${_mRows
+        ? '<div style="overflow-x:auto"><table class="fc-tbl"><thead><tr><th style="text-align:right">نوع الصيانة</th><th>الفترة (كم)</th><th>الفترة (أيام)</th><th>آخر كم</th><th>آخر تاريخ</th></tr></thead><tbody>'+_mRows+'</tbody></table></div>'
+        : '<div style="padding:1rem 1.4rem;color:#94a3b8;font-size:.82rem">لا يوجد جدول صيانة مسجل لهذه المركبة</div>'
+      }
+    </div>
+
+    <!-- تذييل -->
+    <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:.7rem 1.4rem;display:flex;justify-content:space-between;align-items:center;font-size:.72rem;color:#94a3b8">
+      <span>تم إنشاء هذا التقرير بواسطة نظام إدارة الأسطول</span>
+      <span>نسبة الثقة في التوقع: <strong style="color:${confColor}">${conf}%</strong></span>
+    </div>
+
+  </div>`;
 }
+
+
 
 
 async function deleteRepairQuote(id) {
