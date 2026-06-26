@@ -20132,17 +20132,39 @@ function fcRenderCarCard(c, fmt) {
                  :'→ مستقر';
 
   // قطع الغيار
-  const partsHtml = (c.parts||[]).filter(p=>(p.prob||0)>0.05).map(p=>{
-    const pct   = Math.round((p.prob||0)*100);
-    const color = pct>=70?'#ef4444':pct>=40?'#f97316':'#10b981';
-    return `<div class="part-row">
-      <div class="part-prob" style="color:${color}">${pct}%</div>
-      <div class="part-bar"><div class="part-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-      <div class="part-name">${p.part_label||p.part_type}</div>
-      <div class="part-cost">${fmt(p.est_cost)} ج</div>
-      <div class="part-due">${p.due_date?'📅 '+p.due_date:p.due_km?'📍 '+fmt(p.due_km)+' كم':''}</div>
-    </div>`;
-  }).join('') || '<div style="color:var(--text-3);font-size:.8rem;padding:.3rem 0">لا توجد قطع متوقعة هذا الشهر</div>';
+  const _partsFiltered = (c.parts||[]).filter(p=>(p.prob||0)>0.05);
+  const partsHtml = _partsFiltered.length === 0
+    ? '<div style="color:var(--text-3);font-size:.8rem;padding:.5rem 0;text-align:center">✅ لا توجد قطع غيار مستحقة هذا الشهر</div>'
+    : _partsFiltered.map(function(p){
+        const pct   = Math.round((p.prob||0)*100);
+        const color = pct>=85?'#ef4444':pct>=60?'#f97316':pct>=30?'#eab308':'#10b981';
+        const urgency = pct>=85?'عاجل':pct>=60?'هذا الشهر':pct>=30?'قريب':'مراقبة';
+        const daysLeft  = p.days_until!=null ? Math.round(p.days_until) : null;
+        const kmLeft    = p.km_remaining!=null ? Math.round(p.km_remaining) : null;
+        const dueInfo   = daysLeft!=null
+          ? (daysLeft<=0 ? '<span style="color:#ef4444;font-weight:700">⚠️ فات الموعد</span>'
+            : '<span>📅 خلال '+daysLeft+' يوم · '+fmt(kmLeft)+' كم متبقية</span>')
+          : (p.due_date ? '<span>📅 '+p.due_date+'</span>' : '');
+        const dueLine   = p.due_km ? '<span style="color:var(--text-4)"> (عند '+fmt(p.due_km)+' كم)</span>' : '';
+
+        return '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:.5rem 1rem;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--border-light)">'
+          // العمود 1: الاسم + badge
+          + '<div>'
+            + '<div style="font-weight:700;font-size:.84rem">'+( p.part_label||p.part_type )+'</div>'
+            + '<div style="margin-top:.15rem"><span style="font-size:.68rem;font-weight:700;padding:.1rem .45rem;border-radius:20px;background:'+(pct>=85?'#fee2e2':pct>=60?'#ffedd5':pct>=30?'#fef9c3':'#dcfce7')+';color:'+color+'">'+urgency+'</span></div>'
+          + '</div>'
+          // العمود 2: شريط + موعد
+          + '<div>'
+            + '<div style="height:6px;background:var(--border);border-radius:3px;margin-bottom:.3rem;overflow:hidden"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+color+'"></div></div>'
+            + '<div style="font-size:.73rem;color:var(--text-3)">'+dueInfo+dueLine+'</div>'
+          + '</div>'
+          // العمود 3: التكلفة + نسبة
+          + '<div style="text-align:left">'
+            + '<div style="font-weight:800;font-size:.85rem;color:var(--gold)">'+fmt(p.est_cost)+' ج</div>'
+            + '<div style="font-size:.72rem;color:'+color+';font-weight:700">'+pct+'%</div>'
+          + '</div>'
+          + '</div>';
+      }).join('');
 
   // جدول الصيانة
   const _mRows = (c.maintenance_plan||[]).map(function(m){
