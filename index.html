@@ -2676,7 +2676,7 @@ function buildAdminNav() {
     {id:'ws-attachments', icon:'📎', label:'تتبع المرفقات'},
     {id:'ops-review', icon:'📝', label:'مراجعة العمليات'},
     {id:'ws-repair-quotes', icon:'🧾', label:'مقايسات الإصلاح'},
-    {id:'forecast',       icon:'🔮', label:'التخطيط والتنبؤ'},
+    {id:'forecast',       icon:'🗓️', label:'خطط الصيانة والإصلاح'},
     {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
@@ -19744,352 +19744,349 @@ function printRepairQuote(q) {
 
 
 
+
 // ═══════════════════════════════════════════════════════════
-// FORECAST — Planning & Forecast Dashboard
+// خطط الصيانة والإصلاح — Planning & Forecast
 // ═══════════════════════════════════════════════════════════
 let _fcData = null;
 let _fcMonth = null;
-let _fcFilters = { branch: '', project: '', equip: '', status: '' };
+let _fcSelectedCar = null;
+let _fcSelectedBranch = null;
 
 async function renderForecastSection() {
-  const c = document.getElementById('pageContent');
-  c.innerHTML = `
-    <style>
-      .fc-kpi { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin-bottom:1.5rem; }
-      .fc-kpi-card { background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:1.2rem 1.4rem; }
-      .fc-kpi-card .fc-icon { font-size:1.8rem; margin-bottom:.4rem; }
-      .fc-kpi-card .fc-val { font-size:1.5rem; font-weight:900; color:var(--gold); line-height:1; }
-      .fc-kpi-card .fc-lbl { font-size:.78rem; color:var(--text-3); margin-top:.3rem; }
-      .fc-kpi-card .fc-sub { font-size:.72rem; color:var(--text-4); margin-top:.1rem; }
+  const pg = document.getElementById('pageContent');
+  pg.innerHTML = `
+  <style>
+    .fc-wrap { max-width:900px; margin:0 auto; padding:1.2rem 1rem; }
 
-      .fc-table { width:100%; border-collapse:collapse; font-size:.82rem; }
-      .fc-table th { background:var(--surface-2); color:var(--text-2); font-weight:700; padding:.6rem .5rem; text-align:center; border-bottom:2px solid var(--border); white-space:nowrap; }
-      .fc-table td { padding:.5rem .4rem; border-bottom:1px solid var(--border-light); text-align:center; vertical-align:middle; }
-      .fc-table tr:hover td { background:var(--surface-hover); }
-      .fc-table .plate { font-weight:800; font-size:.9rem; color:var(--gold); }
+    /* فلتر الاختيار */
+    .fc-selector { background:var(--surface); border:1.5px solid var(--border); border-radius:16px; padding:1.4rem 1.6rem; margin-bottom:1.2rem; }
+    .fc-selector h3 { font-size:.95rem; font-weight:700; color:var(--text-2); margin:0 0 1rem; }
+    .fc-selector-grid { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }
+    .fc-selector-grid .form-group { margin:0; }
+    .fc-selector-grid label { font-size:.78rem; color:var(--text-3); font-weight:600; margin-bottom:.3rem; display:block; }
+    .fc-selector-grid select { width:100%; padding:.5rem .8rem; border:1.5px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font-size:.85rem; }
+    .fc-month-row { display:flex; gap:.8rem; align-items:center; margin-top:.8rem; }
+    .fc-month-row input[type=month] { padding:.5rem .8rem; border:1.5px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font-size:.85rem; flex:1; }
+    .fc-run-btn { flex:0; white-space:nowrap; }
 
-      .conf-bar { height:6px; border-radius:3px; background:var(--border); display:inline-block; width:60px; vertical-align:middle; position:relative; }
-      .conf-fill { height:100%; border-radius:3px; background:var(--gold); }
-      .badge-high   { background:#dcfce7; color:#166534; padding:.15rem .5rem; border-radius:20px; font-size:.7rem; font-weight:700; }
-      .badge-med    { background:#fef9c3; color:#854d0e; padding:.15rem .5rem; border-radius:20px; font-size:.7rem; font-weight:700; }
-      .badge-low    { background:#fee2e2; color:#991b1b; padding:.15rem .5rem; border-radius:20px; font-size:.7rem; font-weight:700; }
+    /* KPIs */
+    .fc-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:.8rem; margin-bottom:1.2rem; }
+    .fc-kpi { background:var(--surface); border:1.5px solid var(--border); border-radius:14px; padding:1rem 1.1rem; }
+    .fc-kpi .val { font-size:1.2rem; font-weight:900; color:var(--gold); line-height:1.1; margin-bottom:.2rem; }
+    .fc-kpi .lbl { font-size:.73rem; color:var(--text-3); }
 
-      .fc-filters { display:flex; gap:.6rem; flex-wrap:wrap; align-items:center; padding:.8rem 0; }
-      .fc-filters select, .fc-filters input { padding:.35rem .6rem; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); font-size:.82rem; }
+    /* بطاقة المركبة */
+    .fc-car-card { background:var(--surface); border:1.5px solid var(--border); border-radius:16px; overflow:hidden; }
+    .fc-car-header { background:var(--surface-2); border-bottom:1px solid var(--border); padding:1rem 1.4rem; display:flex; justify-content:space-between; align-items:center; }
+    .fc-car-header .plate { font-size:1.1rem; font-weight:900; color:var(--gold); }
+    .fc-car-header .meta { font-size:.75rem; color:var(--text-3); margin-top:.1rem; }
 
-      .part-tag { display:inline-block; background:rgba(184,134,11,.12); color:var(--gold); border:1px solid rgba(184,134,11,.3); border-radius:12px; padding:.1rem .5rem; font-size:.68rem; margin:.1rem; }
-      .part-tag.high { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+    /* sections داخل البطاقة */
+    .fc-section { padding:1rem 1.4rem; border-bottom:1px solid var(--border-light); }
+    .fc-section:last-child { border-bottom:none; }
+    .fc-section-title { font-size:.78rem; font-weight:700; color:var(--text-3); text-transform:uppercase; letter-spacing:.5px; margin-bottom:.7rem; }
+    .fc-row { display:flex; justify-content:space-between; align-items:center; padding:.25rem 0; font-size:.83rem; border-bottom:1px solid var(--border-light); }
+    .fc-row:last-child { border-bottom:none; }
+    .fc-row .name { color:var(--text-2); }
+    .fc-row .val2 { font-weight:700; color:var(--text); }
 
-      .fc-trend-up   { color:#16a34a; font-weight:700; }
-      .fc-trend-down { color:#dc2626; font-weight:700; }
-      .fc-trend-flat { color:#94a3b8; }
-    </style>
+    /* confidence */
+    .conf-pill { display:inline-flex; align-items:center; gap:.4rem; padding:.2rem .7rem; border-radius:20px; font-size:.75rem; font-weight:700; }
+    .conf-high { background:#dcfce7; color:#15803d; }
+    .conf-med  { background:#fef9c3; color:#92400e; }
+    .conf-low  { background:#fee2e2; color:#b91c1c; }
+    .conf-bar-wrap { height:5px; background:var(--border); border-radius:3px; flex:1; margin:0 .6rem; overflow:hidden; }
+    .conf-bar-fill { height:100%; border-radius:3px; }
 
-    <div class="card-header" style="padding:1.2rem 1.4rem 0">
-      <div class="card-title">🔮 التخطيط والتنبؤ</div>
-      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-        <input type="month" id="fcMonthPicker" value="${new Date().toISOString().slice(0,7)}"
-          style="padding:.35rem .6rem;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text)"
-          onchange="loadForecastData()">
-        <button class="btn btn-primary btn-sm" onclick="runForecast()" id="fcRunBtn">⚙️ تحديث التنبؤات</button>
-        <button class="btn btn-ghost btn-sm" onclick="loadForecastData()">🔄 تحديث</button>
+    /* parts */
+    .part-row { display:flex; align-items:center; gap:.6rem; padding:.4rem 0; border-bottom:1px solid var(--border-light); font-size:.82rem; }
+    .part-row:last-child { border-bottom:none; }
+    .part-prob { width:36px; font-weight:700; font-size:.75rem; text-align:center; }
+    .part-bar { flex:1; height:5px; background:var(--border); border-radius:3px; overflow:hidden; }
+    .part-bar-fill { height:100%; border-radius:3px; }
+    .part-name { min-width:110px; }
+    .part-cost { font-size:.75rem; color:var(--text-3); }
+    .part-due  { font-size:.72rem; color:var(--text-4); }
+
+    /* table صيانة دورية */
+    .fc-maint-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+    .fc-maint-table th { padding:.4rem .6rem; background:var(--surface-2); color:var(--text-3); font-weight:600; text-align:center; border-bottom:1.5px solid var(--border); }
+    .fc-maint-table th:first-child { text-align:right; }
+    .fc-maint-table td { padding:.4rem .6rem; border-bottom:1px solid var(--border-light); text-align:center; }
+    .fc-maint-table td:first-child { text-align:right; font-weight:600; }
+    .fc-maint-table tr:hover td { background:var(--surface-hover); }
+
+    /* fleet table */
+    .fc-fleet-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+    .fc-fleet-table th { padding:.5rem .6rem; background:var(--surface-2); color:var(--text-3); font-weight:600; text-align:center; border-bottom:2px solid var(--border); white-space:nowrap; }
+    .fc-fleet-table td { padding:.45rem .5rem; border-bottom:1px solid var(--border-light); text-align:center; vertical-align:middle; }
+    .fc-fleet-table tr:hover td { background:var(--surface-hover); }
+    .fc-fleet-table .plate-cell { font-weight:800; color:var(--gold); text-align:right; }
+
+    @media(max-width:600px){
+      .fc-kpis { grid-template-columns:1fr 1fr; }
+      .fc-selector-grid { grid-template-columns:1fr; }
+    }
+  </style>
+
+  <div class="fc-wrap">
+
+    <!-- ── اختيار المركبة أو الفرع ── -->
+    <div class="fc-selector">
+      <h3>🔍 اختر نطاق الخطة</h3>
+      <div class="fc-selector-grid">
+        <div class="form-group">
+          <label>المركبة</label>
+          <select id="fcCarSel">
+            <option value="">— كل المركبات —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>الفرع</label>
+          <select id="fcBranchSel">
+            <option value="">— كل الفروع —</option>
+          </select>
+        </div>
+      </div>
+      <div class="fc-month-row">
+        <input type="month" id="fcMonthPicker" value="${new Date().toISOString().slice(0,7)}">
+        <button class="btn btn-primary fc-run-btn" id="fcViewBtn" onclick="fcViewPlan()">📋 عرض الخطة</button>
+        <button class="btn btn-ghost fc-run-btn" id="fcRunBtn" onclick="fcRunAndView()" title="إعادة حساب التنبؤات">⚙️ تحديث</button>
       </div>
     </div>
 
-    <!-- KPI Cards -->
-    <div class="fc-kpi" id="fcKpis" style="padding:1rem 1.4rem 0">
-      <div class="fc-kpi-card"><div class="fc-icon">⏳</div><div class="fc-val">—</div><div class="fc-lbl">جارٍ التحميل</div></div>
-    </div>
+    <!-- ── النتائج ── -->
+    <div id="fcResults"></div>
 
-    <!-- Filters -->
-    <div class="fc-filters" style="padding:0 1.4rem">
-      <select id="fcBranch" onchange="applyFcFilters()"><option value="">كل الفروع</option></select>
-      <select id="fcProject" onchange="applyFcFilters()"><option value="">كل المشاريع</option></select>
-      <select id="fcEquip" onchange="applyFcFilters()"><option value="">كل أنواع المعدات</option></select>
-      <select id="fcStatus" onchange="applyFcFilters()">
-        <option value="">كل الحالات</option>
-        <option value="high">ثقة عالية (70%+)</option>
-        <option value="med">ثقة متوسطة (40-70%)</option>
-        <option value="low">ثقة منخفضة</option>
-      </select>
-      <input type="text" id="fcSearch" placeholder="🔍 بحث بالرقم أو النوع..." oninput="applyFcFilters()" style="min-width:160px">
-    </div>
+  </div>`;
 
-    <!-- Table -->
-    <div style="padding:0 1.4rem 1.4rem;overflow-x:auto">
-      <table class="fc-table">
-        <thead><tr>
-          <th>المركبة</th>
-          <th>العداد الحالي</th>
-          <th>الكيلومترات المتوقعة</th>
-          <th>الاتجاه</th>
-          <th>وقود (لتر)</th>
-          <th>تكلفة الوقود</th>
-          <th>الصيانة</th>
-          <th>زيارات الورش</th>
-          <th>الميزانية الكلية</th>
-          <th>قطع الغيار المتوقعة</th>
-          <th>نسبة الثقة</th>
-          <th></th>
-        </tr></thead>
-        <tbody id="fcTableBody">
-          <tr><td colspan="12" style="padding:2rem;color:var(--text-3)">⏳ جارٍ تحميل البيانات...</td></tr>
-        </tbody>
-      </table>
-    </div>`;
-
-  await loadForecastData();
+  await fcLoadFilters();
 }
 
-async function runForecast() {
+async function fcLoadFilters() {
+  try {
+    const [cars, branches] = await Promise.all([
+      apiCall('/cars').catch(()=>[]),
+      Promise.resolve([])
+    ]);
+    const carSel = document.getElementById('fcCarSel');
+    const brSel  = document.getElementById('fcBranchSel');
+    if (!carSel) return;
+
+    // المركبات
+    const activeCars = cars.filter(c => c.status !== 'inactive');
+    carSel.innerHTML = '<option value="">— كل المركبات —</option>' +
+      activeCars.map(c=>`<option value="${c.id}">${c.plate}${c.car_name?' — '+c.car_name:''}${c.branch?' ('+c.branch+')':''}</option>`).join('');
+
+    // الفروع
+    const uniqBranches = [...new Set(activeCars.map(c=>c.branch).filter(Boolean))].sort();
+    if (brSel) {
+      brSel.innerHTML = '<option value="">— كل الفروع —</option>' +
+        uniqBranches.map(b=>`<option value="${b}">${b}</option>`).join('');
+    }
+
+    // ربط الفلتر ببعض
+    carSel.addEventListener('change', ()=>{ if(carSel.value && brSel) brSel.value=''; });
+    brSel.addEventListener('change',  ()=>{ if(brSel.value  && carSel) carSel.value=''; });
+  } catch(e) {}
+}
+
+async function fcRunAndView() {
   const btn = document.getElementById('fcRunBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '⚙️ جارٍ الحساب...'; }
+  if(btn){btn.disabled=true;btn.textContent='⚙️ جارٍ...';}
   try {
     const month = document.getElementById('fcMonthPicker')?.value || new Date().toISOString().slice(0,7);
-    await apiCall(`/forecast/run?month=${month}`, 'POST');
-    showNotification('✅ تم تحديث التنبؤات بنجاح', 'success');
-    await loadForecastData();
-  } catch(e) {
-    showNotification('❌ ' + e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '⚙️ تحديث التنبؤات'; }
-  }
+    await apiCall(`/forecast/run?month=${month}`,'POST');
+    showNotification('✅ تم تحديث التنبؤات','success');
+    await fcViewPlan();
+  } catch(e){showNotification('❌ '+e.message,'error');}
+  finally{if(btn){btn.disabled=false;btn.textContent='⚙️ تحديث';}}
 }
 
-async function loadForecastData() {
+async function fcViewPlan() {
+  const res   = document.getElementById('fcResults');
   const month = document.getElementById('fcMonthPicker')?.value || new Date().toISOString().slice(0,7);
+  const carId  = document.getElementById('fcCarSel')?.value   || '';
+  const branch = document.getElementById('fcBranchSel')?.value || '';
+  _fcMonth = month;
+
+  if(!res) return;
+  res.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--text-3)"><div style="font-size:2rem">⏳</div><p>جارٍ تحميل الخطة...</p></div>`;
+
   try {
-    const data = await apiCall(`/forecast/results?month=${month}`);
-    _fcData   = data;
-    _fcMonth  = month;
-    renderFcKpis(data.summary);
-    populateFcFilters(data.cars);
-    applyFcFilters();
+    const url = `/forecast/results?month=${month}${branch?'&branch='+encodeURIComponent(branch):''}`;
+    const data = await apiCall(url);
+    _fcData = data;
+
+    let cars = data.cars || [];
+    if(carId) cars = cars.filter(c=> String(c.car_id)===String(carId));
+
+    if(!cars.length) {
+      res.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-3)">
+        <div style="font-size:2.5rem">📭</div>
+        <p style="margin-top:.5rem">لا توجد بيانات — اضغط <strong>⚙️ تحديث</strong> لحساب التنبؤات أولاً</p>
+      </div>`;
+      return;
+    }
+
+    const fmt = (v,d=0)=> v!=null ? Number(v).toLocaleString('ar-EG',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+
+    // عرض مركبة واحدة — بطاقة تفصيلية
+    if(carId || cars.length===1) {
+      res.innerHTML = fcRenderCarCard(cars[0], fmt);
+      return;
+    }
+
+    // عرض متعدد — KPIs + جدول
+    const s = data.summary || {};
+    const kpiHtml = `
+      <div class="fc-kpis">
+        <div class="fc-kpi"><div class="val">${fmt(Math.round(s.total_budget||0))} ج</div><div class="lbl">إجمالي الميزانية</div></div>
+        <div class="fc-kpi"><div class="val">${s.workshop_cars||0}</div><div class="lbl">مركبة تدخل الورشة</div></div>
+        <div class="fc-kpi"><div class="val">${fmt(Math.round(s.total_fuel_liters||0))} L</div><div class="lbl">إجمالي الوقود</div></div>
+        <div class="fc-kpi"><div class="val">${s.top_cost_car?.plate||'—'}</div><div class="lbl">أعلى تكلفة · ${fmt(Math.round(s.top_cost_car?.budget_total||0))} ج</div></div>
+      </div>`;
+
+    const tableRows = cars.map(c=>{
+      const conf = Math.round((c.confidence||0)*100);
+      const cpill = conf>=70?'conf-high':conf>=40?'conf-med':'conf-low';
+      const dueParts = (c.parts||[]).filter(p=>(p.prob||0)>=0.5).slice(0,3).map(p=>p.part_label||p.part_type).join(' · ')||'—';
+      return `<tr>
+        <td class="plate-cell">
+          <div>${c.plate||'—'}</div>
+          <div style="font-size:.7rem;color:var(--text-3);font-weight:400">${c.branch||''}</div>
+        </td>
+        <td>${fmt(c.current_km)} كم</td>
+        <td><strong>${fmt(c.km_predicted)}</strong> كم</td>
+        <td>${fmt(c.fuel_liters,1)} L</td>
+        <td>${fmt(c.maint_cost)} ج</td>
+        <td><strong style="color:var(--gold)">${fmt(c.budget_total)} ج</strong></td>
+        <td style="font-size:.72rem;max-width:130px">${dueParts}</td>
+        <td><span class="conf-pill ${cpill}">${conf}%</span></td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="fcShowOne(${c.car_id})">📋</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    res.innerHTML = kpiHtml + `
+      <div class="fc-car-card">
+        <div class="fc-car-header">
+          <div>
+            <div class="plate">🚗 جميع المركبات — ${month}</div>
+            <div class="meta">${cars.length} مركبة</div>
+          </div>
+        </div>
+        <div style="overflow-x:auto;padding:.5rem 0">
+          <table class="fc-fleet-table">
+            <thead><tr>
+              <th style="text-align:right">المركبة</th>
+              <th>العداد</th><th>الكم المتوقع</th><th>الوقود</th>
+              <th>الصيانة</th><th>الميزانية</th><th>قطع متوقعة</th><th>الثقة</th><th></th>
+            </tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      </div>`;
   } catch(e) {
-    const body = document.getElementById('fcTableBody');
-    if (body) body.innerHTML = `<tr><td colspan="12" style="padding:2rem;color:#dc2626">لا توجد بيانات — اضغط "تحديث التنبؤات" أولاً</td></tr>`;
+    res.innerHTML = `<div style="text-align:center;padding:2rem;color:#dc2626">❌ ${e.message}</div>`;
   }
 }
 
-function renderFcKpis(s) {
-  if (!s) return;
-  const kpis = document.getElementById('fcKpis');
-  if (!kpis) return;
-  const fmt = v => v ? Number(v).toLocaleString('ar-EG') : '—';
-  kpis.innerHTML = `
-    <div class="fc-kpi-card">
-      <div class="fc-icon">💰</div>
-      <div class="fc-val">${fmt(Math.round(s.total_budget))} جنيه</div>
-      <div class="fc-lbl">إجمالي الميزانية المتوقعة</div>
-      <div class="fc-sub">للشهر القادم · ${s.total_cars || 0} مركبة</div>
-    </div>
-    <div class="fc-kpi-card">
-      <div class="fc-icon">🛠️</div>
-      <div class="fc-val">${s.workshop_cars || 0} مركبة</div>
-      <div class="fc-lbl">متوقع دخولها الورشة</div>
-    </div>
-    <div class="fc-kpi-card">
-      <div class="fc-icon">⛽</div>
-      <div class="fc-val">${fmt(Math.round(s.total_fuel_liters))} لتر</div>
-      <div class="fc-lbl">إجمالي الوقود المتوقع</div>
-    </div>
-    <div class="fc-kpi-card">
-      <div class="fc-icon">🏆</div>
-      <div class="fc-val">${s.top_cost_car?.plate || '—'}</div>
-      <div class="fc-lbl">أعلى مركبة تكلفة</div>
-      <div class="fc-sub">${fmt(Math.round(s.top_cost_car?.budget_total || 0))} جنيه</div>
-    </div>
-    <div class="fc-kpi-card">
-      <div class="fc-icon">🔩</div>
-      <div class="fc-val">${(s.top_parts||[]).map(p=>p.label).slice(0,2).join(' · ') || '—'}</div>
-      <div class="fc-lbl">أكثر قطع الغيار احتياجاً</div>
+function fcShowOne(carId) {
+  // نغير الـ select ونعرض الخطة
+  const sel = document.getElementById('fcCarSel');
+  if(sel) { sel.value = carId; document.getElementById('fcBranchSel').value=''; }
+  fcViewPlan();
+}
+
+function fcRenderCarCard(c, fmt) {
+  const conf     = Math.round((c.confidence||0)*100);
+  const cpill    = conf>=70?'conf-high':conf>=40?'conf-med':'conf-low';
+  const confColor= conf>=70?'#16a34a':conf>=40?'#f97316':'#dc2626';
+  const trendTxt = (c.km_trend||0)>50?`↑ ${fmt(Math.round(c.km_trend))} كم/شهر زيادة`
+                 :(c.km_trend||0)<-50?`↓ ${fmt(Math.round(Math.abs(c.km_trend)))} كم/شهر نقص`
+                 :'→ مستقر';
+
+  // قطع الغيار
+  const partsHtml = (c.parts||[]).filter(p=>(p.prob||0)>0.05).map(p=>{
+    const pct   = Math.round((p.prob||0)*100);
+    const color = pct>=70?'#ef4444':pct>=40?'#f97316':'#10b981';
+    return `<div class="part-row">
+      <div class="part-prob" style="color:${color}">${pct}%</div>
+      <div class="part-bar"><div class="part-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="part-name">${p.part_label||p.part_type}</div>
+      <div class="part-cost">${fmt(p.est_cost)} ج</div>
+      <div class="part-due">${p.due_date?'📅 '+p.due_date:p.due_km?'📍 '+fmt(p.due_km)+' كم':''}</div>
+    </div>`;
+  }).join('') || '<div style="color:var(--text-3);font-size:.8rem;padding:.3rem 0">لا توجد قطع متوقعة هذا الشهر</div>';
+
+  // جدول الصيانة
+  const _mRows = (c.maintenance_plan||[]).map(function(m){
+    return '<tr>'
+      + '<td>'+( m.maintenance_type||'' )+'</td>'
+      + '<td>'+(m.interval_km  ? fmt(m.interval_km)+' كم'  : '—')+'</td>'
+      + '<td>'+(m.interval_days? m.interval_days+' يوم'     : '—')+'</td>'
+      + '<td>'+(m.last_done_km ? fmt(m.last_done_km)+' كم' : '—')+'</td>'
+      + '<td>'+(m.last_done_date||'—')+'</td>'
+      + '</tr>';
+  }).join('');
+  const maintHtml = _mRows
+    ? '<table class="fc-maint-table"><thead><tr>'
+      + '<th>نوع الصيانة</th><th>كل كم</th><th>أو أيام</th><th>آخر كم</th><th>آخر تاريخ</th>'
+      + '</tr></thead><tbody>' + _mRows + '</tbody></table>'
+    : '<div style="color:var(--text-3);font-size:.8rem">لا يوجد جدول صيانة مسجل لهذه المركبة</div>';
+
+  return `
+    <div class="fc-car-card">
+      <!-- Header -->
+      <div class="fc-car-header">
+        <div>
+          <div class="plate">🚗 ${c.plate||'—'}</div>
+          <div class="meta">${[c.model,c.branch,c.project].filter(Boolean).join(' · ')}</div>
+        </div>
+        <span class="conf-pill ${cpill}">ثقة ${conf}%</span>
+      </div>
+
+      <!-- ميزانية -->
+      <div class="fc-section">
+        <div class="fc-section-title">💰 الميزانية الشهرية المتوقعة</div>
+        <div class="fc-row"><span class="name">⛽ وقود</span><span class="val2">${fmt(c.fuel_cost)} جنيه</span></div>
+        <div class="fc-row"><span class="name">🛠️ صيانة وإصلاح</span><span class="val2">${fmt(c.maint_cost)} جنيه</span></div>
+        <div class="fc-row"><span class="name">🔩 قطع غيار متوقعة</span><span class="val2">${fmt(Math.round((c.parts||[]).reduce((s,p)=>s+(p.est_cost||0)*(p.prob||0),0)))} جنيه</span></div>
+        <div class="fc-row" style="font-size:.95rem">
+          <span class="name" style="font-weight:800">الإجمالي</span>
+          <span class="val2" style="font-size:1.05rem;color:var(--gold)">${fmt(c.budget_total)} جنيه</span>
+        </div>
+      </div>
+
+      <!-- كيلومترات ووقود -->
+      <div class="fc-section">
+        <div class="fc-section-title">📏 الحركة والوقود</div>
+        <div class="fc-row"><span class="name">العداد الحالي</span><span class="val2">${fmt(c.current_km)} كم</span></div>
+        <div class="fc-row"><span class="name">الكيلومترات المتوقعة</span><span class="val2">${fmt(c.km_predicted)} كم</span></div>
+        <div class="fc-row"><span class="name">الاتجاه</span><span class="val2">${trendTxt}</span></div>
+        <div class="fc-row"><span class="name">استهلاك الوقود</span><span class="val2">${fmt(c.fuel_liters,1)} لتر &nbsp;·&nbsp; ${fmt(c.fuel_l_per_100,1)} L/100كم</span></div>
+        <div class="fc-row"><span class="name">زيارات الورشة المتوقعة</span><span class="val2">${fmt(c.maint_visits,1)} مرة</span></div>
+        <div class="fc-row"><span class="name">تكلفة الصيانة لكل 1000كم</span><span class="val2">${c.maint_cost_per_km?((c.maint_cost_per_km||0)*1000).toFixed(1)+' جنيه':'—'}</span></div>
+        <div class="fc-row"><span class="name">نقاط بيانات</span><span class="val2">${c.data_points||0} رحلة مسجلة</span></div>
+      </div>
+
+      <!-- قطع الغيار -->
+      <div class="fc-section">
+        <div class="fc-section-title">🔩 قطع الغيار المتوقع احتياجها</div>
+        ${partsHtml}
+      </div>
+
+      <!-- جدول الصيانة -->
+      <div class="fc-section">
+        <div class="fc-section-title">📅 جدول الصيانة الدورية</div>
+        ${maintHtml}
+      </div>
     </div>`;
 }
 
-function populateFcFilters(cars) {
-  const branches = [...new Set(cars.map(c => c.branch).filter(Boolean))];
-  const projects = [...new Set(cars.map(c => c.project).filter(Boolean))];
-  const equips   = [...new Set(cars.map(c => c.equipment_type).filter(Boolean))];
-  const branchSel = document.getElementById('fcBranch');
-  const projSel   = document.getElementById('fcProject');
-  const equipSel  = document.getElementById('fcEquip');
-  if (branchSel) {
-    const cur = branchSel.value;
-    branchSel.innerHTML = '<option value="">كل الفروع</option>' + branches.map(b=>`<option value="${b}">${b}</option>`).join('');
-    branchSel.value = cur;
-  }
-  if (projSel) {
-    const cur = projSel.value;
-    projSel.innerHTML = '<option value="">كل المشاريع</option>' + projects.map(p=>`<option value="${p}">${p}</option>`).join('');
-    projSel.value = cur;
-  }
-  if (equipSel) {
-    const cur = equipSel.value;
-    equipSel.innerHTML = '<option value="">كل أنواع المعدات</option>' + equips.map(e=>`<option value="${e}">${e}</option>`).join('');
-    equipSel.value = cur;
-  }
-}
-
-function applyFcFilters() {
-  if (!_fcData) return;
-  const branch  = document.getElementById('fcBranch')?.value  || '';
-  const project = document.getElementById('fcProject')?.value || '';
-  const equip   = document.getElementById('fcEquip')?.value   || '';
-  const status  = document.getElementById('fcStatus')?.value  || '';
-  const search  = (document.getElementById('fcSearch')?.value || '').toLowerCase();
-
-  let cars = (_fcData.cars || []).filter(c => {
-    if (branch  && c.branch          !== branch)  return false;
-    if (project && c.project         !== project) return false;
-    if (equip   && c.equipment_type  !== equip)   return false;
-    if (status === 'high' && (c.confidence||0) < 0.7)   return false;
-    if (status === 'med'  && ((c.confidence||0) < 0.4 || (c.confidence||0) >= 0.7)) return false;
-    if (status === 'low'  && (c.confidence||0) >= 0.4)  return false;
-    if (search && !(c.plate||'').toLowerCase().includes(search) &&
-                  !(c.model||'').toLowerCase().includes(search)) return false;
-    return true;
-  });
-
-  renderFcTable(cars);
-}
-
-function renderFcTable(cars) {
-  const tbody = document.getElementById('fcTableBody');
-  if (!tbody) return;
-  if (!cars.length) {
-    tbody.innerHTML = '<tr><td colspan="12" style="padding:2rem;color:var(--text-3)">لا توجد مركبات تطابق الفلتر</td></tr>';
-    return;
-  }
-
-  const fmt = (v, dec=0) => v != null ? Number(v).toLocaleString('ar-EG', {minimumFractionDigits:dec,maximumFractionDigits:dec}) : '—';
-
-  tbody.innerHTML = cars.map(c => {
-    const conf     = Math.round((c.confidence||0)*100);
-    const confBadge = conf >= 70 ? `<span class="badge-high">${conf}%</span>` :
-                      conf >= 40 ? `<span class="badge-med">${conf}%</span>` :
-                                   `<span class="badge-low">${conf}%</span>`;
-    const confBar   = `<div class="conf-bar"><div class="conf-fill" style="width:${conf}%"></div></div>`;
-
-    const trendVal = c.km_trend || 0;
-    const trendHtml = trendVal > 50  ? `<span class="fc-trend-up">↑ ${fmt(trendVal)}</span>` :
-                      trendVal < -50 ? `<span class="fc-trend-down">↓ ${fmt(Math.abs(trendVal))}</span>` :
-                                       `<span class="fc-trend-flat">→ مستقر</span>`;
-
-    // قطع الغيار المتوقعة (احتمال ≥ 40%)
-    const dueParts = (c.parts||[]).filter(p => (p.prob||0) >= 0.4);
-    const partsHtml = dueParts.length
-      ? dueParts.slice(0,4).map(p =>
-          `<span class="part-tag ${p.prob>=0.7?'high':''}">${p.part_label} ${Math.round(p.prob*100)}%</span>`
-        ).join('')
-      : '<span style="color:var(--text-4);font-size:.7rem">لا يوجد</span>';
-
-    return `<tr>
-      <td>
-        <div class="plate">${c.plate||'—'}</div>
-        <div style="font-size:.7rem;color:var(--text-3)">${c.model||''}</div>
-        <div style="font-size:.68rem;color:var(--text-4)">${c.branch||''}</div>
-      </td>
-      <td>${fmt(c.current_km)} كم</td>
-      <td><strong>${fmt(c.km_predicted)}</strong> كم</td>
-      <td>${trendHtml}</td>
-      <td>${fmt(c.fuel_liters, 1)} L<br><span style="font-size:.7rem;color:var(--text-3)">${fmt(c.fuel_l_per_100,1)} L/100</span></td>
-      <td>${fmt(c.fuel_cost)} جنيه</td>
-      <td>${fmt(c.maint_cost)} جنيه<br><span style="font-size:.68rem;color:var(--text-3)">${c.maint_cost_per_km?(c.maint_cost_per_km*1000).toFixed(1)+' ج/1000كم':'—'}</span></td>
-      <td>${fmt(c.maint_visits, 1)} مرة</td>
-      <td><strong style="color:var(--gold)">${fmt(c.budget_total)} جنيه</strong></td>
-      <td style="max-width:160px">${partsHtml}</td>
-      <td>${confBadge}<br>${confBar}</td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="showCarForecastDetail(${c.car_id},'${c.plate}')" title="عرض الخطة التفصيلية">📋</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-async function showCarForecastDetail(carId, plate) {
-  const month = _fcMonth || new Date().toISOString().slice(0,7);
-  openModal(`<div class="modal-header"><div class="modal-title">📋 خطة ${plate} — ${month}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div style="text-align:center;padding:2rem"><div class="empty-icon">⏳</div><p>جارٍ التحميل...</p></div>`);
-  try {
-    const d = await apiCall(`/forecast/car/${carId}?month=${month}`);
-    const fmt = (v, dec=0) => v != null ? Number(v).toLocaleString('ar-EG', {minimumFractionDigits:dec,maximumFractionDigits:dec}) : '—';
-    const conf = Math.round((d.confidence||0)*100);
-
-    const partsRows = (d.parts||[]).filter(p=>(p.prob||0)>0.05).map(p => `
-      <tr>
-        <td style="font-weight:700">${p.part_label||p.part_type}</td>
-        <td><div style="background:#f1f5f9;border-radius:4px;height:8px;overflow:hidden"><div style="background:${p.prob>=0.7?'#ef4444':p.prob>=0.4?'#f97316':'#10b981'};width:${Math.round(p.prob*100)}%;height:100%"></div></div><span style="font-size:.75rem">${Math.round(p.prob*100)}%</span></td>
-        <td>${fmt(p.est_cost)} جنيه</td>
-        <td>${p.due_km ? fmt(p.due_km)+' كم' : '—'}</td>
-        <td>${p.due_date||'—'}</td>
-        <td>${fmt(p.avg_life_km)} كم</td>
-      </tr>`).join('');
-
-    const maintRows = (d.maintenance_plan||[]).map(m => `
-      <tr>
-        <td>${m.maintenance_type}</td>
-        <td>${m.interval_km ? fmt(m.interval_km)+' كم' : '—'}</td>
-        <td>${m.interval_days ? m.interval_days+' يوم' : '—'}</td>
-        <td>${m.last_done_km ? fmt(m.last_done_km)+' كم' : '—'}</td>
-        <td>${m.last_done_date||'—'}</td>
-      </tr>`).join('');
-
-    document.querySelector('.modal-body') ? null : null;
-    const modalContent = document.querySelector('[class*="modal"]');
-    if (modalContent) {
-      modalContent.innerHTML = `
-        <div class="modal-header"><div class="modal-title">📋 خطة ${plate} — ${month}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin:.8rem 0;font-size:.82rem">
-          <div style="background:var(--surface-2);padding:.8rem;border-radius:10px;text-align:center">
-            <div style="font-size:1.1rem;font-weight:900;color:var(--gold)">${fmt(d.km_predicted)} كم</div>
-            <div style="color:var(--text-3);font-size:.75rem">الكيلومترات المتوقعة</div>
-          </div>
-          <div style="background:var(--surface-2);padding:.8rem;border-radius:10px;text-align:center">
-            <div style="font-size:1.1rem;font-weight:900;color:#3b82f6">${fmt(d.budget_total)} جنيه</div>
-            <div style="color:var(--text-3);font-size:.75rem">الميزانية الإجمالية</div>
-          </div>
-          <div style="background:var(--surface-2);padding:.8rem;border-radius:10px;text-align:center">
-            <div style="font-size:1.1rem;font-weight:900;color:${conf>=70?'#16a34a':conf>=40?'#f97316':'#dc2626'}">${conf}%</div>
-            <div style="color:var(--text-3);font-size:.75rem">نسبة الثقة</div>
-          </div>
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin:.5rem 0;font-size:.8rem">
-          <div><strong>⛽ وقود:</strong> ${fmt(d.fuel_liters,1)} لتر · ${fmt(d.fuel_cost)} جنيه · ${fmt(d.fuel_l_per_100,1)} L/100km</div>
-          <div><strong>🛠️ صيانة:</strong> ${fmt(d.maint_cost)} جنيه · ${fmt(d.maint_visits,1)} زيارة</div>
-          <div><strong>💡 تكلفة/كم:</strong> ${d.maint_cost_per_km?(d.maint_cost_per_km*1000).toFixed(1)+' ج/1000كم':'—'}</div>
-          <div><strong>📊 نقاط بيانات:</strong> ${d.data_points} رحلة</div>
-        </div>
-
-        ${partsRows ? `
-        <div style="font-weight:700;margin:.8rem 0 .4rem">🔩 قطع الغيار المتوقع تغييرها:</div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:.78rem">
-            <thead style="background:var(--surface-2)">
-              <tr><th style="padding:.4rem">القطعة</th><th>الاحتمال</th><th>التكلفة</th><th>العداد المتوقع</th><th>التاريخ المتوقع</th><th>عمر القطعة</th></tr>
-            </thead>
-            <tbody>${partsRows}</tbody>
-          </table>
-        </div>` : ''}
-
-        ${maintRows ? `
-        <div style="font-weight:700;margin:.8rem 0 .4rem">📅 جدول الصيانة الدورية:</div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:.78rem">
-            <thead style="background:var(--surface-2)">
-              <tr><th style="padding:.4rem">النوع</th><th>كل كم</th><th>أو كل أيام</th><th>آخر كم</th><th>آخر تاريخ</th></tr>
-            </thead>
-            <tbody>${maintRows}</tbody>
-          </table>
-        </div>` : ''}
-
-        <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button></div>`;
-    }
-  } catch(e) {
-    showNotification('❌ ' + e.message, 'error');
-    closeModal();
-  }
-}
 
 async function deleteRepairQuote(id) {
   if (!confirm('تأكيد حذف مقايسة الإصلاح؟')) return;
