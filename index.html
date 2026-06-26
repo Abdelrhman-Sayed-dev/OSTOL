@@ -19836,15 +19836,19 @@ async function renderForecastSection() {
     <div class="fc-selector">
       <h3>🔍 اختر نطاق الخطة</h3>
       <div class="fc-selector-grid">
-        <div class="form-group">
+        <div class="form-group" style="position:relative">
           <label>المركبة</label>
-          <select id="fcCarSel">
-            <option value="">— كل المركبات —</option>
-          </select>
+          <div class="fc-search-wrap" id="fcCarWrap">
+            <input type="text" id="fcCarSearch" placeholder="ابحث بالرقم أو اسم السائق..." autocomplete="off"
+              style="width:100%;padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:.85rem"
+              oninput="fcFilterCarList()" onfocus="fcOpenCarList()" onblur="setTimeout(fcCloseCarList,200)">
+            <div id="fcCarDropdown" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:999;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;max-height:220px;overflow-y:auto;box-shadow:0 4px 20px rgba(0,0,0,.12);margin-top:2px"></div>
+            <input type="hidden" id="fcCarVal" value="">
+          </div>
         </div>
         <div class="form-group">
           <label>الفرع</label>
-          <select id="fcBranchSel">
+          <select id="fcBranchSel" style="width:100%;padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:.85rem">
             <option value="">— كل الفروع —</option>
           </select>
         </div>
@@ -19864,32 +19868,140 @@ async function renderForecastSection() {
   await fcLoadFilters();
 }
 
+let _fcAllCars = [];   // cache للمركبات
+
 async function fcLoadFilters() {
   try {
-    const [cars, branches] = await Promise.all([
+    const [cars, drivers] = await Promise.all([
       apiCall('/cars').catch(()=>[]),
-      Promise.resolve([])
+      apiCall('/drivers').catch(()=>[]),
     ]);
-    const carSel = document.getElementById('fcCarSel');
-    const brSel  = document.getElementById('fcBranchSel');
-    if (!carSel) return;
 
-    // المركبات
-    const activeCars = cars.filter(c => c.status !== 'inactive');
-    carSel.innerHTML = '<option value="">— كل المركبات —</option>' +
-      activeCars.map(c=>`<option value="${c.id}">${c.plate}${c.car_name?' — '+c.car_name:''}${c.branch?' ('+c.branch+')':''}</option>`).join('');
+    // دمج السائقين مع المركبات
+    const driverMap = {};
+    drivers.forEach(d => { if(d.user_id) driverMap[d.user_id] = d; });
+
+    _fcAllCars = cars
+      .filter(c => c.status !== 'inactive')
+      .map(c => {
+        // نحاول نجيب السائق المرتبط بالمركبة من الأذونات لو متوفرة
+        return {
+          id:     c.id,
+          plate:  c.plate,
+          name:   c.car_name || c.model || '',
+          branch: c.branch || '',
+          label:  [c.plate, c.car_name||c.model, c.branch].filter(Boolean).join(' — '),
+        };
+      });
+
+    // جلب السائقين بالمركبات عبر الأذونات
+    try {
+      const perms = await apiCall('/driver-car-permissions').catch(()=>[]);
+      perms.forEach(p => {
+        const car = _fcAllCars.find(c=>c.id===p.car_id);
+        const drv = drivers.find(d=>d.id===p.driver_id);
+        if(car && drv && !car.driverName) {
+          car.driverName = drv.name;
+          car.label = [car.plate, car.name, car.driverName, car.branch].filter(Boolean).join(' — ');
+        }
+      });
+    } catch(e){}
 
     // الفروع
-    const uniqBranches = [...new Set(activeCars.map(c=>c.branch).filter(Boolean))].sort();
+    const brSel = document.getElementById('fcBranchSel');
+    const uniqBranches = [...new Set(_fcAllCars.map(c=>c.branch).filter(Boolean))].sort();
     if (brSel) {
       brSel.innerHTML = '<option value="">— كل الفروع —</option>' +
-        uniqBranches.map(b=>`<option value="${b}">${b}</option>`).join('');
+        uniqBranches.map(b=>'<option value="'+b+'">'+b+'</option>').join('');
+      brSel.addEventListener('change', ()=>{
+        if(brSel.value) {
+          document.getElementById('fcCarSearch').value = '';
+          document.getElementById('fcCarVal').value = '';
+        }
+      });
     }
 
-    // ربط الفلتر ببعض
-    carSel.addEventListener('change', ()=>{ if(carSel.value && brSel) brSel.value=''; });
-    brSel.addEventListener('change',  ()=>{ if(brSel.value  && carSel) carSel.value=''; });
-  } catch(e) {}
+    // تهيئة الـ searchable car list
+    fcRenderCarList('');
+  } catch(e){ console.error('fcLoadFilters:', e); }
+}
+
+function fcRenderCarList(query) {
+  const dd = document.getElementById('fcCarDropdown');
+  if (!dd) return;
+  const q = (query||'').toLowerCase().trim();
+  const branchFilter = document.getElementById('fcBranchSel')?.value || '';
+  let filtered = _fcAllCars.slice();
+  if (branchFilter) filtered = filtered.filter(function(c){return c.branch===branchFilter;});
+  if (q) filtered = filtered.filter(function(c){return c.label.toLowerCase().includes(q);});
+
+  if (!filtered.length) {
+    dd.innerHTML = '';
+    var empty = document.createElement('div');
+    empty.style.cssText = 'padding:.6rem 1rem;color:var(--text-3);font-size:.82rem';
+    empty.textContent = 'لا توجد نتائج';
+    dd.appendChild(empty);
+    return;
+  }
+
+  dd.innerHTML = '';
+
+  // خيار "كل المركبات"
+  var allOpt = document.createElement('div');
+  allOpt.style.cssText = 'padding:.4rem .6rem;cursor:pointer;font-size:.82rem;color:var(--text-3);border-bottom:1px solid var(--border-light)';
+  allOpt.textContent = '— كل المركبات —';
+  allOpt.addEventListener('mousedown', function(){ fcSelectCar('', ''); });
+  dd.appendChild(allOpt);
+
+  filtered.slice(0, 60).forEach(function(c) {
+    var item = document.createElement('div');
+    item.style.cssText = 'padding:.45rem .8rem;cursor:pointer;border-bottom:1px solid var(--border-light)';
+    item.addEventListener('mouseover', function(){ item.style.background='var(--surface-hover)'; });
+    item.addEventListener('mouseout',  function(){ item.style.background=''; });
+    item.addEventListener('mousedown', function(){ fcSelectCar(c.id, c.plate + (c.driverName?' — '+c.driverName:'') + (c.branch?' ('+c.branch+')':'')); });
+
+    var plateDiv = document.createElement('div');
+    plateDiv.style.cssText = 'font-weight:700;color:var(--gold);font-size:.85rem';
+    plateDiv.textContent = '🚗 ' + c.plate;
+    item.appendChild(plateDiv);
+
+    var sub = [c.driverName?'👤 '+c.driverName:'', c.name, c.branch].filter(Boolean).join(' · ');
+    if (sub) {
+      var subDiv = document.createElement('div');
+      subDiv.style.cssText = 'font-size:.72rem;color:var(--text-3);margin-top:.1rem';
+      subDiv.textContent = sub;
+      item.appendChild(subDiv);
+    }
+    dd.appendChild(item);
+  });
+}
+
+function fcSelectCar(id, label) {
+  document.getElementById('fcCarVal').value    = id;
+  document.getElementById('fcCarSearch').value = id ? label : '';
+  document.getElementById('fcCarDropdown').style.display = 'none';
+  // لو اختار مركبة، اصفر الفرع
+  if (id) {
+    const brSel = document.getElementById('fcBranchSel');
+    if(brSel) brSel.value = '';
+  }
+}
+
+function fcFilterCarList() {
+  const q = document.getElementById('fcCarSearch')?.value || '';
+  // لو غير النص، امسح الاختيار
+  document.getElementById('fcCarVal').value = '';
+  fcRenderCarList(q);
+  fcOpenCarList();
+}
+
+function fcOpenCarList() {
+  const dd = document.getElementById('fcCarDropdown');
+  if(dd) { fcRenderCarList(document.getElementById('fcCarSearch')?.value||''); dd.style.display='block'; }
+}
+function fcCloseCarList() {
+  const dd = document.getElementById('fcCarDropdown');
+  if(dd) dd.style.display='none';
 }
 
 async function fcRunAndView() {
@@ -19907,7 +20019,7 @@ async function fcRunAndView() {
 async function fcViewPlan() {
   const res   = document.getElementById('fcResults');
   const month = document.getElementById('fcMonthPicker')?.value || new Date().toISOString().slice(0,7);
-  const carId  = document.getElementById('fcCarSel')?.value   || '';
+  const carId  = document.getElementById('fcCarVal')?.value   || '';
   const branch = document.getElementById('fcBranchSel')?.value || '';
   _fcMonth = month;
 
@@ -19919,8 +20031,13 @@ async function fcViewPlan() {
     const data = await apiCall(url);
     _fcData = data;
 
+    const branchSel = document.getElementById('fcBranchSel')?.value || '';
     let cars = data.cars || [];
-    if(carId) cars = cars.filter(c=> String(c.car_id)===String(carId));
+    if(carId) {
+      cars = cars.filter(c=> String(c.car_id)===String(carId));
+    } else if(branchSel) {
+      cars = cars.filter(c=> c.branch===branchSel);
+    }
 
     if(!cars.length) {
       res.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-3)">
@@ -19995,9 +20112,14 @@ async function fcViewPlan() {
 }
 
 function fcShowOne(carId) {
-  // نغير الـ select ونعرض الخطة
-  const sel = document.getElementById('fcCarSel');
-  if(sel) { sel.value = carId; document.getElementById('fcBranchSel').value=''; }
+  const car = _fcAllCars.find(c=>c.id===carId||c.id===Number(carId));
+  if(car) {
+    fcSelectCar(car.id, car.label);
+    const brSel = document.getElementById('fcBranchSel');
+    if(brSel) brSel.value='';
+  } else {
+    document.getElementById('fcCarVal').value = carId;
+  }
   fcViewPlan();
 }
 
