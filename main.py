@@ -16782,77 +16782,116 @@ def compute_forecast_for_car(
     # D. تنبؤ قطع الغيار
     # ──────────────────────────────────────
     parts_forecast = []
+    # متوسط الحركة اليومية (الأساس لحساب موعد الاستحقاق)
+    daily_km_avg = km_predicted / 30.0 if km_predicted > 0 else 0.0
+    # العداد الحالي للمركبة
+    current_km = max([float(t.get("end_odometer") or 0) for t in trips if t.get("end_odometer")] or [0])
+
     for part_type, life in PART_LIFECYCLE.items():
         part_recs = [r for r in workshop_records if r.get("type") == part_type]
         if not part_recs:
             continue
 
         change_count = len(part_recs)
-        # آخر تغيير
-        last_rec = max(part_recs, key=lambda r: r.get("created_at") or "")
-        last_date = (last_rec.get("created_at") or "")[:10]
-        last_km   = float(last_rec.get("odometer_reading") or 0)
-        avg_cost  = sum(float(r.get("price") or 0) for r in part_recs) / change_count
+        # آخر تغيير — نأخذ الأحدث بالكيلومتر ثم بالتاريخ
+        last_rec = max(part_recs, key=lambda r: (float(r.get("odometer_reading") or 0), r.get("created_at") or ""))
+        last_date_str = (last_rec.get("created_at") or "")[:10]
+        last_km = float(last_rec.get("odometer_reading") or 0)
+        avg_cost = sum(float(r.get("price") or 0) for r in part_recs) / change_count
 
-        # العمر الفعلي من البيانات
-        actual_life_km = life["avg_km"]
-        if change_count >= 2 and last_km > 0:
-            km_readings = sorted([float(r.get("odometer_reading") or 0) for r in part_recs if r.get("odometer_reading")])
-            if len(km_readings) >= 2:
-                diffs = [km_readings[i+1] - km_readings[i] for i in range(len(km_readings)-1)]
-                if diffs and all(d > 0 for d in diffs):
-                    actual_life_km = sum(diffs) / len(diffs)
+        # ── العمر الفعلي من البيانات الحقيقية ──
+        actual_life_km = life["avg_km"]   # افتراضي
+        km_readings = sorted([
+            float(r.get("odometer_reading") or 0)
+            for r in part_recs if r.get("odometer_reading") and float(r.get("odometer_reading") or 0) > 0
+        ])
+        if len(km_readings) >= 2:
+            diffs = [km_readings[i+1] - km_readings[i] for i in range(len(km_readings)-1)]
+            valid_diffs = [d for d in diffs if d > 100]  # فلتر القيم الشاذة
+            if valid_diffs:
+                actual_life_km = sum(valid_diffs) / len(valid_diffs)
 
-        # العداد الحالي للمركبة
-        current_km = max([float(t.get("end_odometer") or 0) for t in trips if t.get("end_odometer")] or [0])
-        next_due_km = last_km + actual_life_km if last_km > 0 else None
+        # ── حساب العداد المتوقع للاستحقاق القادم ──
+        if last_km > 0:
+            # عدد دورات كاملة مرت منذ آخر تغيير
+            if current_km > last_km:
+                cycles_since = int((current_km - last_km) / actual_life_km)
+                next_due_km = last_km + (cycles_since + 1) * actual_life_km
+            else:
+                next_due_km = last_km + actual_life_km
+        else:
+            next_due_km = None
+
+        # ── الكيلومترات المتبقية حتى الاستحقاق ──
         km_remaining = (next_due_km - current_km) if next_due_km and current_km > 0 else None
 
-        # هل ستحتاج هذا الشهر؟
-        prob = 0.0
-        due_date = None
-        if km_remaining is not None and km_predicted > 0:
-            if km_remaining <= 0:
-                prob = 0.95  # فات الموعد
-            elif km_remaining <= km_predicted:
-                prob = 0.80  # سيحتاج خلال الشهر
-            elif km_remaining <= km_predicted * 1.5:
-                prob = 0.40  # قريب
-            else:
-                prob = 0.10
+        # ── الأيام المتبقية بناءً على متوسط الحركة اليومية ──
+        days_until = None
+        due_date   = None
+        prob       = 0.0
 
-            # موعد التنفيذ المتوقع
-            if km_predicted > 0 and km_remaining is not None:
-                days_until = (km_remaining / km_predicted * 30) if km_remaining > 0 else 0
-                due_dt = target_dt + timedelta(days=max(0, days_until))
-                due_date = due_dt.strftime("%Y-%m-%d")
-        elif last_date:
-            # نعتمد على الأيام لو مفيش عداد
-            days_since = (now.date() - datetime.strptime(last_date, "%Y-%m-%d").date()).days if last_date else 9999
-            days_remaining = life["avg_days"] - days_since
-            if days_remaining <= 0:
-                prob = 0.90
-            elif days_remaining <= 30:
-                prob = 0.75
-            elif days_remaining <= 60:
-                prob = 0.35
+        if km_remaining is not None and daily_km_avg > 0:
+            days_until = km_remaining / daily_km_avg
+            due_dt     = now + timedelta(days=days_until)
+            due_date   = due_dt.strftime("%Y-%m-%d")
+
+            # ── الاحتمالية بناءً على متى يقع الاستحقاق ──
+            if km_remaining <= 0:
+                prob = 0.97   # فات الموعد — عاجل جداً
+            elif days_until <= 7:
+                prob = 0.95   # خلال أسبوع
+            elif days_until <= 30:
+                prob = 0.85   # خلال الشهر
+            elif days_until <= 45:
+                prob = 0.50   # الشهر القادم
+            elif days_until <= 60:
+                prob = 0.25   # بعدين بشوية
+            else:
+                prob = 0.05   # بعيد
+
+        elif last_date_str:
+            # fallback: نعتمد على الأيام لو مفيش عداد
+            try:
+                days_since = (now.date() - datetime.strptime(last_date_str, "%Y-%m-%d").date()).days
+            except Exception:
+                days_since = 9999
+            days_left_by_date = life["avg_days"] - days_since
+            if days_left_by_date <= 0:
+                prob = 0.85
+                due_date = now.strftime("%Y-%m-%d")
+            elif days_left_by_date <= 30:
+                prob = 0.60
+                due_date = (now + timedelta(days=days_left_by_date)).strftime("%Y-%m-%d")
+            elif days_left_by_date <= 60:
+                prob = 0.25
+                due_date = (now + timedelta(days=days_left_by_date)).strftime("%Y-%m-%d")
             else:
                 prob = 0.05
 
+        # نضيف فقط القطع اللي احتمالها > 5%
         if prob > 0.05:
             parts_forecast.append({
-                "part_type":   part_type,
-                "part_label":  life["label"],
-                "prob":        round(prob, 2),
-                "est_cost":    round(avg_cost, 2),
-                "due_km":      round(next_due_km, 0) if next_due_km else None,
-                "due_date":    due_date,
-                "avg_life_km": round(actual_life_km, 0),
-                "avg_life_days": life["avg_days"],
+                "part_type":    part_type,
+                "part_label":   life["label"],
+                "prob":         round(prob, 2),
+                "est_cost":     round(avg_cost, 2),
+                "due_km":       round(next_due_km, 0) if next_due_km else None,
+                "km_remaining": round(km_remaining, 0) if km_remaining is not None else None,
+                "days_until":   round(days_until, 1) if days_until is not None else None,
+                "due_date":     due_date,
+                "avg_life_km":  round(actual_life_km, 0),
+                "avg_life_days":life["avg_days"],
                 "change_count": change_count,
+                "last_km":      round(last_km, 0),
+                "last_date":    last_date_str,
+                "daily_km_avg": round(daily_km_avg, 1),
             })
 
-    parts_forecast.sort(key=lambda x: -x["prob"])
+    # ترتيب: الأقرب أولاً (بالأيام)، ثم الأعلى احتمالاً
+    parts_forecast.sort(key=lambda x: (
+        x.get("days_until") if x.get("days_until") is not None else 9999,
+        -x["prob"]
+    ))
 
     # ──────────────────────────────────────
     # E. الميزانية
