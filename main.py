@@ -726,6 +726,66 @@ def _safe_add_columns(c):
         FOREIGN KEY (car_id) REFERENCES cars(id) ON DELETE CASCADE
     )""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_maint_car ON maintenance_schedule(car_id)")
+    # ═══════════════════════════════════════════
+    # FORECAST MODULE — Planning & Forecast Tables
+    # ═══════════════════════════════════════════
+    c.execute("""CREATE TABLE IF NOT EXISTS forecast_results (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_id          INTEGER NOT NULL,
+        forecast_month  TEXT    NOT NULL,
+        generated_at    TEXT    NOT NULL,
+        km_predicted    REAL    DEFAULT 0,
+        km_trend        REAL    DEFAULT 0,
+        km_confidence   REAL    DEFAULT 0,
+        fuel_liters     REAL    DEFAULT 0,
+        fuel_cost       REAL    DEFAULT 0,
+        fuel_l_per_100  REAL    DEFAULT 0,
+        maint_cost      REAL    DEFAULT 0,
+        maint_visits    REAL    DEFAULT 0,
+        maint_cost_per_km REAL  DEFAULT 0,
+        budget_total    REAL    DEFAULT 0,
+        confidence      REAL    DEFAULT 0,
+        data_points     INTEGER DEFAULT 0,
+        algorithm       TEXT    DEFAULT 'WMA_v1',
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_fc_car ON forecast_results(car_id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_fc_month ON forecast_results(forecast_month)")
+    try: c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_fc_car_month ON forecast_results(car_id, forecast_month)")
+    except Exception: pass
+
+    c.execute("""CREATE TABLE IF NOT EXISTS forecast_parts (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        car_id      INTEGER NOT NULL,
+        forecast_month TEXT NOT NULL,
+        part_type   TEXT    NOT NULL,
+        part_label  TEXT    DEFAULT '',
+        prob        REAL    DEFAULT 0,
+        est_cost    REAL    DEFAULT 0,
+        due_km      REAL,
+        due_date    TEXT,
+        avg_life_km REAL,
+        avg_life_days INTEGER,
+        change_count INTEGER DEFAULT 0,
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE CASCADE
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_fcp_car ON forecast_parts(car_id, forecast_month)")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS forecast_settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        note  TEXT DEFAULT ''
+    )""")
+    for _k, _v, _n in [
+        ('fuel_price_per_liter','20','سعر اللتر الافتراضي'),
+        ('wma_weights','1,2,3,4','أوزان WMA'),
+        ('confidence_data_w','0.4','وزن كمية البيانات'),
+        ('confidence_reg_w','0.3','وزن انتظام البيانات'),
+        ('confidence_stab_w','0.3','وزن الاستقرار'),
+        ('forecast_horizon_months','3','أشهر التنبؤ'),
+    ]:
+        c.execute("INSERT OR IGNORE INTO forecast_settings VALUES(?,?,?)", (_k,_v,_n))
+
 
     # ── migration: avatar_url للمستخدمين ──
     try:
@@ -16420,6 +16480,499 @@ async def apply_maintenance_override(rid: int, cu: dict = Depends(require_admin)
         return {"ok": True, "updated_rows": updated, "km": km, "types": related}
 
 
+
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FORECAST ENGINE — Planning & Forecast Module
+# ═══════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════
+# FORECAST ENGINE — Planning & Forecast Module
+# Algorithm: WMA + Linear Trend + Statistical Rules
+# Designed for extensibility (Prophet/XGBoost ready)
+# ═══════════════════════════════════════════════════════════════════
+
+import math
+from datetime import datetime, date, timedelta
+from typing import List, Dict, Optional, Tuple, Any
+from collections import defaultdict
+
+
+# ── Part type mapping: workshop type → label + avg life ──
+PART_LIFECYCLE = {
+    "oil":               {"label": "تغيير زيت",        "avg_km": 5000,  "avg_days": 90},
+    "oil_motor":         {"label": "زيت محرك",          "avg_km": 5000,  "avg_days": 90},
+    "filter_oil":        {"label": "فلتر زيت",          "avg_km": 5000,  "avg_days": 90},
+    "filter":            {"label": "فلتر هواء",          "avg_km": 10000, "avg_days": 180},
+    "filter_air":        {"label": "فلتر هواء",          "avg_km": 10000, "avg_days": 180},
+    "filter_solar":      {"label": "فلتر سولار",         "avg_km": 10000, "avg_days": 180},
+    "tire":              {"label": "إطارات",             "avg_km": 40000, "avg_days": 730},
+    "battery":           {"label": "بطارية",             "avg_km": 0,     "avg_days": 730},
+    "belt":              {"label": "سيور",               "avg_km": 30000, "avg_days": 365},
+    "timing_belt":       {"label": "سير كاتينة",         "avg_km": 60000, "avg_days": 730},
+    "engine_overhaul":   {"label": "عمرة محرك",          "avg_km": 150000,"avg_days": 1825},
+    "engine_half_overhaul":{"label":"نصف عمرة محرك",    "avg_km": 80000, "avg_days": 1095},
+    "head_gasket":       {"label": "جوان وش سلندر",      "avg_km": 100000,"avg_days": 1825},
+    "fuel_pump_overhaul":{"label": "عمرة طرمبة وقود",    "avg_km": 80000, "avg_days": 1825},
+    "filter_ac":         {"label": "فلتر مكيف",          "avg_km": 15000, "avg_days": 365},
+    "oil_gear":          {"label": "زيت تروس",           "avg_km": 30000, "avg_days": 365},
+    "oil_brake":         {"label": "زيت فرامل",          "avg_km": 20000, "avg_days": 365},
+    "oil_hydro":         {"label": "زيت هيدروليك",       "avg_km": 20000, "avg_days": 365},
+}
+
+FUEL_TYPES = {"fuel_solar", "fuel_92", "fuel_95", "fuel_80", "fuel_cng"}
+
+
+def _wma(values: List[float], weights: List[float] = None) -> float:
+    """Weighted Moving Average — الأحدث وزنه أعلى"""
+    if not values:
+        return 0.0
+    n = len(values)
+    if weights is None:
+        weights = list(range(1, n + 1))
+    w = weights[-n:] if len(weights) >= n else weights + [weights[-1]] * (n - len(weights))
+    total_w = sum(w)
+    if total_w == 0:
+        return sum(values) / n
+    return sum(v * wt for v, wt in zip(values, w)) / total_w
+
+
+def _linear_trend(values: List[float]) -> Tuple[float, float]:
+    """Simple linear regression → (slope, intercept)"""
+    n = len(values)
+    if n < 2:
+        return 0.0, values[0] if values else 0.0
+    x_mean = (n - 1) / 2
+    y_mean = sum(values) / n
+    num = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(values))
+    den = sum((i - x_mean) ** 2 for i in range(n))
+    slope = num / den if den else 0.0
+    intercept = y_mean - slope * x_mean
+    return slope, intercept
+
+
+def _coefficient_of_variation(values: List[float]) -> float:
+    """CV = std/mean — يقيس الاستقرار (أقل = أفضل)"""
+    if len(values) < 2:
+        return 1.0
+    mean = sum(values) / len(values)
+    if mean == 0:
+        return 1.0
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    return math.sqrt(variance) / mean
+
+
+def _confidence_score(
+    data_points: int,
+    cv_km: float,
+    cv_cost: float,
+    has_fuel: bool,
+    has_maint: bool,
+    completeness: float,
+) -> float:
+    """
+    Confidence Score (0-1) مبني على:
+    - كمية البيانات (40%)
+    - انتظام الكيلومترات (30%)
+    - اكتمال البيانات (30%)
+    """
+    # كمية البيانات: 3 رحلات = 30%، 10 = 70%، 30+ = 100%
+    data_score = min(1.0, data_points / 30)
+
+    # انتظام: CV أقل من 0.2 = ممتاز، فوق 1.0 = ضعيف
+    regularity = max(0.0, 1.0 - cv_km)
+    cost_reg   = max(0.0, 1.0 - cv_cost * 0.5) if has_maint else 0.5
+
+    # اكتمال: هل عنده وقود وصيانة مسجلة؟
+    completeness_score = completeness
+
+    confidence = (
+        0.40 * data_score +
+        0.30 * regularity +
+        0.20 * completeness_score +
+        0.10 * ((1 if has_fuel else 0) + (1 if has_maint else 0)) / 2
+    )
+    return round(min(1.0, max(0.05, confidence)), 3)
+
+
+def _months_between(d1: str, d2: str) -> int:
+    """عدد الأشهر بين تاريخين YYYY-MM-DD"""
+    try:
+        a = datetime.strptime(d1[:10], "%Y-%m-%d")
+        b = datetime.strptime(d2[:10], "%Y-%m-%d")
+        return abs((b.year - a.year) * 12 + b.month - a.month)
+    except Exception:
+        return 0
+
+
+def compute_forecast_for_car(
+    car_id: int,
+    car_plate: str,
+    trips: List[Dict],
+    workshop_records: List[Dict],
+    maintenance_schedule: List[Dict],
+    settings: Dict[str, str],
+    target_month: str,  # YYYY-MM
+) -> Dict[str, Any]:
+    """
+    الـ Forecast Engine الأساسي — قابل للاستبدال بـ Prophet/XGBoost
+    يرجع dict كامل بكل التنبؤات
+    """
+    now = datetime.utcnow()
+    target_dt = datetime.strptime(target_month, "%Y-%m")
+    fuel_price = float(settings.get("fuel_price_per_liter", "20"))
+    wma_w = [float(x) for x in settings.get("wma_weights", "1,2,3,4").split(",")]
+
+    # ──────────────────────────────────────
+    # A. تحليل الكيلومترات الشهرية
+    # ──────────────────────────────────────
+    # نجمّع الكيلومترات لكل شهر
+    monthly_km: Dict[str, float] = defaultdict(float)
+    for t in trips:
+        if not t.get("start_odometer") or not t.get("end_odometer"):
+            continue
+        km = float(t["end_odometer"]) - float(t["start_odometer"])
+        if km <= 0 or km > 5000:  # فلتر القيم الشاذة
+            continue
+        ts = (t.get("end_time") or t.get("start_time") or "")[:7]  # YYYY-MM
+        if ts:
+            monthly_km[ts] += km
+
+    sorted_months = sorted(monthly_km.keys())
+    km_series = [monthly_km[m] for m in sorted_months]
+    data_points = len([t for t in trips if t.get("end_odometer")])
+
+    # WMA للتنبؤ
+    km_wma = _wma(km_series, wma_w) if km_series else 0.0
+
+    # Linear Trend
+    slope, intercept = _linear_trend(km_series)
+    n_ahead = len(km_series)
+    km_trend_predicted = intercept + slope * n_ahead
+
+    # الكيلومترات المتوقعة = WMA (70%) + Trend (30%)
+    km_predicted = km_wma * 0.7 + max(0, km_trend_predicted) * 0.3 if km_series else 0.0
+
+    # CV للانتظام
+    cv_km = _coefficient_of_variation(km_series)
+
+    # ──────────────────────────────────────
+    # B. تحليل الوقود
+    # ──────────────────────────────────────
+    fuel_records = [r for r in workshop_records if r.get("type") in FUEL_TYPES]
+    total_fuel_liters = sum(float(r.get("quantity") or 0) for r in fuel_records)
+    total_fuel_cost   = sum(float(r.get("price") or 0) for r in fuel_records)
+    has_fuel = len(fuel_records) > 0
+
+    # كيلومترات إجمالية من الرحلات
+    total_km_all = sum(km_series) if km_series else 1
+
+    # L/100km
+    l_per_100 = (total_fuel_liters / total_km_all * 100) if total_km_all > 0 and total_fuel_liters > 0 else 0.0
+
+    # تكلفة الوقود لكل كم
+    fuel_cost_per_km = total_fuel_cost / total_km_all if total_km_all > 0 and total_fuel_cost > 0 else 0.0
+
+    # التنبؤ
+    pred_fuel_liters = (km_predicted * l_per_100 / 100) if l_per_100 > 0 else 0.0
+    pred_fuel_cost   = (fuel_cost_per_km * km_predicted) if fuel_cost_per_km > 0 else (pred_fuel_liters * fuel_price)
+
+    # ──────────────────────────────────────
+    # C. تحليل الصيانة
+    # ──────────────────────────────────────
+    maint_records = [r for r in workshop_records if r.get("type") not in FUEL_TYPES]
+    total_maint_cost = sum(float(r.get("price") or 0) for r in maint_records)
+    has_maint = len(maint_records) > 0
+    cv_cost = _coefficient_of_variation([float(r.get("price") or 0) for r in maint_records]) if maint_records else 1.0
+
+    # تكلفة الصيانة لكل كم
+    maint_cost_per_km = total_maint_cost / total_km_all if total_km_all > 0 and total_maint_cost > 0 else 0.0
+
+    # تكلفة الصيانة لكل يوم
+    if workshop_records:
+        dates = [r["created_at"][:10] for r in maint_records if r.get("created_at")]
+        if len(dates) >= 2:
+            d_min = min(dates)
+            d_max = max(dates)
+            span_days = max(1, (datetime.strptime(d_max, "%Y-%m-%d") - datetime.strptime(d_min, "%Y-%m-%d")).days)
+            maint_cost_per_day = total_maint_cost / span_days
+        else:
+            maint_cost_per_day = total_maint_cost / 30
+    else:
+        maint_cost_per_day = 0.0
+
+    # معدل دخول الورشة الشهري
+    monthly_visits: Dict[str, int] = defaultdict(int)
+    for r in maint_records:
+        ts = (r.get("created_at") or "")[:7]
+        if ts:
+            monthly_visits[ts] += 1
+    avg_visits = sum(monthly_visits.values()) / len(monthly_visits) if monthly_visits else 0.0
+
+    # التنبؤ بتكلفة الصيانة = weighted(per_km + per_day)
+    pred_maint_from_km  = maint_cost_per_km * km_predicted
+    pred_maint_from_day = maint_cost_per_day * 30
+    # لو عنده بيانات كيلومتر كويسة → نعتمد per_km أكتر
+    if km_predicted > 0 and maint_cost_per_km > 0:
+        pred_maint_cost = pred_maint_from_km * 0.6 + pred_maint_from_day * 0.4
+    else:
+        pred_maint_cost = pred_maint_from_day
+
+    pred_visits = _wma(list(monthly_visits.values()), wma_w) if monthly_visits else 0.0
+
+    # ──────────────────────────────────────
+    # D. تنبؤ قطع الغيار
+    # ──────────────────────────────────────
+    parts_forecast = []
+    for part_type, life in PART_LIFECYCLE.items():
+        part_recs = [r for r in workshop_records if r.get("type") == part_type]
+        if not part_recs:
+            continue
+
+        change_count = len(part_recs)
+        # آخر تغيير
+        last_rec = max(part_recs, key=lambda r: r.get("created_at") or "")
+        last_date = (last_rec.get("created_at") or "")[:10]
+        last_km   = float(last_rec.get("odometer_reading") or 0)
+        avg_cost  = sum(float(r.get("price") or 0) for r in part_recs) / change_count
+
+        # العمر الفعلي من البيانات
+        actual_life_km = life["avg_km"]
+        if change_count >= 2 and last_km > 0:
+            km_readings = sorted([float(r.get("odometer_reading") or 0) for r in part_recs if r.get("odometer_reading")])
+            if len(km_readings) >= 2:
+                diffs = [km_readings[i+1] - km_readings[i] for i in range(len(km_readings)-1)]
+                if diffs and all(d > 0 for d in diffs):
+                    actual_life_km = sum(diffs) / len(diffs)
+
+        # العداد الحالي للمركبة
+        current_km = max([float(t.get("end_odometer") or 0) for t in trips if t.get("end_odometer")] or [0])
+        next_due_km = last_km + actual_life_km if last_km > 0 else None
+        km_remaining = (next_due_km - current_km) if next_due_km and current_km > 0 else None
+
+        # هل ستحتاج هذا الشهر؟
+        prob = 0.0
+        due_date = None
+        if km_remaining is not None and km_predicted > 0:
+            if km_remaining <= 0:
+                prob = 0.95  # فات الموعد
+            elif km_remaining <= km_predicted:
+                prob = 0.80  # سيحتاج خلال الشهر
+            elif km_remaining <= km_predicted * 1.5:
+                prob = 0.40  # قريب
+            else:
+                prob = 0.10
+
+            # موعد التنفيذ المتوقع
+            if km_predicted > 0 and km_remaining is not None:
+                days_until = (km_remaining / km_predicted * 30) if km_remaining > 0 else 0
+                due_dt = target_dt + timedelta(days=max(0, days_until))
+                due_date = due_dt.strftime("%Y-%m-%d")
+        elif last_date:
+            # نعتمد على الأيام لو مفيش عداد
+            days_since = (now.date() - datetime.strptime(last_date, "%Y-%m-%d").date()).days if last_date else 9999
+            days_remaining = life["avg_days"] - days_since
+            if days_remaining <= 0:
+                prob = 0.90
+            elif days_remaining <= 30:
+                prob = 0.75
+            elif days_remaining <= 60:
+                prob = 0.35
+            else:
+                prob = 0.05
+
+        if prob > 0.05:
+            parts_forecast.append({
+                "part_type":   part_type,
+                "part_label":  life["label"],
+                "prob":        round(prob, 2),
+                "est_cost":    round(avg_cost, 2),
+                "due_km":      round(next_due_km, 0) if next_due_km else None,
+                "due_date":    due_date,
+                "avg_life_km": round(actual_life_km, 0),
+                "avg_life_days": life["avg_days"],
+                "change_count": change_count,
+            })
+
+    parts_forecast.sort(key=lambda x: -x["prob"])
+
+    # ──────────────────────────────────────
+    # E. الميزانية
+    # ──────────────────────────────────────
+    parts_cost = sum(p["est_cost"] * p["prob"] for p in parts_forecast)
+    budget_total = pred_fuel_cost + pred_maint_cost + parts_cost
+
+    # ──────────────────────────────────────
+    # F. نسبة الثقة
+    # ──────────────────────────────────────
+    completeness = min(1.0, (
+        (0.4 if has_fuel else 0) +
+        (0.4 if has_maint else 0) +
+        (0.2 if len(km_series) >= 3 else len(km_series) * 0.07)
+    ))
+    confidence = _confidence_score(
+        data_points=data_points,
+        cv_km=cv_km,
+        cv_cost=cv_cost,
+        has_fuel=has_fuel,
+        has_maint=has_maint,
+        completeness=completeness,
+    )
+
+    return {
+        "car_id":          car_id,
+        "car_plate":       car_plate,
+        "forecast_month":  target_month,
+        "generated_at":    now.isoformat() + "Z",
+        "algorithm":       "WMA_v1",
+        "data_points":     data_points,
+        # كيلومترات
+        "km_predicted":    round(km_predicted, 1),
+        "km_trend":        round(slope, 2),
+        "km_confidence":   round(min(1.0, max(0.0, 1 - cv_km)), 2),
+        "km_series":       {m: round(v, 1) for m, v in zip(sorted_months, km_series)},
+        # وقود
+        "fuel_liters":     round(pred_fuel_liters, 1),
+        "fuel_cost":       round(pred_fuel_cost, 2),
+        "fuel_l_per_100":  round(l_per_100, 2),
+        "fuel_cost_per_km":round(fuel_cost_per_km, 4),
+        # صيانة
+        "maint_cost":      round(pred_maint_cost, 2),
+        "maint_visits":    round(pred_visits, 1),
+        "maint_cost_per_km": round(maint_cost_per_km, 4),
+        # قطع الغيار
+        "parts":           parts_forecast,
+        # ميزانية
+        "fuel_budget":     round(pred_fuel_cost, 2),
+        "maint_budget":    round(pred_maint_cost + parts_cost, 2),
+        "budget_total":    round(budget_total, 2),
+        # ثقة
+        "confidence":      confidence,
+        "confidence_pct":  round(confidence * 100, 1),
+    }
+
+
+# ── POST /forecast/run ──
+@app.post("/forecast/run")
+async def run_forecast(month: Optional[str] = None, cu: dict = Depends(require_admin)):
+    target_month = month or datetime.utcnow().strftime("%Y-%m")
+    results = []
+    with get_db() as conn:
+        c = conn.cursor()
+        settings = dict((r[0], r[1]) for r in c.execute("SELECT key,value FROM forecast_settings").fetchall())
+        cars = [dict(r) for r in c.execute("SELECT * FROM cars WHERE status != 'inactive'").fetchall()]
+        now = datetime.utcnow().isoformat() + "Z"
+        for car in cars:
+            cid = car["id"]
+            trips   = [dict(r) for r in c.execute("SELECT * FROM trips WHERE car_id=? AND start_time >= date('now','-120 days')", (cid,)).fetchall()]
+            ws_recs = [dict(r) for r in c.execute("SELECT * FROM workshop_records WHERE vehicle_id=? AND created_at >= date('now','-120 days')", (cid,)).fetchall()]
+            maint   = [dict(r) for r in c.execute("SELECT * FROM maintenance_schedule WHERE car_id=?", (cid,)).fetchall()]
+            fc = compute_forecast_for_car(
+                car_id=cid, car_plate=car.get("plate",""),
+                trips=trips, workshop_records=ws_recs,
+                maintenance_schedule=maint, settings=settings, target_month=target_month,
+            )
+            c.execute(
+                "INSERT OR REPLACE INTO forecast_results (car_id,forecast_month,generated_at,km_predicted,km_trend,km_confidence,fuel_liters,fuel_cost,fuel_l_per_100,maint_cost,maint_visits,maint_cost_per_km,budget_total,confidence,data_points,algorithm) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (cid, target_month, now, fc["km_predicted"], fc["km_trend"], fc["km_confidence"],
+                 fc["fuel_liters"], fc["fuel_cost"], fc["fuel_l_per_100"],
+                 fc["maint_cost"], fc["maint_visits"], fc["maint_cost_per_km"],
+                 fc["budget_total"], fc["confidence"], fc["data_points"], fc["algorithm"])
+            )
+            c.execute("DELETE FROM forecast_parts WHERE car_id=? AND forecast_month=?", (cid, target_month))
+            for p in fc.get("parts", []):
+                c.execute(
+                    "INSERT INTO forecast_parts (car_id,forecast_month,part_type,part_label,prob,est_cost,due_km,due_date,avg_life_km,avg_life_days,change_count) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    (cid, target_month, p["part_type"], p["part_label"], p["prob"], p["est_cost"],
+                     p.get("due_km"), p.get("due_date"), p.get("avg_life_km"), p.get("avg_life_days"), p["change_count"])
+                )
+            fc.update({"branch": car.get("branch",""), "project": car.get("project",""),
+                       "model": car.get("model",""), "equipment_type": car.get("equipment_type",""),
+                       "sector": car.get("sector","")})
+            results.append(fc)
+    return {"ok": True, "month": target_month, "cars": len(results), "results": results}
+
+
+# ── GET /forecast/results ──
+@app.get("/forecast/results")
+async def get_forecast_results(month: Optional[str] = None, branch: Optional[str] = None,
+                                cu: dict = Depends(require_admin_or_reporter)):
+    target_month = month or datetime.utcnow().strftime("%Y-%m")
+    with get_db() as conn:
+        c = conn.cursor()
+        query = "SELECT fr.*,c.plate,c.model,c.branch,c.project,c.equipment_type,c.sector,c.status as car_status,(SELECT MAX(end_odometer) FROM trips WHERE car_id=fr.car_id AND end_odometer IS NOT NULL) as current_km FROM forecast_results fr JOIN cars c ON c.id=fr.car_id WHERE fr.forecast_month=?"
+        params = [target_month]
+        if branch:
+            query += " AND c.branch=?"
+            params.append(branch)
+        query += " ORDER BY fr.budget_total DESC"
+        rows = [dict(r) for r in c.execute(query, params).fetchall()]
+        parts_map = defaultdict(list)
+        if rows:
+            car_ids = [r["car_id"] for r in rows]
+            ph = ",".join("?" * len(car_ids))
+            for p in c.execute(f"SELECT * FROM forecast_parts WHERE car_id IN ({ph}) AND forecast_month=? ORDER BY prob DESC", car_ids + [target_month]).fetchall():
+                d = dict(p)
+                parts_map[d["car_id"]].append(d)
+        for r in rows:
+            r["parts"] = parts_map.get(r["car_id"], [])
+            r["confidence_pct"] = round((r.get("confidence") or 0) * 100, 1)
+        total_budget  = sum(r.get("budget_total") or 0 for r in rows)
+        total_fuel    = sum(r.get("fuel_liters") or 0 for r in rows)
+        workshop_cars = sum(1 for r in rows if (r.get("maint_visits") or 0) > 0.5)
+        top_cost_car  = max(rows, key=lambda r: r.get("budget_total") or 0) if rows else None
+        part_counts = defaultdict(lambda: {"count": 0, "label": ""})
+        for r in rows:
+            for p in r["parts"]:
+                if (p.get("prob") or 0) >= 0.5:
+                    pt = p["part_type"]
+                    part_counts[pt]["count"] += 1
+                    part_counts[pt]["label"] = p.get("part_label", pt)
+        top_parts = sorted(part_counts.items(), key=lambda x: -x[1]["count"])[:5]
+        return {
+            "month": target_month, "cars": rows,
+            "summary": {
+                "total_budget": round(total_budget, 2),
+                "total_fuel_liters": round(total_fuel, 1),
+                "workshop_cars": workshop_cars,
+                "total_cars": len(rows),
+                "top_cost_car": top_cost_car,
+                "top_parts": [{"type": k, **v} for k, v in top_parts],
+                "generated": rows[0].get("generated_at") if rows else None,
+            }
+        }
+
+
+# ── GET /forecast/car/{car_id} ──
+@app.get("/forecast/car/{car_id}")
+async def get_car_forecast(car_id: int, month: Optional[str] = None,
+                            cu: dict = Depends(require_admin_or_reporter)):
+    target_month = month or datetime.utcnow().strftime("%Y-%m")
+    with get_db() as conn:
+        c = conn.cursor()
+        row = c.execute("SELECT * FROM forecast_results WHERE car_id=? AND forecast_month=?", (car_id, target_month)).fetchone()
+        if not row:
+            raise HTTPException(404, "لم يتم حساب التنبؤ — شغّل /forecast/run أولاً")
+        result = dict(row)
+        result["parts"] = [dict(p) for p in c.execute("SELECT * FROM forecast_parts WHERE car_id=? AND forecast_month=? ORDER BY prob DESC", (car_id, target_month)).fetchall()]
+        result["confidence_pct"] = round((result.get("confidence") or 0) * 100, 1)
+        result["maintenance_plan"] = [dict(r) for r in c.execute("SELECT * FROM maintenance_schedule WHERE car_id=?", (car_id,)).fetchall()]
+        return result
+
+
+# ── GET/PUT /forecast/settings ──
+@app.get("/forecast/settings")
+async def get_forecast_settings(cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        return dict((r[0], r[1]) for r in conn.execute("SELECT key,value FROM forecast_settings").fetchall())
+
+@app.put("/forecast/settings")
+async def update_forecast_settings(body: dict, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        for k, v in body.items():
+            conn.execute("INSERT OR REPLACE INTO forecast_settings(key,value,note) VALUES(?,?,'')", (k, str(v)))
+    return {"ok": True}
 
 
 # ── التنبيهات (منتجات منخفضة/منتهية) ──
