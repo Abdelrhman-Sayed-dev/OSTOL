@@ -6,16 +6,18 @@ Author: Refactored for enterprise use
 
 import asyncio
 import base64
+import math
 import csv
 import io
 import os
 import uuid
 import logging
 import httpx
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from collections import defaultdict
 
 try:
     import openpyxl
@@ -16391,6 +16393,67 @@ def _apply_override_for_record(c, rec_dict, now_str):
     return c.execute("SELECT changes()").fetchone()[0]
 
 @app.on_event("startup")
+async def ensure_forecast_tables():
+    """Migration: تأكد من وجود جداول الـ Forecast حتى لو الـ DB قديمة"""
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("""CREATE TABLE IF NOT EXISTS forecast_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                car_id INTEGER NOT NULL,
+                forecast_month TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                km_predicted REAL DEFAULT 0,
+                km_trend REAL DEFAULT 0,
+                km_confidence REAL DEFAULT 0,
+                fuel_liters REAL DEFAULT 0,
+                fuel_cost REAL DEFAULT 0,
+                fuel_l_per_100 REAL DEFAULT 0,
+                maint_cost REAL DEFAULT 0,
+                maint_visits REAL DEFAULT 0,
+                maint_cost_per_km REAL DEFAULT 0,
+                budget_total REAL DEFAULT 0,
+                confidence REAL DEFAULT 0,
+                data_points INTEGER DEFAULT 0,
+                algorithm TEXT DEFAULT 'WMA_v1',
+                FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE CASCADE
+            )""")
+            try: c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_fc_car_month ON forecast_results(car_id, forecast_month)")
+            except Exception: pass
+            c.execute("""CREATE TABLE IF NOT EXISTS forecast_parts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                car_id INTEGER NOT NULL,
+                forecast_month TEXT NOT NULL,
+                part_type TEXT NOT NULL,
+                part_label TEXT DEFAULT '',
+                prob REAL DEFAULT 0,
+                est_cost REAL DEFAULT 0,
+                due_km REAL,
+                due_date TEXT,
+                avg_life_km REAL,
+                avg_life_days INTEGER,
+                change_count INTEGER DEFAULT 0,
+                FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE CASCADE
+            )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS forecast_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                note TEXT DEFAULT ''
+            )""")
+            for _k, _v, _n in [
+                ('fuel_price_per_liter','20','سعر اللتر'),
+                ('wma_weights','1,2,3,4','أوزان WMA'),
+                ('confidence_data_w','0.4',''),
+                ('confidence_reg_w','0.3',''),
+                ('confidence_stab_w','0.3',''),
+                ('forecast_horizon_months','3',''),
+            ]:
+                c.execute("INSERT OR IGNORE INTO forecast_settings VALUES(?,?,?)", (_k,_v,_n))
+            log.info("[STARTUP] Forecast tables ensured")
+    except Exception as e:
+        log.error(f"[STARTUP] ensure_forecast_tables failed: {e}")
+
+@app.on_event("startup")
 async def fix_missing_overrides():
     """عند الـ startup: يمسح كل سجلات الورش اللي عندها مركبة وعداد ويطبق override لو ما اتطبقش"""
     await asyncio.sleep(3)  # نستنى شوية حتى الـ DB يكون جاهز
@@ -16492,12 +16555,6 @@ async def apply_maintenance_override(rid: int, cu: dict = Depends(require_admin)
 # Algorithm: WMA + Linear Trend + Statistical Rules
 # Designed for extensibility (Prophet/XGBoost ready)
 # ═══════════════════════════════════════════════════════════════════
-
-import math
-from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional, Tuple, Any
-from collections import defaultdict
-
 
 # ── Part type mapping: workshop type → label + avg life ──
 PART_LIFECYCLE = {
