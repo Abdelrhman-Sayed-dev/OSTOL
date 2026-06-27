@@ -2577,7 +2577,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             MAINT_MAP = {
                 # ── زيوت ──
                 "oil":        ["تغيير زيت", "فلتر زيت"],
-                "oil_motor":  ["تغيير زيت", "زيت محرك"],
+                "oil_motor":  ["تغيير زيت"],
                 "oil_gear":   ["زيت تروس"],
                 "oil_brake":  ["زيت فرامل"],
                 "oil_hydro":  ["زيت هيدروليك"],
@@ -2792,7 +2792,7 @@ async def get_operational_page2(
         "oil":        "other",   # legacy
     }
     OIL_OP_LABELS = {
-        "زيت محرك":    "motor",
+        "تغيير زيت":   "motor",
         "زيت تروس":    "gear",
         "زيت فرامل":   "brake",
         "زيت هيدروليك":"hydraulic",
@@ -3790,7 +3790,7 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
 
 MAINTENANCE_TYPES = [
     # ── زيوت وفلاتر ──
-    "تغيير زيت", "زيت محرك", "زيت تروس", "زيت فرامل", "زيت هيدروليك", "شحم",
+    "تغيير زيت", "زيت تروس", "زيت فرامل", "زيت هيدروليك", "شحم",
     "فلتر زيت", "فلتر هواء", "فلتر وقود", "فلتر سولار", "فلتر بنزين",
     "فلتر فاصل", "فلتر مكيف", "فلتر تكيف", "فلتر مجفف", "فلتر منفس", "فلتر هيدروليك",
     # ── قطع ──
@@ -3802,7 +3802,7 @@ MAINTENANCE_TYPES = [
     "جوان وش سلندر", "سلندر",
     "عمرة طرمبة وقود", "طرمبة وقود", "وحدات الحقن",
     # ── أخرى ──
-    "ترمس", "ماء تبريد", "سائل فرامل", "فحص دوري عام", "أخرى",
+    "ماء تبريد", "سائل فرامل", "فحص دوري عام", "أخرى",
 ]
 
 class MaintenanceScheduleCreate(BaseModel):
@@ -10664,7 +10664,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             MAINT_MAP = {
                 # ── زيوت ──
                 "oil":        ["تغيير زيت", "فلتر زيت"],
-                "oil_motor":  ["تغيير زيت", "زيت محرك"],
+                "oil_motor":  ["تغيير زيت"],
                 "oil_gear":   ["زيت تروس"],
                 "oil_brake":  ["زيت فرامل"],
                 "oil_hydro":  ["زيت هيدروليك"],
@@ -10883,7 +10883,7 @@ async def get_operational_page2(
         "oil":        "other",   # legacy
     }
     OIL_OP_LABELS = {
-        "زيت محرك":    "motor",
+        "تغيير زيت":   "motor",
         "زيت تروس":    "gear",
         "زيت فرامل":   "brake",
         "زيت هيدروليك":"hydraulic",
@@ -11881,7 +11881,7 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
 
 MAINTENANCE_TYPES = [
     # ── زيوت وفلاتر ──
-    "تغيير زيت", "زيت محرك", "زيت تروس", "زيت فرامل", "زيت هيدروليك", "شحم",
+    "تغيير زيت", "زيت تروس", "زيت فرامل", "زيت هيدروليك", "شحم",
     "فلتر زيت", "فلتر هواء", "فلتر وقود", "فلتر سولار", "فلتر بنزين",
     "فلتر فاصل", "فلتر مكيف", "فلتر تكيف", "فلتر مجفف", "فلتر منفس", "فلتر هيدروليك",
     # ── قطع ──
@@ -11893,7 +11893,7 @@ MAINTENANCE_TYPES = [
     "جوان وش سلندر", "سلندر",
     "عمرة طرمبة وقود", "طرمبة وقود", "وحدات الحقن",
     # ── أخرى ──
-    "ترمس", "ماء تبريد", "سائل فرامل", "فحص دوري عام", "أخرى",
+    "ماء تبريد", "سائل فرامل", "فحص دوري عام", "أخرى",
 ]
 
 class MaintenanceScheduleCreate(BaseModel):
@@ -16337,7 +16337,7 @@ async def delete_repair_quote(qid: int, cu: dict = Depends(require_admin)):
 # ── تصحيح تلقائي عند الـ startup لأي سجل ورش لم يتم تطبيق override عليه ──
 FULL_MAINT_MAP_GLOBAL = {
     "oil":        ["تغيير زيت", "فلتر زيت"],
-    "oil_motor":  ["تغيير زيت", "زيت محرك"],
+    "oil_motor":  ["تغيير زيت"],
     "oil_gear":   ["زيت تروس"],
     "oil_brake":  ["زيت فرامل"],
     "oil_hydro":  ["زيت هيدروليك"],
@@ -16482,7 +16482,7 @@ async def apply_maintenance_override(rid: int, cu: dict = Depends(require_admin)
     """يطبق override يدوي لسجل ورش على الصيانات الدورية"""
     FULL_MAINT_MAP = {
         "oil":        ["تغيير زيت", "فلتر زيت"],
-        "oil_motor":  ["تغيير زيت", "زيت محرك"],
+        "oil_motor":  ["تغيير زيت"],
         "oil_gear":   ["زيت تروس"],
         "oil_brake":  ["زيت فرامل"],
         "oil_hydro":  ["زيت هيدروليك"],
@@ -16559,13 +16559,13 @@ async def apply_maintenance_override(rid: int, cu: dict = Depends(require_admin)
 # ── Part type mapping: workshop type → label + avg life ──
 PART_LIFECYCLE = {
     "oil":               {"label": "تغيير زيت",        "avg_km": 5000,  "avg_days": 90},
-    "oil_motor":         {"label": "زيت محرك",          "avg_km": 5000,  "avg_days": 90},
+    "oil_motor":         {"label": "تغيير زيت",         "avg_km": 5000,  "avg_days": 90},
     "filter_oil":        {"label": "فلتر زيت",          "avg_km": 5000,  "avg_days": 90},
     "filter":            {"label": "فلتر هواء",          "avg_km": 10000, "avg_days": 180},
     "filter_air":        {"label": "فلتر هواء",          "avg_km": 10000, "avg_days": 180},
     "filter_solar":      {"label": "فلتر سولار",         "avg_km": 10000, "avg_days": 180},
     "tire":              {"label": "إطارات",             "avg_km": 40000, "avg_days": 730},
-    "battery":           {"label": "بطارية",             "avg_km": 0,     "avg_days": 730},
+    "battery":           {"label": "بطارية",             "avg_km": 60000, "avg_days": 730},
     "belt":              {"label": "سيور",               "avg_km": 30000, "avg_days": 365},
     "timing_belt":       {"label": "سير كاتينة",         "avg_km": 60000, "avg_days": 730},
     "engine_overhaul":   {"label": "عمرة محرك",          "avg_km": 150000,"avg_days": 1825},
@@ -16797,7 +16797,24 @@ def compute_forecast_for_car(
         last_rec = max(part_recs, key=lambda r: (float(r.get("odometer_reading") or 0), r.get("created_at") or ""))
         last_date_str = (last_rec.get("created_at") or "")[:10]
         last_km = float(last_rec.get("odometer_reading") or 0)
-        avg_cost = sum(float(r.get("price") or 0) for r in part_recs) / change_count
+
+        # ── حساب التكلفة مع استبعاد الشواذ (Outlier Removal) ──
+        all_costs = [float(r.get("price") or 0) for r in part_recs if float(r.get("price") or 0) > 0]
+        if len(all_costs) >= 3:
+            # نستخدم IQR لاستبعاد الشواذ
+            sorted_c = sorted(all_costs)
+            q1 = sorted_c[len(sorted_c)//4]
+            q3 = sorted_c[3*len(sorted_c)//4]
+            iqr = q3 - q1
+            clean_costs = [c for c in all_costs if q1 - 1.5*iqr <= c <= q3 + 1.5*iqr]
+            avg_cost = sum(clean_costs) / len(clean_costs) if clean_costs else sum(all_costs) / len(all_costs)
+        elif len(all_costs) == 2:
+            # لو اتنين فقط — خد الأقل (أكثر واقعية للتقدير)
+            avg_cost = min(all_costs)
+        elif len(all_costs) == 1:
+            avg_cost = all_costs[0]
+        else:
+            avg_cost = 0.0
 
         # ── العمر الفعلي من البيانات الحقيقية ──
         actual_life_km = life["avg_km"]   # افتراضي
@@ -16805,22 +16822,35 @@ def compute_forecast_for_car(
             float(r.get("odometer_reading") or 0)
             for r in part_recs if r.get("odometer_reading") and float(r.get("odometer_reading") or 0) > 0
         ])
-        if len(km_readings) >= 2:
+        if len(km_readings) >= 2 and life["avg_km"] > 0:
             diffs = [km_readings[i+1] - km_readings[i] for i in range(len(km_readings)-1)]
-            valid_diffs = [d for d in diffs if d > 100]  # فلتر القيم الشاذة
+            # فلتر: الفارق لازم يكون بين 10% و 300% من العمر الافتراضي
+            min_valid = life["avg_km"] * 0.1
+            max_valid = life["avg_km"] * 3.0
+            valid_diffs = [d for d in diffs if min_valid <= d <= max_valid]
             if valid_diffs:
-                actual_life_km = sum(valid_diffs) / len(valid_diffs)
+                # متوسط مرجح — الأحدث وزنه أعلى
+                weights = list(range(1, len(valid_diffs)+1))
+                actual_life_km = sum(d*w for d,w in zip(valid_diffs,weights)) / sum(weights)
+        elif life["avg_km"] == 0:
+            # قطع بدون عمر كيلومترات (زي البطارية أحياناً) — نعتمد على الأيام فقط
+            actual_life_km = 0
 
         # ── حساب العداد المتوقع للاستحقاق القادم ──
-        if last_km > 0:
-            # عدد دورات كاملة مرت منذ آخر تغيير
+        if last_km > 0 and actual_life_km > 0:
             if current_km > last_km:
-                cycles_since = int((current_km - last_km) / actual_life_km)
-                next_due_km = last_km + (cycles_since + 1) * actual_life_km
+                km_since_last = current_km - last_km
+                if km_since_last >= actual_life_km:
+                    # فات الموعد — الاستحقاق = العداد الحالي + الفرق
+                    cycles_since = int(km_since_last / actual_life_km)
+                    next_due_km = last_km + (cycles_since + 1) * actual_life_km
+                else:
+                    # لسه في العمر المتوقع
+                    next_due_km = last_km + actual_life_km
             else:
                 next_due_km = last_km + actual_life_km
         else:
-            next_due_km = None
+            next_due_km = None  # نعتمد على الأيام فقط
 
         # ── الكيلومترات المتبقية حتى الاستحقاق ──
         km_remaining = (next_due_km - current_km) if next_due_km and current_km > 0 else None
