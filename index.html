@@ -20181,11 +20181,20 @@ function fcRenderCarCard(c, fmt) {
   <!-- ══ PRINT STYLES ══ -->
   <style>
     @media print {
-      .no-print,.sidebar,.topbar,#sidebarOverlay,.fc-selector,#fcResults .fc-selector { display:none!important; }
-      @page { size:A4 portrait; margin:15mm 18mm; }
-      body,html { background:#fff!important; }
-      .fc-report { box-shadow:none!important; border:none!important; }
+      .no-print,.sidebar,.topbar,#sidebarOverlay,.fc-selector,
+      #fcResults > div:first-child,.fc-wrap > .fc-selector { display:none!important; }
+      @page { size:A4 portrait; margin:12mm 14mm; }
+      body,html { background:#fff!important; font-size:9pt; }
+      .main-content { margin:0!important; padding:0!important; }
+      .page-content { padding:0!important; }
+      .fc-wrap { padding:0!important; }
+      .fc-report { box-shadow:none!important; border:1px solid #cbd5e1!important; }
       .fc-report-section { break-inside:avoid; }
+      .fc-rpt-header { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .fc-rpt-summary { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .fc-rpt-sum-cell:last-child { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .fc-sec-title { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .fc-tbl thead tr { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     }
     .fc-report {
       background:#fff;
@@ -20305,7 +20314,15 @@ function fcRenderCarCard(c, fmt) {
       <div>
         <div class="fc-rpt-title">🗓️ خطة الصيانة والإصلاح</div>
         <div class="fc-rpt-sub">المركبة: ${c.plate||'—'} &nbsp;·&nbsp; ${[c.model,c.branch,c.project].filter(Boolean).join(' · ')}</div>
-        <div class="fc-rpt-sub" style="margin-top:.3rem">شهر: ${c.forecast_month||_fcMonth||'—'} &nbsp;·&nbsp; الخوارزمية: ${c.algorithm||'WMA_v1'}</div>
+        <div class="fc-rpt-sub" style="margin-top:.4rem;font-size:.9rem;font-weight:700;opacity:1">
+            📅 ${(function(){
+              const m = c.forecast_month||_fcMonth||'';
+              if(!m) return '—';
+              const [y,mo] = m.split('-');
+              const months = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+              return (months[parseInt(mo,10)-1]||mo) + ' ' + y;
+            })()}
+          </div>
       </div>
       <div class="fc-rpt-meta">
         <div>تاريخ الإصدار: ${printDate}</div>
