@@ -20049,9 +20049,24 @@ async function fcViewPlan() {
 
     const fmt = (v,d=0)=> v!=null ? Number(v).toLocaleString('ar-EG',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
 
-    // عرض مركبة واحدة — بطاقة تفصيلية
+    // عرض مركبة واحدة — بطاقة تفصيلية مع جدول الصيانة
     if(carId || cars.length===1) {
-      res.innerHTML = fcRenderCarCard(cars[0], fmt);
+      const singleCar = cars[0];
+      // نجيب التفاصيل الكاملة من endpoint المخصص اللي بيشمل maintenance_plan
+      try {
+        const detail = await apiCall(`/forecast/car/${singleCar.car_id}?month=${month}`);
+        // ندمج البيانات — نحافظ على current_km وباقي بيانات السيارة
+        const merged = Object.assign({}, singleCar, detail, {
+          current_km: singleCar.current_km || detail.current_km,
+          branch:     singleCar.branch  || detail.branch  || '',
+          model:      singleCar.model   || detail.model   || '',
+          project:    singleCar.project || detail.project || '',
+        });
+        res.innerHTML = fcRenderCarCard(merged, fmt);
+      } catch(e) {
+        // لو فشل نعرض بالبيانات الموجودة
+        res.innerHTML = fcRenderCarCard(singleCar, fmt);
+      }
       return;
     }
 
