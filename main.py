@@ -16559,7 +16559,6 @@ async def apply_maintenance_override(rid: int, cu: dict = Depends(require_admin)
 # ── Part type mapping: workshop type → label + avg life ──
 PART_LIFECYCLE = {
     "oil":               {"label": "تغيير زيت",        "avg_km": 5000,  "avg_days": 90},
-    "oil_motor":         {"label": "تغيير زيت",         "avg_km": 5000,  "avg_days": 90},
     "filter_oil":        {"label": "فلتر زيت",          "avg_km": 5000,  "avg_days": 90},
     "filter":            {"label": "فلتر هواء",          "avg_km": 10000, "avg_days": 180},
     "filter_air":        {"label": "فلتر هواء",          "avg_km": 10000, "avg_days": 180},
@@ -16787,8 +16786,16 @@ def compute_forecast_for_car(
     # العداد الحالي للمركبة
     current_km = max([float(t.get("end_odometer") or 0) for t in trips if t.get("end_odometer")] or [0])
 
+    # دمج oil_motor مع oil قبل المعالجة
+    merged_ws = []
+    for r in workshop_records:
+        rec = dict(r)
+        if rec.get("type") == "oil_motor":
+            rec["type"] = "oil"
+        merged_ws.append(rec)
+
     for part_type, life in PART_LIFECYCLE.items():
-        part_recs = [r for r in workshop_records if r.get("type") == part_type]
+        part_recs = [r for r in merged_ws if r.get("type") == part_type]
         if not part_recs:
             continue
 
