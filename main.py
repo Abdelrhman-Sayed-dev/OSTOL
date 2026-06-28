@@ -16831,10 +16831,13 @@ def compute_forecast_for_car(
             if valid_diffs:
                 # متوسط مرجح — الأحدث وزنه أعلى
                 weights = list(range(1, len(valid_diffs)+1))
-                actual_life_km = sum(d*w for d,w in zip(valid_diffs,weights)) / sum(weights)
+                actual_life_km = sum(d*w for d,w in zip(valid_diffs, weights)) / sum(weights)
         elif life["avg_km"] == 0:
-            # قطع بدون عمر كيلومترات (زي البطارية أحياناً) — نعتمد على الأيام فقط
-            actual_life_km = 0
+            actual_life_km = 0  # نعتمد على الأيام فقط
+
+        # ── Safety guard: لو actual_life_km أصغر من 10% من العمر الافتراضي = بيانات غير موثوقة ──
+        if life["avg_km"] > 0 and actual_life_km < life["avg_km"] * 0.1:
+            actual_life_km = life["avg_km"]  # ارجع للعمر الافتراضي
 
         # ── حساب العداد المتوقع للاستحقاق القادم ──
         if last_km > 0 and actual_life_km > 0:
