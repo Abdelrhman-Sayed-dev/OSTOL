@@ -273,7 +273,7 @@ def create_database():
     SUPERUSERS = [
         ("supre mohamed sayed",    "sup@mosayed3904"),
         ("super abdelrhman sayed", "sup@abdo1414"),
-        ("super mohamed mansour",  "sup@momansour84329"),
+        ("super mohamed mansour",  "sup@momansour30382"),
     ]
     for uname, pw in SUPERUSERS:
         cursor.execute("SELECT id FROM users WHERE username=?", (uname,))
