@@ -2401,8 +2401,9 @@ const API = (window.location.hostname === '127.0.0.1' || window.location.hostnam
 let currentUser = null;
 const isReporter     = () => currentUser?.role === 'reporter';
 const isAdmin        = () => currentUser?.role === 'admin';
-const isAdminOrSup   = () => ['admin','superuser'].includes(currentUser?.role);
-const isAdminLike    = () => ['admin','reporter','superuser','supervisor_workshop','supervisor_field'].includes(currentUser?.role);
+const isSuperAdmin   = () => currentUser?.role === 'super_admin';
+const isAdminOrSup   = () => ['admin','superuser','super_admin'].includes(currentUser?.role);
+const isAdminLike    = () => ['admin','reporter','superuser','super_admin','supervisor_workshop','supervisor_field'].includes(currentUser?.role);
 const isSuperuser    = () => currentUser?.role === 'superuser';
 const isSupervisorWS   = () => currentUser?.role === 'supervisor_workshop';
 const isSupervisorField= () => currentUser?.role === 'supervisor_field';
@@ -2701,6 +2702,7 @@ function buildAdminNav() {
     base.push({id:'super-licenses',    icon:'⚠️', label:'تنبيهات الرخص'});
     base.push({id:'import-data',       icon:'📥', label:'استيراد البيانات'});
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
+    base.push({id:'super-super-admins', icon:'🛡️', label:'السوبر أدمنز'});
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-reassign',    icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
@@ -2711,6 +2713,12 @@ function buildAdminNav() {
     base.push({id:'super-voice',    icon:'🎙️', label:'رسائل صوتية'});
     base.push({id:'super-reassign', icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'driver-photos',  icon:'📷', label:'صور السائقين'});
+  }
+  if(isSuperAdmin()) {
+    base.push({id:'super-voice',        icon:'🎙️', label:'رسائل صوتية'});
+    base.push({id:'super-reassign',     icon:'🔄', label:'إعادة تخصيص'});
+    base.push({id:'driver-photos',      icon:'📷', label:'صور السائقين'});
+    base.push({id:'sa-my-admins',       icon:'👥', label:'أدمنزي'});
   }
   return base;
 }
@@ -2843,7 +2851,9 @@ async function renderSection(id) {
     case 'super-fraud':      await renderSuperFraud(); break;
     case 'super-voice':      await renderSuperVoice(); break;
     case 'super-licenses':  await renderSuperLicenses(); break;
-    case 'super-admins':    await renderSuperAdmins(); break;
+    case 'super-admins':         await renderSuperAdmins(); break;
+    case 'super-super-admins':   await renderSuperSuperAdmins(); break;
+    case 'sa-my-admins':         await renderSAMyAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-reassign':  await renderSuperReassign(); break;
     case 'super-logs':      await renderSuperLogs(); break;
@@ -9087,7 +9097,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','super-sarky','import-data','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','ws-repair-quotes','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','ws-repair-quotes','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
   renderNav(buildAdminNav());
   renderSection(currentSection);
@@ -10615,19 +10625,30 @@ async function renderWsAttachments() {
   const typeSet = [...new Set(records.map(r=>r.type))];
   const typeOpts = typeSet.map(t=>`<option value="${t}">${WT[t]?.icon||'🔧'} ${WT[t]?.label||t}</option>`).join('');
 
+  // قائمة المركبات/المعدات الفريدة الموجودة في المرفقات
+  const uniqueVehicles = [...new Map(
+    records.filter(r=>r.vehicle_plate)
+           .map(r=>[r.vehicle_plate, r.vehicle_plate])
+  ).values()].sort((a,b)=>String(a).localeCompare(String(b),'ar'));
+
   c.innerHTML = `
     <div class="card">
       <div class="card-header">
         <div class="card-title">📎 تتبع المرفقات — صور العداد</div>
         <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+          <select id="wsAttVehicleFilter" onchange="filterWsAttachments()"
+            style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;background:var(--surface-2);max-width:170px">
+            <option value="">🚗 كل المركبات</option>
+            ${uniqueVehicles.map(v=>`<option value="${v}">${v}</option>`).join('')}
+          </select>
           <select id="wsAttTypeFilter" onchange="filterWsAttachments()"
             style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;background:var(--surface-2)">
             <option value="">كل العمليات</option>
             ${typeOpts}
           </select>
-          <input type="text" id="wsAttSearch" placeholder="🔎 بحث باسم السائق أو رقم المركبة"
+          <input type="text" id="wsAttSearch" placeholder="🔎 بحث باسم السائق"
             oninput="filterWsAttachments()"
-            style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;background:var(--surface-2);min-width:200px">
+            style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;background:var(--surface-2);min-width:160px">
           <button class="btn btn-ghost btn-sm" onclick="renderWsAttachments()">🔄 تحديث</button>
         </div>
       </div>
@@ -10699,13 +10720,13 @@ function renderWsAttachmentsRows(records) {
 }
 
 function filterWsAttachments() {
+  const vehicle = document.getElementById('wsAttVehicleFilter')?.value || '';
   const type = document.getElementById('wsAttTypeFilter')?.value || '';
   const q    = (document.getElementById('wsAttSearch')?.value || '').trim().toLowerCase();
   let records = window._wsAttachments || [];
+  if(vehicle) records = records.filter(r=>r.vehicle_plate===vehicle);
   if(type) records = records.filter(r=>r.type===type);
-  if(q) records = records.filter(r =>
-    (r.driver_name||'').toLowerCase().includes(q) ||
-    (r.vehicle_plate||'').toLowerCase().includes(q));
+  if(q) records = records.filter(r => (r.driver_name||'').toLowerCase().includes(q));
   document.getElementById('wsAttTbody').innerHTML = renderWsAttachmentsRows(records);
 }
 
@@ -11229,6 +11250,7 @@ async function dpWsModal(type) {
 
 const ROLE_CONFIG = {
   admin:    { endpoint: '/superuser/admins',    label: 'الأدمن',    icon: '👑', emptyMsg: 'لا يوجد أدمنز',   render: () => renderSuperUserRole('admin') },
+  super_admin: { endpoint: '/superuser/super-admins', label: 'السوبر أدمن', icon: '🛡️', emptyMsg: 'لا يوجد سوبر أدمنز', render: () => renderSuperSuperAdmins() },
   reporter: { endpoint: '/superuser/reporters', label: 'المراقب',   icon: '👁️', emptyMsg: 'لا يوجد مراقبون', render: () => renderSuperUserRole('reporter') },
 };
 
@@ -11720,7 +11742,7 @@ function renderImportPreview(data) {
     : isDrivers
       ? ['#','الاسم','اسم المستخدم (تلقائي)','الهاتف','الرقم الثابت','الفرع','رخصة السائق','التحقق']
       : isMaintenance
-        ? ['#','رقم اللوحة','نوع الصيانة','كل كام كم','كل كام يوم','آخر قراءة (كم)','تاريخ آخر صيانة','التحقق']
+        ? ['#','رقم اللوحة','نوع الصيانة','كل كام كم','كل كام يوم','آخر قراءة (كم)','تاريخ آخر صيانة','الإجراء','التحقق']
         : ['#','رقم اللوحة','الموديل','الاسم','الفرع','الحالة','التحقق'];
 
   const renderRow = (r) => {
@@ -11743,6 +11765,10 @@ function renderImportPreview(data) {
         <td>${r.interval_days!=null?r.interval_days+' يوم':'—'}</td>
         <td>${r.last_done_km!=null?r.last_done_km+' كم':'—'}</td>
         <td style="font-size:.8rem">${r.last_done_date||'—'}</td>
+        <td>${r.valid ? (r.is_update
+              ? '<span style="color:#2563eb;font-weight:700;font-size:.78rem">🔄 تحديث</span>'
+              : '<span style="color:#16a34a;font-weight:700;font-size:.78rem">➕ إضافة</span>')
+            : '<span style="color:var(--text-3);font-size:.78rem">—</span>'}</td>
         <td>${status}</td>
       </tr>`;
     if(isDrivers) return `
@@ -11825,7 +11851,8 @@ async function doImportConfirm() {
       const detail = typeof data.detail === 'object' ? data.detail.message : data.detail;
       throw new Error(detail || 'فشل الرفع');
     }
-    showNotification(`✅ تم الرفع بنجاح: ${data.inserted} سجل${data.skipped>0?' (تجاهل '+data.skipped+')':''}`, 'success');
+    const updatedTxt = data.updated ? ` و${data.updated} تحديث` : '';
+    showNotification(`✅ تم الرفع بنجاح: ${data.inserted} إضافة${updatedTxt}${data.skipped>0?' (تجاهل '+data.skipped+')':''}`, 'success');
     _importPreviewData = null;
     renderImportResult(data, importType);
   } catch(e) {
@@ -11836,22 +11863,29 @@ async function doImportConfirm() {
 
 function renderImportResult(data, importType) {
   const area = document.getElementById('importPreviewArea');
+  const hasUpdated = data.updated != null;
+  const totalCount = data.inserted + (data.updated||0) + data.skipped;
   area.innerHTML = `
     <div class="card" style="border-top:3px solid var(--success)">
       <div class="card-header">
         <div class="card-title" style="color:var(--success)">✅ تم الرفع بنجاح</div>
       </div>
-      <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
+      <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(${hasUpdated?4:3},1fr);gap:1rem;text-align:center">
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
           <div style="font-size:2rem;font-weight:800;color:var(--success)">${data.inserted}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم إضافته</div>
         </div>
+        ${hasUpdated ? `
+        <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
+          <div style="font-size:2rem;font-weight:800;color:#2563eb">${data.updated}</div>
+          <div style="color:var(--muted);font-size:.85rem">سجل تم تحديثه</div>
+        </div>` : ''}
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
           <div style="font-size:2rem;font-weight:800;color:var(--warning)">${data.skipped}</div>
           <div style="color:var(--muted);font-size:.85rem">سجل تم تجاهله</div>
         </div>
         <div style="padding:1rem;background:var(--surface-2);border-radius:12px">
-          <div style="font-size:2rem;font-weight:800;color:var(--primary)">${data.inserted+data.skipped}</div>
+          <div style="font-size:2rem;font-weight:800;color:var(--primary)">${totalCount}</div>
           <div style="color:var(--muted);font-size:.85rem">إجمالي الصفوف</div>
         </div>
       </div>
@@ -20428,6 +20462,284 @@ function fcRenderCarCard(c, fmt) {
 
 
 
+
+
+// ═══════════════════════════════════════════════════════════
+// 🛡️ SUPER ADMIN — إدارة السوبر أدمنز (من شاشة السوبر يوزر)
+// ═══════════════════════════════════════════════════════════
+
+async function renderSuperSuperAdmins() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جارٍ التحميل...</p></div>';
+  let superAdmins = [], freeAdmins = [];
+  try {
+    [superAdmins, freeAdmins] = await Promise.all([
+      apiCall('/superuser/super-admins'),
+      apiCall('/superuser/free-admins'),
+    ]);
+  } catch(e) {
+    c.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+    return;
+  }
+
+  c.innerHTML = `
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🛡️ إدارة السوبر أدمنز</div>
+      <button class="btn btn-primary btn-sm" onclick="openCreateSuperAdminModal()">➕ إضافة سوبر أدمن</button>
+    </div>
+
+    ${superAdmins.length === 0 ? `
+      <div class="empty-state"><div class="empty-icon">👥</div><p>لا يوجد سوبر أدمنز بعد</p></div>
+    ` : `
+    <div style="display:grid;gap:1rem;padding:1.2rem">
+      ${superAdmins.map(sa => {
+        const lastLogin = sa.last_login ? fmtDT(sa.last_login) : 'لم يدخل بعد';
+        const adminsList = (sa.managed_admins||[]).map(a =>
+          `<span style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:.2rem .6rem;font-size:.75rem;display:inline-flex;align-items:center;gap:.3rem">
+            👤 ${a.username}${a.branch?' <span style="color:var(--text-3)">('+a.branch+')</span>':''}
+          </span>`
+        ).join('');
+
+        return `
+        <div style="border:1.5px solid var(--border);border-radius:14px;overflow:hidden">
+          <!-- Header -->
+          <div style="background:linear-gradient(135deg,#1e3a5f,#2d5a8e);color:#fff;padding:1rem 1.4rem;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:1rem;font-weight:800">🛡️ ${sa.username}</div>
+              <div style="font-size:.75rem;opacity:.8;margin-top:.2rem">${sa.branch||'كل الفروع'} · آخر دخول: ${lastLogin}</div>
+            </div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sm" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3)"
+                onclick="openEditSuperAdminModal(${sa.id},'${sa.username.replace(/'/g,"\'")}','${(sa.branch||'').replace(/'/g,"\'")}',${JSON.stringify(sa.managed_admins||[]).replace(/'/g,"\'")})" >✏️ تعديل</button>
+              <button class="btn btn-sm" style="background:rgba(220,38,38,.4);color:#fff;border:1px solid rgba(220,38,38,.5)"
+                onclick="deleteSuperAdmin(${sa.id},'${sa.username.replace(/'/g,"\'")}')">🗑️</button>
+            </div>
+          </div>
+          <!-- Stats -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border)">
+            <div style="padding:.8rem;text-align:center;border-left:1px solid var(--border)">
+              <div style="font-size:1.2rem;font-weight:900;color:var(--gold)">${sa.managed_count||0}</div>
+              <div style="font-size:.72rem;color:var(--text-3)">أدمن تابع</div>
+            </div>
+            <div style="padding:.8rem;text-align:center;border-left:1px solid var(--border)">
+              <div style="font-size:1.2rem;font-weight:900;color:#3b82f6">${sa.total_drivers||0}</div>
+              <div style="font-size:.72rem;color:var(--text-3)">سائق</div>
+            </div>
+            <div style="padding:.8rem;text-align:center;border-left:1px solid var(--border)">
+              <div style="font-size:1.2rem;font-weight:900;color:#10b981">${sa.total_cars||0}</div>
+              <div style="font-size:.72rem;color:var(--text-3)">مركبة</div>
+            </div>
+            <div style="padding:.8rem;text-align:center">
+              <div style="font-size:1.2rem;font-weight:900;color:#f97316">${sa.active_trips||0}</div>
+              <div style="font-size:.72rem;color:var(--text-3)">رحلة نشطة</div>
+            </div>
+          </div>
+          <!-- Managed Admins -->
+          <div style="padding:.9rem 1.2rem">
+            <div style="font-size:.78rem;color:var(--text-3);font-weight:600;margin-bottom:.5rem">الأدمنز التابعون:</div>
+            ${adminsList || '<span style="color:var(--text-4);font-size:.78rem">لا يوجد أدمنز مرتبطون</span>'}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`}
+  </div>
+
+  ${freeAdmins.length > 0 ? `
+  <div class="card" style="margin-top:1rem">
+    <div class="card-header"><div class="card-title" style="font-size:.9rem;color:var(--text-3)">👤 أدمنز غير مرتبطين بسوبر أدمن (${freeAdmins.length})</div></div>
+    <div style="padding:.5rem 1.2rem 1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+      ${freeAdmins.map(a => `<span style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:.25rem .7rem;font-size:.78rem">👤 ${a.username}${a.branch?' ('+a.branch+')':''}</span>`).join('')}
+    </div>
+  </div>` : ''}`;
+}
+
+async function openCreateSuperAdminModal() {
+  let allAdmins = [];
+  try { allAdmins = await apiCall('/superuser/admins'); } catch(e){}
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🛡️ إضافة سوبر أدمن جديد</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>اسم المستخدم *</label>
+        <input type="text" id="saUsername" placeholder="super_admin_name">
+      </div>
+      <div class="form-group">
+        <label>كلمة المرور *</label>
+        <input type="password" id="saPassword" placeholder="••••••••">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>الفرع <span style="font-size:.75rem;color:var(--text-3)">(فارغ = يرى كل الفروع)</span></label>
+      ${branchSearchField('saBranch')}
+    </div>
+    <div class="form-group">
+      <label>الأدمنز التابعون <span style="font-size:.75rem;color:var(--text-3)">(اختر الأدمنز اللي تحت إشرافه)</span></label>
+      <div id="saAdminCheckboxes" style="max-height:200px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:.6rem">
+        ${allAdmins.length === 0
+          ? '<div style="color:var(--text-3);font-size:.8rem;padding:.3rem">لا يوجد أدمنز متاحون</div>'
+          : allAdmins.map(a => `
+            <label style="display:flex;align-items:center;gap:.6rem;padding:.35rem .2rem;cursor:pointer;font-size:.83rem">
+              <input type="checkbox" value="${a.id}" class="sa-admin-cb">
+              <span>👤 <strong>${a.username}</strong>${a.branch?' <span style="color:var(--text-3);">('+a.branch+')</span>':''}</span>
+            </label>`).join('')}
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="saCreateBtn">💾 إنشاء</button>
+    </div>`);
+
+  document.getElementById('saCreateBtn').onclick = async () => {
+    const username = document.getElementById('saUsername').value.trim();
+    const password = document.getElementById('saPassword').value;
+    const branch   = document.getElementById('saBranch').value.trim();
+    const adminIds = [...document.querySelectorAll('.sa-admin-cb:checked')].map(cb => parseInt(cb.value));
+    if (!username || !password) return showNotification('اسم المستخدم وكلمة المرور مطلوبان', 'error');
+    const btn = document.getElementById('saCreateBtn');
+    btn.disabled = true; btn.textContent = 'جارٍ...';
+    try {
+      await apiCall('/superuser/super-admins', 'POST', {username, password, branch, managed_admin_ids: adminIds});
+      showNotification(`✅ تم إنشاء السوبر أدمن: ${username}`, 'success');
+      closeModal(); renderSuperSuperAdmins();
+    } catch(e) { showNotification(e.message, 'error'); btn.disabled=false; btn.textContent='💾 إنشاء'; }
+  };
+}
+
+async function openEditSuperAdminModal(uid, oldUser, oldBranch, currentAdmins) {
+  let allAdmins = [];
+  try { allAdmins = await apiCall('/superuser/admins'); } catch(e){}
+  const currentIds = new Set((currentAdmins||[]).map(a=>a.id));
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✏️ تعديل السوبر أدمن: ${oldUser}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>اسم المستخدم *</label>
+        <input type="text" id="saUsername" value="${oldUser}">
+      </div>
+      <div class="form-group">
+        <label>كلمة المرور الجديدة</label>
+        <input type="password" id="saPassword" placeholder="اتركها فارغة للإبقاء">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>الفرع</label>
+      ${branchSearchField('saBranch', oldBranch)}
+    </div>
+    <div class="form-group">
+      <label>الأدمنز التابعون</label>
+      <div id="saAdminCheckboxes" style="max-height:200px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:.6rem">
+        ${allAdmins.map(a => `
+          <label style="display:flex;align-items:center;gap:.6rem;padding:.35rem .2rem;cursor:pointer;font-size:.83rem">
+            <input type="checkbox" value="${a.id}" class="sa-admin-cb" ${currentIds.has(a.id)?'checked':''}>
+            <span>👤 <strong>${a.username}</strong>${a.branch?' <span style="color:var(--text-3);">('+a.branch+')</span>':''}</span>
+          </label>`).join('')}
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="saEditBtn">💾 حفظ</button>
+    </div>`);
+
+  document.getElementById('saEditBtn').onclick = async () => {
+    const username = document.getElementById('saUsername').value.trim();
+    const password = document.getElementById('saPassword').value || null;
+    const branch   = document.getElementById('saBranch').value.trim();
+    const adminIds = [...document.querySelectorAll('.sa-admin-cb:checked')].map(cb=>parseInt(cb.value));
+    if(!username) return showNotification('اسم المستخدم مطلوب','error');
+    const btn = document.getElementById('saEditBtn');
+    btn.disabled=true; btn.textContent='جارٍ...';
+    try {
+      await apiCall(`/superuser/super-admins/${uid}`, 'PUT', {username, password, branch, managed_admin_ids: adminIds});
+      showNotification('✅ تم التحديث', 'success');
+      closeModal(); renderSuperSuperAdmins();
+    } catch(e) { showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ'; }
+  };
+}
+
+async function deleteSuperAdmin(uid, username) {
+  if (!confirm(`⚠️ حذف السوبر أدمن "${username}"؟\nسيتم فك ربط الأدمنز التابعين له.`)) return;
+  try {
+    await apiCall(`/superuser/super-admins/${uid}`, 'DELETE');
+    showNotification('✅ تم الحذف', 'success');
+    renderSuperSuperAdmins();
+  } catch(e) { showNotification(e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 👥 SA MY ADMINS — شاشة السوبر أدمن لإدارة أدمنزه
+// ═══════════════════════════════════════════════════════════
+
+async function renderSAMyAdmins() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جارٍ التحميل...</p></div>';
+  try {
+    const stats = await apiCall(`/superuser/super-admins/${currentUser.id}/stats`);
+    const managed = stats.managed_admins || [];
+
+    c.innerHTML = `
+    <!-- إحصائيات -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:1.2rem">
+      <div class="card" style="padding:1rem;text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:var(--gold)">${managed.length}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">أدمن تحت إشرافي</div>
+      </div>
+      <div class="card" style="padding:1rem;text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:#3b82f6">${stats.drivers||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">سائق</div>
+      </div>
+      <div class="card" style="padding:1rem;text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:#10b981">${stats.cars||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">مركبة</div>
+      </div>
+      <div class="card" style="padding:1rem;text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:#f97316">${stats.active_trips||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">رحلة نشطة</div>
+      </div>
+      <div class="card" style="padding:1rem;text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:#8b5cf6">${stats.total_trips_30d||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">رحلة (30 يوم)</div>
+      </div>
+      <div class="card" style="padding:1rem;text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:#ef4444">${stats.workshop_30d||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">ورش (30 يوم)</div>
+      </div>
+    </div>
+
+    <!-- جدول الأدمنز -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">👥 الأدمنز تحت إشرافي</div>
+      </div>
+      ${managed.length === 0
+        ? '<div class="empty-state"><div class="empty-icon">👤</div><p>لم يتم تخصيص أدمنز لك بعد — تواصل مع السوبر يوزر</p></div>'
+        : `<div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>الأدمن</th><th>الفرع</th><th>آخر دخول</th></tr></thead>
+            <tbody>
+              ${managed.map(a => `
+                <tr>
+                  <td>${a.id}</td>
+                  <td><strong>👤 ${a.username}</strong></td>
+                  <td>${a.branch ? '<span class="badge badge-blue">'+a.branch+'</span>' : '<span style="color:var(--text-4)">—</span>'}</td>
+                  <td>${a.last_login ? fmtDT(a.last_login) : 'لم يدخل بعد'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`}
+    </div>`;
+  } catch(e) {
+    c.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
 async function deleteRepairQuote(id) {
   if (!confirm('تأكيد حذف مقايسة الإصلاح؟')) return;
   try { await apiCall(`/workshop/repair-quotes/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderWorkshopRepairQuotes(); }
@@ -20460,8 +20772,24 @@ async function renderInventoryAlerts() {
 async function renderOpsReview() {
   const c = document.getElementById('pageContent');
   c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
-  const rows = await apiCall('/workshops/pending-review').catch(()=>[]);
+  const [rows, fuelAnalysis] = await Promise.all([
+    apiCall('/workshops/pending-review').catch(()=>[]),
+    apiCall('/workshops/fuel-consumption-analysis').catch(()=>({})),
+  ]);
   window._opsReviewRows = rows;
+  window._fuelAnalysis  = fuelAnalysis;
+
+  // فهرسة سريعة: record_id → بيانات التحليل
+  window._fuelAnalysisByRecordId = {};
+  Object.values(fuelAnalysis).forEach(carRecords => {
+    carRecords.forEach(rec => { window._fuelAnalysisByRecordId[rec.id] = rec; });
+  });
+
+  // قائمة المركبات/المعدات الفريدة الموجودة فعلاً في السجلات
+  const uniqueVehicles = [...new Map(
+    rows.filter(r=>r.vehicle_plate||r.vehicle_model)
+        .map(r=>[r.vehicle_plate||r.vehicle_model, {plate:r.vehicle_plate, model:r.vehicle_model}])
+  ).values()].sort((a,b)=>(a.plate||a.model||'').localeCompare(b.plate||b.model||'','ar'));
 
   const today = new Date().toISOString().slice(0,10);
   const totalOps = rows.length;
@@ -20481,6 +20809,10 @@ async function renderOpsReview() {
       <div class="card-header">
         <div class="card-title">سجل العمليات</div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <select id="orVehicleFilter" onchange="renderOpsReviewRows()" style="padding:.4rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem;max-width:180px">
+            <option value="">🚗 كل المركبات</option>
+            ${uniqueVehicles.map(v=>`<option value="${(v.plate||v.model||'').replace(/"/g,'')}">${v.plate||v.model}</option>`).join('')}
+          </select>
           <select id="orKindFilter" onchange="renderOpsReviewRows()" style="padding:.4rem .7rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.82rem">
             <option value="">الكل</option><option value="fuel">⛽ تفويل</option><option value="maintenance">🔧 صيانة</option>
           </select>
@@ -20491,7 +20823,7 @@ async function renderOpsReview() {
       </div>
       <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
         <table style="width:100%"><thead><tr>
-          <th>النوع</th><th>المركبة/المعدة</th><th>السائق/المشغل</th><th>التاريخ</th><th>قراءة العداد</th><th>💰 السعر</th><th>الصور</th><th>الحالة</th><th>اعتمدها</th><th></th>
+          <th>النوع</th><th>المركبة/المعدة</th><th>السائق/المشغل</th><th>التاريخ</th><th>قراءة العداد</th><th>⛽ معدل الاستهلاك</th><th>💰 السعر</th><th>الصور</th><th>الحالة</th><th>اعتمدها</th><th></th>
         </tr></thead><tbody id="orTbody"></tbody></table>
       </div>
     </div>`;
@@ -20500,8 +20832,10 @@ async function renderOpsReview() {
 
 function renderOpsReviewRows() {
   let rows = window._opsReviewRows || [];
+  const vehicle = document.getElementById('orVehicleFilter')?.value;
   const kind = document.getElementById('orKindFilter')?.value;
   const status = document.getElementById('orStatusFilter')?.value;
+  if (vehicle) rows = rows.filter(r => (r.vehicle_plate||r.vehicle_model||'') === vehicle);
   if (kind==='fuel') rows = rows.filter(r=>r.type.startsWith('fuel_'));
   else if (kind==='maintenance') rows = rows.filter(r=>!r.type.startsWith('fuel_'));
   if (status) rows = rows.filter(r=>(r.approval_status||'pending')===status);
@@ -20513,12 +20847,36 @@ function renderOpsReviewRows() {
     const wt = WT[r.type] || {icon:'🔧', label:r.type};
     const st = r.approval_status || 'pending';
     const photos = [r.odometer_photo, r.invoice_photo].filter(Boolean);
+    // ── خلية معدل الاستهلاك (للتفويلات فقط) ──
+    const isFuelType = r.type.startsWith('fuel_');
+    const fa = window._fuelAnalysisByRecordId?.[r.id];
+    let consumptionCell = '—';
+    if (isFuelType && fa) {
+      if (fa.consumption_l100 != null) {
+        const valTxt = fa.consumption_l100.toFixed(1) + ' لتر/100كم';
+        if (fa.is_anomaly) {
+          consumptionCell = `<span style="display:inline-flex;align-items:center;gap:.3rem;background:#fef2f2;color:#dc2626;padding:.2rem .5rem;border-radius:8px;font-size:.75rem;font-weight:700;cursor:help" title="${fa.anomaly_reason||''}">
+            ⚠️ ${valTxt}
+          </span>`;
+        } else {
+          consumptionCell = `<span style="color:#16a34a;font-weight:600;font-size:.8rem">✓ ${valTxt}</span>`;
+        }
+      } else if (fa.anomaly_reason) {
+        consumptionCell = `<span style="color:#dc2626;font-size:.75rem;font-weight:700" title="${fa.anomaly_reason}">⚠️ غير صالح</span>`;
+      } else {
+        consumptionCell = '<span style="color:var(--muted);font-size:.75rem">أول تفويلة</span>';
+      }
+    } else if (isFuelType) {
+      consumptionCell = '<span style="color:var(--muted);font-size:.75rem">—</span>';
+    }
+
     return `<tr>
       <td>${wt.icon} ${wt.label}</td>
       <td>${r.vehicle_plate || r.vehicle_model || '—'}</td>
       <td>${r.driver_name || '—'}</td>
       <td style="font-size:.78rem;color:var(--muted)">${fmtDate(r.created_at)}</td>
       <td>${r.odometer_reading ?? '—'}</td>
+      <td>${consumptionCell}</td>
       <td style="font-weight:700">${(r.price||0).toFixed(2)} ج${r.price_edited_by ? ' <span title="تم تعديل السعر بواسطة '+r.price_edited_by+'" style="cursor:help">✏️</span>' : ''}</td>
       <td>${photos.length ? photos.map(p=>`<img src="${p}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;border:1px solid var(--border);margin-left:2px">`).join('') : '—'}</td>
       <td><span style="color:${statusColor[st]};font-weight:700;font-size:.8rem">${statusBadge[st]}</span></td>
@@ -20570,6 +20928,43 @@ function openOpsReviewDetail(id) {
       ${r.price_edited_by ? `<div class="opsr-edit-meta">آخر تعديل: ${r.price_edited_by}${r.price_edited_at?' — '+fmtDate(r.price_edited_at):''}</div>` : ''}
     </div>`;
 
+  /* ── كرت معدل الاستهلاك (للتفويلات فقط) ── */
+  const fa = window._fuelAnalysisByRecordId?.[r.id];
+  let consumptionCardHtml = '';
+  if (isFuel && fa) {
+    if (fa.consumption_l100 != null) {
+      const cardColor = fa.is_anomaly ? '#dc2626' : '#16a34a';
+      const cardBg    = fa.is_anomaly ? '#fef2f2' : 'var(--surface)';
+      consumptionCardHtml = `
+        <div class="opsr-card" style="${fa.is_anomaly ? 'border-color:#fca5a5;background:'+cardBg : ''}">
+          <div class="opsr-card-icon">${fa.is_anomaly ? '⚠️' : '⛽'}</div>
+          <div class="opsr-card-label">معدل الاستهلاك</div>
+          <div class="opsr-card-value" style="color:${cardColor}">${fa.consumption_l100.toFixed(1)} لتر/100كم</div>
+          <div style="font-size:.72rem;color:var(--text-3);margin-top:.2rem">
+            ${fa.km_driven!=null ? 'المسافة: '+fa.km_driven.toLocaleString('ar-EG')+' كم' : ''}
+            ${fa.km_per_liter!=null ? ' · '+fa.km_per_liter+' كم/لتر' : ''}
+          </div>
+          ${fa.baseline_avg_l100 != null ? `<div style="font-size:.72rem;color:var(--text-3)">المعتاد: ${fa.baseline_avg_l100} لتر/100كم</div>` : ''}
+          ${fa.is_anomaly ? `<div style="margin-top:.4rem;background:#fee2e2;color:#991b1b;padding:.35rem .6rem;border-radius:8px;font-size:.74rem;font-weight:700">⚠️ ${fa.anomaly_reason}</div>` : `<div style="margin-top:.3rem;color:#16a34a;font-size:.74rem;font-weight:600">✓ ضمن المعدل الطبيعي</div>`}
+        </div>`;
+    } else if (fa.anomaly_reason) {
+      consumptionCardHtml = `
+        <div class="opsr-card" style="border-color:#fca5a5;background:#fef2f2">
+          <div class="opsr-card-icon">⚠️</div>
+          <div class="opsr-card-label">معدل الاستهلاك</div>
+          <div class="opsr-card-value" style="color:#dc2626;font-size:.85rem">غير قابل للحساب</div>
+          <div style="margin-top:.4rem;background:#fee2e2;color:#991b1b;padding:.35rem .6rem;border-radius:8px;font-size:.74rem;font-weight:700">⚠️ ${fa.anomaly_reason}</div>
+        </div>`;
+    } else {
+      consumptionCardHtml = `
+        <div class="opsr-card">
+          <div class="opsr-card-icon">⛽</div>
+          <div class="opsr-card-label">معدل الاستهلاك</div>
+          <div class="opsr-card-value" style="font-size:.85rem;color:var(--text-3)">أول تفويلة مسجلة</div>
+        </div>`;
+    }
+  }
+
   /* ── شبكة الملخص ── */
   const summaryCardsHtml = isFuel ? `
     <div class="opsr-card"><div class="opsr-card-icon">🚚</div><div class="opsr-card-label">المركبة</div><div class="opsr-card-value">${r.vehicle_plate||'—'}</div></div>
@@ -20578,6 +20973,7 @@ function openOpsReviewDetail(id) {
     <div class="opsr-card"><div class="opsr-card-icon">📊</div><div class="opsr-card-label">قراءة العداد</div><div class="opsr-card-value">${r.odometer_reading??'—'}</div></div>
     ${qtyCardHtml}
     ${priceCardHtml}
+    ${consumptionCardHtml}
   ` : `
     <div class="opsr-card"><div class="opsr-card-icon">🚚</div><div class="opsr-card-label">المركبة / المعدة</div><div class="opsr-card-value">${r.vehicle_plate||r.vehicle_model||'—'}</div></div>
     <div class="opsr-card"><div class="opsr-card-icon">🔧</div><div class="opsr-card-label">نوع الصيانة</div><div class="opsr-card-value">${wt.icon} ${wt.label}</div></div>
