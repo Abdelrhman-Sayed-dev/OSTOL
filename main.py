@@ -115,11 +115,12 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+            role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
-            refresh_exp TEXT
+            refresh_exp TEXT,
+            managed_by INTEGER DEFAULT NULL
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
 
@@ -455,7 +456,7 @@ def _safe_add_columns(c):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+                role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
                 branch TEXT DEFAULT '',
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
@@ -694,7 +695,7 @@ def _safe_add_columns(c):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
                     branch TEXT DEFAULT '',
                     created_at TEXT DEFAULT(datetime('now')),
                     last_login TEXT,
@@ -788,6 +789,15 @@ def _safe_add_columns(c):
     ]:
         c.execute("INSERT OR IGNORE INTO forecast_settings VALUES(?,?,?)", (_k,_v,_n))
 
+
+    # ── migration: managed_by (super_admin feature) ──
+    try:
+        cols = [r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()]
+        if "managed_by" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN managed_by INTEGER DEFAULT NULL")
+            log.info("[MIGRATION] Added managed_by column to users")
+    except Exception as _e:
+        log.warning(f"[MIGRATION] managed_by: {_e}")
 
     # ── migration: avatar_url للمستخدمين ──
     try:
@@ -992,7 +1002,7 @@ async def get_user(
     return result
 
 def require_admin(cu: dict = Depends(get_user)):
-    if cu["role"] not in ("admin", "superuser"):
+    if cu["role"] not in ("admin", "superuser", "super_admin"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات المدير مطلوبة")
     return cu
 
@@ -1001,7 +1011,7 @@ def require_superuser(cu: dict = Depends(get_user)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات السوبر يوزر مطلوبة")
     return cu
 
-ADMIN_LIKE_ROLES = ("superuser","admin","reporter","supervisor_workshop","supervisor_field")
+ADMIN_LIKE_ROLES = ("superuser","super_admin","admin","reporter","supervisor_workshop","supervisor_field")
 
 def require_admin_or_reporter(cu: dict = Depends(get_user)):
     """Allows superuser, admin, reporter and supervisors (read-only) roles."""
@@ -1263,7 +1273,7 @@ class UserCreate(BaseModel):
 
     @validator('role')
     def validate_role(cls, v):
-        allowed = ("admin","superuser","driver","reporter","supervisor_workshop","supervisor_field","operator")
+        allowed = ("admin","superuser","super_admin","driver","reporter","supervisor_workshop","supervisor_field","operator")
         if v not in allowed:
             raise ValueError(f"دور غير صالح. المتاح: {allowed}")
         return v
@@ -4224,6 +4234,21 @@ ARABIC_COL_MAP = {
     "equipment_type":    "equipment_type",
     "القطاع":            "sector",
     "sector":            "sector",
+    # للصيانة الدورية
+    "نوع الصيانة":        "maintenance_type",
+    "maintenance_type":  "maintenance_type",
+    "كل كام كم":          "interval_km",
+    "الفترة كم":          "interval_km",
+    "interval_km":       "interval_km",
+    "كل كام يوم":         "interval_days",
+    "الفترة يوم":         "interval_days",
+    "interval_days":     "interval_days",
+    "آخر قراءة":          "last_done_km",
+    "آخر قراءة كم":        "last_done_km",
+    "last_done_km":      "last_done_km",
+    "تاريخ آخر صيانة":     "last_done_date",
+    "آخر تاريخ":          "last_done_date",
+    "last_done_date":    "last_done_date",
 }
 
 def _normalize_date(val: str) -> str:
@@ -4680,6 +4705,216 @@ async def import_permissions_template(cu: dict = Depends(require_admin)):
     from fastapi.responses import Response
     return Response(content=output.getvalue().encode("utf-8-sig"), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=permissions_template.csv"})
+
+# ══════════════════════════════════════════════════════
+# IMPORT: جدول الصيانة الدورية (maintenance_schedule)
+# منطق UPSERT: لو المركبة+النوع موجودين بالفعل → تحديث
+#              لو مش موجودين → إضافة سجل جديد
+# ══════════════════════════════════════════════════════
+
+def _validate_maintenance_row(row: dict, idx: int, cars_by_plate: dict, existing_map: dict) -> dict:
+    """
+    يتحقق من صحة صف صيانة دورية واحد.
+    cars_by_plate: {plate_normalized: car_id}
+    existing_map:  {(car_id, maintenance_type): schedule_id}  — للتحديد upsert أم insert
+    """
+    errors = []
+    plate = (row.get("plate") or "").strip()
+    maint_type = (row.get("maintenance_type") or "").strip()
+    interval_km_raw   = row.get("interval_km")
+    interval_days_raw = row.get("interval_days")
+    last_km_raw   = row.get("last_done_km")
+    last_date_raw = row.get("last_done_date")
+
+    car_id = None
+    if not plate:
+        errors.append("رقم اللوحة مطلوب")
+    else:
+        car_id = cars_by_plate.get(plate.strip().lower())
+        if not car_id:
+            errors.append(f"المركبة '{plate}' غير موجودة في النظام")
+
+    if not maint_type:
+        errors.append("نوع الصيانة مطلوب")
+    elif maint_type not in MAINTENANCE_TYPES:
+        errors.append(f"نوع صيانة غير معروف: '{maint_type}'")
+
+    def _to_float(v):
+        try:
+            if v is None or str(v).strip() in ("", "—", "None"):
+                return None
+            return float(str(v).replace(",", "").strip())
+        except Exception:
+            return None
+
+    def _to_int(v):
+        f = _to_float(v)
+        return int(f) if f is not None else None
+
+    interval_km   = _to_int(interval_km_raw)
+    interval_days = _to_int(interval_days_raw)
+    last_km       = _to_float(last_km_raw)
+    last_date     = _normalize_date(str(last_date_raw)) if last_date_raw else ""
+
+    if not interval_km and not interval_days:
+        errors.append("يجب تحديد 'كل كام كم' أو 'كل كام يوم' على الأقل")
+
+    is_update = False
+    existing_id = None
+    if car_id and maint_type and maint_type in MAINTENANCE_TYPES:
+        existing_id = existing_map.get((car_id, maint_type))
+        is_update = existing_id is not None
+
+    return {
+        "row_index":      idx,
+        "plate":          plate,
+        "maintenance_type": maint_type,
+        "interval_km":    interval_km,
+        "interval_days":  interval_days,
+        "last_done_km":   last_km,
+        "last_done_date": last_date,
+        "car_id":         car_id,
+        "existing_id":    existing_id,
+        "is_update":      is_update,
+        "valid":          len(errors) == 0,
+        "errors":         errors,
+    }
+
+
+def _build_maintenance_maps(c):
+    """يبني خرائط المركبات (باللوحة) وجداول الصيانة الموجودة فعلاً."""
+    cars_by_plate = {}
+    for r in c.execute("SELECT id, plate FROM cars").fetchall():
+        if r["plate"]:
+            cars_by_plate[r["plate"].strip().lower()] = r["id"]
+
+    existing_map = {}
+    for r in c.execute("SELECT id, car_id, maintenance_type FROM maintenance_schedule").fetchall():
+        existing_map[(r["car_id"], r["maintenance_type"])] = r["id"]
+
+    return cars_by_plate, existing_map
+
+
+@app.post("/import/maintenance/preview")
+async def import_maintenance_preview(
+    file: UploadFile = File(...),
+    cu: dict = Depends(require_admin)
+):
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(400, "حجم الملف يتجاوز 5 MB")
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ أو لا يحتوي على بيانات")
+
+    with get_db() as conn:
+        cars_by_plate, existing_map = _build_maintenance_maps(conn.cursor())
+
+    rows = [_validate_maintenance_row(r, i + 1, cars_by_plate, existing_map) for i, r in enumerate(raw_rows)]
+
+    valid   = sum(1 for r in rows if r["valid"])
+    updates = sum(1 for r in rows if r["valid"] and r["is_update"])
+    inserts = sum(1 for r in rows if r["valid"] and not r["is_update"])
+
+    return {
+        "import_type": "maintenance",
+        "rows": rows,
+        "summary": {
+            "total": len(rows), "valid": valid, "invalid": len(rows) - valid,
+            "will_update": updates, "will_insert": inserts,
+        },
+    }
+
+
+@app.post("/import/maintenance/confirm")
+async def import_maintenance_confirm(
+    file: UploadFile = File(...),
+    skip_errors: bool = False,
+    cu: dict = Depends(require_admin)
+):
+    content = await file.read()
+    raw_rows = _parse_upload_file(content, file.filename or "file.csv")
+    if not raw_rows:
+        raise HTTPException(400, "الملف فارغ")
+
+    with get_db() as conn:
+        cars_by_plate, existing_map = _build_maintenance_maps(conn.cursor())
+
+    rows = [_validate_maintenance_row(r, i + 1, cars_by_plate, existing_map) for i, r in enumerate(raw_rows)]
+
+    invalid = [r for r in rows if not r["valid"]]
+    if invalid and not skip_errors:
+        raise HTTPException(422, {"message": f"يوجد {len(invalid)} صف بأخطاء", "invalid_rows": invalid})
+
+    now = datetime.utcnow().isoformat() + "Z"
+    inserted_items, updated_items, skipped_rows = [], [], []
+
+    with get_db() as conn:
+        c = conn.cursor()
+        for row in [r for r in rows if r["valid"]]:
+            try:
+                if row["is_update"]:
+                    # ── UPSERT: تحديث السجل الموجود بدل تجاهله ──
+                    c.execute("""UPDATE maintenance_schedule
+                                 SET interval_km=COALESCE(?, interval_km),
+                                     interval_days=COALESCE(?, interval_days),
+                                     last_done_km=COALESCE(?, last_done_km),
+                                     last_done_date=CASE WHEN ?!='' THEN ? ELSE last_done_date END,
+                                     updated_at=?
+                                 WHERE id=?""",
+                              (row["interval_km"], row["interval_days"], row["last_done_km"],
+                               row["last_done_date"], row["last_done_date"], now, row["existing_id"]))
+                    updated_items.append({
+                        "row_index": row["row_index"], "plate": row["plate"],
+                        "maintenance_type": row["maintenance_type"],
+                    })
+                else:
+                    c.execute("""INSERT INTO maintenance_schedule
+                                 (car_id,maintenance_type,interval_km,interval_days,
+                                  last_done_km,last_done_date,alert_km_before,alert_days_before,
+                                  notes,created_at,updated_at)
+                                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                              (row["car_id"], row["maintenance_type"], row["interval_km"], row["interval_days"],
+                               row["last_done_km"], row["last_done_date"] or None,
+                               500, 7, "", now, now))
+                    inserted_items.append({
+                        "row_index": row["row_index"], "plate": row["plate"],
+                        "maintenance_type": row["maintenance_type"],
+                    })
+            except Exception as e:
+                row["errors"] = [str(e)]
+                skipped_rows.append(row)
+
+    write_audit_log(cu["user_id"], cu["username"], cu["role"], "bulk_import_maintenance",
+                    f"استيراد صيانة دورية: {len(inserted_items)} إضافة، {len(updated_items)} تحديث")
+    log_event("maintenance_bulk_import", inserted=len(inserted_items), updated=len(updated_items),
+              skipped=len(skipped_rows), admin=cu["username"])
+
+    return {
+        "import_type": "maintenance",
+        "inserted": len(inserted_items),
+        "updated":  len(updated_items),
+        "skipped":  len(skipped_rows),
+        "inserted_items": inserted_items,
+        "updated_items":  updated_items,
+        "skipped_items":  skipped_rows,
+    }
+
+
+@app.get("/import/template/maintenance")
+async def import_maintenance_template(cu: dict = Depends(require_admin)):
+    cols   = ["رقم اللوحة", "نوع الصيانة", "كل كام كم", "كل كام يوم", "آخر قراءة", "تاريخ آخر صيانة"]
+    sample = ["أ-ب-1234", "تغيير زيت", "5000", "90", "120000", "2026-05-01"]
+    output = io.StringIO()
+    csv.writer(output).writerows([cols, sample])
+    from fastapi.responses import Response
+    return Response(
+        content=output.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=maintenance_template.csv"},
+    )
+
+
 
 
 # ══════════════════════════════════════════════════════
@@ -6799,6 +7034,150 @@ async def delete_equipment(eq_id: int, cu: dict = Depends(require_admin)):
     return {"message": "تم الحذف"}
 
 
+# ══════════════════════════════════════════════════════════════
+# SUPER ADMIN — Role Management Endpoints
+# ══════════════════════════════════════════════════════════════
+
+class SuperAdminCreate(BaseModel):
+    username: str
+    password: str
+    branch:   Optional[str] = ""
+    managed_admin_ids: Optional[List[int]] = []   # الأدمنز التابعين له
+
+class SuperAdminUpdate(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    branch:   Optional[str] = None
+    managed_admin_ids: Optional[List[int]] = None
+
+
+@app.get("/superuser/super-admins")
+async def list_super_admins(cu: dict = Depends(require_superuser)):
+    """قائمة كل السوبر أدمنز مع الأدمنز التابعين لهم وإحصائياتهم"""
+    with get_db() as conn:
+        c = conn.cursor()
+        super_admins = [dict(r) for r in c.execute(
+            "SELECT id,username,branch,created_at,last_login FROM users WHERE role='super_admin' ORDER BY id"
+        ).fetchall()]
+        for sa in super_admins:
+            # الأدمنز التابعين
+            managed = [dict(r) for r in c.execute(
+                "SELECT id,username,branch,last_login FROM users WHERE managed_by=? AND role='admin'",
+                (sa["id"],)
+            ).fetchall()]
+            sa["managed_admins"] = managed
+            sa["managed_count"]  = len(managed)
+            # إحصائيات: عدد السائقين والمركبات في نطاق الأدمنز التابعين
+            admin_branches = list({m["branch"] for m in managed if m.get("branch")})
+            if admin_branches:
+                ph = ",".join("?" * len(admin_branches))
+                sa["total_drivers"] = c.execute(
+                    f"SELECT COUNT(*) FROM drivers WHERE branch IN ({ph})", admin_branches
+                ).fetchone()[0]
+                sa["total_cars"] = c.execute(
+                    f"SELECT COUNT(*) FROM cars WHERE branch IN ({ph})", admin_branches
+                ).fetchone()[0]
+                sa["active_trips"] = c.execute(
+                    "SELECT COUNT(*) FROM trips WHERE end_time IS NULL AND car_id IN "
+                    f"(SELECT id FROM cars WHERE branch IN ({ph}))", admin_branches
+                ).fetchone()[0]
+            else:
+                sa["total_drivers"] = 0
+                sa["total_cars"]    = 0
+                sa["active_trips"]  = 0
+        return super_admins
+
+
+@app.post("/superuser/super-admins", status_code=201)
+async def create_super_admin(body: SuperAdminCreate, cu: dict = Depends(require_superuser)):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        if c.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone():
+            raise HTTPException(409, "اسم المستخدم موجود بالفعل")
+        hashed = hash_password(body.password)
+        cur = c.execute(
+            "INSERT INTO users(username,password,role,branch,created_at) VALUES(?,?,?,?,?)",
+            (body.username, hashed, "super_admin", body.branch or "", now)
+        )
+        sa_id = cur.lastrowid
+        # تعيين الأدمنز التابعين
+        for admin_id in (body.managed_admin_ids or []):
+            c.execute("UPDATE users SET managed_by=? WHERE id=? AND role='admin'", (sa_id, admin_id))
+        log_event("super_admin_created", username=body.username, by=cu["username"])
+        return {"id": sa_id, "username": body.username, "role": "super_admin"}
+
+
+@app.put("/superuser/super-admins/{uid}")
+async def update_super_admin(uid: int, body: SuperAdminUpdate, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        c = conn.cursor()
+        if not c.execute("SELECT id FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone():
+            raise HTTPException(404, "السوبر أدمن غير موجود")
+        if body.username:
+            ex = c.execute("SELECT id FROM users WHERE username=? AND id!=?", (body.username, uid)).fetchone()
+            if ex: raise HTTPException(409, "اسم المستخدم مستخدم")
+            c.execute("UPDATE users SET username=? WHERE id=?", (body.username, uid))
+        if body.password:
+            c.execute("UPDATE users SET password=? WHERE id=?", (hash_password(body.password), uid))
+        if body.branch is not None:
+            c.execute("UPDATE users SET branch=? WHERE id=?", (body.branch, uid))
+        if body.managed_admin_ids is not None:
+            # فك الربط القديم
+            c.execute("UPDATE users SET managed_by=NULL WHERE managed_by=? AND role='admin'", (uid,))
+            # الربط الجديد
+            for admin_id in body.managed_admin_ids:
+                c.execute("UPDATE users SET managed_by=? WHERE id=? AND role='admin'", (uid, admin_id))
+        log_event("super_admin_updated", uid=uid, by=cu["username"])
+        return {"ok": True}
+
+
+@app.delete("/superuser/super-admins/{uid}")
+async def delete_super_admin(uid: int, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        c = conn.cursor()
+        if not c.execute("SELECT id FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone():
+            raise HTTPException(404, "السوبر أدمن غير موجود")
+        # فك ربط الأدمنز التابعين
+        c.execute("UPDATE users SET managed_by=NULL WHERE managed_by=? AND role='admin'", (uid,))
+        c.execute("DELETE FROM users WHERE id=?", (uid,))
+        log_event("super_admin_deleted", uid=uid, by=cu["username"])
+        return {"ok": True}
+
+
+@app.get("/superuser/super-admins/{uid}/stats")
+async def get_super_admin_stats(uid: int, cu: dict = Depends(require_superuser)):
+    """إحصائيات تفصيلية لسوبر أدمن محدد"""
+    with get_db() as conn:
+        c = conn.cursor()
+        sa = c.execute("SELECT * FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone()
+        if not sa: raise HTTPException(404, "غير موجود")
+        managed = [dict(r) for r in c.execute(
+            "SELECT id,username,branch,last_login FROM users WHERE managed_by=? AND role='admin'", (uid,)
+        ).fetchall()]
+        branches = list({m["branch"] for m in managed if m.get("branch")})
+        stats = {"managed_admins": managed, "branches": branches}
+        if branches:
+            ph = ",".join("?" * len(branches))
+            stats["drivers"]      = c.execute(f"SELECT COUNT(*) FROM drivers WHERE branch IN ({ph})", branches).fetchone()[0]
+            stats["cars"]         = c.execute(f"SELECT COUNT(*) FROM cars WHERE branch IN ({ph})", branches).fetchone()[0]
+            stats["active_trips"] = c.execute("SELECT COUNT(*) FROM trips WHERE end_time IS NULL AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
+            stats["total_trips_30d"] = c.execute("SELECT COUNT(*) FROM trips WHERE start_time >= date('now','-30 days') AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
+            stats["workshop_30d"] = c.execute("SELECT COUNT(*) FROM workshop_records WHERE created_at >= date('now','-30 days') AND vehicle_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
+        return stats
+
+
+# ── الأدمنز المتاحون للربط (لم يُربطوا بسوبر أدمن بعد) ──
+@app.get("/superuser/free-admins")
+async def list_free_admins(cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+
 # ── Equipment Import ──
 @app.post("/equipment/import/preview")
 async def equipment_import_preview(
@@ -8038,7 +8417,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+            role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
@@ -8378,7 +8757,7 @@ def _safe_add_columns(c):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+                role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
                 branch TEXT DEFAULT '',
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
@@ -8764,7 +9143,7 @@ def _safe_add_columns(c):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN('superuser','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
                     branch TEXT DEFAULT '',
                     created_at TEXT DEFAULT(datetime('now')),
                     last_login TEXT,
@@ -12315,6 +12694,21 @@ ARABIC_COL_MAP = {
     "equipment_type":    "equipment_type",
     "القطاع":            "sector",
     "sector":            "sector",
+    # للصيانة الدورية
+    "نوع الصيانة":        "maintenance_type",
+    "maintenance_type":  "maintenance_type",
+    "كل كام كم":          "interval_km",
+    "الفترة كم":          "interval_km",
+    "interval_km":       "interval_km",
+    "كل كام يوم":         "interval_days",
+    "الفترة يوم":         "interval_days",
+    "interval_days":     "interval_days",
+    "آخر قراءة":          "last_done_km",
+    "آخر قراءة كم":        "last_done_km",
+    "last_done_km":      "last_done_km",
+    "تاريخ آخر صيانة":     "last_done_date",
+    "آخر تاريخ":          "last_done_date",
+    "last_done_date":    "last_done_date",
 }
 
 def _normalize_date(val: str) -> str:
@@ -17173,6 +17567,201 @@ async def list_pending_review(cu: dict = Depends(require_admin_or_reporter), sta
         for r in rows:
             r.setdefault("approval_status", "pending")
         return rows
+
+@app.get("/workshops/fuel-consumption-analysis")
+async def fuel_consumption_analysis(cu: dict = Depends(require_admin_or_reporter)):
+    """
+    يحسب معدل استهلاك الوقود لكل تفويلة بناءً على المعادلة:
+    معدل الاستهلاك = (عداد التفويلة الحالية - عداد التفويلة السابقة) / كمية الوقود بالتفويلة الحالية
+    (لتر / كم، ثم نحوله لـ لتر/100كم)
+    يكتشف الشذوذ بناءً على الانحراف عن متوسط آخر 5 تفويلات لنفس المركبة.
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+        q = """SELECT w.id, w.vehicle_id, w.driver_id, w.odometer_reading, w.quantity,
+                      w.price, w.created_at, w.type,
+                      c.plate as vehicle_plate, c.model as vehicle_model,
+                      COALESCE(d.name, op.name) as driver_name
+               FROM workshop_records w
+               LEFT JOIN cars c ON w.vehicle_id = c.id
+               LEFT JOIN drivers d ON w.driver_id = d.id AND (w.is_operator IS NULL OR w.is_operator = 0)
+               LEFT JOIN equipment_operators op ON w.operator_id = op.id
+               WHERE w.type LIKE 'fuel_%'
+                 AND w.vehicle_id IS NOT NULL
+                 AND w.odometer_reading IS NOT NULL
+                 AND w.quantity IS NOT NULL
+                 AND w.quantity > 0
+               ORDER BY w.vehicle_id, w.odometer_reading ASC"""
+        rows = [dict(r) for r in c.execute(q).fetchall()]
+
+        # تجميع حسب المركبة
+        by_car = {}
+        for r in rows:
+            by_car.setdefault(r["vehicle_id"], []).append(r)
+
+        result = {}
+        for car_id, recs in by_car.items():
+            recs_sorted = sorted(recs, key=lambda x: x["odometer_reading"])
+            enriched = []
+            consumptions = []  # لتر/100كم لكل سجلات الحساب الصحيحة
+
+            for i, rec in enumerate(recs_sorted):
+                entry = dict(rec)
+                if i == 0:
+                    entry["prev_odometer"]   = None
+                    entry["km_driven"]       = None
+                    entry["consumption_l100"]= None
+                    entry["is_anomaly"]      = False
+                    entry["anomaly_reason"]  = None
+                    enriched.append(entry)
+                    continue
+
+                prev = recs_sorted[i-1]
+                km_driven = rec["odometer_reading"] - prev["odometer_reading"]
+                qty = rec["quantity"]
+
+                entry["prev_odometer"] = prev["odometer_reading"]
+                entry["km_driven"]     = round(km_driven, 1)
+
+                if km_driven <= 0:
+                    # عداد رجع للخلف أو نفس القراءة — بيانات غير منطقية
+                    entry["consumption_l100"] = None
+                    entry["is_anomaly"]     = True
+                    entry["anomaly_reason"] = "عداد غير منطقي (لم يتقدم منذ آخر تفويلة)"
+                elif qty <= 0:
+                    entry["consumption_l100"] = None
+                    entry["is_anomaly"]     = True
+                    entry["anomaly_reason"] = "كمية وقود غير صحيحة"
+                else:
+                    # معدل الاستهلاك حسب المعادلة المطلوبة: km_driven / qty = كم/لتر
+                    km_per_liter = km_driven / qty
+                    consumption_l100 = (qty / km_driven) * 100  # لتر/100كم — الصيغة القياسية
+                    entry["km_per_liter"]      = round(km_per_liter, 2)
+                    entry["consumption_l100"]  = round(consumption_l100, 2)
+
+                    # ── كشف الشذوذ: مقارنة بمتوسط آخر 5 تفويلات سابقة صحيحة لنفس المركبة ──
+                    recent_valid = [c_ for c_ in consumptions[-5:] if c_ is not None]
+                    if len(recent_valid) >= 2:
+                        avg_recent = sum(recent_valid) / len(recent_valid)
+                        std_dev = (sum((x-avg_recent)**2 for x in recent_valid) / len(recent_valid)) ** 0.5
+                        # عتبة الشذوذ: انحراف أكبر من 40% عن المتوسط أو أكبر من 2.5 انحراف معياري
+                        deviation_pct = abs(consumption_l100 - avg_recent) / avg_recent if avg_recent > 0 else 0
+                        threshold_std = max(std_dev * 2.5, avg_recent * 0.4)
+
+                        if abs(consumption_l100 - avg_recent) > threshold_std:
+                            entry["is_anomaly"] = True
+                            if consumption_l100 > avg_recent:
+                                entry["anomaly_reason"] = (
+                                    f"استهلاك أعلى من المعتاد بنسبة {round(deviation_pct*100)}٪ "
+                                    f"(المعتاد ≈ {round(avg_recent,1)} لتر/100كم)"
+                                )
+                            else:
+                                entry["anomaly_reason"] = (
+                                    f"استهلاك أقل من المعتاد بنسبة {round(deviation_pct*100)}٪ "
+                                    f"— قد يشير لتفويلة جزئية أو خطأ تسجيل "
+                                    f"(المعتاد ≈ {round(avg_recent,1)} لتر/100كم)"
+                                )
+                        else:
+                            entry["is_anomaly"] = False
+                            entry["anomaly_reason"] = None
+                    else:
+                        # مفيش بيانات كافية للمقارنة بعد
+                        entry["is_anomaly"] = False
+                        entry["anomaly_reason"] = None
+
+                    entry["baseline_avg_l100"] = round(sum(recent_valid)/len(recent_valid), 2) if recent_valid else None
+                    consumptions.append(consumption_l100)
+
+                enriched.append(entry)
+
+            result[str(car_id)] = enriched
+
+        return result
+
+
+@app.get("/workshops/fuel-consumption-analysis/{record_id}")
+async def fuel_consumption_for_record(record_id: int, cu: dict = Depends(require_admin_or_reporter)):
+    """يرجع تحليل الاستهلاك لتفويلة واحدة محددة (يُستخدم في شاشة مراجعة العمليات عند فتح تفاصيل التفويلة)."""
+    with get_db() as conn:
+        c = conn.cursor()
+        rec = c.execute("SELECT * FROM workshop_records WHERE id=?", (record_id,)).fetchone()
+        if not rec:
+            raise HTTPException(404, "السجل غير موجود")
+        rec = dict(rec)
+        if not (rec.get("type") or "").startswith("fuel_") or not rec.get("vehicle_id"):
+            return {"applicable": False}
+
+        # نجيب آخر تفويلة سابقة بعداد أقل لنفس المركبة
+        prev = c.execute(
+            """SELECT * FROM workshop_records
+               WHERE vehicle_id=? AND type LIKE 'fuel_%' AND id != ?
+                 AND odometer_reading IS NOT NULL AND odometer_reading < ?
+               ORDER BY odometer_reading DESC LIMIT 1""",
+            (rec["vehicle_id"], record_id, rec.get("odometer_reading") or 999999999)
+        ).fetchone()
+
+        if not prev or not rec.get("odometer_reading") or not rec.get("quantity"):
+            return {"applicable": True, "has_previous": False}
+
+        prev = dict(prev)
+        km_driven = rec["odometer_reading"] - prev["odometer_reading"]
+        qty = rec["quantity"]
+
+        if km_driven <= 0 or qty <= 0:
+            return {
+                "applicable": True, "has_previous": True,
+                "is_anomaly": True,
+                "anomaly_reason": "بيانات غير منطقية (عداد أو كمية غير صحيحة)",
+                "km_driven": km_driven, "prev_odometer": prev["odometer_reading"],
+            }
+
+        consumption_l100 = (qty / km_driven) * 100
+
+        # متوسط آخر 5 تفويلات قبل دي
+        recent = c.execute(
+            """SELECT odometer_reading, quantity FROM workshop_records
+               WHERE vehicle_id=? AND type LIKE 'fuel_%' AND id != ?
+                 AND odometer_reading IS NOT NULL AND odometer_reading <= ?
+               ORDER BY odometer_reading DESC LIMIT 6""",
+            (rec["vehicle_id"], record_id, prev["odometer_reading"])
+        ).fetchall()
+        recent = [dict(r) for r in recent]
+        recent_consumptions = []
+        for i in range(len(recent)-1):
+            km_d = recent[i]["odometer_reading"] - recent[i+1]["odometer_reading"]
+            q_ = recent[i]["quantity"]
+            if km_d > 0 and q_ and q_ > 0:
+                recent_consumptions.append((q_ / km_d) * 100)
+
+        is_anomaly = False
+        anomaly_reason = None
+        baseline = None
+        if len(recent_consumptions) >= 2:
+            avg_recent = sum(recent_consumptions) / len(recent_consumptions)
+            std_dev = (sum((x-avg_recent)**2 for x in recent_consumptions) / len(recent_consumptions)) ** 0.5
+            threshold = max(std_dev * 2.5, avg_recent * 0.4)
+            baseline = round(avg_recent, 2)
+            if abs(consumption_l100 - avg_recent) > threshold:
+                is_anomaly = True
+                deviation_pct = round(abs(consumption_l100 - avg_recent) / avg_recent * 100) if avg_recent > 0 else 0
+                if consumption_l100 > avg_recent:
+                    anomaly_reason = f"استهلاك أعلى من المعتاد بنسبة {deviation_pct}٪"
+                else:
+                    anomaly_reason = f"استهلاك أقل من المعتاد بنسبة {deviation_pct}٪ — تحقق من صحة البيانات"
+
+        return {
+            "applicable": True, "has_previous": True,
+            "prev_odometer": prev["odometer_reading"],
+            "current_odometer": rec["odometer_reading"],
+            "km_driven": round(km_driven, 1),
+            "fuel_quantity": qty,
+            "consumption_l100": round(consumption_l100, 2),
+            "km_per_liter": round(km_driven / qty, 2),
+            "baseline_avg_l100": baseline,
+            "is_anomaly": is_anomaly,
+            "anomaly_reason": anomaly_reason,
+        }
+
 
 @app.post("/workshops/{wid}/review")
 async def review_workshop_record(wid: int, body: WorkshopApproval, cu: dict = Depends(require_admin)):
