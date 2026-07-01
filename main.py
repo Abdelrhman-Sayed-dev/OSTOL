@@ -1394,19 +1394,7 @@ class PaginationParams(BaseModel):
 
 
 
-async def import_maintenance_template(cu: dict = Depends(require_admin)):
-    cols   = ["رقم اللوحة", "نوع الصيانة", "كل كام كم", "كل كام يوم", "آخر قراءة", "تاريخ آخر صيانة"]
-    sample = ["أ-ب-1234", "تغيير زيت", "5000", "90", "120000", "2026-05-01"]
-    output = io.StringIO()
-    csv.writer(output).writerows([cols, sample])
-    from fastapi.responses import Response
-    return Response(
-        content=output.getvalue().encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=maintenance_template.csv"},
-    )
-
-
+@app.get("/superuser/free-admins")
 async def list_free_admins(cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         rows = conn.execute(
@@ -1621,10 +1609,6 @@ async def get_super_admin_stats(uid: int, cu: dict = Depends(require_superuser))
             stats["total_trips_30d"] = c.execute("SELECT COUNT(*) FROM trips WHERE start_time >= date('now','-30 days') AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
             stats["workshop_30d"] = c.execute("SELECT COUNT(*) FROM workshop_records WHERE created_at >= date('now','-30 days') AND vehicle_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
         return stats
-
-
-# ── الأدمنز المتاحون للربط (لم يُربطوا بسوبر أدمن بعد) ──
-@app.get("/superuser/free-admins")
 
 
 # ══════════════════════════════════════════════════════
