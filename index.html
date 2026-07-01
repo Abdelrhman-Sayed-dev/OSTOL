@@ -2706,6 +2706,7 @@ function buildAdminNav() {
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-reassign',    icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
+    base.push({id:'su-change-password', icon:'🔑', label:'تغيير كلمة المرور'});
     base.push({id:'super-sarky',       icon:'📅', label:'السركي'});
     base.push({id:'driver-photos',      icon:'📷', label:'صور السائقين'});
   }
@@ -2856,7 +2857,8 @@ async function renderSection(id) {
     case 'sa-my-admins':         await renderSAMyAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-reassign':  await renderSuperReassign(); break;
-    case 'super-logs':      await renderSuperLogs(); break;
+    case 'super-logs':           await renderSuperLogs(); break;
+    case 'su-change-password':   renderSuChangePassword(); break;
     case 'super-sarky':     await renderSuperSarky(); break;
     case 'driver-photos': await renderDriverPhotosSection(); break;
     case 'ws-attachments': await renderWsAttachments(); break;
@@ -20738,6 +20740,109 @@ async function renderSAMyAdmins() {
   } catch(e) {
     c.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
   }
+}
+
+
+// ── تغيير كلمة المرور — السوبر يوزر ──
+function renderSuChangePassword() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `
+  <div class="card" style="max-width:520px;margin:2rem auto">
+    <div class="card-header">
+      <div class="card-title">🔑 تغيير كلمة المرور</div>
+    </div>
+    <div style="padding:1.4rem">
+
+      <!-- تغيير كلمة مرور السوبر يوزر نفسه -->
+      <div style="border:1.5px solid var(--border);border-radius:12px;padding:1.2rem;margin-bottom:1.2rem">
+        <div style="font-weight:700;font-size:.92rem;margin-bottom:1rem">🔐 تغيير كلمة مرورك الخاصة</div>
+        <div class="form-group">
+          <label>كلمة المرور الحالية</label>
+          <input type="password" id="suCurPw" placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>كلمة المرور الجديدة</label>
+          <input type="password" id="suNewPw" placeholder="6 أحرف على الأقل">
+        </div>
+        <div class="form-group">
+          <label>تأكيد كلمة المرور الجديدة</label>
+          <input type="password" id="suConfPw" placeholder="أعد كتابة كلمة المرور">
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="suChangeOwnPassword()">💾 تغيير كلمة مروري</button>
+      </div>
+
+      <!-- تغيير كلمة مرور أي مستخدم -->
+      <div style="border:1.5px solid var(--border);border-radius:12px;padding:1.2rem">
+        <div style="font-weight:700;font-size:.92rem;margin-bottom:1rem">👤 تغيير كلمة مرور مستخدم آخر</div>
+        <div class="form-group">
+          <label>اختر المستخدم</label>
+          <select id="suTargetUser" style="width:100%">
+            <option value="">— جارٍ التحميل... —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>كلمة المرور الجديدة</label>
+          <input type="password" id="suTargetPw" placeholder="6 أحرف على الأقل">
+        </div>
+        <div class="form-group">
+          <label>تأكيد كلمة المرور</label>
+          <input type="password" id="suTargetConfPw" placeholder="أعد كتابة كلمة المرور">
+        </div>
+        <button class="btn btn-primary" style="width:100%;background:#dc2626" onclick="suChangeTargetPassword()">🔑 تغيير كلمة مرور المستخدم</button>
+      </div>
+    </div>
+  </div>`;
+
+  // تحميل المستخدمين
+  apiCall('/superuser/admins').then(admins => {
+    apiCall('/superuser/super-admins').then(superAdmins => {
+      const sel = document.getElementById('suTargetUser');
+      if (!sel) return;
+      const allUsers = [
+        ...admins.map(a=>({id:a.id, label:`👑 ${a.username} (أدمن)${a.branch?' — '+a.branch:''}`})),
+        ...superAdmins.map(s=>({id:s.id, label:`🛡️ ${s.username} (سوبر أدمن)${s.branch?' — '+s.branch:''}`})),
+      ];
+      sel.innerHTML = '<option value="">— اختر مستخدماً —</option>' +
+        allUsers.map(u=>`<option value="${u.id}">${u.label}</option>`).join('');
+    }).catch(()=>{});
+  }).catch(()=>{
+    const sel = document.getElementById('suTargetUser');
+    if (sel) sel.innerHTML = '<option value="">— تعذر التحميل —</option>';
+  });
+}
+
+async function suChangeOwnPassword() {
+  const cur  = document.getElementById('suCurPw')?.value;
+  const nw   = document.getElementById('suNewPw')?.value;
+  const conf = document.getElementById('suConfPw')?.value;
+  if (!cur)  return showNotification('أدخل كلمة المرور الحالية', 'error');
+  if (!nw || nw.length < 6) return showNotification('كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل', 'error');
+  if (nw !== conf) return showNotification('كلمتا المرور غير متطابقتان', 'error');
+  try {
+    const res = await apiCall('/superuser/change-password', 'PUT', {current_password: cur, new_password: nw});
+    showNotification('✅ ' + res.message, 'success');
+    document.getElementById('suCurPw').value  = '';
+    document.getElementById('suNewPw').value  = '';
+    document.getElementById('suConfPw').value = '';
+    // تسجيل خروج تلقائي بعد ثانيتين
+    setTimeout(() => { clearAuth(); showLogin(); }, 2000);
+  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+async function suChangeTargetPassword() {
+  const userId = document.getElementById('suTargetUser')?.value;
+  const nw     = document.getElementById('suTargetPw')?.value;
+  const conf   = document.getElementById('suTargetConfPw')?.value;
+  if (!userId) return showNotification('اختر مستخدماً أولاً', 'error');
+  if (!nw || nw.length < 6) return showNotification('كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل', 'error');
+  if (nw !== conf) return showNotification('كلمتا المرور غير متطابقتان', 'error');
+  if (!confirm('⚠️ هل أنت متأكد من تغيير كلمة مرور هذا المستخدم؟')) return;
+  try {
+    const res = await apiCall('/superuser/change-password', 'PUT', {user_id: parseInt(userId), new_password: nw});
+    showNotification('✅ ' + res.message, 'success');
+    document.getElementById('suTargetPw').value     = '';
+    document.getElementById('suTargetConfPw').value = '';
+  } catch(e) { showNotification('❌ ' + e.message, 'error'); }
 }
 
 async function deleteRepairQuote(id) {
