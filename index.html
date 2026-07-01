@@ -764,6 +764,68 @@ tbody tr:hover{background:#F8FAFC;transition:.1s}
   border-top:1px solid var(--border);
 }
 
+/* ── Larger modal variant ── */
+.modal-lg{max-width:720px}
+
+/* ── Super Admin create/edit modal — redesign ── */
+.sa-modal-head{display:flex;align-items:center;gap:.9rem}
+.sa-modal-icon{
+  width:46px;height:46px;border-radius:13px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--brand-teal),var(--brand-green));
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.35rem;box-shadow:0 6px 16px rgba(6,182,212,.32);
+}
+.sa-modal-titles{display:flex;flex-direction:column;gap:.15rem}
+.sa-modal-subtitle{font-size:.78rem;color:var(--muted);font-weight:500}
+.sa-section-label{
+  display:flex;align-items:center;gap:.4rem;
+  font-size:.72rem;font-weight:800;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.6px;
+  margin:1.3rem 0 .6rem;
+}
+.sa-section-label:first-of-type{margin-top:0}
+.sa-admin-toolbar{display:flex;align-items:center;gap:.6rem;margin-bottom:.6rem}
+.sa-admin-search{flex:1;position:relative}
+.sa-admin-search input{padding-inline-start:2.2rem}
+.sa-admin-search::before{
+  content:'🔎';position:absolute;top:50%;transform:translateY(-50%);
+  inset-inline-start:.75rem;font-size:.8rem;opacity:.55;pointer-events:none;
+}
+.sa-select-all-btn{
+  white-space:nowrap;font-size:.74rem;font-weight:700;color:var(--gold);
+  background:var(--gold-pale);border:1px solid rgba(6,182,212,.25);
+  border-radius:9px;padding:.5rem .8rem;cursor:pointer;transition:.15s;
+}
+.sa-select-all-btn:hover{background:rgba(6,182,212,.16)}
+.sa-admin-list{
+  max-height:260px;overflow-y:auto;
+  border:1.5px solid var(--border);border-radius:13px;
+  background:var(--surface-2);
+}
+.sa-admin-item{
+  display:flex;align-items:center;gap:.75rem;
+  padding:.65rem .9rem;cursor:pointer;
+  border-bottom:1px solid var(--border);transition:.13s;
+}
+.sa-admin-item:last-child{border-bottom:none}
+.sa-admin-item:hover{background:var(--surface)}
+.sa-admin-item.sa-checked{background:var(--gold-pale)}
+.sa-avatar{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  background:var(--primary);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:700;font-size:.82rem;
+}
+.sa-admin-name{font-size:.85rem;font-weight:700;color:var(--text)}
+.sa-admin-branch{font-size:.74rem;color:var(--muted);font-weight:500}
+.sa-admin-cb{width:17px;height:17px;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
+.sa-admin-empty{padding:1.4rem;text-align:center;color:var(--muted);font-size:.82rem}
+.sa-count-pill{
+  font-size:.72rem;font-weight:700;color:var(--muted);
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:999px;padding:.25rem .65rem;
+}
+
 /* ── OPS REVIEW — Premium Enterprise Modal ── */
 .opsr-modal{background:#FFFFFF;border-radius:20px;padding:0;width:94%;max-width:1080px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;border:1px solid #E2E8F0;box-shadow:0 30px 80px -20px rgba(15,23,42,.35),0 10px 30px rgba(15,23,42,.08);animation:slideUp .22s cubic-bezier(.34,1.56,.64,1)}
 .opsr-header{padding:1.6rem 2rem 1.3rem;background:linear-gradient(180deg,#FAFBFD,#FFFFFF);border-bottom:1px solid #E2E8F0;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-shrink:0}
@@ -20559,41 +20621,97 @@ async function renderSuperSuperAdmins() {
 async function openCreateSuperAdminModal() {
   let allAdmins = [];
   try { allAdmins = await apiCall('/superuser/admins'); } catch(e){}
+
+  const renderAdminRow = a => `
+    <label class="sa-admin-item" data-name="${(a.username||'').toLowerCase()}" data-branch="${(a.branch||'').toLowerCase()}">
+      <input type="checkbox" value="${a.id}" class="sa-admin-cb">
+      <span class="sa-avatar">${(a.username||'?').trim().charAt(0).toUpperCase()}</span>
+      <span style="flex:1;min-width:0">
+        <div class="sa-admin-name">${a.username}</div>
+        ${a.branch ? `<div class="sa-admin-branch">📍 ${a.branch}</div>` : ''}
+      </span>
+    </label>`;
+
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">🛡️ إضافة سوبر أدمن جديد</div>
+      <div class="sa-modal-head">
+        <div class="sa-modal-icon">🛡️</div>
+        <div class="sa-modal-titles">
+          <div class="modal-title">إضافة سوبر أدمن جديد</div>
+          <div class="sa-modal-subtitle">أنشئ حساباً جديداً وحدد نطاق إشرافه</div>
+        </div>
+      </div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
+
+    <div class="sa-section-label">🔑 بيانات الحساب</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>اسم المستخدم *</label>
+      <div class="form-group" style="margin-bottom:0">
+        <label>اسم المستخدم <span class="req">*</span></label>
         <input type="text" id="saUsername" placeholder="super_admin_name">
       </div>
-      <div class="form-group">
-        <label>كلمة المرور *</label>
+      <div class="form-group" style="margin-bottom:0">
+        <label>كلمة المرور <span class="req">*</span></label>
         <input type="password" id="saPassword" placeholder="••••••••">
       </div>
     </div>
-    <div class="form-group">
-      <label>الفرع <span style="font-size:.75rem;color:var(--text-3)">(فارغ = يرى كل الفروع)</span></label>
+
+    <div class="sa-section-label">🏢 الفرع</div>
+    <div class="form-group" style="margin-bottom:0">
       ${branchSearchField('saBranch')}
+      <div style="font-size:.75rem;color:var(--muted);margin-top:.4rem">اتركه فارغاً ليتمكن من رؤية كل الفروع</div>
     </div>
-    <div class="form-group">
-      <label>الأدمنز التابعون <span style="font-size:.75rem;color:var(--text-3)">(اختر الأدمنز اللي تحت إشرافه)</span></label>
-      <div id="saAdminCheckboxes" style="max-height:200px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:.6rem">
-        ${allAdmins.length === 0
-          ? '<div style="color:var(--text-3);font-size:.8rem;padding:.3rem">لا يوجد أدمنز متاحون</div>'
-          : allAdmins.map(a => `
-            <label style="display:flex;align-items:center;gap:.6rem;padding:.35rem .2rem;cursor:pointer;font-size:.83rem">
-              <input type="checkbox" value="${a.id}" class="sa-admin-cb">
-              <span>👤 <strong>${a.username}</strong>${a.branch?' <span style="color:var(--text-3);">('+a.branch+')</span>':''}</span>
-            </label>`).join('')}
+
+    <div class="sa-section-label" style="margin-bottom:.6rem">
+      <span style="flex:1">👥 الأدمنز التابعون</span>
+      <span class="sa-count-pill" id="saSelectedCount">0 محدد</span>
+    </div>
+    <div class="sa-admin-toolbar">
+      <div class="sa-admin-search">
+        <input type="text" id="saAdminSearch" placeholder="ابحث عن أدمن بالاسم أو الفرع...">
       </div>
+      <button type="button" class="sa-select-all-btn" id="saSelectAllBtn">تحديد الكل</button>
     </div>
+    <div id="saAdminCheckboxes" class="sa-admin-list">
+      ${allAdmins.length === 0
+        ? '<div class="sa-admin-empty">لا يوجد أدمنز متاحون</div>'
+        : allAdmins.map(renderAdminRow).join('')}
+    </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="saCreateBtn">💾 إنشاء</button>
-    </div>`);
+    </div>`, 'modal-lg');
+
+  const listEl = document.getElementById('saAdminCheckboxes');
+  const countEl = document.getElementById('saSelectedCount');
+  const updateCount = () => {
+    const n = listEl.querySelectorAll('.sa-admin-cb:checked').length;
+    countEl.textContent = n > 0 ? `${n} محدد` : '0 محدد';
+  };
+  listEl.addEventListener('change', e => {
+    if (e.target.classList.contains('sa-admin-cb')) {
+      e.target.closest('.sa-admin-item')?.classList.toggle('sa-checked', e.target.checked);
+      updateCount();
+    }
+  });
+  document.getElementById('saAdminSearch')?.addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    listEl.querySelectorAll('.sa-admin-item').forEach(row => {
+      const match = !q || row.dataset.name.includes(q) || row.dataset.branch.includes(q);
+      row.style.display = match ? '' : 'none';
+    });
+  });
+  document.getElementById('saSelectAllBtn')?.addEventListener('click', () => {
+    const visible = [...listEl.querySelectorAll('.sa-admin-item')].filter(r => r.style.display !== 'none');
+    const allChecked = visible.length > 0 && visible.every(r => r.querySelector('.sa-admin-cb').checked);
+    visible.forEach(r => {
+      const cb = r.querySelector('.sa-admin-cb');
+      cb.checked = !allChecked;
+      r.classList.toggle('sa-checked', cb.checked);
+    });
+    updateCount();
+  });
 
   document.getElementById('saCreateBtn').onclick = async () => {
     const username = document.getElementById('saUsername').value.trim();
@@ -20611,44 +20729,101 @@ async function openCreateSuperAdminModal() {
   };
 }
 
+
 async function openEditSuperAdminModal(uid, oldUser, oldBranch, currentAdmins) {
   let allAdmins = [];
   try { allAdmins = await apiCall('/superuser/admins'); } catch(e){}
   const currentIds = new Set((currentAdmins||[]).map(a=>a.id));
 
+  const renderAdminRow = a => `
+    <label class="sa-admin-item ${currentIds.has(a.id)?'sa-checked':''}" data-name="${(a.username||'').toLowerCase()}" data-branch="${(a.branch||'').toLowerCase()}">
+      <input type="checkbox" value="${a.id}" class="sa-admin-cb" ${currentIds.has(a.id)?'checked':''}>
+      <span class="sa-avatar">${(a.username||'?').trim().charAt(0).toUpperCase()}</span>
+      <span style="flex:1;min-width:0">
+        <div class="sa-admin-name">${a.username}</div>
+        ${a.branch ? `<div class="sa-admin-branch">📍 ${a.branch}</div>` : ''}
+      </span>
+    </label>`;
+
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">✏️ تعديل السوبر أدمن: ${oldUser}</div>
+      <div class="sa-modal-head">
+        <div class="sa-modal-icon">✏️</div>
+        <div class="sa-modal-titles">
+          <div class="modal-title">تعديل السوبر أدمن</div>
+          <div class="sa-modal-subtitle">${oldUser}</div>
+        </div>
+      </div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
+
+    <div class="sa-section-label">🔑 بيانات الحساب</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>اسم المستخدم *</label>
+      <div class="form-group" style="margin-bottom:0">
+        <label>اسم المستخدم <span class="req">*</span></label>
         <input type="text" id="saUsername" value="${oldUser}">
       </div>
-      <div class="form-group">
+      <div class="form-group" style="margin-bottom:0">
         <label>كلمة المرور الجديدة</label>
         <input type="password" id="saPassword" placeholder="اتركها فارغة للإبقاء">
       </div>
     </div>
-    <div class="form-group">
-      <label>الفرع</label>
+
+    <div class="sa-section-label">🏢 الفرع</div>
+    <div class="form-group" style="margin-bottom:0">
       ${branchSearchField('saBranch', oldBranch)}
     </div>
-    <div class="form-group">
-      <label>الأدمنز التابعون</label>
-      <div id="saAdminCheckboxes" style="max-height:200px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:.6rem">
-        ${allAdmins.map(a => `
-          <label style="display:flex;align-items:center;gap:.6rem;padding:.35rem .2rem;cursor:pointer;font-size:.83rem">
-            <input type="checkbox" value="${a.id}" class="sa-admin-cb" ${currentIds.has(a.id)?'checked':''}>
-            <span>👤 <strong>${a.username}</strong>${a.branch?' <span style="color:var(--text-3);">('+a.branch+')</span>':''}</span>
-          </label>`).join('')}
-      </div>
+
+    <div class="sa-section-label" style="margin-bottom:.6rem">
+      <span style="flex:1">👥 الأدمنز التابعون</span>
+      <span class="sa-count-pill" id="saSelectedCount">${currentIds.size} محدد</span>
     </div>
+    <div class="sa-admin-toolbar">
+      <div class="sa-admin-search">
+        <input type="text" id="saAdminSearch" placeholder="ابحث عن أدمن بالاسم أو الفرع...">
+      </div>
+      <button type="button" class="sa-select-all-btn" id="saSelectAllBtn">تحديد الكل</button>
+    </div>
+    <div id="saAdminCheckboxes" class="sa-admin-list">
+      ${allAdmins.length === 0
+        ? '<div class="sa-admin-empty">لا يوجد أدمنز متاحون</div>'
+        : allAdmins.map(renderAdminRow).join('')}
+    </div>
+
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="saEditBtn">💾 حفظ</button>
-    </div>`);
+    </div>`, 'modal-lg');
+
+  const listEl = document.getElementById('saAdminCheckboxes');
+  const countEl = document.getElementById('saSelectedCount');
+  const updateCount = () => {
+    const n = listEl.querySelectorAll('.sa-admin-cb:checked').length;
+    countEl.textContent = `${n} محدد`;
+  };
+  listEl.addEventListener('change', e => {
+    if (e.target.classList.contains('sa-admin-cb')) {
+      e.target.closest('.sa-admin-item')?.classList.toggle('sa-checked', e.target.checked);
+      updateCount();
+    }
+  });
+  document.getElementById('saAdminSearch')?.addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    listEl.querySelectorAll('.sa-admin-item').forEach(row => {
+      const match = !q || row.dataset.name.includes(q) || row.dataset.branch.includes(q);
+      row.style.display = match ? '' : 'none';
+    });
+  });
+  document.getElementById('saSelectAllBtn')?.addEventListener('click', () => {
+    const visible = [...listEl.querySelectorAll('.sa-admin-item')].filter(r => r.style.display !== 'none');
+    const allChecked = visible.length > 0 && visible.every(r => r.querySelector('.sa-admin-cb').checked);
+    visible.forEach(r => {
+      const cb = r.querySelector('.sa-admin-cb');
+      cb.checked = !allChecked;
+      r.classList.toggle('sa-checked', cb.checked);
+    });
+    updateCount();
+  });
 
   document.getElementById('saEditBtn').onclick = async () => {
     const username = document.getElementById('saUsername').value.trim();
