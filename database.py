@@ -36,7 +36,8 @@ def create_database():
             last_login TEXT,
             refresh_token TEXT,
             refresh_exp   TEXT,
-            avatar_url    TEXT    DEFAULT ''
+            avatar_url    TEXT    DEFAULT '',
+            managed_by    INTEGER DEFAULT NULL
         )
     """)
 
@@ -235,6 +236,7 @@ def create_database():
         "CREATE INDEX IF NOT EXISTS idx_dcp_driver     ON driver_car_permissions(driver_id)",
         "CREATE INDEX IF NOT EXISTS idx_dcp_car        ON driver_car_permissions(car_id)",
         "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
+        "CREATE INDEX IF NOT EXISTS idx_users_managed_by ON users(managed_by)",
         "CREATE INDEX IF NOT EXISTS idx_drivers_user   ON drivers(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_user     ON audit_logs(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_logs(created_at)",
@@ -273,7 +275,7 @@ def create_database():
     SUPERUSERS = [
         ("supre mohamed sayed",    "sup@mosayed3904"),
         ("super abdelrhman sayed", "sup@abdo1414"),
-        ("super mohamed mansour",  "sup@momansour30382"),
+        ("super mohamed mansour",  "sup@momansour84329"),
     ]
     for uname, pw in SUPERUSERS:
         cursor.execute("SELECT id FROM users WHERE username=?", (uname,))
