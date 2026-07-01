@@ -1472,6 +1472,13 @@ def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
     log.info(f"✅ {role.capitalize()} accounts synced")
 
 
+app = FastAPI(
+    title="Fleet Management API",
+    version="2.0.0",
+    docs_url="/docs" if ENVIRONMENT != "production" else None,
+    redoc_url=None,
+)
+
 @app.on_event("startup")
 async def startup():
     migrate_db()
@@ -1481,13 +1488,6 @@ async def startup():
         _sync_accounts(c, REPORTERS,   "reporter")
         _sync_accounts(c, SUPERUSERS,  "superuser")
     log.info("🚀 Fleet Management API started")
-
-app = FastAPI(
-    title="Fleet Management API",
-    version="2.0.0",
-    docs_url="/docs" if ENVIRONMENT != "production" else None,
-    redoc_url=None,
-)
 
 # ══════════════════════════════════════════════════════════════
 # SUPER ADMIN — Role Management Endpoints
