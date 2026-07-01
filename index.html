@@ -20747,51 +20747,54 @@ async function renderSAMyAdmins() {
 function renderSuChangePassword() {
   const c = document.getElementById('pageContent');
   c.innerHTML = `
-  <div class="card" style="max-width:520px;margin:2rem auto">
-    <div class="card-header">
-      <div class="card-title">🔑 تغيير كلمة المرور</div>
-    </div>
-    <div style="padding:1.4rem">
+  <div style="max-width:1100px;margin:2rem auto;padding:0 1rem">
+    <div class="card-title" style="font-size:1.3rem;margin-bottom:1.4rem">🔑 تغيير كلمة المرور</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.4rem">
 
       <!-- تغيير كلمة مرور السوبر يوزر نفسه -->
-      <div style="border:1.5px solid var(--border);border-radius:12px;padding:1.2rem;margin-bottom:1.2rem">
-        <div style="font-weight:700;font-size:.92rem;margin-bottom:1rem">🔐 تغيير كلمة مرورك الخاصة</div>
+      <div class="card" style="border-radius:14px;padding:1.6rem">
+        <div style="font-weight:700;font-size:1.05rem;margin-bottom:1.3rem;display:flex;align-items:center;gap:.5rem">🔐 تغيير كلمة مرورك الخاصة</div>
         <div class="form-group">
           <label>كلمة المرور الحالية</label>
-          <input type="password" id="suCurPw" placeholder="••••••••">
+          <input type="password" id="suCurPw" placeholder="••••••••" style="width:100%;padding:.85rem 1rem;font-size:1rem">
         </div>
         <div class="form-group">
           <label>كلمة المرور الجديدة</label>
-          <input type="password" id="suNewPw" placeholder="6 أحرف على الأقل">
+          <input type="password" id="suNewPw" placeholder="6 أحرف على الأقل" style="width:100%;padding:.85rem 1rem;font-size:1rem">
         </div>
         <div class="form-group">
           <label>تأكيد كلمة المرور الجديدة</label>
-          <input type="password" id="suConfPw" placeholder="أعد كتابة كلمة المرور">
+          <input type="password" id="suConfPw" placeholder="أعد كتابة كلمة المرور" style="width:100%;padding:.85rem 1rem;font-size:1rem">
         </div>
-        <button class="btn btn-primary" style="width:100%" onclick="suChangeOwnPassword()">💾 تغيير كلمة مروري</button>
+        <button class="btn btn-primary" style="width:100%;padding:.9rem;font-size:1rem;margin-top:.4rem" onclick="suChangeOwnPassword()">💾 تغيير كلمة مروري</button>
       </div>
 
       <!-- تغيير كلمة مرور أي مستخدم -->
-      <div style="border:1.5px solid var(--border);border-radius:12px;padding:1.2rem">
-        <div style="font-weight:700;font-size:.92rem;margin-bottom:1rem">👤 تغيير كلمة مرور مستخدم آخر</div>
+      <div class="card" style="border-radius:14px;padding:1.6rem">
+        <div style="font-weight:700;font-size:1.05rem;margin-bottom:1.3rem;display:flex;align-items:center;gap:.5rem">👤 تغيير كلمة مرور مستخدم آخر</div>
         <div class="form-group">
           <label>اختر المستخدم</label>
-          <select id="suTargetUser" style="width:100%">
+          <select id="suTargetUser" style="width:100%;padding:.85rem 1rem;font-size:1rem">
             <option value="">— جارٍ التحميل... —</option>
           </select>
         </div>
         <div class="form-group">
           <label>كلمة المرور الجديدة</label>
-          <input type="password" id="suTargetPw" placeholder="6 أحرف على الأقل">
+          <input type="password" id="suTargetPw" placeholder="6 أحرف على الأقل" style="width:100%;padding:.85rem 1rem;font-size:1rem">
         </div>
         <div class="form-group">
           <label>تأكيد كلمة المرور</label>
-          <input type="password" id="suTargetConfPw" placeholder="أعد كتابة كلمة المرور">
+          <input type="password" id="suTargetConfPw" placeholder="أعد كتابة كلمة المرور" style="width:100%;padding:.85rem 1rem;font-size:1rem">
         </div>
-        <button class="btn btn-primary" style="width:100%;background:#dc2626" onclick="suChangeTargetPassword()">🔑 تغيير كلمة مرور المستخدم</button>
+        <button class="btn btn-primary" style="width:100%;padding:.9rem;font-size:1rem;margin-top:.4rem;background:#dc2626" onclick="suChangeTargetPassword()">🔑 تغيير كلمة مرور المستخدم</button>
       </div>
     </div>
-  </div>`;
+  </div>
+  <style>
+    @media (max-width:820px){
+      #pageContent > div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr !important}
+    }
+  </style>`;
 
   // تحميل المستخدمين
   apiCall('/superuser/admins').then(admins => {
