@@ -1394,15 +1394,6 @@ class PaginationParams(BaseModel):
 
 
 
-@app.get("/superuser/free-admins")
-async def list_free_admins(cu: dict = Depends(require_superuser)):
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
 # Startup
 ADMINS = [
     ("Eng mohamed mansour", "mo@mansour241"),
@@ -1609,6 +1600,16 @@ async def get_super_admin_stats(uid: int, cu: dict = Depends(require_superuser))
             stats["total_trips_30d"] = c.execute("SELECT COUNT(*) FROM trips WHERE start_time >= date('now','-30 days') AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
             stats["workshop_30d"] = c.execute("SELECT COUNT(*) FROM workshop_records WHERE created_at >= date('now','-30 days') AND vehicle_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
         return stats
+
+
+# ── الأدمنز المتاحون للربط (لم يُربطوا بسوبر أدمن بعد) ──
+@app.get("/superuser/free-admins")
+async def list_free_admins(cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ══════════════════════════════════════════════════════
