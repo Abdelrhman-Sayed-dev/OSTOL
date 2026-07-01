@@ -1393,6 +1393,239 @@ class PaginationParams(BaseModel):
 
 
 
+async def import_maintenance_template(cu: dict = Depends(require_admin)):
+    cols   = ["رقم اللوحة", "نوع الصيانة", "كل كام كم", "كل كام يوم", "آخر قراءة", "تاريخ آخر صيانة"]
+    sample = ["أ-ب-1234", "تغيير زيت", "5000", "90", "120000", "2026-05-01"]
+    output = io.StringIO()
+    csv.writer(output).writerows([cols, sample])
+    from fastapi.responses import Response
+    return Response(
+        content=output.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=maintenance_template.csv"},
+    )
+
+
+async def list_free_admins(cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# Startup
+ADMINS = [
+    ("Eng mohamed mansour", "mo@mansour241"),
+    ("Eng mohamed sayed",   "mo@sayed11214123"),
+    ("Eng abdelrhman sayed","abdo@11214123"),
+]
+
+REPORTERS = [
+    ("admin1", "24681012"),
+    ("admin2", "11214123"),
+    ("admin3", "9853247"),
+]
+
+SUPERUSERS = [
+    ("supre mohamed sayed",    "sup@mosayed3904"),
+    ("super abdelrhman sayed", "sup@abdo1414"),
+    ("super mohamed mansour",  "sup@momansour84329"),
+]
+
+def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
+    """Ensure the hardcoded accounts exist for a role.
+    Only removes accounts that WERE previously hardcoded but removed from the list.
+    Dynamically added accounts (via API) are preserved.
+    Skips rehashing on restart for accounts that already exist.
+    """
+    c.execute("SELECT id, username FROM users WHERE role=?", (role,))
+    existing = {r["username"]: r["id"] for r in c.fetchall()}
+    hardcoded_names = {u for u, _ in accounts}
+
+    # Only delete accounts that are NOT in hardcoded list AND were hardcoded before
+    # We track this via a special marker: accounts seeded by code get flag in a settings table
+    c.execute("""CREATE TABLE IF NOT EXISTS _seeded_accounts (
+        username TEXT PRIMARY KEY,
+        role TEXT NOT NULL
+    )""")
+    c.execute("SELECT username FROM _seeded_accounts WHERE role=?", (role,))
+    previously_seeded = {r["username"] for r in c.fetchall()}
+
+    for uname, uid in list(existing.items()):
+        # Only delete if it was previously seeded AND is no longer in hardcoded list
+        if uname in previously_seeded and uname not in hardcoded_names:
+            c.execute("DELETE FROM users WHERE id=?", (uid,))
+            c.execute("DELETE FROM _seeded_accounts WHERE username=?", (uname,))
+            log.info(f"Removed old seeded {role}: {uname}")
+
+    for uname, pw in accounts:
+        if uname not in existing:
+            pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+            c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
+                      (uname, pw_hash, role))
+            log.info(f"Created {role}: {uname}")
+        # Mark as seeded (or update marker if already exists)
+        c.execute("INSERT OR REPLACE INTO _seeded_accounts(username,role) VALUES(?,?)",
+                  (uname, role))
+
+    log.info(f"✅ {role.capitalize()} accounts synced")
+
+
+@app.on_event("startup")
+async def startup():
+    migrate_db()
+    with get_db() as conn:
+        c = conn.cursor()
+        _sync_accounts(c, ADMINS,      "admin")
+        _sync_accounts(c, REPORTERS,   "reporter")
+        _sync_accounts(c, SUPERUSERS,  "superuser")
+    log.info("🚀 Fleet Management API started")
+
+app = FastAPI(
+    title="Fleet Management API",
+    version="2.0.0",
+    docs_url="/docs" if ENVIRONMENT != "production" else None,
+    redoc_url=None,
+)
+
+# ══════════════════════════════════════════════════════════════
+# SUPER ADMIN — Role Management Endpoints
+# ══════════════════════════════════════════════════════════════
+
+class SuperAdminCreate(BaseModel):
+    username: str
+    password: str
+    branch:   Optional[str] = ""
+    managed_admin_ids: Optional[List[int]] = []   # الأدمنز التابعين له
+
+class SuperAdminUpdate(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    branch:   Optional[str] = None
+    managed_admin_ids: Optional[List[int]] = None
+
+
+@app.get("/superuser/super-admins")
+async def list_super_admins(cu: dict = Depends(require_superuser)):
+    """قائمة كل السوبر أدمنز مع الأدمنز التابعين لهم وإحصائياتهم"""
+    with get_db() as conn:
+        c = conn.cursor()
+        super_admins = [dict(r) for r in c.execute(
+            "SELECT id,username,branch,created_at,last_login FROM users WHERE role='super_admin' ORDER BY id"
+        ).fetchall()]
+        for sa in super_admins:
+            # الأدمنز التابعين
+            managed = [dict(r) for r in c.execute(
+                "SELECT id,username,branch,last_login FROM users WHERE managed_by=? AND role='admin'",
+                (sa["id"],)
+            ).fetchall()]
+            sa["managed_admins"] = managed
+            sa["managed_count"]  = len(managed)
+            # إحصائيات: عدد السائقين والمركبات في نطاق الأدمنز التابعين
+            admin_branches = list({m["branch"] for m in managed if m.get("branch")})
+            if admin_branches:
+                ph = ",".join("?" * len(admin_branches))
+                sa["total_drivers"] = c.execute(
+                    f"SELECT COUNT(*) FROM drivers WHERE branch IN ({ph})", admin_branches
+                ).fetchone()[0]
+                sa["total_cars"] = c.execute(
+                    f"SELECT COUNT(*) FROM cars WHERE branch IN ({ph})", admin_branches
+                ).fetchone()[0]
+                sa["active_trips"] = c.execute(
+                    "SELECT COUNT(*) FROM trips WHERE end_time IS NULL AND car_id IN "
+                    f"(SELECT id FROM cars WHERE branch IN ({ph}))", admin_branches
+                ).fetchone()[0]
+            else:
+                sa["total_drivers"] = 0
+                sa["total_cars"]    = 0
+                sa["active_trips"]  = 0
+        return super_admins
+
+
+@app.post("/superuser/super-admins", status_code=201)
+async def create_super_admin(body: SuperAdminCreate, cu: dict = Depends(require_superuser)):
+    now = datetime.utcnow().isoformat() + "Z"
+    with get_db() as conn:
+        c = conn.cursor()
+        if c.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone():
+            raise HTTPException(409, "اسم المستخدم موجود بالفعل")
+        hashed = hash_password(body.password)
+        cur = c.execute(
+            "INSERT INTO users(username,password,role,branch,created_at) VALUES(?,?,?,?,?)",
+            (body.username, hashed, "super_admin", body.branch or "", now)
+        )
+        sa_id = cur.lastrowid
+        # تعيين الأدمنز التابعين
+        for admin_id in (body.managed_admin_ids or []):
+            c.execute("UPDATE users SET managed_by=? WHERE id=? AND role='admin'", (sa_id, admin_id))
+        log_event("super_admin_created", username=body.username, by=cu["username"])
+        return {"id": sa_id, "username": body.username, "role": "super_admin"}
+
+
+@app.put("/superuser/super-admins/{uid}")
+async def update_super_admin(uid: int, body: SuperAdminUpdate, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        c = conn.cursor()
+        if not c.execute("SELECT id FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone():
+            raise HTTPException(404, "السوبر أدمن غير موجود")
+        if body.username:
+            ex = c.execute("SELECT id FROM users WHERE username=? AND id!=?", (body.username, uid)).fetchone()
+            if ex: raise HTTPException(409, "اسم المستخدم مستخدم")
+            c.execute("UPDATE users SET username=? WHERE id=?", (body.username, uid))
+        if body.password:
+            c.execute("UPDATE users SET password=? WHERE id=?", (hash_password(body.password), uid))
+        if body.branch is not None:
+            c.execute("UPDATE users SET branch=? WHERE id=?", (body.branch, uid))
+        if body.managed_admin_ids is not None:
+            # فك الربط القديم
+            c.execute("UPDATE users SET managed_by=NULL WHERE managed_by=? AND role='admin'", (uid,))
+            # الربط الجديد
+            for admin_id in body.managed_admin_ids:
+                c.execute("UPDATE users SET managed_by=? WHERE id=? AND role='admin'", (uid, admin_id))
+        log_event("super_admin_updated", uid=uid, by=cu["username"])
+        return {"ok": True}
+
+
+@app.delete("/superuser/super-admins/{uid}")
+async def delete_super_admin(uid: int, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        c = conn.cursor()
+        if not c.execute("SELECT id FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone():
+            raise HTTPException(404, "السوبر أدمن غير موجود")
+        # فك ربط الأدمنز التابعين
+        c.execute("UPDATE users SET managed_by=NULL WHERE managed_by=? AND role='admin'", (uid,))
+        c.execute("DELETE FROM users WHERE id=?", (uid,))
+        log_event("super_admin_deleted", uid=uid, by=cu["username"])
+        return {"ok": True}
+
+
+@app.get("/superuser/super-admins/{uid}/stats")
+async def get_super_admin_stats(uid: int, cu: dict = Depends(require_superuser)):
+    """إحصائيات تفصيلية لسوبر أدمن محدد"""
+    with get_db() as conn:
+        c = conn.cursor()
+        sa = c.execute("SELECT * FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone()
+        if not sa: raise HTTPException(404, "غير موجود")
+        managed = [dict(r) for r in c.execute(
+            "SELECT id,username,branch,last_login FROM users WHERE managed_by=? AND role='admin'", (uid,)
+        ).fetchall()]
+        branches = list({m["branch"] for m in managed if m.get("branch")})
+        stats = {"managed_admins": managed, "branches": branches}
+        if branches:
+            ph = ",".join("?" * len(branches))
+            stats["drivers"]      = c.execute(f"SELECT COUNT(*) FROM drivers WHERE branch IN ({ph})", branches).fetchone()[0]
+            stats["cars"]         = c.execute(f"SELECT COUNT(*) FROM cars WHERE branch IN ({ph})", branches).fetchone()[0]
+            stats["active_trips"] = c.execute("SELECT COUNT(*) FROM trips WHERE end_time IS NULL AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
+            stats["total_trips_30d"] = c.execute("SELECT COUNT(*) FROM trips WHERE start_time >= date('now','-30 days') AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
+            stats["workshop_30d"] = c.execute("SELECT COUNT(*) FROM workshop_records WHERE created_at >= date('now','-30 days') AND vehicle_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
+        return stats
+
+
+# ── الأدمنز المتاحون للربط (لم يُربطوا بسوبر أدمن بعد) ──
+@app.get("/superuser/free-admins")
+
+
 # ══════════════════════════════════════════════════════
 # IMPORT: جدول الصيانة الدورية (maintenance_schedule)
 # منطق UPSERT: لو المركبة+النوع موجودين بالفعل → تحديث
@@ -1601,224 +1834,6 @@ async def import_maintenance_template(cu: dict = Depends(require_admin)):
         headers={"Content-Disposition": "attachment; filename=maintenance_template.csv"},
     )
 
-
-# ══════════════════════════════════════════════════════════════
-# SUPER ADMIN — Role Management Endpoints
-# ══════════════════════════════════════════════════════════════
-
-class SuperAdminCreate(BaseModel):
-    username: str
-    password: str
-    branch:   Optional[str] = ""
-    managed_admin_ids: Optional[List[int]] = []   # الأدمنز التابعين له
-
-class SuperAdminUpdate(BaseModel):
-    username: Optional[str] = None
-    password: Optional[str] = None
-    branch:   Optional[str] = None
-    managed_admin_ids: Optional[List[int]] = None
-
-
-@app.get("/superuser/super-admins")
-async def list_super_admins(cu: dict = Depends(require_superuser)):
-    """قائمة كل السوبر أدمنز مع الأدمنز التابعين لهم وإحصائياتهم"""
-    with get_db() as conn:
-        c = conn.cursor()
-        super_admins = [dict(r) for r in c.execute(
-            "SELECT id,username,branch,created_at,last_login FROM users WHERE role='super_admin' ORDER BY id"
-        ).fetchall()]
-        for sa in super_admins:
-            # الأدمنز التابعين
-            managed = [dict(r) for r in c.execute(
-                "SELECT id,username,branch,last_login FROM users WHERE managed_by=? AND role='admin'",
-                (sa["id"],)
-            ).fetchall()]
-            sa["managed_admins"] = managed
-            sa["managed_count"]  = len(managed)
-            # إحصائيات: عدد السائقين والمركبات في نطاق الأدمنز التابعين
-            admin_branches = list({m["branch"] for m in managed if m.get("branch")})
-            if admin_branches:
-                ph = ",".join("?" * len(admin_branches))
-                sa["total_drivers"] = c.execute(
-                    f"SELECT COUNT(*) FROM drivers WHERE branch IN ({ph})", admin_branches
-                ).fetchone()[0]
-                sa["total_cars"] = c.execute(
-                    f"SELECT COUNT(*) FROM cars WHERE branch IN ({ph})", admin_branches
-                ).fetchone()[0]
-                sa["active_trips"] = c.execute(
-                    "SELECT COUNT(*) FROM trips WHERE end_time IS NULL AND car_id IN "
-                    f"(SELECT id FROM cars WHERE branch IN ({ph}))", admin_branches
-                ).fetchone()[0]
-            else:
-                sa["total_drivers"] = 0
-                sa["total_cars"]    = 0
-                sa["active_trips"]  = 0
-        return super_admins
-
-
-@app.post("/superuser/super-admins", status_code=201)
-async def create_super_admin(body: SuperAdminCreate, cu: dict = Depends(require_superuser)):
-    now = datetime.utcnow().isoformat() + "Z"
-    with get_db() as conn:
-        c = conn.cursor()
-        if c.execute("SELECT id FROM users WHERE username=?", (body.username,)).fetchone():
-            raise HTTPException(409, "اسم المستخدم موجود بالفعل")
-        hashed = hash_password(body.password)
-        cur = c.execute(
-            "INSERT INTO users(username,password,role,branch,created_at) VALUES(?,?,?,?,?)",
-            (body.username, hashed, "super_admin", body.branch or "", now)
-        )
-        sa_id = cur.lastrowid
-        # تعيين الأدمنز التابعين
-        for admin_id in (body.managed_admin_ids or []):
-            c.execute("UPDATE users SET managed_by=? WHERE id=? AND role='admin'", (sa_id, admin_id))
-        log_event("super_admin_created", username=body.username, by=cu["username"])
-        return {"id": sa_id, "username": body.username, "role": "super_admin"}
-
-
-@app.put("/superuser/super-admins/{uid}")
-async def update_super_admin(uid: int, body: SuperAdminUpdate, cu: dict = Depends(require_superuser)):
-    with get_db() as conn:
-        c = conn.cursor()
-        if not c.execute("SELECT id FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone():
-            raise HTTPException(404, "السوبر أدمن غير موجود")
-        if body.username:
-            ex = c.execute("SELECT id FROM users WHERE username=? AND id!=?", (body.username, uid)).fetchone()
-            if ex: raise HTTPException(409, "اسم المستخدم مستخدم")
-            c.execute("UPDATE users SET username=? WHERE id=?", (body.username, uid))
-        if body.password:
-            c.execute("UPDATE users SET password=? WHERE id=?", (hash_password(body.password), uid))
-        if body.branch is not None:
-            c.execute("UPDATE users SET branch=? WHERE id=?", (body.branch, uid))
-        if body.managed_admin_ids is not None:
-            # فك الربط القديم
-            c.execute("UPDATE users SET managed_by=NULL WHERE managed_by=? AND role='admin'", (uid,))
-            # الربط الجديد
-            for admin_id in body.managed_admin_ids:
-                c.execute("UPDATE users SET managed_by=? WHERE id=? AND role='admin'", (uid, admin_id))
-        log_event("super_admin_updated", uid=uid, by=cu["username"])
-        return {"ok": True}
-
-
-@app.delete("/superuser/super-admins/{uid}")
-async def delete_super_admin(uid: int, cu: dict = Depends(require_superuser)):
-    with get_db() as conn:
-        c = conn.cursor()
-        if not c.execute("SELECT id FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone():
-            raise HTTPException(404, "السوبر أدمن غير موجود")
-        # فك ربط الأدمنز التابعين
-        c.execute("UPDATE users SET managed_by=NULL WHERE managed_by=? AND role='admin'", (uid,))
-        c.execute("DELETE FROM users WHERE id=?", (uid,))
-        log_event("super_admin_deleted", uid=uid, by=cu["username"])
-        return {"ok": True}
-
-
-@app.get("/superuser/super-admins/{uid}/stats")
-async def get_super_admin_stats(uid: int, cu: dict = Depends(require_superuser)):
-    """إحصائيات تفصيلية لسوبر أدمن محدد"""
-    with get_db() as conn:
-        c = conn.cursor()
-        sa = c.execute("SELECT * FROM users WHERE id=? AND role='super_admin'", (uid,)).fetchone()
-        if not sa: raise HTTPException(404, "غير موجود")
-        managed = [dict(r) for r in c.execute(
-            "SELECT id,username,branch,last_login FROM users WHERE managed_by=? AND role='admin'", (uid,)
-        ).fetchall()]
-        branches = list({m["branch"] for m in managed if m.get("branch")})
-        stats = {"managed_admins": managed, "branches": branches}
-        if branches:
-            ph = ",".join("?" * len(branches))
-            stats["drivers"]      = c.execute(f"SELECT COUNT(*) FROM drivers WHERE branch IN ({ph})", branches).fetchone()[0]
-            stats["cars"]         = c.execute(f"SELECT COUNT(*) FROM cars WHERE branch IN ({ph})", branches).fetchone()[0]
-            stats["active_trips"] = c.execute("SELECT COUNT(*) FROM trips WHERE end_time IS NULL AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
-            stats["total_trips_30d"] = c.execute("SELECT COUNT(*) FROM trips WHERE start_time >= date('now','-30 days') AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
-            stats["workshop_30d"] = c.execute("SELECT COUNT(*) FROM workshop_records WHERE created_at >= date('now','-30 days') AND vehicle_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
-        return stats
-
-
-# ── الأدمنز المتاحون للربط (لم يُربطوا بسوبر أدمن بعد) ──
-@app.get("/superuser/free-admins")
-async def list_free_admins(cu: dict = Depends(require_superuser)):
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
-# Startup
-ADMINS = [
-    ("Eng mohamed mansour", "mo@mansour241"),
-    ("Eng mohamed sayed",   "mo@sayed11214123"),
-    ("Eng abdelrhman sayed","abdo@11214123"),
-]
-
-REPORTERS = [
-    ("admin1", "24681012"),
-    ("admin2", "11214123"),
-    ("admin3", "9853247"),
-]
-
-SUPERUSERS = [
-    ("supre mohamed sayed",    "sup@mosayed3904"),
-    ("super abdelrhman sayed", "sup@abdo1414"),
-    ("super mohamed mansour",  "sup@momansour84329"),
-]
-
-def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
-    """Ensure the hardcoded accounts exist for a role.
-    Only removes accounts that WERE previously hardcoded but removed from the list.
-    Dynamically added accounts (via API) are preserved.
-    Skips rehashing on restart for accounts that already exist.
-    """
-    c.execute("SELECT id, username FROM users WHERE role=?", (role,))
-    existing = {r["username"]: r["id"] for r in c.fetchall()}
-    hardcoded_names = {u for u, _ in accounts}
-
-    # Only delete accounts that are NOT in hardcoded list AND were hardcoded before
-    # We track this via a special marker: accounts seeded by code get flag in a settings table
-    c.execute("""CREATE TABLE IF NOT EXISTS _seeded_accounts (
-        username TEXT PRIMARY KEY,
-        role TEXT NOT NULL
-    )""")
-    c.execute("SELECT username FROM _seeded_accounts WHERE role=?", (role,))
-    previously_seeded = {r["username"] for r in c.fetchall()}
-
-    for uname, uid in list(existing.items()):
-        # Only delete if it was previously seeded AND is no longer in hardcoded list
-        if uname in previously_seeded and uname not in hardcoded_names:
-            c.execute("DELETE FROM users WHERE id=?", (uid,))
-            c.execute("DELETE FROM _seeded_accounts WHERE username=?", (uname,))
-            log.info(f"Removed old seeded {role}: {uname}")
-
-    for uname, pw in accounts:
-        if uname not in existing:
-            pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
-            c.execute("INSERT OR IGNORE INTO users(username,password,role) VALUES(?,?,?)",
-                      (uname, pw_hash, role))
-            log.info(f"Created {role}: {uname}")
-        # Mark as seeded (or update marker if already exists)
-        c.execute("INSERT OR REPLACE INTO _seeded_accounts(username,role) VALUES(?,?)",
-                  (uname, role))
-
-    log.info(f"✅ {role.capitalize()} accounts synced")
-
-
-@app.on_event("startup")
-async def startup():
-    migrate_db()
-    with get_db() as conn:
-        c = conn.cursor()
-        _sync_accounts(c, ADMINS,      "admin")
-        _sync_accounts(c, REPORTERS,   "reporter")
-        _sync_accounts(c, SUPERUSERS,  "superuser")
-    log.info("🚀 Fleet Management API started")
-
-app = FastAPI(
-    title="Fleet Management API",
-    version="2.0.0",
-    docs_url="/docs" if ENVIRONMENT != "production" else None,
-    redoc_url=None,
-)
 
 # Rate limiter
 app.state.limiter = limiter
