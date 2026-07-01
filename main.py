@@ -1403,17 +1403,6 @@ class PaginationParams(BaseModel):
 # 8. APP SETUP
 # ══════════════════════════════════════════════════════
 
-
-
-@app.get("/superuser/free-admins")
-async def list_free_admins(cu: dict = Depends(require_superuser)):
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
 # Startup
 ADMINS = [
     ("Eng mohamed mansour", "mo@mansour241"),
@@ -1488,6 +1477,14 @@ async def startup():
         _sync_accounts(c, REPORTERS,   "reporter")
         _sync_accounts(c, SUPERUSERS,  "superuser")
     log.info("🚀 Fleet Management API started")
+
+@app.get("/superuser/free-admins")
+async def list_free_admins(cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 # ══════════════════════════════════════════════════════════════
 # SUPER ADMIN — Role Management Endpoints
