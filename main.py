@@ -873,6 +873,17 @@ def _safe_add_columns(c):
     except Exception:
         pass  # العمود موجود بالفعل
 
+    # ── migration: managed_by (ربط الأدمن بالسوبر يوزر المسؤول عنه) ──
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN managed_by INTEGER DEFAULT NULL")
+        log.info("✅ Migrated users: added managed_by column")
+    except Exception:
+        pass  # العمود موجود بالفعل
+    try:
+        c.execute("CREATE INDEX IF NOT EXISTS idx_users_managed_by ON users(managed_by)")
+    except Exception:
+        pass
+
     # ── جدول صور السائقين ──
     c.execute("""CREATE TABLE IF NOT EXISTS driver_photos (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1394,6 +1405,15 @@ class PaginationParams(BaseModel):
 
 
 
+@app.get("/superuser/free-admins")
+async def list_free_admins(cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 # Startup
 ADMINS = [
     ("Eng mohamed mansour", "mo@mansour241"),
@@ -1600,16 +1620,6 @@ async def get_super_admin_stats(uid: int, cu: dict = Depends(require_superuser))
             stats["total_trips_30d"] = c.execute("SELECT COUNT(*) FROM trips WHERE start_time >= date('now','-30 days') AND car_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
             stats["workshop_30d"] = c.execute("SELECT COUNT(*) FROM workshop_records WHERE created_at >= date('now','-30 days') AND vehicle_id IN (SELECT id FROM cars WHERE branch IN ("+ph+"))", branches).fetchone()[0]
         return stats
-
-
-# ── الأدمنز المتاحون للربط (لم يُربطوا بسوبر أدمن بعد) ──
-@app.get("/superuser/free-admins")
-async def list_free_admins(cu: dict = Depends(require_superuser)):
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT id,username,branch FROM users WHERE role='admin' AND (managed_by IS NULL OR managed_by=0) ORDER BY username"
-        ).fetchall()
-        return [dict(r) for r in rows]
 
 
 # ══════════════════════════════════════════════════════
