@@ -20,6 +20,15 @@ html{font-size:16px}
   0%,100% { box-shadow:0 3px 12px rgba(16,185,129,.35),0 0 0 0 rgba(16,185,129,.4); }
   50%      { box-shadow:0 3px 12px rgba(16,185,129,.35),0 0 0 8px rgba(16,185,129,0); }
 }
+@keyframes sirenPulse {
+  0%   { box-shadow:0 4px 16px rgba(220,38,38,.55),0 0 0 0 rgba(220,38,38,.7); }
+  70%  { box-shadow:0 4px 16px rgba(220,38,38,.55),0 0 0 18px rgba(220,38,38,0); }
+  100% { box-shadow:0 4px 16px rgba(220,38,38,.55),0 0 0 0 rgba(220,38,38,0); }
+}
+@keyframes sirenSpin {
+  0%,49%   { background:#dc2626; }
+  50%,100% { background:#1d4ed8; }
+}
 :root{
   /* ══ FleetSync Design System ══ */
   /* Brand Colors from logo */
@@ -3842,19 +3851,36 @@ function openEditDriverModal(id,name,phone,status,national_id,birth_date,driver_
 }
 
 async function openAssignPermModal() {
-  const [drivers,cars]=await Promise.all([loadDrivers(),loadCars()]);
+  const [drivers,cars,perms]=await Promise.all([loadDrivers(),loadCars(),apiCall('/permissions').catch(()=>[])]);
   openModal(`
     <div class="modal-header"><div class="modal-title">🔗 تعيين مركبة لسائق</div><button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="form-group"><label>السائق <span class="req">*</span></label><select id="mAsDrv"><option value="">-- اختر --</option>${drivers.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select></div>
-    <div class="form-group"><label>المركبة <span class="req">*</span></label><select id="mAsCar"><option value="">-- اختر --</option>${cars.map(c=>`<option value="${c.id}">${c.plate} - ${c.model}</option>`).join('')}</select></div>
+    <div class="form-group"><label>المركبة <span class="req">*</span></label><select id="mAsCar" onchange="_onAssignCarChange()"><option value="">-- اختر --</option>${cars.map(c=>`<option value="${c.id}" data-cat="${(c.equipment_type||'').split('|')[0]||''}">${c.plate} - ${c.model}</option>`).join('')}</select></div>
+    <div id="mAsCurrentDrivers" style="display:none;background:#f0f9ff;border:1.5px solid #38bdf8;border-radius:10px;padding:.6rem .9rem;margin-bottom:.6rem;font-size:.8rem;color:#0369a1"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mAsBtn">📌 تعيين</button>
     </div>`);
+
+  window._onAssignCarChange = () => {
+    const carId = +document.getElementById('mAsCar').value;
+    const box = document.getElementById('mAsCurrentDrivers');
+    if(!carId){ box.style.display='none'; return; }
+    const car = cars.find(c=>c.id===carId);
+    const cat = (car?.equipment_type||'').split('|')[0]||'';
+    const existing = perms.filter(p=>p.car_id===carId)
+      .map(p=>drivers.find(d=>d.id===p.driver_id)?.name).filter(Boolean);
+    let msg = '';
+    if(existing.length) msg += `👤 السائقون المعينون حالياً على هذه المركبة: <strong>${existing.join('، ')}</strong>. `;
+    if(cat==='سيارات متعددة السائقين') msg += `🚨 هذه مركبة متعددة السائقين — يمكن إضافة أكثر من سائق دون حذف السابقين.`;
+    else if(existing.length) msg += `⚠️ هذه المركبة ليست من نوع "متعددة السائقين"، تأكد أن إضافة سائق آخر مقصودة.`;
+    if(msg){ box.innerHTML = msg; box.style.display='block'; } else { box.style.display='none'; }
+  };
+
   document.getElementById('mAsBtn').onclick = async()=>{
     const d=document.getElementById('mAsDrv').value, c=document.getElementById('mAsCar').value;
     if(!d||!c) return showNotification('اختر السائق والمركبة','error');
-    try{ await apiCall('/permissions','POST',{driver_id:+d,car_id:+c}); showNotification('✅ تم تعيين الصلاحية','success'); closeModal(); }catch(e){showNotification(e.message,'error');}
+    try{ await apiCall('/permissions','POST',{driver_id:+d,car_id:+c}); showNotification('✅ تم تعيين الصلاحية','success'); closeModal(); await renderCarsSection().catch(()=>{}); }catch(e){showNotification(e.message,'error');}
   };
 }
 
@@ -3869,6 +3895,7 @@ async function renderCarsSection() {
   window._carsCache   = cars;
   window._carsCSVData = cars;
   window._allPerms    = perms;
+  window.__driversAll = drivers;
 
   // Unassigned cars (no active permission)
   const assignedCarIds = new Set(perms.map(p=>p.car_id));
@@ -3913,6 +3940,7 @@ async function renderCarsSection() {
           <option value="">كل التصنيفات</option>
           <option value="عربات">🚗 عربات</option>
           <option value="آلات ومعدات">⚙️ آلات ومعدات</option>
+          <option value="سيارات متعددة السائقين">🚨 سيارات متعددة السائقين</option>
         </select>
         <select id="carsFilterStatus" onchange="filterCarsTable()">
           <option value="">كل الحالات</option>
@@ -3931,7 +3959,7 @@ async function renderCarsSection() {
       <div class="table-wrap" id="carsList">
         <table><thead><tr>
           <th>#</th><th>اللوحة</th><th>الاسم</th><th>الموديل</th>
-          <th>التصنيف</th><th>النوع</th><th>الفرع</th>
+          <th>التصنيف</th><th>النوع</th><th>السائقون</th><th>الفرع</th>
           <th>الحالة</th><th>إجراءات</th>
         </tr></thead>
         <tbody id="carsBody">
@@ -3943,7 +3971,21 @@ async function renderCarsSection() {
             ? '<span class="badge badge-blue">🚗 عربات</span>'
             : cat==='آلات ومعدات'
             ? '<span class="badge badge-purple">⚙️ آلات ومعدات</span>'
+            : cat==='سيارات متعددة السائقين'
+            ? '<span class="badge badge-red">🚨 متعددة السائقين</span>'
             : `<span style="color:var(--muted);font-size:.78rem">${cat}</span>`;
+          const carPermsForRow = (window._allPerms||[]).filter(p=>p.car_id===c.id);
+          const carDriverNames = carPermsForRow.map(p=>{
+            const dr = (window.__driversAll||[]).find(x=>x.id===p.driver_id);
+            return dr ? dr.name : null;
+          }).filter(Boolean);
+          const multiDriverBadge = cat==='سيارات متعددة السائقين'
+            ? (carDriverNames.length
+                ? `<span class="badge ${carDriverNames.length>1?'badge-green':'badge-yellow'}" title="${carDriverNames.join('، ')}">👥 ${carDriverNames.length} سائق${carDriverNames.length>1?'ين':''}</span>`
+                : `<span class="badge badge-red">⚠️ بدون سائق</span>`)
+            : (carDriverNames.length>1
+                ? `<span class="badge badge-orange" title="${carDriverNames.join('، ')}">👥 ${carDriverNames.length} سائقين</span>`
+                : (carDriverNames[0] || '—'));
 
   window.__carsAll = cars;
   // ── Pagination ──
@@ -3954,6 +3996,7 @@ return `<tr data-cat="${eqParts[0]||''}" data-status="${c.status||''}">
             <td>${c.model}</td>
             <td>${catBadge}</td>
             <td style="font-size:.82rem">${sub}</td>
+            <td style="font-size:.82rem">${multiDriverBadge}</td>
             <td style="font-size:.82rem">${c.branch||'—'}</td>
             <td>${_carStatusBadge(c.status)}</td>
             <td>${!isReporter() ? `<button class="btn btn-ghost btn-sm edit-car" data-id="${c.id}">✏️</button>
@@ -4109,13 +4152,16 @@ function resetCarsFilter() {
 function onCarCategoryChange(cat) {
   const CAR_CATEGORIES = {
     'عربات': ['سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة','ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'],
-    'آلات ومعدات': ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى']
+    'آلات ومعدات': ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'],
+    'سيارات متعددة السائقين': ['سيارة طوارئ','سيارة إطفاء (مطافئ)','سيارة إسعاف','أخرى']
   };
   const sel = document.getElementById('mCarSubType');
   if(!sel) return;
   const subs = CAR_CATEGORIES[cat]||[];
   sel.innerHTML = '<option value="">— اختر النوع —</option>'
     + subs.map(s=>`<option value="${s}">${s}</option>`).join('');
+  const note = document.getElementById('mCarMultiDriverNote');
+  if(note) note.style.display = (cat==='سيارات متعددة السائقين') ? 'block' : 'none';
 }
 
 function openAddCarModal(editId='', editCar={}) {
@@ -4129,7 +4175,15 @@ function openAddCarModal(editId='', editCar={}) {
     'آلات ومعدات': [
       'معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل',
       'معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'
+    ],
+    'سيارات متعددة السائقين': [
+      'سيارة طوارئ','سيارة إطفاء (مطافئ)','سيارة إسعاف','أخرى'
     ]
+  };
+  const CAR_CATEGORY_LABELS = {
+    'عربات': '🚗 عربات',
+    'آلات ومعدات': '⚙️ آلات ومعدات',
+    'سيارات متعددة السائقين': '🚨 سيارات متعددة السائقين (طوارئ/إطفاء/إسعاف)'
   };
   const currentCat = editCar.equipment_type?.split('|')[0]||'';
   const currentSub = editCar.equipment_type?.split('|')[1]||'';
@@ -4141,7 +4195,7 @@ function openAddCarModal(editId='', editCar={}) {
   }
 
   const catOptsHtml = '<option value="">— اختر التصنيف الرئيسي —</option>'
-    + Object.keys(CAR_CATEGORIES).map(c=>`<option value="${c}" ${c===currentCat?'selected':''}>${c==='عربات'?'🚗 عربات':'⚙️ آلات ومعدات'}</option>`).join('');
+    + Object.keys(CAR_CATEGORIES).map(c=>`<option value="${c}" ${c===currentCat?'selected':''}>${CAR_CATEGORY_LABELS[c]||c}</option>`).join('');
   openModal(`
     <div class="modal-header">
       <div class="modal-title">${isEdit?'✏️ تعديل مركبة':'➕ إضافة مركبة جديدة'}</div>
@@ -4202,6 +4256,10 @@ function openAddCarModal(editId='', editCar={}) {
         <label>النوع الفرعي <span class="req">*</span></label>
         <select id="mCarSubType">${buildSubOpts(currentCat, currentSub)}</select>
       </div>
+    </div>
+
+    <div id="mCarMultiDriverNote" style="display:${currentCat==='سيارات متعددة السائقين'?'block':'none'};background:#fef2f2;border:1.5px solid #f87171;border-radius:10px;padding:.7rem .9rem;margin-bottom:.6rem;font-size:.8rem;color:#991B1B">
+      🚨 هذا التصنيف مخصص لمركبات الطوارئ/الإطفاء/الإسعاف التي يمكن أن يقودها أكثر من سائق. بعد الحفظ، يمكنك تعيين أكثر من سائق لنفس المركبة من قسم "الصلاحيات" دون إزالة الصلاحيات السابقة.
     </div>
 
     <div class="two-col" style="gap:.8rem;margin-bottom:.6rem">
@@ -5116,6 +5174,7 @@ async function renderMapSection() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">🗺️ خرائط الأسطول</div>
+        <span id="activeEmergenciesBadge" style="display:none;align-items:center;gap:.3rem;font-size:.78rem;font-weight:800;color:#991B1B;background:#fee2e2;border:1.5px solid #f87171;padding:.3rem .8rem;border-radius:20px;animation:emgBlink 1.2s infinite"></span>
         <button class="btn btn-ghost btn-sm" onclick="renderMapSection()">🔄 تحديث</button>
       </div>
 
@@ -5133,6 +5192,7 @@ async function renderMapSection() {
         <div class="map-legend" style="margin-top:.6rem">
           <span><span class="legend-dot" style="background:#10b981"></span> سائق يتحرك (موقع حي)</span>
           <span><span class="legend-dot" style="background:#1e3a5f"></span> سائق واقف</span>
+          <span>🚨 بلاغ طوارئ/حادث نشط (يظهر فوراً ويفضل حتى تتم معالجته)</span>
           <span style="font-size:.75rem;color:var(--muted)">يتحدث كل 4 ثواني تلقائياً</span>
         </div>
       </div>
@@ -5144,6 +5204,7 @@ async function renderMapSection() {
           <span><span class="legend-dot" style="background:#10b981"></span> رحلة نشطة (موقع البداية)</span>
           <span><span class="legend-dot" style="background:#1e3a5f"></span> آخر موقع معروف (نهاية رحلة)</span>
           <span><span class="legend-dot" style="background:#b8860b"></span> موقع الجراج / وقوف</span>
+          <span>🚨 بلاغ طوارئ/حادث نشط</span>
         </div>
       </div>
 
@@ -5248,6 +5309,7 @@ async function renderMapSection() {
     if(markers.length>0) map.fitBounds(L.latLngBounds(markers.map(c=>L.latLng(c[0],c[1]))),{padding:[60,60],maxZoom:8});
     else map.setView([27.0, 33.0], 5);
     window._fleetMap = map;
+    syncEmergencyMarkersOnMap(window._fleetMap, 'fleet');
   },100);
 
   // Init route map placeholder
@@ -5269,6 +5331,7 @@ async function renderMapSection() {
     }).addTo(liveMap);
     window._liveMapInstance = liveMap;
     startLiveTracking(liveMap);
+    fetchAndSyncActiveEmergencies();
   }, 200);
 }
 
@@ -8646,6 +8709,7 @@ async function openEmergencyActionModal(reportId) {
       showNotification('✅ تم حفظ الإجراء والرسالة','success');
       closeModal();
       await renderEmergenciesSection();
+      fetchAndSyncActiveEmergencies();
     }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='💾 حفظ الإجراء'; }
   };
 }
@@ -9078,8 +9142,86 @@ async function updateLivePopup(did, loc) {
 }
 
 /* ── NOTIFICATION POLLING ── */
+/* ── EMERGENCY MARKERS ON MAP — تظهر فوراً بأيقونة مميزة عند موقع السائق وتفضل ظاهرة لحد ما يتم التعامل معها من الإدارة ── */
+window._activeEmergencyReports = [];
+const _emergencyMapMarkers = { live: {}, fleet: {} };
+
+function makeEmergencyIcon(type) {
+  const label = type === 'accident' ? '💥' : '🚨';
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative;width:52px;height:52px">
+      <div style="position:absolute;inset:6px;border-radius:50%;display:flex;align-items:center;
+                  justify-content:center;font-size:1.4rem;border:3px solid white;
+                  animation:sirenPulse 1s ease-in-out infinite, sirenSpin .6s steps(1) infinite">
+        ${label}
+      </div>
+    </div>`,
+    iconSize: [52, 52], iconAnchor: [26, 26]
+  });
+}
+
+function buildEmergencyPopupHtml(rep) {
+  const typeLabel = rep.type === 'accident' ? '💥 بلاغ حادث' : '🚨 بلاغ طوارئ';
+  const timeStr   = rep.created_at ? fmtDT(rep.created_at) : '—';
+  return `<div dir="rtl" style="min-width:220px;font-family:Cairo,sans-serif;line-height:1.8">
+    <strong style="font-size:.95rem;color:#dc2626">${typeLabel}</strong>
+    <span style="display:inline-block;margin-right:.4rem;font-size:.68rem;font-weight:800;
+                 background:#fee2e2;color:#991B1B;padding:.1rem .5rem;border-radius:20px">لم تتم المعالجة</span><br>
+    <span style="font-size:.82rem">👨‍✈️ <strong>${rep.driver_name || rep.sender_name || '—'}</strong></span><br>
+    ${rep.car_plate ? `<span style="font-size:.8rem">🚗 ${rep.car_plate}</span><br>` : ''}
+    ${rep.notes ? `<span style="font-size:.8rem;color:#555">📝 ${rep.notes}</span><br>` : ''}
+    <span style="font-size:.75rem;color:#94a3b8">🕐 ${timeStr}</span><br>
+    <a href="#" onclick="switchSection('emergencies');return false;"
+       style="display:inline-flex;align-items:center;gap:.3rem;margin-top:.4rem;
+              padding:.3rem .7rem;background:#dc2626;color:white;border-radius:7px;
+              text-decoration:none;font-size:.78rem;font-weight:700">
+      ⚠️ عرض ومعالجة البلاغ
+    </a>
+  </div>`;
+}
+
+function syncEmergencyMarkersOnMap(map, key) {
+  if (!map) return;
+  const store = _emergencyMapMarkers[key];
+  const activeIds = new Set();
+  (window._activeEmergencyReports || []).forEach(rep => {
+    const coords = parseCoords(rep.location || '');
+    if (!coords) return;
+    activeIds.add(rep.id);
+    if (store[rep.id]) {
+      store[rep.id].setLatLng(coords);
+      store[rep.id].setPopupContent(buildEmergencyPopupHtml(rep));
+    } else {
+      const marker = L.marker(coords, { icon: makeEmergencyIcon(rep.type), zIndexOffset: 5000 })
+        .addTo(map).bindPopup(buildEmergencyPopupHtml(rep));
+      store[rep.id] = marker;
+    }
+  });
+  Object.keys(store).forEach(id => {
+    if (!activeIds.has(+id)) { map.removeLayer(store[id]); delete store[id]; }
+  });
+}
+
+async function fetchAndSyncActiveEmergencies() {
+  if (!isAdminLike()) return;
+  let reports = [];
+  try { reports = await apiCall('/emergency/reports'); } catch (e) { return; }
+  window._activeEmergencyReports = (reports || []).filter(r => !r.is_handled && r.location);
+  syncEmergencyMarkersOnMap(window._liveMapInstance, 'live');
+  syncEmergencyMarkersOnMap(window._fleetMap, 'fleet');
+  const badge = document.getElementById('activeEmergenciesBadge');
+  if (badge) {
+    const n = window._activeEmergencyReports.length;
+    badge.style.display = n ? 'inline-flex' : 'none';
+    badge.textContent = `🚨 ${n} بلاغ نشط على الخريطة`;
+  }
+}
+
+
 async function pollNotifications() {
   if(!isAdminLike()) return;
+  fetchAndSyncActiveEmergencies();
   try{
     const r=await apiCall('/emergency/unread-count');
     const count=r.count||0;
