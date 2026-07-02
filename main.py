@@ -2381,6 +2381,22 @@ async def get_equipment_types(cu: dict = Depends(get_user)):
     """قائمة أنواع تصنيف المعدات والمركبات."""
     return {"equipment_types": sorted(EQUIPMENT_TYPES)}
 
+@app.get("/cars/{cid}/drivers")
+async def car_drivers(cid: int, cu: dict = Depends(get_user)):
+    """
+    كل السائقين المصرح لهم بقيادة مركبة معينة.
+    مفيد بشكل خاص لمركبات (سيارات متعددة السائقين) — طوارئ / إطفاء / إسعاف —
+    التي يمكن أن يُصرَّح لأكثر من سائق بقيادتها في نفس الوقت.
+    """
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT d.id,d.name,d.phone,d.status,p.id AS permission_id
+                     FROM drivers d
+                     INNER JOIN driver_car_permissions p ON d.id=p.driver_id
+                     WHERE p.car_id=?
+                     ORDER BY d.name""", (cid,))
+        return [dict(r) for r in c.fetchall()]
+
 # ══════════════════════════════════════════════════════
 # 15. PERMISSIONS
 # ══════════════════════════════════════════════════════
