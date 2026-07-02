@@ -3579,6 +3579,7 @@ async def get_emergency_reports(cu: dict = Depends(get_user), branch: Optional[s
     q = """SELECT e.*,
                   COALESCE(d.name, op.name) as driver_name,
                   COALESCE(d.name, op.name) as sender_name,
+                  COALESCE(d.phone, op.phone) as driver_phone,
                   c.plate as car_plate,
                   op.name as operator_name
            FROM emergency_reports e
@@ -3608,6 +3609,7 @@ async def get_emergency_reports(cu: dict = Depends(get_user), branch: Optional[s
             d["is_read"]    = bool(d.get("is_read", 0))
             d["is_handled"] = bool(d.get("is_handled", 0))
             d.setdefault("driver_name", None); d.setdefault("car_plate", None)
+            d.setdefault("driver_phone", "")
             d.setdefault("location", ""); d.setdefault("action_taken", "")
             d.setdefault("handled_by", ""); d.setdefault("action_time", "")
             d.setdefault("audio_url", ""); d.setdefault("driver_message", "")
