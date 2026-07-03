@@ -776,6 +776,19 @@ tbody tr:hover{background:#F8FAFC;transition:.1s}
 /* ── Larger modal variant ── */
 .modal-lg{max-width:720px}
 
+/* ── Extra-large modal with bigger input fields (used for the vehicle add/edit form) ── */
+.modal-car-form{max-width:960px!important;width:94%!important}
+.modal-car-form input,
+.modal-car-form select,
+.modal-car-form textarea{
+  padding:1.05rem 1.25rem!important;font-size:1.05rem!important;border-radius:12px!important;
+}
+.modal-car-form label{font-size:.82rem!important;margin-bottom:.55rem!important}
+.modal-car-form textarea{min-height:100px!important}
+.modal-car-form .cs-trigger{min-height:56px!important;padding:.95rem 2.8rem .95rem 1.2rem!important;font-size:1.05rem!important;border-radius:12px!important}
+.modal-car-form .cs-label{font-size:1.05rem!important}
+@media(max-width:960px){.modal-car-form{max-width:97vw!important}}
+
 /* ── Super Admin create/edit modal — redesign ── */
 .sa-modal-head{display:flex;align-items:center;gap:.9rem}
 .sa-modal-icon{
@@ -4153,7 +4166,7 @@ function onCarCategoryChange(cat) {
   const CAR_CATEGORIES = {
     'عربات': ['سيارة ركوب','بيك آب كابينة مزدوجة','بيك آب كابينة مفردة','ميكروباص','أتوبيس','سيارة نقل خفيف','سيارة إسعاف','أخرى'],
     'آلات ومعدات': ['معدات رفع','معدات حفر وتحريك تربة','معدات نقل ثقيل','معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'],
-    'سيارات متعددة السائقين': ['سيارة طوارئ','سيارة إطفاء (مطافئ)','سيارة إسعاف','أخرى']
+    'سيارات متعددة السائقين': ['سيارة طوارئ','سيارة إطفاء (مطافئ)','سيارة إسعاف','أوناش الإنقاذ','القيادات','أخرى']
   };
   const sel = document.getElementById('mCarSubType');
   if(!sel) return;
@@ -4177,7 +4190,7 @@ function openAddCarModal(editId='', editCar={}) {
       'معدات إنتاجية','معدات ثابتة','معدات وآلات ورش','معدات مساعدة','أخرى'
     ],
     'سيارات متعددة السائقين': [
-      'سيارة طوارئ','سيارة إطفاء (مطافئ)','سيارة إسعاف','أخرى'
+      'سيارة طوارئ','سيارة إطفاء (مطافئ)','سيارة إسعاف','أوناش الإنقاذ','القيادات','أخرى'
     ]
   };
   const CAR_CATEGORY_LABELS = {
@@ -4307,7 +4320,11 @@ function openAddCarModal(editId='', editCar={}) {
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="mCarSave">${isEdit?'💾 حفظ التعديلات':'➕ إضافة'}</button>
-    </div>`);
+    </div>`, 'modal-car-form');
+
+  // ضمان إضافي (fallback) لعرض النافذة الأكبر حتى لو فيه أي تعارض في الـ CSS
+  const _mEl = document.querySelector('#activeModal .modal');
+  if (_mEl) { _mEl.style.maxWidth = '960px'; _mEl.style.width = '94%'; }
 
   document.getElementById('mCarSave').onclick = async () => {
     const plate          = document.getElementById('mCarPlate').value.trim();
@@ -12910,9 +12927,9 @@ async function renderMaintenanceSection() {
   (window._allDriversCache || []).forEach(d => { driversMap[d.id] = d; });
   const permsArr = window._allPermsCache || [];
 
-  function getDriverForCar(carId) {
-    const perm = permsArr.find(p => p.car_id === carId);
-    return perm ? (driversMap[perm.driver_id] || null) : null;
+  function getDriversForCar(carId) {
+    return permsArr.filter(p => p.car_id === carId)
+      .map(p => driversMap[p.driver_id]).filter(Boolean);
   }
 
   function buildRow(r) {
@@ -12922,10 +12939,15 @@ async function renderMaintenanceSection() {
     const remDisplay = remKm !== null
       ? (remKm > 0 ? `${remKm.toLocaleString('ar-EG')} كم متبقي` : `${Math.abs(remKm).toLocaleString('ar-EG')} كم تأخير`)
       : '—';
-    const driver = getDriverForCar(r.car_id);
-    const driverCell = driver
-      ? `<strong style="font-size:.84rem">${driver.name}</strong>${driver.phone ? `<br><small style="color:var(--muted)">${driver.phone}</small>` : ''}`
-      : '<span style="color:var(--muted);font-size:.78rem">—</span>';
+    const carDrivers = getDriversForCar(r.car_id);
+    const driverCell = carDrivers.length === 0
+      ? '<span style="color:var(--muted);font-size:.78rem">—</span>'
+      : carDrivers.length === 1
+      ? `<strong style="font-size:.84rem">${carDrivers[0].name}</strong>${carDrivers[0].phone ? `<br><small style="color:var(--muted)">${carDrivers[0].phone}</small>` : ''}`
+      : `<span title="${carDrivers.map(d=>d.name).join('، ')}">
+           <strong style="font-size:.84rem">${carDrivers[0].name}</strong>
+           <span class="badge badge-orange" style="font-size:.65rem;margin-right:.3rem">+${carDrivers.length-1} آخرين</span>
+         </span>`;
     const branchCell = r.car_branch
       ? `<span class="badge badge-blue" style="font-size:.72rem">${r.car_branch}</span>`
       : '<span style="color:var(--muted);font-size:.78rem">—</span>';
