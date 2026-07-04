@@ -2487,10 +2487,11 @@ const isReporter     = () => currentUser?.role === 'reporter';
 const isAdmin        = () => currentUser?.role === 'admin';
 const isSuperAdmin   = () => currentUser?.role === 'super_admin';
 const isAdminOrSup   = () => ['admin','superuser','super_admin'].includes(currentUser?.role);
-const isAdminLike    = () => ['admin','reporter','superuser','super_admin','supervisor_workshop','supervisor_field'].includes(currentUser?.role);
+const isAdminLike    = () => ['admin','reporter','superuser','super_admin','supervisor_workshop','supervisor_field','workshop_admin'].includes(currentUser?.role);
 const isSuperuser    = () => currentUser?.role === 'superuser';
 const isSupervisorWS   = () => currentUser?.role === 'supervisor_workshop';
 const isSupervisorField= () => currentUser?.role === 'supervisor_field';
+const isWorkshopAdmin  = () => currentUser?.role === 'workshop_admin';
 const isSupervisor     = () => isSupervisorWS() || isSupervisorField();
 const isOperator       = () => currentUser?.role === 'operator';
 const isAdminOrSuper = () => ['admin','superuser'].includes(currentUser?.role);
@@ -2710,7 +2711,7 @@ const NAV_MODULES = [
 const NAV_ITEM_MODULE = {
   overview:'dashboard',
   trips:'fleet', map:'fleet', drivers:'fleet', cars:'fleet', requests:'fleet',
-  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops', 'ws-attachments':'ops', 'ops-review':'ops', 'ws-repair-quotes':'ops',
+  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops', 'ws-attachments':'ops', 'ops-review':'ops', 'ws-repair-quotes':'ops', 'ws-inspection-reports':'ops',
   'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment', 'equipment-op-card':'equipment',
   'inv-overview':'inventory', 'inv-products':'inventory', 'inv-categories':'inventory', 'inv-suppliers':'inventory',
   'inv-movements':'inventory', 'inv-alerts':'inventory',
@@ -2742,6 +2743,19 @@ function buildSupervisorNav() {
   return buildAdminNav();
 }
 
+function buildWorkshopAdminNav() {
+  // ادمن الورش: صلاحية إدارية كاملة على كل ما يخص الورشة والصيانة فقط
+  return [
+    {id:'workshops',             icon:'🛠️', label:'الورش والإحصائيات'},
+    {id:'maintenance',           icon:'🔧', label:'الصيانة الدورية'},
+    {id:'forecast',              icon:'🗓️', label:'خطط الصيانة والإصلاح'},
+    {id:'cars',                  icon:'🚙', label:'المركبات'},
+    {id:'ws-attachments',        icon:'📎', label:'تتبع المرفقات'},
+    {id:'ws-repair-quotes',      icon:'🧾', label:'مقايسات الإصلاح'},
+    {id:'ws-inspection-reports', icon:'📝', label:'محاضر الفحص'},
+  ];
+}
+
 function buildAdminNav() {
   // ترتيب حسب الأولوية: العمليات الحرجة أولاً، ثم الإدارة، ثم التقارير
   const base = [
@@ -2761,6 +2775,7 @@ function buildAdminNav() {
     {id:'ws-attachments', icon:'📎', label:'تتبع المرفقات'},
     {id:'ops-review', icon:'📝', label:'مراجعة العمليات'},
     {id:'ws-repair-quotes', icon:'🧾', label:'مقايسات الإصلاح'},
+    {id:'ws-inspection-reports', icon:'📝', label:'محاضر الفحص'},
     {id:'forecast',       icon:'🗓️', label:'خطط الصيانة والإصلاح'},
     {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
@@ -2788,6 +2803,7 @@ function buildAdminNav() {
     base.push({id:'super-admins',      icon:'👑', label:'إدارة الأدمنز'});
     base.push({id:'super-super-admins', icon:'🛡️', label:'السوبر أدمنز'});
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
+    base.push({id:'super-workshop-admins', icon:'🛠️', label:'إدارة ادمن الورش'});
     base.push({id:'super-reassign',    icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
     base.push({id:'su-change-password', icon:'🔑', label:'تغيير كلمة المرور'});
@@ -2887,6 +2903,7 @@ function toggleNavModule(key) {
   // فتح قسم واحد فقط في كل مرة — إغلاق الأقسام الأخرى تلقائياً
   window._openNavModule = (window._openNavModule === key) ? null : key;
   const items = isSupervisor() ? buildSupervisorNav()
+              : isWorkshopAdmin() ? buildWorkshopAdminNav()
               : isAdminLike()  ? buildAdminNav()
               : buildDriverNav();
   renderNav(items);
@@ -2899,6 +2916,7 @@ async function switchSection(id) {
     window._openNavModule = NAV_ITEM_MODULE[id];
   }
   const items = isSupervisor() ? buildSupervisorNav()
+              : isWorkshopAdmin() ? buildWorkshopAdminNav()
               : isAdminLike()  ? buildAdminNav()
               : buildDriverNav();
   renderNav(items);
@@ -2940,6 +2958,7 @@ async function renderSection(id) {
     case 'super-super-admins':   await renderSuperSuperAdmins(); break;
     case 'sa-my-admins':         await renderSAMyAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
+    case 'super-workshop-admins': await renderSuperWorkshopAdmins(); break;
     case 'super-reassign':  await renderSuperReassign(); break;
     case 'super-logs':           await renderSuperLogs(); break;
     case 'su-change-password':   renderSuChangePassword(); break;
@@ -2953,6 +2972,7 @@ async function renderSection(id) {
     case 'inv-suppliers': await renderInventorySuppliers(); break;
     case 'inv-movements': await renderInventoryMovements(); break;
     case 'ws-repair-quotes': await renderWorkshopRepairQuotes(); break;
+    case 'ws-inspection-reports': await renderWorkshopInspectionReports(); break;
     case 'inv-alerts': await renderInventoryAlerts(); break;
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
@@ -9307,7 +9327,7 @@ async function pollNotifications() {
   }
   // Poll maintenance alerts
   await pollMaintenanceAlerts();
-  renderNav(buildAdminNav());
+  renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
 }
 
 // ── handle browser back/forward ──
@@ -9316,6 +9336,7 @@ window.addEventListener('popstate', (e) => {
   if(currentUser && id) {
     currentSection = id;
     const items = isSupervisor() ? buildSupervisorNav()
+                : isWorkshopAdmin() ? buildWorkshopAdminNav()
                 : isAdminLike()  ? buildAdminNav()
                 : buildDriverNav();
     renderNav(items);
@@ -9342,7 +9363,7 @@ function initUI() {
     avatarEl.prepend(img);
   }
   document.getElementById('sidebarUsername').textContent=currentUser.username;
-  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':currentUser.role==='operator'?'⚙️ مشغل معدات':'🚗 سائق';
+  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':currentUser.role==='operator'?'⚙️ مشغل معدات':currentUser.role==='workshop_admin'?'🛠️ ادمن الورش':'🚗 سائق';
   // إظهار الفرع في الـ sidebar لو الأدمن/المراقب مقيّد بفرع
   const branchBadgeEl = document.getElementById('sidebarBranchBadge');
   if(branchBadgeEl) {
@@ -9355,9 +9376,9 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','ws-repair-quotes','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
-  currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : 'overview';
-  renderNav(buildAdminNav());
+  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
+  currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops' : 'overview');
+  renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
   if(_hashSection && _validSections.includes(_hashSection) && history.replaceState)
     history.replaceState({section:currentSection},'','#'+currentSection);
@@ -11510,6 +11531,7 @@ const ROLE_CONFIG = {
   admin:    { endpoint: '/superuser/admins',    label: 'الأدمن',    icon: '👑', emptyMsg: 'لا يوجد أدمنز',   render: () => renderSuperUserRole('admin') },
   super_admin: { endpoint: '/superuser/super-admins', label: 'السوبر أدمن', icon: '🛡️', emptyMsg: 'لا يوجد سوبر أدمنز', render: () => renderSuperSuperAdmins() },
   reporter: { endpoint: '/superuser/reporters', label: 'المراقب',   icon: '👁️', emptyMsg: 'لا يوجد مراقبون', render: () => renderSuperUserRole('reporter') },
+  workshop_admin: { endpoint: '/superuser/workshop-admins', label: 'ادمن الورش', icon: '🛠️', emptyMsg: 'لا يوجد ادمنز ورش', render: () => renderSuperUserRole('workshop_admin') },
 };
 
 async function renderSuperUserRole(role) {
@@ -11829,6 +11851,7 @@ function sdFilter(f, btn) {
 
 const renderSuperAdmins      = () => renderSuperUserRole('admin');
 const renderSuperReporters   = () => renderSuperUserRole('reporter');
+const renderSuperWorkshopAdmins = () => renderSuperUserRole('workshop_admin');
 const openAddAdminModal      = () => openAddRoleModal('admin');
 const openAddReporterModal   = () => openAddRoleModal('reporter');
 const openEditAdminModal     = (uid, u, b) => openEditRoleModal('admin',    uid, u, b);
@@ -21225,6 +21248,161 @@ async function suChangeTargetPassword() {
 async function deleteRepairQuote(id) {
   if (!confirm('تأكيد حذف مقايسة الإصلاح؟')) return;
   try { await apiCall(`/workshop/repair-quotes/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderWorkshopRepairQuotes(); }
+  catch(e) { showNotification(e.message, 'error'); }
+}
+
+/* ══════════════════════════════════════════
+   محاضر الفحص (ادمن الورش)
+══════════════════════════════════════════ */
+const INSPECTION_RESULT_LABELS = {
+  pass: '✅ سليمة', fail: '❌ غير سليمة', needs_repair: '🛠️ تحتاج إصلاح', pending: '⏳ قيد الفحص'
+};
+
+async function renderWorkshopInspectionReports() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [reports, cars, drvs] = await Promise.all([
+    apiCall('/workshop/inspection-reports').catch(()=>[]),
+    apiCall('/cars').catch(()=>[]),
+    apiCall('/drivers').catch(()=>[]),
+  ]);
+  window._irCars = cars; window._irDrivers = drvs;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📝 محاضر الفحص</div>
+        <button class="btn btn-primary btn-sm" onclick="openInspectionReportModal(null)">➕ محضر فحص جديد</button>
+      </div>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>رقم المحضر</th><th>المركبة</th><th>السائق</th><th>تاريخ الفحص</th>
+            <th>الفاحص</th><th>قراءة العداد</th><th>النتيجة</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${reports.length ? reports.map(r=>`
+              <tr>
+                <td><strong>${r.report_number||'—'}</strong></td>
+                <td>${r.car_plate||'—'}</td>
+                <td>${r.driver_name||'—'}</td>
+                <td>${r.inspection_date||'—'}</td>
+                <td>${r.inspector_name||'—'}</td>
+                <td>${r.odometer_reading!=null ? r.odometer_reading.toLocaleString('ar-EG') : '—'}</td>
+                <td>${INSPECTION_RESULT_LABELS[r.result]||r.result}</td>
+                <td style="white-space:nowrap">
+                  <button class="btn btn-outline btn-sm" onclick='openInspectionReportModal(${JSON.stringify(r).replace(/'/g,"&#39;")})'>✏️ تعديل</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteInspectionReport(${r.id})">🗑️ حذف</button>
+                </td>
+              </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد محاضر فحص بعد</p></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function openInspectionReportModal(r) {
+  const cars = window._irCars || [];
+  const drvs = window._irDrivers || [];
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${r ? '✏️ تعديل محضر فحص' : '➕ محضر فحص جديد'}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>رقم المحضر</label>
+        <input type="text" id="irNum" value="${r?.report_number||''}" placeholder="سيتم توليده تلقائياً إن ترك فارغاً">
+      </div>
+      <div class="form-group">
+        <label>تاريخ الفحص *</label>
+        <input type="date" id="irDate" value="${r?.inspection_date||new Date().toISOString().slice(0,10)}">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>المركبة *</label>
+        <select id="irCar">
+          <option value="">— اختر —</option>
+          ${cars.map(c=>`<option value="${c.id}" ${r?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}${c.model?' | '+c.model:''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>السائق (اختياري)</label>
+        <select id="irDriver">
+          <option value="">— بدون —</option>
+          ${drvs.map(d=>`<option value="${d.id}" ${r?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>اسم الفاحص</label>
+        <input type="text" id="irInspector" value="${r?.inspector_name||''}" placeholder="اسم مهندس/فني الفحص">
+      </div>
+      <div class="form-group">
+        <label>قراءة العداد (كم)</label>
+        <input type="number" id="irOdo" min="0" step="1" value="${r?.odometer_reading??''}" placeholder="مثال: 54000">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>نتيجة الفحص *</label>
+      <select id="irResult">
+        ${Object.keys(INSPECTION_RESULT_LABELS).map(k=>`<option value="${k}" ${(r?.result||'pending')===k?'selected':''}>${INSPECTION_RESULT_LABELS[k]}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>الملاحظات الفنية / نتائج الفحص التفصيلية</label>
+      <textarea id="irFindings" rows="4" placeholder="اكتب هنا تفاصيل ما تم فحصه والملاحظات...">${r?.findings||''}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label>ملاحظات إضافية</label>
+      <textarea id="irNotes" rows="2">${r?.notes||''}</textarea>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="irSubmitBtn">💾 حفظ</button>
+    </div>`);
+
+  document.getElementById('irSubmitBtn').onclick = async () => {
+    const carId = document.getElementById('irCar').value;
+    const date  = document.getElementById('irDate').value;
+    if (!carId) return showNotification('يرجى اختيار المركبة', 'error');
+    if (!date)  return showNotification('يرجى تحديد تاريخ الفحص', 'error');
+    const driverVal = document.getElementById('irDriver').value;
+    const odoVal     = document.getElementById('irOdo').value;
+    const payload = {
+      report_number: document.getElementById('irNum').value.trim(),
+      car_id: parseInt(carId),
+      driver_id: driverVal ? parseInt(driverVal) : null,
+      inspection_date: date,
+      inspector_name: document.getElementById('irInspector').value.trim(),
+      odometer_reading: odoVal !== '' ? parseFloat(odoVal) : null,
+      result: document.getElementById('irResult').value,
+      findings: document.getElementById('irFindings').value.trim(),
+      notes: document.getElementById('irNotes').value.trim(),
+    };
+    const btn = document.getElementById('irSubmitBtn');
+    btn.disabled = true; btn.textContent = 'جاري...';
+    try {
+      if (r) await apiCall(`/workshop/inspection-reports/${r.id}`, 'PUT', payload);
+      else   await apiCall('/workshop/inspection-reports', 'POST', payload);
+      showNotification('✅ تم حفظ محضر الفحص', 'success');
+      closeModal(); renderWorkshopInspectionReports();
+    } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ'; }
+  };
+}
+
+async function deleteInspectionReport(id) {
+  if (!confirm('تأكيد حذف محضر الفحص؟')) return;
+  try { await apiCall(`/workshop/inspection-reports/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderWorkshopInspectionReports(); }
   catch(e) { showNotification(e.message, 'error'); }
 }
 

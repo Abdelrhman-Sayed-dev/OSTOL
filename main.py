@@ -108,7 +108,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+            role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
@@ -448,7 +448,7 @@ def _safe_add_columns(c):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+                role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
                 branch TEXT DEFAULT '',
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
@@ -796,6 +796,26 @@ def _safe_add_columns(c):
             c.execute("UPDATE workshop_repair_quotes SET driver_id=NULL WHERE driver_id=0")
     except Exception as _e:
         pass
+
+    # ── جدول محاضر الفحص (Inspection Reports) — لدور ادمن الورش ──
+    c.execute("""CREATE TABLE IF NOT EXISTS workshop_inspection_reports(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_number TEXT DEFAULT '',
+        car_id INTEGER NOT NULL,
+        driver_id INTEGER DEFAULT NULL,
+        inspection_date TEXT DEFAULT '',
+        inspector_name TEXT DEFAULT '',
+        odometer_reading REAL,
+        result TEXT DEFAULT 'pending' CHECK(result IN ('pass','fail','needs_repair','pending')),
+        findings TEXT DEFAULT '',
+        items_json TEXT DEFAULT '[]',
+        notes TEXT DEFAULT '',
+        created_by TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
+        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL
+    )""")
+
     for idx_sql in [
         "CREATE INDEX IF NOT EXISTS idx_inv_products_cat ON inventory_products(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_inv_products_sup ON inventory_products(supplier_id)",
@@ -804,6 +824,8 @@ def _safe_add_columns(c):
         "CREATE INDEX IF NOT EXISTS idx_rq_car ON workshop_repair_quotes(car_id)",
         "CREATE INDEX IF NOT EXISTS idx_rq_driver ON workshop_repair_quotes(driver_id)",
         "CREATE INDEX IF NOT EXISTS idx_ws_approval ON workshop_records(approval_status)",
+        "CREATE INDEX IF NOT EXISTS idx_insp_car ON workshop_inspection_reports(car_id)",
+        "CREATE INDEX IF NOT EXISTS idx_insp_driver ON workshop_inspection_reports(driver_id)",
     ]:
         try: c.execute(idx_sql)
         except Exception: pass
@@ -834,7 +856,7 @@ def _safe_add_columns(c):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator')),
+                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
                     branch TEXT DEFAULT '',
                     created_at TEXT DEFAULT(datetime('now')),
                     last_login TEXT,
@@ -850,6 +872,36 @@ def _safe_add_columns(c):
                 log.info("✅ operator role added to users table")
     except Exception as _e:
         log.warning(f"operator role migration: {_e}")
+
+    # ── Migration: إضافة workshop_admin role (ادمن ورش) في users CHECK constraint ──
+    try:
+        c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+        row = c.fetchone()
+        if row:
+            existing_sql = row['sql'] or ''
+            if "'workshop_admin'" not in existing_sql:
+                log.info("🔄 Adding workshop_admin role to users table...")
+                c.execute("PRAGMA foreign_keys=OFF")
+                c.execute("""CREATE TABLE IF NOT EXISTS _users_wa_fix(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL,
+                    password TEXT NOT NULL,
+                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
+                    branch TEXT DEFAULT '',
+                    created_at TEXT DEFAULT(datetime('now')),
+                    last_login TEXT,
+                    refresh_token TEXT,
+                    refresh_exp TEXT,
+                    avatar_url TEXT DEFAULT ''
+                )""")
+                c.execute("INSERT OR IGNORE INTO _users_wa_fix SELECT id,username,password,role,COALESCE(branch,''),created_at,last_login,refresh_token,refresh_exp,COALESCE(avatar_url,'') FROM users")
+                c.execute("DROP TABLE users")
+                c.execute("ALTER TABLE _users_wa_fix RENAME TO users")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+                c.execute("PRAGMA foreign_keys=ON")
+                log.info("✅ workshop_admin role added to users table")
+    except Exception as _e:
+        log.warning(f"workshop_admin role migration: {_e}")
 
     # ── جدول الصيانة الدورية ──
     c.execute("""CREATE TABLE IF NOT EXISTS maintenance_schedule (
@@ -1094,12 +1146,22 @@ def require_superuser(cu: dict = Depends(get_user)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات السوبر يوزر مطلوبة")
     return cu
 
-ADMIN_LIKE_ROLES = ("superuser","admin","reporter","supervisor_workshop","supervisor_field")
+ADMIN_LIKE_ROLES = ("superuser","admin","reporter","supervisor_workshop","supervisor_field","workshop_admin")
 
 def require_admin_or_reporter(cu: dict = Depends(get_user)):
     """Allows superuser, admin, reporter and supervisors (read-only) roles."""
     if cu["role"] not in ADMIN_LIKE_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات غير كافية")
+    return cu
+
+# دور "ادمن ورش" — إدارة كاملة (إضافة/تعديل/حذف) لكل ما يخص الورشة:
+# سجلات الورشة والصيانة، جداول ومقايسات الإصلاح، محاضر الفحص، وبقية بنود الورشة.
+WORKSHOP_ADMIN_ROLES = ("superuser", "admin", "workshop_admin")
+
+def require_workshop_admin(cu: dict = Depends(get_user)):
+    """Allows superuser, admin, and workshop_admin (دور ادمن الورش الكامل)."""
+    if cu["role"] not in WORKSHOP_ADMIN_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات إدارة الورشة مطلوبة")
     return cu
 
 def _branch_filter(cu: dict) -> Optional[str]:
@@ -1350,7 +1412,7 @@ class UserCreate(BaseModel):
 
     @validator('role')
     def validate_role(cls, v):
-        allowed = ("admin","superuser","driver","reporter","supervisor_workshop","supervisor_field","operator")
+        allowed = ("admin","superuser","driver","reporter","supervisor_workshop","supervisor_field","operator","workshop_admin")
         if v not in allowed:
             raise ValueError(f"دور غير صالح. المتاح: {allowed}")
         return v
@@ -3177,7 +3239,7 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
     with get_db() as conn:
         c = conn.cursor()
         branch = _effective_branch(cu, branch)
-        if cu["role"] in ("admin", "reporter", "superuser"):
+        if cu["role"] in ("admin", "reporter", "superuser", "workshop_admin"):
             conditions = []
             params = []
             if branch:
@@ -3217,7 +3279,7 @@ async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = No
 async def get_workshop_attachments(cu: dict = Depends(get_user), branch: Optional[str] = None,
                                     month: Optional[str] = None, type: Optional[str] = None):
     """تتبع المرفقات — قائمة سجلات الورشة (تفويل/صيانة) المرفق بها صورة عداد، للمراجعة من لوحة الإدارة فقط."""
-    if cu["role"] not in ("admin", "superuser", "reporter"):
+    if cu["role"] not in ("admin", "superuser", "reporter", "workshop_admin"):
         raise HTTPException(403, "غير مصرح")
     q = """SELECT w.id, w.type, w.quantity, w.price, w.notes, w.created_at,
                   w.operation_type, w.vehicle_id, w.odometer_reading, w.description,
@@ -4020,6 +4082,108 @@ async def superuser_delete_reporter(
                     "delete_reporter", f"حذف مراقب: {deleted_username} (id={uid})",
                     request.client.host if request.client else "")
     return {"message": f"تم حذف المراقب: {deleted_username}"}
+
+
+# ── Workshop Admins management (ادمن الورش) ─────────────────────────────────
+
+@app.get("/superuser/workshop-admins")
+async def superuser_list_workshop_admins(cu: dict = Depends(require_superuser)):
+    """عرض جميع حسابات ادمن الورش."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT id, username, role, branch, created_at, last_login
+                     FROM users WHERE role='workshop_admin' ORDER BY id""")
+        return [dict(r) for r in c.fetchall()]
+
+
+@app.post("/superuser/workshop-admins", status_code=201)
+async def superuser_create_workshop_admin(
+    request: Request,
+    body: AdminCreate,
+    cu: dict = Depends(require_superuser)
+):
+    """إضافة ادمن ورش جديد."""
+    username = body.username.strip()
+    if len(username) < 2:
+        raise HTTPException(400, "اسم المستخدم قصير جداً")
+    validate_password(body.password)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE username=?", (username,))
+        if c.fetchone():
+            raise HTTPException(400, "اسم المستخدم موجود مسبقاً")
+        c.execute("INSERT INTO users(username,password,role,branch) VALUES(?,?,?,?)",
+                  (username, _hash(body.password), "workshop_admin", body.branch or ""))
+        new_id = c.lastrowid
+    log_event("workshop_admin_created_by_super", new_username=username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "create_workshop_admin", f"إنشاء ادمن ورش جديد: {username} (فرع: {body.branch or 'بدون'})",
+                    request.client.host if request.client else "")
+    return {"id": new_id, "username": username, "role": "workshop_admin", "branch": body.branch or ""}
+
+
+@app.put("/superuser/workshop-admins/{uid}")
+async def superuser_update_workshop_admin(
+    request: Request,
+    uid: int,
+    body: AdminUpdate,
+    cu: dict = Depends(require_superuser)
+):
+    """تعديل اسم المستخدم أو كلمة مرور ادمن ورش."""
+    new_username = body.username.strip()
+    if len(new_username) < 2:
+        raise HTTPException(400, "اسم المستخدم قصير جداً")
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, role FROM users WHERE id=?", (uid,))
+        target = c.fetchone()
+        if not target:
+            raise HTTPException(404, "المستخدم غير موجود")
+        if target["role"] != "workshop_admin":
+            raise HTTPException(403, "لا يمكن تعديل إلا حسابات ادمن الورش من هنا")
+        c.execute("SELECT id FROM users WHERE username=? AND id!=?", (new_username, uid))
+        if c.fetchone():
+            raise HTTPException(400, "اسم المستخدم مستخدم من قِبل شخص آخر")
+        old_username = target["username"]
+        if body.password:
+            validate_password(body.password)
+            c.execute("UPDATE users SET username=?,password=? WHERE id=?",
+                      (new_username, _hash(body.password), uid))
+        else:
+            c.execute("UPDATE users SET username=? WHERE id=?", (new_username, uid))
+        if body.branch is not None:
+            c.execute("UPDATE users SET branch=? WHERE id=?", (body.branch, uid))
+    log_event("workshop_admin_updated_by_super", uid=uid, new_username=new_username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "update_workshop_admin",
+                    f"تعديل ادمن ورش #{uid} من '{old_username}' إلى '{new_username}'"
+                    + (" (مع تغيير كلمة المرور)" if body.password else ""),
+                    request.client.host if request.client else "")
+    return {"message": "تم التحديث", "id": uid, "username": new_username}
+
+
+@app.delete("/superuser/workshop-admins/{uid}")
+async def superuser_delete_workshop_admin(
+    request: Request,
+    uid: int,
+    cu: dict = Depends(require_superuser)
+):
+    """حذف حساب ادمن ورش."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username, role FROM users WHERE id=?", (uid,))
+        target = c.fetchone()
+        if not target:
+            raise HTTPException(404, "المستخدم غير موجود")
+        if target["role"] != "workshop_admin":
+            raise HTTPException(403, "لا يمكن حذف إلا حسابات ادمن الورش من هنا")
+        deleted_username = target["username"]
+        c.execute("DELETE FROM users WHERE id=?", (uid,))
+    log_event("workshop_admin_deleted_by_super", uid=uid, username=deleted_username, superuser=cu["username"])
+    write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                    "delete_workshop_admin", f"حذف ادمن ورش: {deleted_username} (id={uid})",
+                    request.client.host if request.client else "")
+    return {"message": f"تم حذف ادمن الورش: {deleted_username}"}
 
 
 @app.get("/superuser/audit-logs")
@@ -5699,7 +5863,7 @@ async def list_voice_notes(cu: dict = Depends(get_user)):
     # ── استقبال الرسائل (driver, reporter …) ──
     if role == "driver":
         group = "drivers"
-    elif role in ("reporter", "supervisor_workshop", "supervisor_field"):
+    elif role in ("reporter", "supervisor_workshop", "supervisor_field", "workshop_admin"):
         group = "admins"
     else:
         return []
@@ -5796,7 +5960,7 @@ async def get_voice_notes_inbox(cu: dict = Depends(get_user)):
     uid  = cu["user_id"]
     now  = datetime.utcnow().isoformat() + "Z"
 
-    if role in ("admin", "reporter", "supervisor_workshop", "supervisor_field"):
+    if role in ("admin", "reporter", "supervisor_workshop", "supervisor_field", "workshop_admin"):
         group = "admins"
     elif role == "driver":
         group = "drivers"
@@ -6102,7 +6266,7 @@ async def get_driver_maintenance_alerts(cu: dict = Depends(get_user)):
 
 
 @app.post("/maintenance/schedule", status_code=201)
-async def create_maintenance(rec: MaintenanceScheduleCreate, cu: dict = Depends(require_admin)):
+async def create_maintenance(rec: MaintenanceScheduleCreate, cu: dict = Depends(require_workshop_admin)):
     if rec.maintenance_type not in MAINTENANCE_TYPES:
         raise HTTPException(400, f"نوع صيانة غير صالح. الأنواع المتاحة: {MAINTENANCE_TYPES}")
     if not rec.interval_km and not rec.interval_days:
@@ -6132,7 +6296,7 @@ async def create_maintenance(rec: MaintenanceScheduleCreate, cu: dict = Depends(
 
 
 @app.put("/maintenance/schedule/{mid}")
-async def update_maintenance(mid: int, rec: MaintenanceScheduleUpdate, cu: dict = Depends(require_admin)):
+async def update_maintenance(mid: int, rec: MaintenanceScheduleUpdate, cu: dict = Depends(require_workshop_admin)):
     now = datetime.utcnow().isoformat() + "Z"
     with get_db() as conn:
         c = conn.cursor()
@@ -6152,7 +6316,7 @@ async def update_maintenance(mid: int, rec: MaintenanceScheduleUpdate, cu: dict 
 
 
 @app.delete("/maintenance/schedule/{mid}")
-async def delete_maintenance(mid: int, cu: dict = Depends(require_admin)):
+async def delete_maintenance(mid: int, cu: dict = Depends(require_workshop_admin)):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("DELETE FROM maintenance_schedule WHERE id=?", (mid,))
@@ -7843,7 +8007,7 @@ async def get_operator_permissions(oid: int, cu: dict = Depends(get_user)):
     if cu["role"] == "operator":
         if cu.get("operator_id") != oid:
             raise HTTPException(403, "يمكنك الاطلاع على صلاحياتك فقط")
-    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field", "workshop_admin"):
         raise HTTPException(403, "صلاحيات غير كافية")
     with get_db() as conn:
         _ensure_operator_tables(conn)
@@ -7917,7 +8081,7 @@ async def get_allowed_equipment(oid: int, cu: dict = Depends(get_user)):
     if cu["role"] == "operator":
         if cu.get("operator_id") != oid:
             raise HTTPException(403, "يمكنك الاطلاع على صلاحياتك فقط")
-    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field", "workshop_admin"):
         raise HTTPException(403, "صلاحيات غير كافية")
     with get_db() as conn:
         _ensure_operator_tables(conn)
@@ -7955,7 +8119,7 @@ async def get_operator_stats(oid: int, cu: dict = Depends(get_user)):
     if cu["role"] == "operator":
         if cu.get("operator_id") != oid:
             raise HTTPException(403, "يمكنك الاطلاع على بياناتك فقط")
-    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field", "workshop_admin"):
         raise HTTPException(403, "صلاحيات غير كافية")
     with get_db() as conn:
         _ensure_operator_tables(conn)
@@ -8117,7 +8281,7 @@ async def get_operator_shifts(
     if cu["role"] == "operator":
         if cu.get("operator_id") != oid:
             raise HTTPException(403, "يمكنك الاطلاع على ورديات حسابك فقط")
-    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field"):
+    elif cu["role"] not in ("admin", "superuser", "reporter", "supervisor_workshop", "supervisor_field", "workshop_admin"):
         raise HTTPException(403, "صلاحيات غير كافية")
     with get_db() as conn:
         _ensure_operator_tables(conn)
@@ -8811,7 +8975,7 @@ async def list_repair_quotes(cu: dict = Depends(require_admin_or_reporter)):
         return rows
 
 @app.post("/workshop/repair-quotes")
-async def create_repair_quote(body: RepairQuoteCreate, cu: dict = Depends(require_admin)):
+async def create_repair_quote(body: RepairQuoteCreate, cu: dict = Depends(require_workshop_admin)):
     with get_db() as conn:
         now = datetime.utcnow().isoformat() + "Z"
         quote_number = body.quote_number or f"RQ-{int(datetime.utcnow().timestamp())}"
@@ -8824,7 +8988,7 @@ async def create_repair_quote(body: RepairQuoteCreate, cu: dict = Depends(requir
         return {"id": cur.lastrowid, "quote_number": quote_number}
 
 @app.put("/workshop/repair-quotes/{qid}")
-async def update_repair_quote(qid: int, body: RepairQuoteCreate, cu: dict = Depends(require_admin)):
+async def update_repair_quote(qid: int, body: RepairQuoteCreate, cu: dict = Depends(require_workshop_admin)):
     if body.status not in ("draft", "approved", "done", "cancelled"):
         raise HTTPException(400, "حالة غير صالحة")
     with get_db() as conn:
@@ -8836,9 +9000,84 @@ async def update_repair_quote(qid: int, body: RepairQuoteCreate, cu: dict = Depe
         return {"ok": True}
 
 @app.delete("/workshop/repair-quotes/{qid}")
-async def delete_repair_quote(qid: int, cu: dict = Depends(require_admin)):
+async def delete_repair_quote(qid: int, cu: dict = Depends(require_workshop_admin)):
     with get_db() as conn:
         conn.execute("DELETE FROM workshop_repair_quotes WHERE id=?", (qid,))
+        return {"ok": True}
+
+
+# ── محاضر الفحص (الورشة) ──
+class InspectionReportCreate(BaseModel):
+    report_number: Optional[str] = ""
+    car_id: int
+    driver_id: Optional[int] = None
+    inspection_date: Optional[str] = ""
+    inspector_name: Optional[str] = ""
+    odometer_reading: Optional[float] = None
+    result: Optional[str] = "pending"
+    findings: Optional[str] = ""
+    items_json: Optional[str] = "[]"
+    notes: Optional[str] = ""
+
+INSPECTION_RESULTS = ("pass", "fail", "needs_repair", "pending")
+
+@app.get("/workshop/inspection-reports")
+async def list_inspection_reports(cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
+        drvs = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM drivers").fetchall()}
+        rows = [dict(r) for r in conn.execute("SELECT * FROM workshop_inspection_reports ORDER BY id DESC").fetchall()]
+        for r in rows:
+            r["car_plate"] = cars.get(r.get("car_id"), "")
+            r["driver_name"] = drvs.get(r.get("driver_id"), "")
+        return rows
+
+@app.post("/workshop/inspection-reports", status_code=201)
+async def create_inspection_report(body: InspectionReportCreate, cu: dict = Depends(require_workshop_admin)):
+    if body.result not in INSPECTION_RESULTS:
+        raise HTTPException(400, "نتيجة فحص غير صالحة")
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM cars WHERE id=?", (body.car_id,)).fetchone():
+            raise HTTPException(404, "المركبة غير موجودة")
+        now = datetime.utcnow().isoformat() + "Z"
+        report_number = body.report_number or f"IR-{int(datetime.utcnow().timestamp())}"
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
+        cur = conn.execute("""INSERT INTO workshop_inspection_reports
+                              (report_number,car_id,driver_id,inspection_date,inspector_name,
+                               odometer_reading,result,findings,items_json,notes,created_by,created_at)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (report_number, body.car_id, driver_id_val, body.inspection_date or now[:10],
+                             body.inspector_name or "", body.odometer_reading, body.result or "pending",
+                             body.findings or "", body.items_json or "[]", body.notes or "",
+                             cu.get("username", ""), now))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "create_inspection_report", f"إنشاء محضر فحص جديد: {report_number}")
+        return {"id": cur.lastrowid, "report_number": report_number}
+
+@app.put("/workshop/inspection-reports/{rid}")
+async def update_inspection_report(rid: int, body: InspectionReportCreate, cu: dict = Depends(require_workshop_admin)):
+    if body.result not in INSPECTION_RESULTS:
+        raise HTTPException(400, "نتيجة فحص غير صالحة")
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM workshop_inspection_reports WHERE id=?", (rid,)).fetchone():
+            raise HTTPException(404, "المحضر غير موجود")
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
+        conn.execute("""UPDATE workshop_inspection_reports SET report_number=?,car_id=?,driver_id=?,
+                       inspection_date=?,inspector_name=?,odometer_reading=?,result=?,findings=?,
+                       items_json=?,notes=? WHERE id=?""",
+                      (body.report_number or "", body.car_id, driver_id_val, body.inspection_date or "",
+                       body.inspector_name or "", body.odometer_reading, body.result,
+                       body.findings or "", body.items_json or "[]", body.notes or "", rid))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "update_inspection_report", f"تعديل محضر فحص #{rid}")
+        return {"ok": True}
+
+@app.delete("/workshop/inspection-reports/{rid}")
+async def delete_inspection_report(rid: int, cu: dict = Depends(require_workshop_admin)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM workshop_inspection_reports WHERE id=?", (rid,))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "delete_inspection_report", f"حذف محضر فحص #{rid}")
         return {"ok": True}
 
 # ── تصحيح تلقائي عند الـ startup لأي سجل ورش لم يتم تطبيق override عليه ──
@@ -9877,7 +10116,7 @@ async def fuel_consumption_for_record(record_id: int, cu: dict = Depends(require
 
 
 @app.post("/workshops/{wid}/review")
-async def review_workshop_record(wid: int, body: WorkshopApproval, cu: dict = Depends(require_admin)):
+async def review_workshop_record(wid: int, body: WorkshopApproval, cu: dict = Depends(require_workshop_admin)):
     if body.action not in ("approve", "reject"):
         raise HTTPException(400, "إجراء غير صالح")
     new_status = "approved" if body.action == "approve" else "rejected"
@@ -9899,7 +10138,7 @@ class WorkshopPriceUpdate(BaseModel):
 
 
 @app.put("/workshops/{wid}/price")
-async def update_workshop_price(wid: int, body: WorkshopPriceUpdate, cu: dict = Depends(require_admin)):
+async def update_workshop_price(wid: int, body: WorkshopPriceUpdate, cu: dict = Depends(require_workshop_admin)):
     """تصحيح سعر/تكلفة سجل تفويل أو صيانة بعد المراجعة، لو مش مطابق للفاتورة."""
     if body.price is None or body.price < 0:
         raise HTTPException(400, "قيمة غير صالحة")
@@ -9921,7 +10160,7 @@ class WorkshopQuantityUpdate(BaseModel):
 
 
 @app.put("/workshops/{wid}/quantity")
-async def update_workshop_quantity(wid: int, body: WorkshopQuantityUpdate, cu: dict = Depends(require_admin)):
+async def update_workshop_quantity(wid: int, body: WorkshopQuantityUpdate, cu: dict = Depends(require_workshop_admin)):
     """تصحيح الكمية (لترات الوقود/عدد الإطارات...إلخ) لسجل بعد المراجعة، لو مش مطابقة للفاتورة أو صورة العداد."""
     if body.quantity is None or body.quantity < 0:
         raise HTTPException(400, "قيمة غير صالحة")

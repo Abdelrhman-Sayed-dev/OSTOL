@@ -30,7 +30,7 @@ def create_database():
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             username   TEXT    NOT NULL,
             password   TEXT    NOT NULL,
-            role       TEXT    NOT NULL CHECK(role IN ('superuser', 'admin', 'driver', 'reporter')),
+            role       TEXT    NOT NULL CHECK(role IN ('superuser', 'admin', 'driver', 'reporter', 'supervisor_workshop', 'supervisor_field', 'operator', 'workshop_admin')),
             branch     TEXT    DEFAULT '',
             created_at TEXT    DEFAULT(datetime('now')),
             last_login TEXT,
@@ -212,6 +212,27 @@ def create_database():
             details     TEXT DEFAULT '',
             ip_address  TEXT DEFAULT '',
             created_at  TEXT NOT NULL
+        )
+    """)
+
+    # ── جدول محاضر الفحص (الورشة) ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workshop_inspection_reports (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_number    TEXT DEFAULT '',
+            car_id           INTEGER NOT NULL,
+            driver_id        INTEGER DEFAULT NULL,
+            inspection_date  TEXT DEFAULT '',
+            inspector_name   TEXT DEFAULT '',
+            odometer_reading REAL,
+            result           TEXT DEFAULT 'pending' CHECK(result IN ('pass','fail','needs_repair','pending')),
+            findings         TEXT DEFAULT '',
+            items_json       TEXT DEFAULT '[]',
+            notes            TEXT DEFAULT '',
+            created_by       TEXT DEFAULT '',
+            created_at       TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (car_id)    REFERENCES cars(id)    ON DELETE SET NULL,
+            FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL
         )
     """)
 
