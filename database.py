@@ -222,6 +222,7 @@ def create_database():
             report_number    TEXT DEFAULT '',
             car_id           INTEGER NOT NULL,
             driver_id        INTEGER DEFAULT NULL,
+            quote_id         INTEGER DEFAULT NULL,
             inspection_date  TEXT DEFAULT '',
             inspector_name   TEXT DEFAULT '',
             odometer_reading REAL,
@@ -232,7 +233,55 @@ def create_database():
             created_by       TEXT DEFAULT '',
             created_at       TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (car_id)    REFERENCES cars(id)    ON DELETE SET NULL,
-            FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL
+            FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
+            FOREIGN KEY (quote_id)  REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
+        )
+    """)
+
+    # ── جدول طلبات التشغيل الخارجي ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workshop_external_ops (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_number    TEXT DEFAULT '',
+            quote_id          INTEGER DEFAULT NULL,
+            car_id            INTEGER NOT NULL,
+            driver_id         INTEGER DEFAULT NULL,
+            workshop_name     TEXT DEFAULT '',
+            reason            TEXT DEFAULT '',
+            estimated_cost    REAL DEFAULT 0,
+            workmanship_cost  REAL DEFAULT 0,
+            request_date      TEXT DEFAULT '',
+            status            TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','done')),
+            notes             TEXT DEFAULT '',
+            created_by        TEXT DEFAULT '',
+            created_at        TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (car_id)    REFERENCES cars(id)    ON DELETE SET NULL,
+            FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
+            FOREIGN KEY (quote_id)  REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
+        )
+    """)
+
+    # ── جدول إذن الصرف ──
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workshop_vouchers (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            voucher_number   TEXT DEFAULT '',
+            quote_id         INTEGER DEFAULT NULL,
+            car_id           INTEGER NOT NULL,
+            driver_id        INTEGER DEFAULT NULL,
+            recipient_name   TEXT DEFAULT '',
+            purpose          TEXT DEFAULT '',
+            items_json       TEXT DEFAULT '[]',
+            total_amount     REAL DEFAULT 0,
+            issue_date       TEXT DEFAULT '',
+            issued_by        TEXT DEFAULT '',
+            status           TEXT DEFAULT 'draft' CHECK(status IN ('draft','issued','cancelled')),
+            notes            TEXT DEFAULT '',
+            created_by       TEXT DEFAULT '',
+            created_at       TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (car_id)    REFERENCES cars(id)    ON DELETE SET NULL,
+            FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
+            FOREIGN KEY (quote_id)  REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
         )
     """)
 

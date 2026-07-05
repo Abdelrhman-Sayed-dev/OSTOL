@@ -2700,7 +2700,8 @@ function closeModal() { document.getElementById('activeModal')?.remove(); }
 const NAV_MODULES = [
   {key:'dashboard',  icon:'🏠', label:'لوحة التحكم',         collapsible:false},
   {key:'fleet',      icon:'🚗', label:'إدارة الأسطول',        collapsible:true},
-  {key:'ops',        icon:'🛠️', label:'التشغيل',             collapsible:true},
+  {key:'workshop',   icon:'🛠️', label:'الورشة',              collapsible:true},
+  {key:'ops',        icon:'🚨', label:'التشغيل',             collapsible:true},
   {key:'equipment',  icon:'🏗️', label:'إدارة المعدات',       collapsible:true},
   {key:'inventory',  icon:'📦', label:'إدارة المخزون',       collapsible:true},
   {key:'reports',    icon:'📊', label:'التقارير',            collapsible:true},
@@ -2711,14 +2712,17 @@ const NAV_MODULES = [
 const NAV_ITEM_MODULE = {
   overview:'dashboard',
   trips:'fleet', map:'fleet', drivers:'fleet', cars:'fleet', requests:'fleet',
-  workshops:'ops', 'op-card':'ops', maintenance:'ops', emergencies:'ops', 'ws-attachments':'ops', 'ops-review':'ops', 'ws-repair-quotes':'ops', 'ws-inspection-reports':'ops',
+  'workshops-stats':'workshop', workshops:'workshop', maintenance:'workshop', forecast:'workshop',
+  'ws-attachments':'workshop', 'ws-repair-quotes':'workshop', 'ws-inspection-reports':'workshop',
+  'ws-external-ops':'workshop', 'ws-vouchers':'workshop',
+  'op-card':'ops', emergencies:'ops', 'ops-review':'ops',
   'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment', 'equipment-op-card':'equipment',
   'inv-overview':'inventory', 'inv-products':'inventory', 'inv-categories':'inventory', 'inv-suppliers':'inventory',
   'inv-movements':'inventory', 'inv-alerts':'inventory',
   'monthly-report':'reports', 'driver-kpi':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
-  'super-admins':'admin', 'super-reporters':'admin', 'super-reassign':'admin',
+  'super-admins':'admin', 'super-reporters':'admin', 'super-workshop-admins':'admin', 'super-reassign':'admin',
   'super-logs':'admin', 'super-sarky':'admin', 'driver-photos':'admin',
   'driver-trip':'driverFlat', 'driver-workshop':'driverFlat', 'driver-emergency':'driverFlat',
 };
@@ -2728,7 +2732,8 @@ let currentSection = '';
 function buildSupervisorNav() {
   // مشرف الورشة: يشوف الورش + المركبات + الصيانة فقط
   if(isSupervisorWS()) return [
-    {id:'workshops',   icon:'🛠️', label:'الورش'},
+    {id:'workshops-stats', icon:'📊', label:'إحصائية الورش'},
+    {id:'workshops',   icon:'🛠️', label:'سجلات الورش'},
     {id:'maintenance', icon:'🔧', label:'الصيانة الدورية'},
     {id:'cars',        icon:'🚙', label:'المركبات'},
   ];
@@ -2746,13 +2751,16 @@ function buildSupervisorNav() {
 function buildWorkshopAdminNav() {
   // ادمن الورش: صلاحية إدارية كاملة على كل ما يخص الورشة والصيانة فقط
   return [
-    {id:'workshops',             icon:'🛠️', label:'الورش والإحصائيات'},
+    {id:'workshops-stats',       icon:'📊', label:'إحصائية الورش'},
+    {id:'workshops',             icon:'🛠️', label:'سجلات الورش'},
     {id:'maintenance',           icon:'🔧', label:'الصيانة الدورية'},
     {id:'forecast',              icon:'🗓️', label:'خطط الصيانة والإصلاح'},
     {id:'cars',                  icon:'🚙', label:'المركبات'},
     {id:'ws-attachments',        icon:'📎', label:'تتبع المرفقات'},
     {id:'ws-repair-quotes',      icon:'🧾', label:'مقايسات الإصلاح'},
     {id:'ws-inspection-reports', icon:'📝', label:'محاضر الفحص'},
+    {id:'ws-external-ops',       icon:'🚚', label:'طلب تشغيل خارجي'},
+    {id:'ws-vouchers',           icon:'💳', label:'إذن الصرف'},
   ];
 }
 
@@ -2769,13 +2777,16 @@ function buildAdminNav() {
     {id:'requests',   icon:'📋', label:'طلبات السائقين'},
     {id:'permissions',icon:'🔗', label:'الصلاحيات'},
     {id:'_sep_ops',   icon:'🛠️', label:'التشغيل', separator:true},
-    {id:'workshops',  icon:'🛠️', label:'الورش'},
+    {id:'workshops',  icon:'🛠️', label:'سجلات الورش'},
+    {id:'workshops-stats', icon:'📊', label:'إحصائية الورش'},
     {id:'op-card',    icon:'📄', label:'البطاقة التشغيلية'},
     {id:'maintenance',   icon:'🔧', label:'الصيانة الدورية'},
     {id:'ws-attachments', icon:'📎', label:'تتبع المرفقات'},
     {id:'ops-review', icon:'📝', label:'مراجعة العمليات'},
     {id:'ws-repair-quotes', icon:'🧾', label:'مقايسات الإصلاح'},
     {id:'ws-inspection-reports', icon:'📝', label:'محاضر الفحص'},
+    {id:'ws-external-ops', icon:'🚚', label:'طلب تشغيل خارجي'},
+    {id:'ws-vouchers', icon:'💳', label:'إذن الصرف'},
     {id:'forecast',       icon:'🗓️', label:'خطط الصيانة والإصلاح'},
     {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
@@ -2940,7 +2951,8 @@ async function renderSection(id) {
     case 'drivers':        await renderDriversSection(); break;
     case 'cars':           await renderCarsSection(); break;
     case 'trips':          await renderTripsSection(); break;
-    case 'workshops':      await renderAdminWorkshops(); break;
+    case 'workshops':      await renderWorkshopRecords(); break;
+    case 'workshops-stats': await renderWorkshopStats(); break;
     case 'map':            await renderMapSection(); break;
     case 'emergencies':    await renderEmergenciesSection(); break;
     case 'requests':       await renderRequestsSection(); break;
@@ -2973,6 +2985,8 @@ async function renderSection(id) {
     case 'inv-movements': await renderInventoryMovements(); break;
     case 'ws-repair-quotes': await renderWorkshopRepairQuotes(); break;
     case 'ws-inspection-reports': await renderWorkshopInspectionReports(); break;
+    case 'ws-external-ops': await renderWorkshopExternalOps(); break;
+    case 'ws-vouchers': await renderWorkshopVouchers(); break;
     case 'inv-alerts': await renderInventoryAlerts(); break;
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
@@ -4817,9 +4831,9 @@ const OIL_SUBTYPES = [
 ];
 const TIRE_ACTIONS = { puncture:'ثقب', replacement:'استبدال', repair:'تصليح' };
 
-async function renderAdminWorkshops() {
-  const [records, cars, currentPrices] = await Promise.all([
-    loadWorkshops(), loadCars(),
+async function renderWorkshopStats() {
+  const [records, currentPrices] = await Promise.all([
+    loadWorkshops(),
     apiCall('/settings/prices').catch(()=>({}))
   ]);
   const totalRaw = records.reduce((s,r)=>s+(r.price||0),0);
@@ -5011,6 +5025,25 @@ async function renderAdminWorkshops() {
       </div>
     </div>
 
+  `;
+
+  if(!isReporter()) {
+    const phBtn = document.getElementById('pricesBtnPlaceholder');
+    if(phBtn) {
+      const btn = document.createElement('button');
+      btn.style.cssText = 'display:flex;align-items:center;gap:.4rem;border:1.5px solid #10b981;color:#059669;background:#fff;padding:.45rem 1rem;border-radius:8px;font-size:.84rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .18s';
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> تعديل الأسعار';
+      btn.onmouseover = () => btn.style.background = '#f0fdf4';
+      btn.onmouseout  = () => btn.style.background = '#fff';
+      btn.onclick = () => openPricesPopup(window._currentWsPrices);
+      phBtn.replaceWith(btn);
+    }
+  }
+}
+
+async function renderWorkshopRecords() {
+  const [records, cars] = await Promise.all([loadWorkshops(), loadCars()]);
+  document.getElementById('pageContent').innerHTML=`
     <!-- ── جدول سجلات الورش ── -->
     <div class="card">
       <div class="card-header"><div class="card-title">🛠️ سجلات الورش</div></div>
@@ -5054,38 +5087,6 @@ async function renderAdminWorkshops() {
 
   window.__workshAll = records;
   window._wsRecords = records;
-  if(!isReporter()) {
-    const phBtn = document.getElementById('pricesBtnPlaceholder');
-    if(phBtn) {
-      const btn = document.createElement('button');
-      btn.style.cssText = 'display:flex;align-items:center;gap:.4rem;border:1.5px solid #10b981;color:#059669;background:#fff;padding:.45rem 1rem;border-radius:8px;font-size:.84rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .18s';
-      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> تعديل الأسعار';
-      btn.onmouseover = () => btn.style.background = '#f0fdf4';
-      btn.onmouseout  = () => btn.style.background = '#fff';
-      btn.onclick = () => openPricesPopup(window._currentWsPrices);
-      phBtn.replaceWith(btn);
-    }
-  }
-}
-
-function switchWsTab(tabId, clickedBtn) {
-  const panels = ['fuel','oils','main','parts'];
-  panels.forEach(id => {
-    const panel = document.getElementById('wsTabPanel_' + id);
-    const btn   = document.getElementById('wsTab_' + id);
-    if (!panel || !btn) return;
-    const isActive = id === tabId;
-    panel.style.display = isActive ? 'block' : 'none';
-    btn.style.color = isActive ? '#059669' : '#64748b';
-    const indicator = btn.querySelector('span');
-    if (isActive && !indicator) {
-      const sp = document.createElement('span');
-      sp.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:2px;background:#10b981;border-radius:2px 2px 0 0';
-      btn.appendChild(sp);
-    } else if (!isActive && indicator) {
-      indicator.remove();
-    }
-  });
 }
 
 function buildWSTable(records) {
@@ -5162,7 +5163,7 @@ async function applyWsOverride(rid, wsType, plate) {
   try {
     const res = await apiCall(`/workshop/records/${rid}/apply-maintenance-override`, 'POST');
     showNotification(`✅ تم تحديث ${res.updated_rows} صيانة بنجاح (${res.km} كم)`, 'success');
-    await renderAdminWorkshops();
+    await renderWorkshopRecords();
   } catch(e) {
     showNotification('❌ ' + e.message, 'error');
   }
@@ -8400,10 +8401,11 @@ async function stopAndSend() {
 let selWsType=null;
 
 async function renderDriverWorkshop() {
-  const [allowedCars, pricesData, allTrips] = await Promise.all([
+  const [allowedCars, pricesData, allTrips, myRecords] = await Promise.all([
     loadAllowedCars(),
     apiCall('/settings/prices').catch(()=>({})),
-    apiCall('/trips').catch(()=>[])
+    apiCall('/trips').catch(()=>[]),
+    apiCall('/workshops').catch(()=>[])
   ]);
   window._typePrices    = pricesData || {};
   window._wsAllowedCars = allowedCars;
@@ -8412,10 +8414,39 @@ async function renderDriverWorkshop() {
   window._wsActiveCarId = activeTrip?.car_id || null;
   selWsType = null;
 
+  // ── آخر تفويلة وآخر تغيير زيت ──
+  const AR_DAYS = ['الأحد','الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  const fmtDateDay = (isoStr) => {
+    if (!isoStr) return null;
+    const dt = new Date(isoStr);
+    if (isNaN(dt.getTime())) return null;
+    return `${dt.toLocaleDateString('ar-EG')} — ${AR_DAYS[dt.getDay()]}`;
+  };
+  const sortedRecords = [...(myRecords||[])].sort((a,b)=> new Date(b.created_at||0) - new Date(a.created_at||0));
+  const lastFuel = sortedRecords.find(r => (r.type||'').startsWith('fuel_'));
+  const lastOil  = sortedRecords.find(r => r.type === 'oil' || (r.type||'').startsWith('oil_'));
+  const lastFuelStr = fmtDateDay(lastFuel?.created_at);
+  const lastOilStr  = fmtDateDay(lastOil?.created_at);
+
   document.getElementById('pageContent').innerHTML=`
     <div class="driver-hero" style="background:linear-gradient(135deg,#1e3a5f,#264d73)">
       <div class="driver-hero-icon">🛠️</div>
       <div><h2>الورشة</h2><p>اختر نوع الصيانة لتسجيل العملية</p></div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><div class="card-title">📅 آخر العمليات</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;padding:.8rem">
+        <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:.7rem;text-align:center">
+          <div style="font-size:1.3rem">⛽</div>
+          <div style="font-weight:700;color:#1e3a5f;margin-top:.3rem">آخر تفويلة</div>
+          <div style="font-size:.85rem;color:#475569;margin-top:.2rem">${lastFuelStr || 'لا يوجد سجل بعد'}</div>
+        </div>
+        <div style="background:#fef3c7;border:1.5px solid #fde68a;border-radius:8px;padding:.7rem;text-align:center">
+          <div style="font-size:1.3rem">🛢️</div>
+          <div style="font-weight:700;color:#92400e;margin-top:.3rem">آخر تغيير زيت</div>
+          <div style="font-size:.85rem;color:#78716c;margin-top:.2rem">${lastOilStr || 'لا يوجد سجل بعد'}</div>
+        </div>
+      </div>
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">اختر نوع الخدمة</div></div>
@@ -8764,7 +8795,7 @@ async function saveTypePrices() {
   try{
     await apiCall('/settings/prices','PUT',body);
     showNotification('✅ تم حفظ أسعار الصيانة بنجاح','success');
-    await renderAdminWorkshops();
+    await renderWorkshopStats();
   }catch(e){ showNotification(e.message,'error'); }
 }
 
@@ -8906,7 +8937,7 @@ async function openPricesPopup(basePrices) {
           await apiCall('/settings/prices','PUT',body);
           showNotification('✅ تم حفظ الأسعار' + (branch?' للفرع: '+branch:' العامة'),'success');
           closeModal();
-          await renderAdminWorkshops();
+          await renderWorkshopStats();
         } catch(e) {
           showNotification(e.message,'error');
           btn.disabled=false; btn.textContent='💾 حفظ الأسعار';
@@ -9376,8 +9407,8 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
-  currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops' : 'overview');
+  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
+  currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops-stats' : 'overview');
   renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
   if(_hashSection && _validSections.includes(_hashSection) && history.replaceState)
@@ -19663,12 +19694,19 @@ function openRepairQuoteModal(q) {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group">
-        <label>المركبة *</label>
-        <select id="rqCar">
+        <label>المركبة / المعدة *</label>
+        <select id="rqCar" onchange="_rqOnCarChange()">
           <option value="">— اختر —</option>
-          ${cars.map(c=>`<option value="${c.id}" ${q?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}${c.model?' | '+c.model:''}</option>`).join('')}
+          ${cars.map(c=>`<option value="${c.id}" data-chassis="${c.chassis||''}" ${q?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}${c.model?' | '+c.model:''}</option>`).join('')}
         </select>
       </div>
+      <div class="form-group">
+        <label>رقم الشاسيه</label>
+        <input type="text" id="rqChassis" value="${meta.chassis_number||q?.chassis_number||(cars.find(c=>c.id===q?.car_id)?.chassis)||''}" placeholder="يُملأ تلقائياً عند اختيار المركبة">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
       <div class="form-group">
         <label>رقم التشغيل</label>
         <input type="text" id="rqOpNum" value="${meta.operation_number||q?.operation_number||''}" placeholder="مثال: 3/6114">
@@ -19688,13 +19726,31 @@ function openRepairQuoteModal(q) {
       </div>
     </div>
 
-    <!-- ─── بنود الأعمال ─── -->
+    <!-- ─── 1) تكلفة الفك والفحص وإعادة التجميع بعد الفحص ─── -->
+    <div style="background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:8px;padding:.8rem;margin-bottom:.8rem">
+      <label style="font-weight:700;color:#3730a3">1️⃣ تكلفة الفك - الفحص - وإعادة التجميع بعد الفحص</label>
+      <input type="number" id="rqDisassemblyCost" value="${meta.disassembly_cost??''}" min="0" step="0.01" placeholder="0" style="margin-top:.4rem" oninput="_rqRecalcTotal()">
+    </div>
+
+    <!-- ─── 2) عمليات الإصلاح (أقسام + بنود) ─── -->
     <div class="form-group">
       <label style="font-size:.95rem;font-weight:700;display:flex;justify-content:space-between;align-items:center">
-        <span>🔧 بنود الأعمال (أقسام + بنود)</span>
+        <span>2️⃣ عمليات الإصلاح (أقسام + بنود)</span>
         <button type="button" class="btn btn-primary btn-sm" onclick="rqAddSection()">➕ إضافة قسم</button>
       </label>
       <div id="rqSectionsContainer" style="margin-top:.5rem;display:flex;flex-direction:column;gap:.8rem"></div>
+    </div>
+
+    <!-- ─── 3) نوع التشغيل في المقايسة ─── -->
+    <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:.8rem;margin-bottom:.8rem">
+      <label style="font-weight:700;color:#166534;display:block;margin-bottom:.4rem">3️⃣ نوع التشغيل في المقايسة</label>
+      <select id="rqOpType" onchange="_rqOnOpTypeChange()">
+        <option value="internal" ${(meta.operation_type||'internal')==='internal'?'selected':''}>🏠 داخلي</option>
+        <option value="external" ${meta.operation_type==='external'?'selected':''}>🚚 خارجي</option>
+      </select>
+      <div id="rqExternalNote" style="display:${meta.operation_type==='external'?'block':'none'};margin-top:.5rem;font-size:.82rem;color:#166534">
+        💡 سيتم اعتبار الورشة المنفذة "خارجية" وإظهار إجمالي قيمة المصنعيات كتكلفة تشغيل خارجي في التقرير.
+      </div>
     </div>
 
     <div style="background:#f0f4f8;border-radius:8px;padding:.8rem;margin-bottom:.5rem">
@@ -19709,6 +19765,10 @@ function openRepairQuoteModal(q) {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.4rem">
         <span style="font-size:8.5pt;color:#666">المصاريف الإدارية:</span>
         <span id="rqAdminAmt" style="font-size:.9rem">0 جنيه</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.4rem">
+        <span style="font-size:8.5pt;color:#666">تكلفة الفك والفحص وإعادة التجميع:</span>
+        <span id="rqDisassemblyDisplay" style="font-size:.9rem">0 جنيه</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.5rem;padding-top:.5rem;border-top:1.5px solid #ccc">
         <span style="font-weight:800;font-size:1rem">الإجمالي الكلي:</span>
@@ -19749,7 +19809,7 @@ function openRepairQuoteModal(q) {
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="rqSaveBtn">💾 حفظ</button>
-    </div>`);
+    </div>`, 'modal-car-form');
 
   // تحميل الأقسام الموجودة أو قسم فارغ
   if (sections.length) {
@@ -19769,7 +19829,8 @@ function openRepairQuoteModal(q) {
     sectionsData.forEach(sec => sec.items.forEach(it => { subtotal += (it.mfg||0) + (it.parts||0); }));
     const adminPct = parseFloat(document.getElementById('rqAdminPct').value) || 0;
     const adminAmt = subtotal * adminPct / 100;
-    const totalValue = subtotal + adminAmt;
+    const disassemblyCost = parseFloat(document.getElementById('rqDisassemblyCost').value) || 0;
+    const totalValue = subtotal + adminAmt + disassemblyCost;
 
     // كل البيانات الإضافية بنخزنها جوا items_json كـ payload كامل
     const fullPayload = {
@@ -19782,6 +19843,9 @@ function openRepairQuoteModal(q) {
       workshop_name:   document.getElementById('rqWorkshop').value.trim(),
       operation_number:document.getElementById('rqOpNum').value.trim(),
       car_desc:        document.getElementById('rqCarDesc').value.trim(),
+      chassis_number:  document.getElementById('rqChassis').value.trim(),
+      disassembly_cost:disassemblyCost,
+      operation_type:  document.getElementById('rqOpType').value,
       admin_pct:       adminPct,
       sig1_title:      document.getElementById('rqSig1Title').value.trim(),
       sig1_name:       document.getElementById('rqSig1Name').value.trim(),
@@ -19887,15 +19951,36 @@ function _rqRecalcTotal() {
   });
   const adminPct = parseFloat(document.getElementById('rqAdminPct')?.value) || 0;
   const adminAmt = subtotal * adminPct / 100;
-  const grand = subtotal + adminAmt;
+  const disassemblyCost = parseFloat(document.getElementById('rqDisassemblyCost')?.value) || 0;
+  const grand = subtotal + adminAmt + disassemblyCost;
 
   const sub = document.getElementById('rqSubTotal');
   const adm = document.getElementById('rqAdminAmt');
+  const dis = document.getElementById('rqDisassemblyDisplay');
   const tot = document.getElementById('rqTotalDisplay');
   if (sub) sub.textContent = subtotal.toLocaleString('ar-EG') + ' جنيه';
   if (adm) adm.textContent = adminAmt.toLocaleString('ar-EG') + ' جنيه';
+  if (dis) dis.textContent = disassemblyCost.toLocaleString('ar-EG') + ' جنيه';
   if (tot) tot.textContent = grand.toLocaleString('ar-EG') + ' جنيه';
   return grand;
+}
+
+/* ── تحديث رقم الشاسيه تلقائياً عند اختيار المركبة ── */
+function _rqOnCarChange() {
+  const sel = document.getElementById('rqCar');
+  const chassisInput = document.getElementById('rqChassis');
+  if (!sel || !chassisInput) return;
+  const opt = sel.options[sel.selectedIndex];
+  const chassis = opt?.getAttribute('data-chassis') || '';
+  if (chassis) chassisInput.value = chassis;
+}
+
+/* ── إظهار/إخفاء ملاحظة التشغيل الخارجي ── */
+function _rqOnOpTypeChange() {
+  const sel = document.getElementById('rqOpType');
+  const note = document.getElementById('rqExternalNote');
+  if (!sel || !note) return;
+  note.style.display = sel.value === 'external' ? 'block' : 'none';
 }
 
 /* ══════════════════════════════════════════
@@ -19922,7 +20007,9 @@ function printRepairQuote(q) {
   let subtotal = 0;
   sections.forEach(sec => (sec.items||[]).forEach(it => { subtotal += (it.mfg||0) + (it.parts||0); }));
   const adminAmt  = subtotal * adminPct / 100;
-  const grandTotal = subtotal + adminAmt;
+  const disassemblyCost = d.disassembly_cost || 0;
+  const opType = d.operation_type || 'internal';
+  const grandTotal = subtotal + adminAmt + disassemblyCost;
 
   // ── صفوف الأعمال ──
   let rowsHtml = '';
@@ -19990,11 +20077,24 @@ function printRepairQuote(q) {
       </tr>
       <tr>
         <td class="lbl">رقم التشغيل</td>
-        <td class="val" colspan="3">${d.operation_number || ''}</td>
+        <td class="val">${d.operation_number || ''}</td>
+        <td class="lbl">رقم الشاسيه</td>
+        <td class="val">${d.chassis_number || ''}</td>
       </tr>
     </table>
 
-    <!-- ─ جدول الأعمال ─ -->
+    <!-- ─ 1) تكلفة الفك والفحص وإعادة التجميع بعد الفحص ─ -->
+    <table class="rq-items-table" style="margin-top:8px">
+      <tbody>
+        <tr class="total-row">
+          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">1) تكلفة الفك - الفحص - وإعادة التجميع بعد الفحص</td>
+          <td style="border:1.5px solid #333">${disassemblyCost>0?disassemblyCost.toLocaleString('ar-EG'):''}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ─ 2) جدول عمليات الإصلاح ─ -->
+    <div style="font-size:9pt;font-weight:bold;margin:8px 0 3px">2) عمليات الإصلاح</div>
     <table class="rq-items-table">
       <thead>
         <tr>
@@ -20019,8 +20119,17 @@ function printRepairQuote(q) {
           <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">يضاف ${adminPct}٪ مستلزمات تشغيل واختبارات جودة ومصاريف ادارية</td>
           <td style="border:1.5px solid #333">${adminAmt>0?adminAmt.toLocaleString('ar-EG'):''}</td>
         </tr>
+        <tr class="total-row">
+          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">3) نوع التشغيل في المقايسة</td>
+          <td style="border:1.5px solid #333;font-weight:bold">${opType==='external' ? 'خارجي 🚚' : 'داخلي 🏠'}</td>
+        </tr>
+        ${opType==='external' ? `
+        <tr class="total-row">
+          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">إجمالي المصنعيات (تشغيل خارجي)</td>
+          <td style="border:1.5px solid #333">${totalMfg>0?totalMfg.toLocaleString('ar-EG'):''}</td>
+        </tr>` : ''}
         <tr class="grand-row">
-          <td colspan="3" style="text-align:right;padding:6px 10px;border:2px solid #333">الإجمالي الكلي</td>
+          <td colspan="3" style="text-align:right;padding:6px 10px;border:2px solid #333">الإجمالي الكلي (شامل تكلفة الفك والفحص)</td>
           <td style="border:2px solid #333">${grandTotal>0?grandTotal.toLocaleString('ar-EG'):''}</td>
         </tr>
       </tfoot>
@@ -21278,7 +21387,7 @@ async function renderWorkshopInspectionReports() {
         <table>
           <thead><tr>
             <th>رقم المحضر</th><th>المركبة</th><th>السائق</th><th>تاريخ الفحص</th>
-            <th>الفاحص</th><th>قراءة العداد</th><th>النتيجة</th><th></th>
+            <th>الفاحص</th><th>قراءة العداد</th><th>النتيجة</th><th>المقايسة المرتبطة</th><th></th>
           </tr></thead>
           <tbody>
             ${reports.length ? reports.map(r=>`
@@ -21290,15 +21399,67 @@ async function renderWorkshopInspectionReports() {
                 <td>${r.inspector_name||'—'}</td>
                 <td>${r.odometer_reading!=null ? r.odometer_reading.toLocaleString('ar-EG') : '—'}</td>
                 <td>${INSPECTION_RESULT_LABELS[r.result]||r.result}</td>
+                <td>${r.quote_id ? `<button class="btn btn-outline btn-sm" onclick='viewQuoteItemsFromReport(${JSON.stringify(r).replace(/'/g,"&#39;")})'>🧾 ${r.quote_number||'عرض البنود'}</button>` : '—'}</td>
                 <td style="white-space:nowrap">
                   <button class="btn btn-outline btn-sm" onclick='openInspectionReportModal(${JSON.stringify(r).replace(/'/g,"&#39;")})'>✏️ تعديل</button>
                   <button class="btn btn-danger btn-sm" onclick="deleteInspectionReport(${r.id})">🗑️ حذف</button>
                 </td>
-              </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد محاضر فحص بعد</p></div></td></tr>`}
+              </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد محاضر فحص بعد</p></div></td></tr>`}
           </tbody>
         </table>
       </div>
     </div>`;
+}
+
+/* ── عرض بنود مقايسة الإصلاح المرتبطة بمحضر الفحص ── */
+function viewQuoteItemsFromReport(r) {
+  let sections = [], meta = {};
+  try {
+    const parsed = JSON.parse(r.quote_items_json || '[]');
+    if (parsed && typeof parsed === 'object' && parsed.sections) { meta = parsed; sections = parsed.sections || []; }
+    else if (Array.isArray(parsed)) { sections = parsed; }
+  } catch(e) {}
+  const opType = meta.operation_type || 'internal';
+  let totalMfg = 0, totalParts = 0;
+  sections.forEach(sec => (sec.items||[]).forEach(it => { totalMfg += it.mfg||0; totalParts += it.parts||0; }));
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🧾 بنود مقايسة الإصلاح رقم ${r.quote_number||''}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem">
+      <span class="badge" style="background:#eef2ff;color:#3730a3;padding:.3rem .7rem;border-radius:8px;font-size:.8rem;font-weight:700">
+        نوع التشغيل: ${opType==='external' ? '🚚 خارجي' : '🏠 داخلي'}
+      </span>
+      ${meta.disassembly_cost ? `<span style="background:#fef3c7;color:#92400e;padding:.3rem .7rem;border-radius:8px;font-size:.8rem;font-weight:700">تكلفة الفك والفحص وإعادة التجميع: ${(meta.disassembly_cost||0).toLocaleString('ar-EG')} جنيه</span>` : ''}
+    </div>
+    ${sections.length ? sections.map(sec => `
+      <div style="margin-bottom:.8rem">
+        ${sec.title ? `<div style="font-weight:700;margin-bottom:.4rem;color:#1e3a5f">${sec.title}</div>` : ''}
+        <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+          <thead><tr style="background:#f1f5f9">
+            <th style="padding:.4rem;text-align:right;border:1px solid #e2e8f0">بيان العمل</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:120px">المصنعيات</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:120px">قطع الغيار</th>
+          </tr></thead>
+          <tbody>
+            ${(sec.items||[]).map(it=>`<tr>
+              <td style="padding:.4rem;border:1px solid #e2e8f0">${it.name||''}</td>
+              <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">${(it.mfg||0).toLocaleString('ar-EG')}</td>
+              <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">${(it.parts||0).toLocaleString('ar-EG')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`).join('') : `<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد بنود مسجلة</p></div>`}
+    ${opType === 'external' ? `
+      <div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:8px;padding:.7rem;margin-top:.5rem;display:flex;justify-content:space-between;align-items:center">
+        <strong style="color:#9a3412">إجمالي المصنعيات (تشغيل خارجي)</strong>
+        <strong style="color:#9a3412">${totalMfg.toLocaleString('ar-EG')} جنيه</strong>
+      </div>` : ''}
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
+    </div>`, 'modal-lg');
 }
 
 function openInspectionReportModal(r) {
@@ -21403,6 +21564,390 @@ function openInspectionReportModal(r) {
 async function deleteInspectionReport(id) {
   if (!confirm('تأكيد حذف محضر الفحص؟')) return;
   try { await apiCall(`/workshop/inspection-reports/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderWorkshopInspectionReports(); }
+  catch(e) { showNotification(e.message, 'error'); }
+}
+
+/* ══════════════════════════════════════════
+   طلب تشغيل خارجي (ادمن الورش)
+══════════════════════════════════════════ */
+const EXTOP_STATUS_LABELS = {
+  pending: '⏳ قيد المراجعة', approved: '🟢 معتمد', rejected: '❌ مرفوض', done: '✅ منفذ'
+};
+
+async function renderWorkshopExternalOps() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [ops, cars, drvs, quotes] = await Promise.all([
+    apiCall('/workshop/external-ops').catch(()=>[]),
+    apiCall('/cars').catch(()=>[]),
+    apiCall('/drivers').catch(()=>[]),
+    apiCall('/workshop/repair-quotes').catch(()=>[]),
+  ]);
+  window._eoCars = cars; window._eoDrivers = drvs; window._eoQuotes = quotes;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🚚 طلبات التشغيل الخارجي</div>
+        <button class="btn btn-primary btn-sm" onclick="openExternalOpModal(null)">➕ طلب جديد</button>
+      </div>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>رقم الطلب</th><th>المركبة</th><th>الورشة الخارجية</th><th>سبب التشغيل الخارجي</th>
+            <th>التكلفة التقديرية</th><th>المصنعيات</th><th>المقايسة</th><th>الحالة</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${ops.length ? ops.map(o=>`
+              <tr>
+                <td><strong>${o.request_number||'—'}</strong></td>
+                <td>${o.car_plate||'—'}</td>
+                <td>${o.workshop_name||'—'}</td>
+                <td>${o.reason||'—'}</td>
+                <td>${(o.estimated_cost||0).toLocaleString('ar-EG')} جنيه</td>
+                <td>${(o.workmanship_cost||0).toLocaleString('ar-EG')} جنيه</td>
+                <td>${o.quote_number||'—'}</td>
+                <td>${EXTOP_STATUS_LABELS[o.status]||o.status}</td>
+                <td style="white-space:nowrap">
+                  <button class="btn btn-outline btn-sm" onclick='openExternalOpModal(${JSON.stringify(o).replace(/'/g,"&#39;")})'>✏️ تعديل</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteExternalOp(${o.id})">🗑️ حذف</button>
+                </td>
+              </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد طلبات تشغيل خارجي</p></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function openExternalOpModal(o) {
+  const cars = window._eoCars || [];
+  const drvs = window._eoDrivers || [];
+  const quotes = window._eoQuotes || [];
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${o ? '✏️ تعديل طلب تشغيل خارجي' : '➕ طلب تشغيل خارجي جديد'}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>رقم الطلب</label>
+        <input type="text" id="eoNum" value="${o?.request_number||''}" placeholder="سيتم توليده تلقائياً إن ترك فارغاً">
+      </div>
+      <div class="form-group">
+        <label>تاريخ الطلب *</label>
+        <input type="date" id="eoDate" value="${o?.request_date||new Date().toISOString().slice(0,10)}">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>المركبة *</label>
+        <select id="eoCar">
+          <option value="">— اختر —</option>
+          ${cars.map(c=>`<option value="${c.id}" ${o?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>السائق (اختياري)</label>
+        <select id="eoDriver">
+          <option value="">— بدون —</option>
+          ${drvs.map(d=>`<option value="${d.id}" ${o?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>مرتبط بمقايسة إصلاح (اختياري)</label>
+      <select id="eoQuote">
+        <option value="">— بدون ربط —</option>
+        ${quotes.map(q=>`<option value="${q.id}" ${o?.quote_id===q.id?'selected':''}>${q.quote_number} — ${q.car_plate||''}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>اسم الورشة الخارجية *</label>
+      <input type="text" id="eoWorkshop" value="${o?.workshop_name||''}" placeholder="اسم الورشة الخارجية المنفذة">
+    </div>
+
+    <div class="form-group">
+      <label>سبب التشغيل الخارجي</label>
+      <textarea id="eoReason" rows="2" placeholder="سبب تعذر التنفيذ داخلياً">${o?.reason||''}</textarea>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>التكلفة التقديرية (جنيه)</label>
+        <input type="number" id="eoEstCost" min="0" step="0.01" value="${o?.estimated_cost??''}" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>قيمة المصنعيات (جنيه)</label>
+        <input type="number" id="eoWorkCost" min="0" step="0.01" value="${o?.workmanship_cost??''}" placeholder="0">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>الحالة</label>
+      <select id="eoStatus">
+        ${Object.keys(EXTOP_STATUS_LABELS).map(k=>`<option value="${k}" ${(o?.status||'pending')===k?'selected':''}>${EXTOP_STATUS_LABELS[k]}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>ملاحظات</label>
+      <textarea id="eoNotes" rows="2">${o?.notes||''}</textarea>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="eoSubmitBtn">💾 حفظ</button>
+    </div>`);
+
+  document.getElementById('eoSubmitBtn').onclick = async () => {
+    const carId = document.getElementById('eoCar').value;
+    if (!carId) return showNotification('يرجى اختيار المركبة', 'error');
+    const workshopName = document.getElementById('eoWorkshop').value.trim();
+    if (!workshopName) return showNotification('يرجى إدخال اسم الورشة الخارجية', 'error');
+    const driverVal = document.getElementById('eoDriver').value;
+    const quoteVal = document.getElementById('eoQuote').value;
+    const payload = {
+      request_number: document.getElementById('eoNum').value.trim(),
+      car_id: parseInt(carId),
+      driver_id: driverVal ? parseInt(driverVal) : null,
+      quote_id: quoteVal ? parseInt(quoteVal) : null,
+      workshop_name: workshopName,
+      reason: document.getElementById('eoReason').value.trim(),
+      estimated_cost: parseFloat(document.getElementById('eoEstCost').value) || 0,
+      workmanship_cost: parseFloat(document.getElementById('eoWorkCost').value) || 0,
+      request_date: document.getElementById('eoDate').value,
+      status: document.getElementById('eoStatus').value,
+      notes: document.getElementById('eoNotes').value.trim(),
+    };
+    const btn = document.getElementById('eoSubmitBtn');
+    btn.disabled = true; btn.textContent = 'جاري...';
+    try {
+      if (o) await apiCall(`/workshop/external-ops/${o.id}`, 'PUT', payload);
+      else   await apiCall('/workshop/external-ops', 'POST', payload);
+      showNotification('✅ تم الحفظ', 'success');
+      closeModal(); renderWorkshopExternalOps();
+    } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ'; }
+  };
+}
+
+async function deleteExternalOp(id) {
+  if (!confirm('تأكيد حذف طلب التشغيل الخارجي؟')) return;
+  try { await apiCall(`/workshop/external-ops/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderWorkshopExternalOps(); }
+  catch(e) { showNotification(e.message, 'error'); }
+}
+
+/* ══════════════════════════════════════════
+   إذن الصرف (ادمن الورش)
+══════════════════════════════════════════ */
+const VOUCHER_STATUS_LABELS = { draft: '📝 مسودة', issued: '✅ تم الصرف', cancelled: '❌ ملغى' };
+
+async function renderWorkshopVouchers() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [vouchers, cars, drvs, quotes] = await Promise.all([
+    apiCall('/workshop/vouchers').catch(()=>[]),
+    apiCall('/cars').catch(()=>[]),
+    apiCall('/drivers').catch(()=>[]),
+    apiCall('/workshop/repair-quotes').catch(()=>[]),
+  ]);
+  window._vchCars = cars; window._vchDrivers = drvs; window._vchQuotes = quotes;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">💳 أذونات الصرف</div>
+        <button class="btn btn-primary btn-sm" onclick="openVoucherModal(null)">➕ إذن صرف جديد</button>
+      </div>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>رقم الإذن</th><th>المركبة</th><th>المستلم</th><th>الغرض</th>
+            <th>الإجمالي</th><th>المقايسة</th><th>الحالة</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${vouchers.length ? vouchers.map(v=>`
+              <tr>
+                <td><strong>${v.voucher_number||'—'}</strong></td>
+                <td>${v.car_plate||'—'}</td>
+                <td>${v.recipient_name||'—'}</td>
+                <td>${v.purpose||'—'}</td>
+                <td><strong>${(v.total_amount||0).toLocaleString('ar-EG')} جنيه</strong></td>
+                <td>${v.quote_number||'—'}</td>
+                <td>${VOUCHER_STATUS_LABELS[v.status]||v.status}</td>
+                <td style="white-space:nowrap">
+                  <button class="btn btn-outline btn-sm" onclick='openVoucherModal(${JSON.stringify(v).replace(/'/g,"&#39;")})'>✏️ تعديل</button>
+                  <button class="btn btn-danger btn-sm" onclick="deleteVoucher(${v.id})">🗑️ حذف</button>
+                </td>
+              </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد أذونات صرف</p></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function openVoucherModal(v) {
+  const cars = window._vchCars || [];
+  const drvs = window._vchDrivers || [];
+  const quotes = window._vchQuotes || [];
+  let items = [];
+  try { items = JSON.parse(v?.items_json || '[]'); if(!Array.isArray(items)) items = []; } catch(e) { items = []; }
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${v ? '✏️ تعديل إذن صرف' : '➕ إذن صرف جديد'}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>رقم الإذن</label>
+        <input type="text" id="vchNum" value="${v?.voucher_number||''}" placeholder="سيتم توليده تلقائياً إن ترك فارغاً">
+      </div>
+      <div class="form-group">
+        <label>تاريخ الصرف *</label>
+        <input type="date" id="vchDate" value="${v?.issue_date||new Date().toISOString().slice(0,10)}">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>المركبة *</label>
+        <select id="vchCar">
+          <option value="">— اختر —</option>
+          ${cars.map(c=>`<option value="${c.id}" ${v?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>السائق (اختياري)</label>
+        <select id="vchDriver">
+          <option value="">— بدون —</option>
+          ${drvs.map(d=>`<option value="${d.id}" ${v?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>مرتبط بمقايسة إصلاح (اختياري)</label>
+      <select id="vchQuote">
+        <option value="">— بدون ربط —</option>
+        ${quotes.map(q=>`<option value="${q.id}" ${v?.quote_id===q.id?'selected':''}>${q.quote_number} — ${q.car_plate||''}</option>`).join('')}
+      </select>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+      <div class="form-group">
+        <label>اسم المستلم *</label>
+        <input type="text" id="vchRecipient" value="${v?.recipient_name||''}" placeholder="اسم مستلم القطع/المبلغ">
+      </div>
+      <div class="form-group">
+        <label>الغرض من الصرف</label>
+        <input type="text" id="vchPurpose" value="${v?.purpose||''}" placeholder="مثال: صرف قطع غيار للمركبة">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label style="display:flex;justify-content:space-between;align-items:center">
+        <span>بنود الصرف</span>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="vchAddItem()">➕ إضافة بند</button>
+      </label>
+      <div id="vchItemsContainer" style="display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem"></div>
+    </div>
+
+    <div style="background:#f0f4f8;border-radius:8px;padding:.7rem;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700">الإجمالي الكلي:</span>
+      <span id="vchTotalDisplay" style="font-size:1.05rem;font-weight:900;color:#1e3a5f">0 جنيه</span>
+    </div>
+
+    <div class="form-group">
+      <label>الحالة</label>
+      <select id="vchStatus">
+        ${Object.keys(VOUCHER_STATUS_LABELS).map(k=>`<option value="${k}" ${(v?.status||'draft')===k?'selected':''}>${VOUCHER_STATUS_LABELS[k]}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>ملاحظات</label>
+      <textarea id="vchNotes" rows="2">${v?.notes||''}</textarea>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="vchSubmitBtn">💾 حفظ</button>
+    </div>`, 'modal-lg');
+
+  if (items.length) items.forEach(it => vchAddItem(it));
+  else vchAddItem();
+  _vchRecalcTotal();
+
+  document.getElementById('vchSubmitBtn').onclick = async () => {
+    const carId = document.getElementById('vchCar').value;
+    if (!carId) return showNotification('يرجى اختيار المركبة', 'error');
+    const recipient = document.getElementById('vchRecipient').value.trim();
+    if (!recipient) return showNotification('يرجى إدخال اسم المستلم', 'error');
+    const driverVal = document.getElementById('vchDriver').value;
+    const quoteVal = document.getElementById('vchQuote').value;
+    const itemsData = _vchCollectItems();
+    const total = itemsData.reduce((s,it)=>s+(it.amount||0),0);
+    const payload = {
+      voucher_number: document.getElementById('vchNum').value.trim(),
+      car_id: parseInt(carId),
+      driver_id: driverVal ? parseInt(driverVal) : null,
+      quote_id: quoteVal ? parseInt(quoteVal) : null,
+      recipient_name: recipient,
+      purpose: document.getElementById('vchPurpose').value.trim(),
+      items_json: JSON.stringify(itemsData),
+      total_amount: total,
+      issue_date: document.getElementById('vchDate').value,
+      status: document.getElementById('vchStatus').value,
+      notes: document.getElementById('vchNotes').value.trim(),
+    };
+    const btn = document.getElementById('vchSubmitBtn');
+    btn.disabled = true; btn.textContent = 'جاري...';
+    try {
+      if (v) await apiCall(`/workshop/vouchers/${v.id}`, 'PUT', payload);
+      else   await apiCall('/workshop/vouchers', 'POST', payload);
+      showNotification('✅ تم الحفظ', 'success');
+      closeModal(); renderWorkshopVouchers();
+    } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ'; }
+  };
+}
+
+function vchAddItem(item) {
+  const container = document.getElementById('vchItemsContainer');
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:.5rem;align-items:center';
+  row.innerHTML = `
+    <input type="text" class="vchItemName" value="${item?.name||''}" placeholder="اسم الصنف/البند" style="flex:2">
+    <input type="number" class="vchItemQty" value="${item?.qty??1}" min="0" step="1" placeholder="الكمية" style="flex:1;min-width:80px" oninput="_vchRecalcTotal()">
+    <input type="number" class="vchItemAmount" value="${item?.amount??''}" min="0" step="0.01" placeholder="القيمة" style="flex:1;min-width:100px" oninput="_vchRecalcTotal()">
+    <button type="button" onclick="this.closest('div').remove(); _vchRecalcTotal()" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:16px">✕</button>`;
+  container.appendChild(row);
+}
+
+function _vchCollectItems() {
+  const result = [];
+  document.querySelectorAll('#vchItemsContainer > div').forEach(row => {
+    const name = row.querySelector('.vchItemName')?.value.trim() || '';
+    const qty = parseFloat(row.querySelector('.vchItemQty')?.value) || 0;
+    const amount = parseFloat(row.querySelector('.vchItemAmount')?.value) || 0;
+    if (name || qty || amount) result.push({name, qty, amount});
+  });
+  return result;
+}
+
+function _vchRecalcTotal() {
+  const total = _vchCollectItems().reduce((s,it)=>s+(it.amount||0),0);
+  const el = document.getElementById('vchTotalDisplay');
+  if (el) el.textContent = total.toLocaleString('ar-EG') + ' جنيه';
+}
+
+async function deleteVoucher(id) {
+  if (!confirm('تأكيد حذف إذن الصرف؟')) return;
+  try { await apiCall(`/workshop/vouchers/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderWorkshopVouchers(); }
   catch(e) { showNotification(e.message, 'error'); }
 }
 

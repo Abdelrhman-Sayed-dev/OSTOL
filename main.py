@@ -803,6 +803,7 @@ def _safe_add_columns(c):
         report_number TEXT DEFAULT '',
         car_id INTEGER NOT NULL,
         driver_id INTEGER DEFAULT NULL,
+        quote_id INTEGER DEFAULT NULL,
         inspection_date TEXT DEFAULT '',
         inspector_name TEXT DEFAULT '',
         odometer_reading REAL,
@@ -813,7 +814,58 @@ def _safe_add_columns(c):
         created_by TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
-        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL
+        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
+        FOREIGN KEY(quote_id) REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
+    )""")
+    # migration: إضافة quote_id لو الجدول كان موجود من قبل بدونه
+    try:
+        insp_cols = [r[1] for r in c.execute("PRAGMA table_info(workshop_inspection_reports)").fetchall()]
+        if "quote_id" not in insp_cols:
+            c.execute("ALTER TABLE workshop_inspection_reports ADD COLUMN quote_id INTEGER DEFAULT NULL")
+    except Exception:
+        pass
+
+    # ── جدول طلبات التشغيل الخارجي (الورشة) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS workshop_external_ops(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_number TEXT DEFAULT '',
+        quote_id INTEGER DEFAULT NULL,
+        car_id INTEGER NOT NULL,
+        driver_id INTEGER DEFAULT NULL,
+        workshop_name TEXT DEFAULT '',
+        reason TEXT DEFAULT '',
+        estimated_cost REAL DEFAULT 0,
+        workmanship_cost REAL DEFAULT 0,
+        request_date TEXT DEFAULT '',
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','done')),
+        notes TEXT DEFAULT '',
+        created_by TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
+        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
+        FOREIGN KEY(quote_id) REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
+    )""")
+
+    # ── جدول إذن الصرف (الورشة) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS workshop_vouchers(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        voucher_number TEXT DEFAULT '',
+        quote_id INTEGER DEFAULT NULL,
+        car_id INTEGER NOT NULL,
+        driver_id INTEGER DEFAULT NULL,
+        recipient_name TEXT DEFAULT '',
+        purpose TEXT DEFAULT '',
+        items_json TEXT DEFAULT '[]',
+        total_amount REAL DEFAULT 0,
+        issue_date TEXT DEFAULT '',
+        issued_by TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft' CHECK(status IN ('draft','issued','cancelled')),
+        notes TEXT DEFAULT '',
+        created_by TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
+        FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
+        FOREIGN KEY(quote_id) REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
     )""")
 
     for idx_sql in [
@@ -826,6 +878,11 @@ def _safe_add_columns(c):
         "CREATE INDEX IF NOT EXISTS idx_ws_approval ON workshop_records(approval_status)",
         "CREATE INDEX IF NOT EXISTS idx_insp_car ON workshop_inspection_reports(car_id)",
         "CREATE INDEX IF NOT EXISTS idx_insp_driver ON workshop_inspection_reports(driver_id)",
+        "CREATE INDEX IF NOT EXISTS idx_insp_quote ON workshop_inspection_reports(quote_id)",
+        "CREATE INDEX IF NOT EXISTS idx_extop_car ON workshop_external_ops(car_id)",
+        "CREATE INDEX IF NOT EXISTS idx_extop_quote ON workshop_external_ops(quote_id)",
+        "CREATE INDEX IF NOT EXISTS idx_voucher_car ON workshop_vouchers(car_id)",
+        "CREATE INDEX IF NOT EXISTS idx_voucher_quote ON workshop_vouchers(quote_id)",
     ]:
         try: c.execute(idx_sql)
         except Exception: pass
@@ -8985,7 +9042,15 @@ async def create_repair_quote(body: RepairQuoteCreate, cu: dict = Depends(requir
                               VALUES(?,?,?,?,?,?,?,?,?)""",
                             (quote_number, body.car_id, driver_id_val, body.quote_date or now[:10], body.status or "draft",
                              body.items_json or "[]", body.total_value or 0, body.notes or "", now))
-        return {"id": cur.lastrowid, "quote_number": quote_number}
+        new_qid = cur.lastrowid
+        # ── إنشاء محضر فحص تلقائياً بنفس رقم ووصف المقايسة ──
+        conn.execute("""INSERT INTO workshop_inspection_reports
+                        (report_number,car_id,driver_id,quote_id,inspection_date,result,notes,created_by,created_at)
+                        VALUES(?,?,?,?,?,?,?,?,?)""",
+                      (quote_number, body.car_id, driver_id_val, new_qid, body.quote_date or now[:10],
+                       "pending", f"تم إنشاؤه تلقائياً من مقايسة الإصلاح رقم {quote_number}",
+                       cu.get("username", ""), now))
+        return {"id": new_qid, "quote_number": quote_number}
 
 @app.put("/workshop/repair-quotes/{qid}")
 async def update_repair_quote(qid: int, body: RepairQuoteCreate, cu: dict = Depends(require_workshop_admin)):
@@ -8997,11 +9062,17 @@ async def update_repair_quote(qid: int, body: RepairQuoteCreate, cu: dict = Depe
                        status=?,items_json=?,total_value=?,notes=? WHERE id=?""",
                       (body.quote_number or "", body.car_id, driver_id_val, body.quote_date or "", body.status,
                        body.items_json or "[]", body.total_value or 0, body.notes or "", qid))
+        # ── مزامنة محضر الفحص المرتبط تلقائياً (نفس الرقم والمركبة والسائق والتاريخ) ──
+        conn.execute("""UPDATE workshop_inspection_reports
+                        SET report_number=?, car_id=?, driver_id=?, inspection_date=?
+                        WHERE quote_id=?""",
+                      (body.quote_number or "", body.car_id, driver_id_val, body.quote_date or "", qid))
         return {"ok": True}
 
 @app.delete("/workshop/repair-quotes/{qid}")
 async def delete_repair_quote(qid: int, cu: dict = Depends(require_workshop_admin)):
     with get_db() as conn:
+        conn.execute("DELETE FROM workshop_inspection_reports WHERE quote_id=?", (qid,))
         conn.execute("DELETE FROM workshop_repair_quotes WHERE id=?", (qid,))
         return {"ok": True}
 
@@ -9011,6 +9082,7 @@ class InspectionReportCreate(BaseModel):
     report_number: Optional[str] = ""
     car_id: int
     driver_id: Optional[int] = None
+    quote_id: Optional[int] = None
     inspection_date: Optional[str] = ""
     inspector_name: Optional[str] = ""
     odometer_reading: Optional[float] = None
@@ -9026,10 +9098,17 @@ async def list_inspection_reports(cu: dict = Depends(require_admin_or_reporter))
     with get_db() as conn:
         cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
         drvs = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM drivers").fetchall()}
+        quotes = {r["id"]: dict(r) for r in conn.execute(
+            "SELECT id,quote_number,items_json,total_value FROM workshop_repair_quotes").fetchall()}
         rows = [dict(r) for r in conn.execute("SELECT * FROM workshop_inspection_reports ORDER BY id DESC").fetchall()]
         for r in rows:
             r["car_plate"] = cars.get(r.get("car_id"), "")
             r["driver_name"] = drvs.get(r.get("driver_id"), "")
+            q = quotes.get(r.get("quote_id"))
+            if q:
+                r["quote_number"] = q.get("quote_number", "")
+                r["quote_items_json"] = q.get("items_json", "[]")
+                r["quote_total_value"] = q.get("total_value", 0)
         return rows
 
 @app.post("/workshop/inspection-reports", status_code=201)
@@ -9043,10 +9122,10 @@ async def create_inspection_report(body: InspectionReportCreate, cu: dict = Depe
         report_number = body.report_number or f"IR-{int(datetime.utcnow().timestamp())}"
         driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
         cur = conn.execute("""INSERT INTO workshop_inspection_reports
-                              (report_number,car_id,driver_id,inspection_date,inspector_name,
+                              (report_number,car_id,driver_id,quote_id,inspection_date,inspector_name,
                                odometer_reading,result,findings,items_json,notes,created_by,created_at)
-                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (report_number, body.car_id, driver_id_val, body.inspection_date or now[:10],
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (report_number, body.car_id, driver_id_val, body.quote_id, body.inspection_date or now[:10],
                              body.inspector_name or "", body.odometer_reading, body.result or "pending",
                              body.findings or "", body.items_json or "[]", body.notes or "",
                              cu.get("username", ""), now))
@@ -9062,10 +9141,10 @@ async def update_inspection_report(rid: int, body: InspectionReportCreate, cu: d
         if not conn.execute("SELECT id FROM workshop_inspection_reports WHERE id=?", (rid,)).fetchone():
             raise HTTPException(404, "المحضر غير موجود")
         driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
-        conn.execute("""UPDATE workshop_inspection_reports SET report_number=?,car_id=?,driver_id=?,
+        conn.execute("""UPDATE workshop_inspection_reports SET report_number=?,car_id=?,driver_id=?,quote_id=COALESCE(?,quote_id),
                        inspection_date=?,inspector_name=?,odometer_reading=?,result=?,findings=?,
                        items_json=?,notes=? WHERE id=?""",
-                      (body.report_number or "", body.car_id, driver_id_val, body.inspection_date or "",
+                      (body.report_number or "", body.car_id, driver_id_val, body.quote_id, body.inspection_date or "",
                        body.inspector_name or "", body.odometer_reading, body.result,
                        body.findings or "", body.items_json or "[]", body.notes or "", rid))
         write_audit_log(cu["user_id"], cu["username"], cu["role"],
@@ -9078,6 +9157,163 @@ async def delete_inspection_report(rid: int, cu: dict = Depends(require_workshop
         conn.execute("DELETE FROM workshop_inspection_reports WHERE id=?", (rid,))
         write_audit_log(cu["user_id"], cu["username"], cu["role"],
                         "delete_inspection_report", f"حذف محضر فحص #{rid}")
+        return {"ok": True}
+
+
+# ── طلبات التشغيل الخارجي (الورشة) ──
+class ExternalOpCreate(BaseModel):
+    request_number: Optional[str] = ""
+    quote_id: Optional[int] = None
+    car_id: int
+    driver_id: Optional[int] = None
+    workshop_name: Optional[str] = ""
+    reason: Optional[str] = ""
+    estimated_cost: Optional[float] = 0
+    workmanship_cost: Optional[float] = 0
+    request_date: Optional[str] = ""
+    status: Optional[str] = "pending"
+    notes: Optional[str] = ""
+
+EXTERNAL_OP_STATUSES = ("pending", "approved", "rejected", "done")
+
+@app.get("/workshop/external-ops")
+async def list_external_ops(cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
+        drvs = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM drivers").fetchall()}
+        quotes = {r["id"]: r["quote_number"] for r in conn.execute("SELECT id,quote_number FROM workshop_repair_quotes").fetchall()}
+        rows = [dict(r) for r in conn.execute("SELECT * FROM workshop_external_ops ORDER BY id DESC").fetchall()]
+        for r in rows:
+            r["car_plate"] = cars.get(r.get("car_id"), "")
+            r["driver_name"] = drvs.get(r.get("driver_id"), "")
+            r["quote_number"] = quotes.get(r.get("quote_id"), "")
+        return rows
+
+@app.post("/workshop/external-ops", status_code=201)
+async def create_external_op(body: ExternalOpCreate, cu: dict = Depends(require_workshop_admin)):
+    if body.status not in EXTERNAL_OP_STATUSES:
+        raise HTTPException(400, "حالة غير صالحة")
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM cars WHERE id=?", (body.car_id,)).fetchone():
+            raise HTTPException(404, "المركبة غير موجودة")
+        now = datetime.utcnow().isoformat() + "Z"
+        request_number = body.request_number or f"EXT-{int(datetime.utcnow().timestamp())}"
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
+        cur = conn.execute("""INSERT INTO workshop_external_ops
+                              (request_number,quote_id,car_id,driver_id,workshop_name,reason,
+                               estimated_cost,workmanship_cost,request_date,status,notes,created_by,created_at)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (request_number, body.quote_id, body.car_id, driver_id_val, body.workshop_name or "",
+                             body.reason or "", body.estimated_cost or 0, body.workmanship_cost or 0,
+                             body.request_date or now[:10], body.status or "pending", body.notes or "",
+                             cu.get("username", ""), now))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "create_external_op", f"إنشاء طلب تشغيل خارجي: {request_number}")
+        return {"id": cur.lastrowid, "request_number": request_number}
+
+@app.put("/workshop/external-ops/{eid}")
+async def update_external_op(eid: int, body: ExternalOpCreate, cu: dict = Depends(require_workshop_admin)):
+    if body.status not in EXTERNAL_OP_STATUSES:
+        raise HTTPException(400, "حالة غير صالحة")
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM workshop_external_ops WHERE id=?", (eid,)).fetchone():
+            raise HTTPException(404, "الطلب غير موجود")
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
+        conn.execute("""UPDATE workshop_external_ops SET request_number=?,quote_id=COALESCE(?,quote_id),
+                       car_id=?,driver_id=?,workshop_name=?,reason=?,estimated_cost=?,workmanship_cost=?,
+                       request_date=?,status=?,notes=? WHERE id=?""",
+                      (body.request_number or "", body.quote_id, body.car_id, driver_id_val, body.workshop_name or "",
+                       body.reason or "", body.estimated_cost or 0, body.workmanship_cost or 0,
+                       body.request_date or "", body.status, body.notes or "", eid))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "update_external_op", f"تعديل طلب تشغيل خارجي #{eid}")
+        return {"ok": True}
+
+@app.delete("/workshop/external-ops/{eid}")
+async def delete_external_op(eid: int, cu: dict = Depends(require_workshop_admin)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM workshop_external_ops WHERE id=?", (eid,))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "delete_external_op", f"حذف طلب تشغيل خارجي #{eid}")
+        return {"ok": True}
+
+
+# ── إذن الصرف (الورشة) ──
+class VoucherCreate(BaseModel):
+    voucher_number: Optional[str] = ""
+    quote_id: Optional[int] = None
+    car_id: int
+    driver_id: Optional[int] = None
+    recipient_name: Optional[str] = ""
+    purpose: Optional[str] = ""
+    items_json: Optional[str] = "[]"
+    total_amount: Optional[float] = 0
+    issue_date: Optional[str] = ""
+    issued_by: Optional[str] = ""
+    status: Optional[str] = "draft"
+    notes: Optional[str] = ""
+
+VOUCHER_STATUSES = ("draft", "issued", "cancelled")
+
+@app.get("/workshop/vouchers")
+async def list_vouchers(cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
+        drvs = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM drivers").fetchall()}
+        quotes = {r["id"]: r["quote_number"] for r in conn.execute("SELECT id,quote_number FROM workshop_repair_quotes").fetchall()}
+        rows = [dict(r) for r in conn.execute("SELECT * FROM workshop_vouchers ORDER BY id DESC").fetchall()]
+        for r in rows:
+            r["car_plate"] = cars.get(r.get("car_id"), "")
+            r["driver_name"] = drvs.get(r.get("driver_id"), "")
+            r["quote_number"] = quotes.get(r.get("quote_id"), "")
+        return rows
+
+@app.post("/workshop/vouchers", status_code=201)
+async def create_voucher(body: VoucherCreate, cu: dict = Depends(require_workshop_admin)):
+    if body.status not in VOUCHER_STATUSES:
+        raise HTTPException(400, "حالة غير صالحة")
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM cars WHERE id=?", (body.car_id,)).fetchone():
+            raise HTTPException(404, "المركبة غير موجودة")
+        now = datetime.utcnow().isoformat() + "Z"
+        voucher_number = body.voucher_number or f"VCH-{int(datetime.utcnow().timestamp())}"
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
+        cur = conn.execute("""INSERT INTO workshop_vouchers
+                              (voucher_number,quote_id,car_id,driver_id,recipient_name,purpose,
+                               items_json,total_amount,issue_date,issued_by,status,notes,created_by,created_at)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (voucher_number, body.quote_id, body.car_id, driver_id_val, body.recipient_name or "",
+                             body.purpose or "", body.items_json or "[]", body.total_amount or 0,
+                             body.issue_date or now[:10], body.issued_by or cu.get("username", ""),
+                             body.status or "draft", body.notes or "", cu.get("username", ""), now))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "create_voucher", f"إنشاء إذن صرف: {voucher_number}")
+        return {"id": cur.lastrowid, "voucher_number": voucher_number}
+
+@app.put("/workshop/vouchers/{vid}")
+async def update_voucher(vid: int, body: VoucherCreate, cu: dict = Depends(require_workshop_admin)):
+    if body.status not in VOUCHER_STATUSES:
+        raise HTTPException(400, "حالة غير صالحة")
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM workshop_vouchers WHERE id=?", (vid,)).fetchone():
+            raise HTTPException(404, "الإذن غير موجود")
+        driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
+        conn.execute("""UPDATE workshop_vouchers SET voucher_number=?,quote_id=COALESCE(?,quote_id),
+                       car_id=?,driver_id=?,recipient_name=?,purpose=?,items_json=?,total_amount=?,
+                       issue_date=?,issued_by=?,status=?,notes=? WHERE id=?""",
+                      (body.voucher_number or "", body.quote_id, body.car_id, driver_id_val, body.recipient_name or "",
+                       body.purpose or "", body.items_json or "[]", body.total_amount or 0, body.issue_date or "",
+                       body.issued_by or "", body.status, body.notes or "", vid))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "update_voucher", f"تعديل إذن صرف #{vid}")
+        return {"ok": True}
+
+@app.delete("/workshop/vouchers/{vid}")
+async def delete_voucher(vid: int, cu: dict = Depends(require_workshop_admin)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM workshop_vouchers WHERE id=?", (vid,))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "delete_voucher", f"حذف إذن صرف #{vid}")
         return {"ok": True}
 
 # ── تصحيح تلقائي عند الـ startup لأي سجل ورش لم يتم تطبيق override عليه ──
