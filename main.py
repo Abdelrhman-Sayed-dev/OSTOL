@@ -1058,6 +1058,18 @@ def _safe_add_columns(c):
     except Exception:
         pass
 
+    # ── migration: account lockout (قفل الحساب بعد محاولات دخول فاشلة متتالية) ──
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0")
+        log.info("✅ Migrated users: added failed_attempts column")
+    except Exception:
+        pass  # العمود موجود بالفعل
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN locked_until TEXT DEFAULT NULL")
+        log.info("✅ Migrated users: added locked_until column")
+    except Exception:
+        pass  # العمود موجود بالفعل
+
     # ── جدول صور السائقين ──
     c.execute("""CREATE TABLE IF NOT EXISTS driver_photos (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1205,6 +1217,13 @@ def _hash_refresh_token(token: str) -> str:
     هيقدر يستخدمها كـ refresh token صالح لانتحال شخصية أي مستخدم.
     """
     return hashlib.sha256(token.encode()).hexdigest()
+
+# ── Account Lockout — قفل الحساب بعد محاولات دخول فاشلة متتالية ──
+# بعد MAX_FAILED_LOGIN_ATTEMPTS محاولة فاشلة على نفس الحساب، يتقفل الحساب
+# تلقائياً لمدة LOCKOUT_MINUTES دقيقة، حتى لو المحاولات جاية من IPs مختلفة.
+# ده إضافي فوق الـ rate limiting الحالي (اللي بيراقب IP)، مش بديل عنه.
+MAX_FAILED_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
 
 def validate_password(pw: str):
     """حد أدنى من متطلبات قوة كلمة المرور — يطبّق على أي كلمة مرور جديدة أو معدّلة."""
@@ -2161,16 +2180,48 @@ async def login(request: Request, data: LoginReq):
         c = conn.cursor()
         # username ممكن يتكرر عند السائقين — نجيب كل الحسابات بنفس الاسم
         # ونبحث عن الأول اللي كلمة مروره تطابق
-        c.execute("SELECT id,username,password,role,branch,avatar_url FROM users WHERE username=?", (data.username,))
+        c.execute("SELECT id,username,password,role,branch,avatar_url,failed_attempts,locked_until "
+                  "FROM users WHERE username=?", (data.username,))
         candidates = c.fetchall()
+
+        # ── فحص القفل: لو أي حساب بنفس اليوزرنيم مقفول حالياً، نرفض فوراً ──
+        now = datetime.utcnow()
+        for cand in candidates:
+            if cand["locked_until"]:
+                locked_until_dt = datetime.fromisoformat(cand["locked_until"])
+                if locked_until_dt > now:
+                    remaining_min = max(1, int((locked_until_dt - now).total_seconds() // 60) + 1)
+                    log_event("login_blocked_locked", username=data.username, ip=request.client.host)
+                    raise HTTPException(
+                        423,
+                        f"الحساب مقفول مؤقتاً بسبب محاولات دخول فاشلة متكررة — "
+                        f"حاول مرة أخرى بعد {remaining_min} دقيقة"
+                    )
+
         u = None
         for candidate in candidates:
             if _verify(data.password, candidate["password"]):
                 u = candidate
                 break
+
         if not u:
+            # ── تسجيل محاولة فاشلة وزيادة العداد على كل الحسابات المطابقة للاسم ──
+            for cand in candidates:
+                new_count = (cand["failed_attempts"] or 0) + 1
+                if new_count >= MAX_FAILED_LOGIN_ATTEMPTS:
+                    lock_until = (now + timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
+                    c.execute("UPDATE users SET failed_attempts=?, locked_until=? WHERE id=?",
+                              (new_count, lock_until, cand["id"]))
+                    log_event("account_locked", user_id=cand["id"], username=cand["username"],
+                              ip=request.client.host)
+                else:
+                    c.execute("UPDATE users SET failed_attempts=? WHERE id=?", (new_count, cand["id"]))
             log_event("login_failed", username=data.username, ip=request.client.host)
             raise HTTPException(401, "اسم المستخدم أو كلمة المرور غير صحيحة")
+
+        # ── تسجيل دخول ناجح: تصفير عداد المحاولات الفاشلة وفك القفل ──
+        if (u["failed_attempts"] or 0) > 0 or u["locked_until"]:
+            c.execute("UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=?", (u["id"],))
 
         driver_id = None
         if u["role"] == "driver":
@@ -4249,6 +4300,41 @@ async def superuser_delete_reporter(
 
 
 # ── Workshop Admins management (ادمن الورش) ─────────────────────────────────
+
+@app.get("/superuser/locked-accounts")
+async def list_locked_accounts(cu: dict = Depends(require_superuser)):
+    """عرض كل الحسابات المقفولة حالياً بسبب محاولات دخول فاشلة متكررة."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT id, username, role, failed_attempts, locked_until
+                     FROM users WHERE locked_until IS NOT NULL""")
+        now = datetime.utcnow()
+        rows = []
+        for r in c.fetchall():
+            row = dict(r)
+            try:
+                is_locked_now = datetime.fromisoformat(row["locked_until"]) > now
+            except Exception:
+                is_locked_now = False
+            row["is_locked_now"] = is_locked_now
+            rows.append(row)
+        return rows
+
+@app.post("/superuser/users/{uid}/unlock")
+async def unlock_account(uid: int, request: Request, cu: dict = Depends(require_superuser)):
+    """فك قفل حساب فوراً (بدل انتظار الـ 15 دقيقة) — لحالات الطوارئ."""
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, username FROM users WHERE id=?", (uid,))
+        target = c.fetchone()
+        if not target:
+            raise HTTPException(404, "المستخدم غير موجود")
+        c.execute("UPDATE users SET failed_attempts=0, locked_until=NULL WHERE id=?", (uid,))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"],
+                        "unlock_account", f"فك قفل الحساب: {target['username']} (id={uid})",
+                        request.client.host if request.client else "")
+        return {"message": f"تم فك قفل الحساب: {target['username']}"}
+
 
 @app.get("/superuser/workshop-admins")
 async def superuser_list_workshop_admins(cu: dict = Depends(require_superuser)):

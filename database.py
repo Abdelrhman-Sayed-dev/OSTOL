@@ -37,7 +37,9 @@ def create_database():
             refresh_token TEXT,
             refresh_exp   TEXT,
             avatar_url    TEXT    DEFAULT '',
-            managed_by    INTEGER DEFAULT NULL
+            managed_by    INTEGER DEFAULT NULL,
+            failed_attempts INTEGER DEFAULT 0,
+            locked_until    TEXT    DEFAULT NULL
         )
     """)
 
