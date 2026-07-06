@@ -1,6 +1,69 @@
+# ══════════════════════════════════════════════════════
+# FLEET MANAGEMENT SYSTEM — main.py
+# ══════════════════════════════════════════════════════
+# فهرس الأقسام (بترتيب ظهورها الفعلي في الملف) — كل رقم هنا يطابق
+# رقم نفس القسم كـ تعليق داخل الكود، ابحث عنه (Ctrl+F) للوصول السريع.
+#
+#   1. ENVIRONMENT — REQUIRED (no fallback secrets)
+#   2. STRUCTURED LOGGING
+#   3. DATABASE — SQLite with WAL mode + proper indexing
+#   4. AUTH — Access + Refresh Token system
+#   5. RATE LIMITER
+#   6. SECURITY HEADERS MIDDLEWARE
+#   7. PYDANTIC MODELS
+#   8. APP SETUP
+#   9. SUPER ADMIN — Role Management Endpoints
+#   10. IMPORT: جدول الصيانة الدورية (maintenance_schedule)
+#   11. GLOBAL EXCEPTION HANDLER
+#   12. HELPERS
+#   13. AUTH ENDPOINTS
+#   14. USER AVATAR — رفع وجلب صورة البروفايل للمستخدم
+#   15. AUDIO UPLOAD — File system, NOT base64 in DB
+#   16. DRIVERS
+#   17. CARS
+#   18. PERMISSIONS
+#   19. DRIVER PHOTOS — رفع وعرض صور السائقين
+#   20. LIVE LOCATION — real-time driver tracking
+#   21. TRIPS — with pagination
+#   22. USERS
+#   23. WORKSHOPS
+#   24. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات
+#   25. GARAGE RECORDS
+#   26. EMERGENCY — Audio stored as file, not base64
+#   27. SETTINGS
+#   28. ADMIN — RESET DATA (protected with password)
+#   29. SUPERUSER — Admin Management + Audit Logs
+#   30. DRIVER REQUESTS
+#   31. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
+#   32. BRANCHES LIST — لقائمة الفروع المتاحة
+#   33. OPERATIONAL CARD REPORT
+#   34. OPERATIONAL REPORT — PER DRIVER BREAKDOWN
+#   35. ANOMALOUS TRIPS DIAGNOSTIC
+#   36. BULK IMPORT — CSV / Excel
+#   37. PERMISSIONS BULK IMPORT — CSV / Excel
+#   38. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
+#   39. FRAUD DETECTION — كشف التلاعب
+#   40. VOICE NOTES — رسائل صوتية من السوبر
+#   41. MAINTENANCE SCHEDULE — CRUD + ALERTS
+#   42. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
+#   43. MONTHLY REPORT — تقرير شهري شامل
+#   44. DRIVER KPI — مؤشرات أداء السائقين
+#   45. RENTAL EQUIPMENT — المعدات المستأجرة
+#   46. RENTAL EQUIPMENT — معدات مستأجرة (من الداتابيز)
+#   47. EQUIPMENT — معدات (جدول منفصل - بدون لوحة، الكود هو المعرف)
+#   48. EQUIPMENT OPERATORS — مشغلو المعدات (نظام ورديات)
+#   49. السركي — تقرير حضور السائقين من الرحلات
+#   50. 📷 OCR Odometer — EasyOCR (مجاني 100%، pip فقط، بدون apt)
+#   51. VIRTUAL INVENTORY MODULE — إدارة المخزون
+#   52. FORECAST ENGINE — Planning & Forecast Module
+#   53. مراجعة العمليات — Workshop Approval Workflow (تفويل + صيانة معاً)
+#   54. ENTRY POINT
+# ══════════════════════════════════════════════════════
+
 import asyncio
 import base64
 import csv
+import hashlib
 import io
 import math
 import os
@@ -1135,10 +1198,34 @@ def _verify(plain: str, hashed: str) -> bool:
     except Exception:
         return False
 
+def _hash_refresh_token(token: str) -> str:
+    """
+    نخزن الـ hash فقط لـ refresh token في قاعدة البيانات (مش القيمة الخام).
+    لو حد قدر يوصل لنسخة من قاعدة البيانات (باكاب، تسريب، ريبو...) مش
+    هيقدر يستخدمها كـ refresh token صالح لانتحال شخصية أي مستخدم.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()
+
 def validate_password(pw: str):
-    """No restrictions — any password accepted."""
+    """حد أدنى من متطلبات قوة كلمة المرور — يطبّق على أي كلمة مرور جديدة أو معدّلة."""
     if not pw:
         raise HTTPException(400, "كلمة المرور مطلوبة")
+    if len(pw) < 8:
+        raise HTTPException(400, "كلمة المرور يجب ألا تقل عن 8 أحرف")
+    if pw.strip().lower() in (
+        "12345678", "123456789", "password", "qwerty123", "11111111", "00000000"
+    ):
+        raise HTTPException(400, "كلمة المرور ضعيفة جداً وسهلة التخمين — اختر كلمة مرور أقوى")
+
+def validate_driver_password(pw: str):
+    """
+    كلمة مرور/PIN السائقين أخف من حسابات الإدارة (عادة أرقام قصيرة يسهل إدخالها
+    من الموبايل)، لكن برضه بحد أدنى يمنع قيم فارغة أو رقم واحد سهل التخمين.
+    """
+    if not pw:
+        raise HTTPException(400, "كلمة المرور مطلوبة")
+    if len(pw) < 4:
+        raise HTTPException(400, "كلمة المرور يجب ألا تقل عن 4 أحرف/أرقام")
 
 def create_access_token(payload: dict) -> str:
     d = payload.copy()
@@ -1527,23 +1614,34 @@ class PaginationParams(BaseModel):
 # ══════════════════════════════════════════════════════
 
 # Startup
-ADMINS = [
-    ("Eng mohamed mansour", "mo@mansour241"),
-    ("Eng mohamed sayed",   "mo@sayed11214123"),
-    ("Eng abdelrhman sayed","abdo@11214123"),
-]
+# ── حسابات البذر (seed accounts) ────────────────────────────────────────
+# بدل ما تكون أسماء المستخدمين وكلمات المرور مكتوبة صراحة في الكود (خطر أمني
+# لو الكود اتشاف من حد تاني أو اترفع مكان عام)، بقت بتتقرأ من متغيرات البيئة.
+#
+# الصيغة المطلوبة لكل متغير: "username:password,username2:password2"
+# مثال: SEED_ADMINS="myadmin:MyStr0ngP@ssw0rd,secondadmin:AnotherStr0ngPass"
+#
+# لو المتغير مش موجود في البيئة (None) → مفيش أي تعديل على حسابات الدور ده
+# خالص (مش هيتحذف ولا هيتضاف حد) — عشان الحسابات الموجودة فعلاً في قاعدة
+# البيانات تفضل شغالة عادي زي ما هي من غير ما تتأثر بغياب المتغير.
+def _parse_seed_accounts(env_var: str):
+    raw = os.environ.get(env_var, "")
+    if not raw.strip():
+        return None  # المتغير غير مُعرَّف — تخطي مزامنة هذا الدور بالكامل
+    accounts = []
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        uname, pw = pair.split(":", 1)
+        uname, pw = uname.strip(), pw.strip()
+        if uname and pw:
+            accounts.append((uname, pw))
+    return accounts
 
-REPORTERS = [
-    ("admin1", "24681012"),
-    ("admin2", "11214123"),
-    ("admin3", "9853247"),
-]
-
-SUPERUSERS = [
-    ("supre mohamed sayed",    "sup@mosayed3904"),
-    ("super abdelrhman sayed", "sup@abdo1414"),
-    ("super mohamed mansour",  "sup@momansour84329"),
-]
+ADMINS     = _parse_seed_accounts("SEED_ADMINS")
+REPORTERS  = _parse_seed_accounts("SEED_REPORTERS")
+SUPERUSERS = _parse_seed_accounts("SEED_SUPERUSERS")
 
 def _sync_accounts(c, accounts: list[tuple[str, str]], role: str):
     """Ensure the hardcoded accounts exist for a role.
@@ -1596,9 +1694,18 @@ async def startup():
     migrate_db()
     with get_db() as conn:
         c = conn.cursor()
-        _sync_accounts(c, ADMINS,      "admin")
-        _sync_accounts(c, REPORTERS,   "reporter")
-        _sync_accounts(c, SUPERUSERS,  "superuser")
+        if ADMINS is not None:
+            _sync_accounts(c, ADMINS, "admin")
+        else:
+            log.info("ℹ️ SEED_ADMINS غير مُعرَّف — تم تخطي مزامنة حسابات الأدمن (الحسابات الحالية لم تتأثر)")
+        if REPORTERS is not None:
+            _sync_accounts(c, REPORTERS, "reporter")
+        else:
+            log.info("ℹ️ SEED_REPORTERS غير مُعرَّف — تم تخطي مزامنة حسابات المراقبين (الحسابات الحالية لم تتأثر)")
+        if SUPERUSERS is not None:
+            _sync_accounts(c, SUPERUSERS, "superuser")
+        else:
+            log.info("ℹ️ SEED_SUPERUSERS غير مُعرَّف — تم تخطي مزامنة حسابات السوبر يوزر (الحسابات الحالية لم تتأثر)")
     log.info("🚀 Fleet Management API started")
 
 @app.get("/superuser/free-admins")
@@ -1609,9 +1716,9 @@ async def list_free_admins(cu: dict = Depends(require_superuser)):
         ).fetchall()
         return [dict(r) for r in rows]
 
-# ══════════════════════════════════════════════════════════════
-# SUPER ADMIN — Role Management Endpoints
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# 9. SUPER ADMIN — Role Management Endpoints
+# ══════════════════════════════════════════════════════
 
 class SuperAdminCreate(BaseModel):
     username: str
@@ -1743,7 +1850,7 @@ async def get_super_admin_stats(uid: int, cu: dict = Depends(require_superuser))
 
 
 # ══════════════════════════════════════════════════════
-# IMPORT: جدول الصيانة الدورية (maintenance_schedule)
+# 10. IMPORT: جدول الصيانة الدورية (maintenance_schedule)
 # منطق UPSERT: لو المركبة+النوع موجودين بالفعل → تحديث
 #              لو مش موجودين → إضافة سجل جديد
 # ══════════════════════════════════════════════════════
@@ -1976,7 +2083,7 @@ async def root():
     return FileResponse("index.html")
 
 # ══════════════════════════════════════════════════════
-# 9. GLOBAL EXCEPTION HANDLER
+# 11. GLOBAL EXCEPTION HANDLER
 # ══════════════════════════════════════════════════════
 
 @app.exception_handler(Exception)
@@ -1988,7 +2095,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # ══════════════════════════════════════════════════════
-# 10. HELPERS
+# 12. HELPERS
 # ══════════════════════════════════════════════════════
 
 def enrich(d: dict) -> dict:
@@ -2044,7 +2151,7 @@ def _car_fields(car, cid: int) -> dict:
     }
 
 # ══════════════════════════════════════════════════════
-# 11. AUTH ENDPOINTS
+# 13. AUTH ENDPOINTS
 # ══════════════════════════════════════════════════════
 
 @app.post("/login", response_model=LoginResp)
@@ -2079,9 +2186,9 @@ async def login(request: Request, data: LoginReq):
         })
         refresh_token, refresh_exp = create_refresh_token()
 
-        # Persist refresh token (one per user)
+        # Persist refresh token (one per user) — نخزن الـ hash فقط
         c.execute("UPDATE users SET refresh_token=?,refresh_exp=?,last_login=? WHERE id=?",
-                  (refresh_token, refresh_exp, datetime.utcnow().isoformat() + "Z", u["id"]))
+                  (_hash_refresh_token(refresh_token), refresh_exp, datetime.utcnow().isoformat() + "Z", u["id"]))
 
         log_event("login_success", user_id=u["id"], role=u["role"])
         # ── Audit log — pass cursor to avoid nested get_db() conflict ──
@@ -2107,7 +2214,7 @@ async def refresh_token(request: Request, body: RefreshReq):
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT id,username,role,refresh_exp FROM users WHERE refresh_token=?",
-                  (body.refresh_token,))
+                  (_hash_refresh_token(body.refresh_token),))
         u = c.fetchone()
         if not u:
             raise HTTPException(401, "Refresh token غير صالح")
@@ -2127,7 +2234,7 @@ async def refresh_token(request: Request, body: RefreshReq):
         })
         new_refresh, new_exp = create_refresh_token()
         c.execute("UPDATE users SET refresh_token=?,refresh_exp=? WHERE id=?",
-                  (new_refresh, new_exp, u["id"]))
+                  (_hash_refresh_token(new_refresh), new_exp, u["id"]))
         return {"access_token": new_access, "refresh_token": new_refresh, "token_type": "bearer"}
 
 @app.post("/logout")
@@ -2138,7 +2245,7 @@ async def logout(cu: dict = Depends(get_user)):
     return {"ok": True}
 
 # ══════════════════════════════════════════════════════
-# USER AVATAR — رفع وجلب صورة البروفايل للمستخدم
+# 14. USER AVATAR — رفع وجلب صورة البروفايل للمستخدم
 # ══════════════════════════════════════════════════════
 
 @app.post("/user/avatar")
@@ -2167,7 +2274,7 @@ async def upload_user_avatar(body: dict, cu: dict = Depends(get_user)):
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(400, "حجم الصورة يتجاوز 5 MB")
 
-    fname = f"avatar_user_{cu['user_id']}_{int(datetime.utcnow().timestamp()*1000)}.{ext}"
+    fname = f"avatar_user_{cu['user_id']}_{uuid.uuid4().hex}.{ext}"
     fpath = UPLOAD_DIR / fname
     fpath.write_bytes(raw)
     avatar_url = f"/uploads/{fname}"
@@ -2210,7 +2317,7 @@ async def delete_user_avatar(cu: dict = Depends(get_user)):
     return {"ok": True}
 
 # ══════════════════════════════════════════════════════
-# 12. AUDIO UPLOAD — File system, NOT base64 in DB
+# 15. AUDIO UPLOAD — File system, NOT base64 in DB
 # ══════════════════════════════════════════════════════
 
 AUDIO_MAGIC = {
@@ -2251,7 +2358,7 @@ async def upload_audio(
     return {"audio_url": f"/uploads/{safe_name}"}
 
 # ══════════════════════════════════════════════════════
-# 13. DRIVERS
+# 16. DRIVERS
 # ══════════════════════════════════════════════════════
 
 @app.get("/drivers", response_model=List[DriverResp])
@@ -2377,7 +2484,7 @@ async def update_credentials(did: int, body: dict, cu: dict = Depends(require_ad
     if not new_username:
         raise HTTPException(400, "اسم المستخدم مطلوب")
     if new_password:
-        validate_password(new_password)
+        validate_driver_password(new_password)
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT user_id FROM drivers WHERE id=?", (did,))
@@ -2417,7 +2524,7 @@ async def allowed_cars(did: int, cu: dict = Depends(get_user)):
         return [dict(r) for r in c.fetchall()]
 
 # ══════════════════════════════════════════════════════
-# 14. CARS
+# 17. CARS
 # ══════════════════════════════════════════════════════
 
 @app.get("/cars", response_model=List[CarResp])
@@ -2517,7 +2624,7 @@ async def car_drivers(cid: int, cu: dict = Depends(get_user)):
         return [dict(r) for r in c.fetchall()]
 
 # ══════════════════════════════════════════════════════
-# 15. PERMISSIONS
+# 18. PERMISSIONS
 # ══════════════════════════════════════════════════════
 
 @app.get("/permissions", response_model=List[PermResp])
@@ -2628,7 +2735,7 @@ async def reassign_permission(body: dict, cu: dict = Depends(require_admin)):
         }
 
 # ══════════════════════════════════════════════════════
-# 15a. DRIVER PHOTOS — رفع وعرض صور السائقين
+# 19. DRIVER PHOTOS — رفع وعرض صور السائقين
 # ══════════════════════════════════════════════════════
 
 @app.post("/driver/photo/upload")
@@ -2671,7 +2778,7 @@ async def upload_driver_photo(body: dict, cu: dict = Depends(get_user)):
         ext = "webp"
 
     now = datetime.utcnow()
-    fname = f"photo_{driver_id}_{int(now.timestamp()*1000)}.{ext}"
+    fname = f"photo_{driver_id}_{uuid.uuid4().hex}.{ext}"
     dest  = UPLOAD_DIR / fname
     dest.write_bytes(raw)
 
@@ -2738,7 +2845,7 @@ async def delete_driver_photo(photo_id: int, cu: dict = Depends(require_superuse
 
 
 # ══════════════════════════════════════════════════════
-# 15b. LIVE LOCATION — real-time driver tracking
+# 20. LIVE LOCATION — real-time driver tracking
 # ══════════════════════════════════════════════════════
 
 @app.post("/location/update")
@@ -2814,7 +2921,7 @@ async def get_live_locations(cu: dict = Depends(require_admin_or_reporter)):
 
 
 # ══════════════════════════════════════════════════════
-# 16. TRIPS — with pagination
+# 21. TRIPS — with pagination
 # ══════════════════════════════════════════════════════
 
 @app.get("/trips")
@@ -2978,7 +3085,7 @@ async def end_current(body: dict, cu: dict = Depends(get_user)):
         return enrich(dict(c.fetchone()))
 
 # ══════════════════════════════════════════════════════
-# 17. USERS
+# 22. USERS
 # ══════════════════════════════════════════════════════
 
 @app.post("/users")
@@ -3018,7 +3125,7 @@ async def delete_user(uid: int, cu: dict = Depends(require_admin)):
         return {"message": "تم الحذف"}
 
 # ══════════════════════════════════════════════════════
-# 18. WORKSHOPS
+# 23. WORKSHOPS
 # ══════════════════════════════════════════════════════
 
 @app.post("/workshops")
@@ -3073,7 +3180,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             elif len(_raw_bytes) >= 4 and _raw_bytes[0] == 0x89 and _raw_bytes[1:4] == b"PNG": _ext = "png"
             elif len(_raw_bytes) >= 3 and _raw_bytes[:3] == b"GIF": _ext = "gif"
             elif len(_raw_bytes) >= 12 and _raw_bytes[:4] == b"RIFF" and _raw_bytes[8:12] == b"WEBP": _ext = "webp"
-            _fname = f"{prefix}_{rec.driver_id or 0}_{int(datetime.utcnow().timestamp()*1000)}.{_ext}"
+            _fname = f"{prefix}_{rec.driver_id or 0}_{uuid.uuid4().hex}.{_ext}"
             (UPLOAD_DIR / _fname).write_bytes(_raw_bytes)
             return f"/uploads/{_fname}"
         except Exception as _photo_err:
@@ -3367,7 +3474,7 @@ async def get_workshop_attachments(cu: dict = Depends(get_user), branch: Optiona
         return [dict(r) for r in c.fetchall()]
 
 # ══════════════════════════════════════════════════════
-# 18b. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات
+# 24. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات
 # ══════════════════════════════════════════════════════
 
 @app.get("/reports/operational/page2")
@@ -3529,7 +3636,7 @@ async def get_operational_page2(
 
 
 # ══════════════════════════════════════════════════════
-# 19. GARAGE RECORDS
+# 25. GARAGE RECORDS
 # ══════════════════════════════════════════════════════
 
 @app.post("/garage/record")
@@ -3650,7 +3757,7 @@ async def garage_latest(cu: dict = Depends(require_admin_or_reporter)):
         return rows
 
 # ══════════════════════════════════════════════════════
-# 20. EMERGENCY — Audio stored as file, not base64
+# 26. EMERGENCY — Audio stored as file, not base64
 # ══════════════════════════════════════════════════════
 
 @app.post("/emergency/report")
@@ -3764,7 +3871,7 @@ async def unread_count(cu: dict = Depends(get_user)):
         return {"count": c.fetchone()["cnt"]}
 
 # ══════════════════════════════════════════════════════
-# 21. SETTINGS
+# 27. SETTINGS
 # ══════════════════════════════════════════════════════
 
 
@@ -3844,7 +3951,7 @@ async def set_prices(body: dict, cu: dict = Depends(require_admin)):
     return {"saved": saved, "branch": branch or "global"}
 
 # ══════════════════════════════════════════════════════
-# 22. ADMIN — RESET DATA (protected with password)
+# 28. ADMIN — RESET DATA (protected with password)
 # ══════════════════════════════════════════════════════
 
 @app.post("/admin/reset-data")
@@ -3882,7 +3989,7 @@ async def reset_data(
         return {"message": "تم مسح جميع البيانات التشغيلية"}
 
 # ══════════════════════════════════════════════════════
-# 23. SUPERUSER — Admin Management + Audit Logs
+# 29. SUPERUSER — Admin Management + Audit Logs
 # ══════════════════════════════════════════════════════
 
 class AdminCreate(BaseModel):
@@ -4297,7 +4404,7 @@ async def audit_logs_summary(cu: dict = Depends(require_superuser)):
 
 
 # ══════════════════════════════════════════════════════
-# 23. DRIVER REQUESTS
+# 30. DRIVER REQUESTS
 # ══════════════════════════════════════════════════════
 
 REQUEST_TYPES = {
@@ -4589,7 +4696,7 @@ async def pending_super_count(cu: dict = Depends(require_superuser)):
 
 
 # ══════════════════════════════════════════════════════
-# 27. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
+# 31. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
 # ══════════════════════════════════════════════════════
 
 MAINTENANCE_TYPES = [
@@ -4631,7 +4738,7 @@ class MaintenanceScheduleUpdate(BaseModel):
     notes:            Optional[str]   = None
 
 # ══════════════════════════════════════════════════════
-# 24-B. BRANCHES LIST — لقائمة الفروع المتاحة
+# 32. BRANCHES LIST — لقائمة الفروع المتاحة
 # ══════════════════════════════════════════════════════
 
 @app.get("/reports/branches")
@@ -4643,7 +4750,7 @@ async def list_branches(cu: dict = Depends(require_admin_or_reporter)):
     return {"branches": BRANCHES}
 
 # ══════════════════════════════════════════════════════
-# 25. OPERATIONAL CARD REPORT
+# 33. OPERATIONAL CARD REPORT
 # ══════════════════════════════════════════════════════
 
 @app.get("/reports/operational")
@@ -4785,7 +4892,7 @@ async def operational_report(
 
 
 # ══════════════════════════════════════════════════════
-# 26-B. OPERATIONAL REPORT — PER DRIVER BREAKDOWN
+# 34. OPERATIONAL REPORT — PER DRIVER BREAKDOWN
 # ══════════════════════════════════════════════════════
 
 @app.get("/reports/operational-by-driver")
@@ -4921,7 +5028,7 @@ async def operational_report_by_driver(
 
 
 # ══════════════════════════════════════════════════════
-# 26. ANOMALOUS TRIPS DIAGNOSTIC
+# 35. ANOMALOUS TRIPS DIAGNOSTIC
 # ══════════════════════════════════════════════════════
 
 @app.get("/reports/anomalous-trips")
@@ -4966,7 +5073,7 @@ async def anomalous_trips(
 
 
 # ══════════════════════════════════════════════════════
-# 26. BULK IMPORT — CSV / Excel
+# 36. BULK IMPORT — CSV / Excel
 # ══════════════════════════════════════════════════════
 
 DRIVER_IMPORT_COLS  = ["name","phone","fixed_number","driver_license_expiry","vehicle_license_expiry",
@@ -5372,7 +5479,7 @@ async def import_template(import_type: str, cu: dict = Depends(require_admin)):
 
 
 # ══════════════════════════════════════════════════════
-# 30. PERMISSIONS BULK IMPORT — CSV / Excel
+# 37. PERMISSIONS BULK IMPORT — CSV / Excel
 #     الأعمدة: fixed_number + plate أو car_code
 # ══════════════════════════════════════════════════════
 
@@ -5502,8 +5609,7 @@ async def import_permissions_template(cu: dict = Depends(require_admin)):
 
 
 # ══════════════════════════════════════════════════════
-# ══════════════════════════════════════════════════════
-# 31. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
+# 38. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
 # ══════════════════════════════════════════════════════
 @app.get("/cars/{car_id}/last-odometer")
 async def get_last_odometer(car_id: int, cu: dict = Depends(get_user)):
@@ -5517,7 +5623,7 @@ async def get_last_odometer(car_id: int, cu: dict = Depends(get_user)):
 
 
 # ══════════════════════════════════════════════════════
-# 32. FRAUD DETECTION — كشف التلاعب
+# 39. FRAUD DETECTION — كشف التلاعب
 # ══════════════════════════════════════════════════════
 @app.get("/reports/fraud-detection")
 async def fraud_detection(
@@ -5803,7 +5909,7 @@ async def fraud_detection(
 
 
 # ══════════════════════════════════════════════════════
-# 33. VOICE NOTES — رسائل صوتية من السوبر
+# 40. VOICE NOTES — رسائل صوتية من السوبر
 # ══════════════════════════════════════════════════════
 class VoiceNoteCreate(BaseModel):
     target_group:   str           = ''   # 'admins' | 'drivers' | '' لو target_user_id محدد
@@ -6126,20 +6232,8 @@ async def search_voice_note_users(
     return {"users": drivers + admins}
 
 
-# 24. ENTRY POINT
 # ══════════════════════════════════════════════════════
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8000)),
-        reload=(ENVIRONMENT != "production"),
-        workers=1 if ENVIRONMENT != "production" else 4,
-    )
-# ══════════════════════════════════════════════════════
-# 27. MAINTENANCE SCHEDULE — CRUD + ALERTS
+# 41. MAINTENANCE SCHEDULE — CRUD + ALERTS
 # ══════════════════════════════════════════════════════
 
 def _maintenance_row(row: dict, cars_map: dict) -> dict:
@@ -6384,7 +6478,7 @@ async def delete_maintenance(mid: int, cu: dict = Depends(require_workshop_admin
 
 
 # ══════════════════════════════════════════════════════
-# 29. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
+# 42. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
 #     — للسوبر يوزر فقط —
 #     يستخدم منهجية Fill-to-Fill الصحيحة:
 #       • التفويلة الأولى = نقطة مرجعية فقط، لا تُحسب
@@ -6563,7 +6657,7 @@ async def fuel_efficiency_report(
     }
 
 # ══════════════════════════════════════════════════════
-# 30. MONTHLY REPORT — تقرير شهري شامل
+# 43. MONTHLY REPORT — تقرير شهري شامل
 # ══════════════════════════════════════════════════════
 
 @app.get("/reports/monthly")
@@ -6749,7 +6843,7 @@ async def monthly_report(
     }
 
 # ══════════════════════════════════════════════════════
-# 35. DRIVER KPI — مؤشرات أداء السائقين
+# 44. DRIVER KPI — مؤشرات أداء السائقين
 # ══════════════════════════════════════════════════════
 
 def _calc_kpi_score(
@@ -7128,13 +7222,13 @@ async def driver_kpi_report(
 
 
 # ══════════════════════════════════════════════════════
-# RENTAL EQUIPMENT — المعدات المستأجرة
+# 45. RENTAL EQUIPMENT — المعدات المستأجرة
 # ══════════════════════════════════════════════════════
 
 
-# ══════════════════════════════════════════════════════════════════
-# RENTAL EQUIPMENT — معدات مستأجرة (من الداتابيز)
-# ══════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# 46. RENTAL EQUIPMENT — معدات مستأجرة (من الداتابيز)
+# ══════════════════════════════════════════════════════
 
 RENTAL_COLS = ["branch","equipment_name","code","rental_source","work_days",
                "daily_rate","monthly_rate","fuel_liters","hours_start","hours_end",
@@ -7415,9 +7509,9 @@ async def rental_import_template(cu: dict = Depends(require_admin)):
 
 
 
-# ══════════════════════════════════════════════════════════════════
-# EQUIPMENT — معدات (جدول منفصل - بدون لوحة، الكود هو المعرف)
-# ══════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# 47. EQUIPMENT — معدات (جدول منفصل - بدون لوحة، الكود هو المعرف)
+# ══════════════════════════════════════════════════════
 
 EQUIPMENT_TYPES = [
     "معدات تحريك تربة",
@@ -7744,9 +7838,9 @@ async def equipment_import_template(cu: dict = Depends(require_admin)):
         headers={"Content-Disposition": "attachment; filename=equipment_template.csv"}
     )
 
-# ══════════════════════════════════════════════════════════════════
-# EQUIPMENT OPERATORS — مشغلو المعدات (نظام ورديات)
-# ══════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# 48. EQUIPMENT OPERATORS — مشغلو المعدات (نظام ورديات)
+# ══════════════════════════════════════════════════════
 
 def _ensure_operator_tables(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS equipment_operators (
@@ -8604,7 +8698,7 @@ async def import_rental_arabic(
     return {"inserted": inserted, "skipped": len(invalid), "invalid_rows": invalid}
 
 # ══════════════════════════════════════════════════════
-# السركي — تقرير حضور السائقين من الرحلات
+# 49. السركي — تقرير حضور السائقين من الرحلات
 # ══════════════════════════════════════════════════════
 
 @app.get("/reports/sarky")
@@ -8749,10 +8843,10 @@ async def sarky_report(
             "drivers":   results,
         }
 
-# ══════════════════════════════════════════════════════════════
-#  📷 OCR Odometer — EasyOCR (مجاني 100%، pip فقط، بدون apt)
+# ══════════════════════════════════════════════════════
+# 50. 📷 OCR Odometer — EasyOCR (مجاني 100%، pip فقط، بدون apt)
 #  السائق يرفع صورة العداد → الباك-إند يقرأها بـ EasyOCR
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
 @app.post("/ocr/odometer")
 async def ocr_odometer(
     file: UploadFile = File(...),
@@ -8815,9 +8909,9 @@ async def ocr_odometer(
         log.error(f"[OCR] EasyOCR error: {e}")
         raise HTTPException(502, "خطأ في قراءة الصورة — يرجى المحاولة مرة أخرى أو إدخال الرقم يدوياً")
 
-# ══════════════════════════════════════════════════════════════════
-# VIRTUAL INVENTORY MODULE — إدارة المخزون
-# ══════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# 51. VIRTUAL INVENTORY MODULE — إدارة المخزون
+# ══════════════════════════════════════════════════════
 
 class InventoryCategoryCreate(BaseModel):
     name: str; notes: Optional[str] = ""
@@ -9528,15 +9622,11 @@ async def apply_maintenance_override(rid: int, cu: dict = Depends(require_admin)
 
 
 
-# ═══════════════════════════════════════════════════════════════════
-# FORECAST ENGINE — Planning & Forecast Module
-# ═══════════════════════════════════════════════════════════════════
-
-# ═══════════════════════════════════════════════════════════════════
-# FORECAST ENGINE — Planning & Forecast Module
+# ══════════════════════════════════════════════════════
+# 52. FORECAST ENGINE — Planning & Forecast Module
 # Algorithm: WMA + Linear Trend + Statistical Rules
 # Designed for extensibility (Prophet/XGBoost ready)
-# ═══════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
 
 # ── Part type mapping: workshop type → label + avg life ──
 PART_LIFECYCLE = {
@@ -10124,9 +10214,9 @@ async def inventory_dashboard(cu: dict = Depends(require_admin_or_reporter)):
         }
 
 
-# ══════════════════════════════════════════════════════════════════
-# مراجعة العمليات — Workshop Approval Workflow (تفويل + صيانة معاً)
-# ══════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════
+# 53. مراجعة العمليات — Workshop Approval Workflow (تفويل + صيانة معاً)
+# ══════════════════════════════════════════════════════
 
 @app.get("/workshops/pending-review")
 async def list_pending_review(cu: dict = Depends(require_admin_or_reporter), status: Optional[str] = None,
@@ -10417,3 +10507,18 @@ async def update_workshop_quantity(wid: int, body: WorkshopQuantityUpdate, cu: d
         )
         log_event("workshop_quantity_edit", record_id=wid, note=f"new_quantity={body.quantity}")
         return {"ok": True, "quantity": body.quantity, "quantity_edited_by": editor_name}
+
+
+# ══════════════════════════════════════════════════════
+# 54. ENTRY POINT
+# ══════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000)),
+        reload=(ENVIRONMENT != "production"),
+        workers=1 if ENVIRONMENT != "production" else 4,
+    )

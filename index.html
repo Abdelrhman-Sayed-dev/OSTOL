@@ -2477,6 +2477,29 @@ table tbody td {
 </div>
 
 <script>
+/* ══════════════════════════════════════════════════════════════════
+   FLEET MANAGEMENT SYSTEM — SPA Frontend (index.html)
+   ══════════════════════════════════════════════════════════════════
+   دليل تنقّل سريع داخل هذا الملف (ابحث بـ Ctrl+F عن اسم الدالة/القسم):
+
+   • الإعداد الأساسي:        currentUser, apiCall, openModal/closeModal
+   • الأدوار وفحصها:         isAdminLike, isSupervisor*, isWorkshopAdmin, isOperator
+   • بناء القوائم الجانبية:   buildAdminNav, buildSupervisorNav, buildWorkshopAdminNav,
+                              buildDriverNav, NAV_MODULES, NAV_ITEM_MODULE, renderNav
+   • التوجيه بين الصفحات:     switchSection, renderSection (switch الرئيسي لكل الأقسام)
+   • الأسطول:                 drivers/cars/trips/permissions renderers
+   • الورشة:                  renderWorkshopStats, renderWorkshopRecords,
+                              renderAdminMaintenance/forecast, renderWorkshopRepairQuotes,
+                              renderWorkshopInspectionReports, renderWorkshopExternalOps,
+                              renderWorkshopVouchers
+   • الطوارئ:                 renderEmergencies وما يتعلق بها
+   • المعدات:                 equipment / equipment-operators renderers
+   • المخزون:                 renderInventory* (inv-overview, inv-products...)
+   • التقارير والذكاء:        renderMonthlyReport, renderDriverKPI, renderFraud*
+   • إدارة السوبريوزر:        renderSuperUserRole, ROLE_CONFIG, super-* renderers
+   • واجهة السائق:            renderDriverTrip, renderDriverWorkshop, renderDriverEmergency
+   ══════════════════════════════════════════════════════════════════ */
+
 
 // Auto-detect environment: empty string = same domain (Railway/VPS)
 const API = (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')

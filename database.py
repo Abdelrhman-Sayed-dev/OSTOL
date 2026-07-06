@@ -327,13 +327,30 @@ def create_database():
             (f"price_{ws_type}", "0", datetime.now().isoformat())
         )
 
+    # ── حسابات البذر (اختيارية) — تُقرأ من متغيرات البيئة بدل كتابتها في الكود ──
+    # الصيغة: "username:password,username2:password2"
+    # مثال:   SEED_ADMINS="admin:كلمة_مرور_قوية,Eng mohamed sayed:كلمة_مرور_تانية"
+    # لو المتغير غير موجود، مفيش أي حساب هيتعمل لهذا الدور (تقدر تعمل الحسابات
+    # يدوياً بعدين من واجهة السوبر يوزر).
+    def _parse_seed_accounts(env_var):
+        raw = os.environ.get(env_var, "")
+        if not raw.strip():
+            return []
+        out = []
+        for pair in raw.split(","):
+            pair = pair.strip()
+            if not pair or ":" not in pair:
+                continue
+            uname, pw = pair.split(":", 1)
+            uname, pw = uname.strip(), pw.strip()
+            if uname and pw:
+                out.append((uname, pw))
+        return out
+
     # ── حسابات الأدمن ──
-    ADMINS = [
-        ("Eng mohamed mansour",  "mo@mansour241"),
-        ("Eng mohamed sayed",    "mo@sayed11214123"),
-        ("Eng abdelrhman sayed", "abdo@11214123"),
-        ("admin",                "ad11228898"),
-    ]
+    ADMINS = _parse_seed_accounts("SEED_ADMINS")
+    if not ADMINS:
+        print("ℹ️  SEED_ADMINS غير معرَّف — لم يتم إنشاء أي حساب أدمن تلقائياً")
     for uname, pw in ADMINS:
         cursor.execute("SELECT id FROM users WHERE username=?", (uname,))
         if not cursor.fetchone():
@@ -342,11 +359,9 @@ def create_database():
             print(f"✅ Admin: {uname}")
 
     # ── حسابات السوبر يوزر ──
-    SUPERUSERS = [
-        ("supre mohamed sayed",    "sup@mosayed3904"),
-        ("super abdelrhman sayed", "sup@abdo1414"),
-        ("super mohamed mansour",  "sup@momansour84329"),
-    ]
+    SUPERUSERS = _parse_seed_accounts("SEED_SUPERUSERS")
+    if not SUPERUSERS:
+        print("ℹ️  SEED_SUPERUSERS غير معرَّف — لم يتم إنشاء أي حساب سوبر يوزر تلقائياً")
     for uname, pw in SUPERUSERS:
         cursor.execute("SELECT id FROM users WHERE username=?", (uname,))
         if not cursor.fetchone():
@@ -355,11 +370,9 @@ def create_database():
             print(f"✅ Superuser: {uname}")
 
     # ── حسابات الريبورتر (قراءة فقط) ──
-    REPORTERS = [
-        ("admin1", "24681012"),
-        ("admin2", "11214123"),
-        ("admin3", "9853247"),
-    ]
+    REPORTERS = _parse_seed_accounts("SEED_REPORTERS")
+    if not REPORTERS:
+        print("ℹ️  SEED_REPORTERS غير معرَّف — لم يتم إنشاء أي حساب مراقب تلقائياً")
     for uname, pw in REPORTERS:
         cursor.execute("SELECT id FROM users WHERE username=?", (uname,))
         if not cursor.fetchone():
