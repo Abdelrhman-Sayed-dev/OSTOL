@@ -1,65 +1,6 @@
 # ══════════════════════════════════════════════════════
 # FLEET MANAGEMENT SYSTEM — main.py
 # ══════════════════════════════════════════════════════
-# فهرس الأقسام (بترتيب ظهورها الفعلي في الملف) — كل رقم هنا يطابق
-# رقم نفس القسم كـ تعليق داخل الكود، ابحث عنه (Ctrl+F) للوصول السريع.
-#
-#   1. ENVIRONMENT — REQUIRED (no fallback secrets)
-#   2. STRUCTURED LOGGING
-#   3. DATABASE — SQLite with WAL mode + proper indexing
-#   4. AUTH — Access + Refresh Token system
-#   5. RATE LIMITER
-#   6. SECURITY HEADERS MIDDLEWARE
-#   7. PYDANTIC MODELS
-#   8. APP SETUP
-#   9. SUPER ADMIN — Role Management Endpoints
-#   10. IMPORT: جدول الصيانة الدورية (maintenance_schedule)
-#   11. GLOBAL EXCEPTION HANDLER
-#   12. HELPERS
-#   13. AUTH ENDPOINTS
-#   14. USER AVATAR — رفع وجلب صورة البروفايل للمستخدم
-#   15. AUDIO UPLOAD — File system, NOT base64 in DB
-#   16. DRIVERS
-#   17. CARS
-#   18. PERMISSIONS
-#   19. DRIVER PHOTOS — رفع وعرض صور السائقين
-#   20. LIVE LOCATION — real-time driver tracking
-#   21. TRIPS — with pagination
-#   22. USERS
-#   23. WORKSHOPS
-#   24. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات
-#   25. GARAGE RECORDS
-#   26. EMERGENCY — Audio stored as file, not base64
-#   27. SETTINGS
-#   28. ADMIN — RESET DATA (protected with password)
-#   29. SUPERUSER — Admin Management + Audit Logs
-#   30. DRIVER REQUESTS
-#   31. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
-#   32. BRANCHES LIST — لقائمة الفروع المتاحة
-#   33. OPERATIONAL CARD REPORT
-#   34. OPERATIONAL REPORT — PER DRIVER BREAKDOWN
-#   35. ANOMALOUS TRIPS DIAGNOSTIC
-#   36. BULK IMPORT — CSV / Excel
-#   37. PERMISSIONS BULK IMPORT — CSV / Excel
-#   38. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
-#   39. FRAUD DETECTION — كشف التلاعب
-#   40. VOICE NOTES — رسائل صوتية من السوبر
-#   41. MAINTENANCE SCHEDULE — CRUD + ALERTS
-#   42. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
-#   43. MONTHLY REPORT — تقرير شهري شامل
-#   44. DRIVER KPI — مؤشرات أداء السائقين
-#   45. RENTAL EQUIPMENT — المعدات المستأجرة
-#   46. RENTAL EQUIPMENT — معدات مستأجرة (من الداتابيز)
-#   47. EQUIPMENT — معدات (جدول منفصل - بدون لوحة، الكود هو المعرف)
-#   48. EQUIPMENT OPERATORS — مشغلو المعدات (نظام ورديات)
-#   49. السركي — تقرير حضور السائقين من الرحلات
-#   50. 📷 OCR Odometer — EasyOCR (مجاني 100%، pip فقط، بدون apt)
-#   51. VIRTUAL INVENTORY MODULE — إدارة المخزون
-#   52. FORECAST ENGINE — Planning & Forecast Module
-#   53. مراجعة العمليات — Workshop Approval Workflow (تفويل + صيانة معاً)
-#   54. ENTRY POINT
-# ══════════════════════════════════════════════════════
-
 import asyncio
 import base64
 import csv
@@ -9047,13 +8988,13 @@ def _inv_product_row(r: dict, cat_map: dict, sup_map: dict) -> dict:
 
 # ── الفئات ──
 @app.get("/inventory/categories")
-async def list_inventory_categories(cu: dict = Depends(get_user)):
+async def list_inventory_categories(cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM inventory_categories ORDER BY name").fetchall()
         return [dict(r) for r in rows]
 
 @app.post("/inventory/categories")
-async def create_inventory_category(body: InventoryCategoryCreate, cu: dict = Depends(require_admin)):
+async def create_inventory_category(body: InventoryCategoryCreate, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         try:
             cur = conn.execute("INSERT INTO inventory_categories(name,notes) VALUES(?,?)", (body.name.strip(), body.notes or ""))
@@ -9062,13 +9003,13 @@ async def create_inventory_category(body: InventoryCategoryCreate, cu: dict = De
             raise HTTPException(400, "الفئة موجودة مسبقاً")
 
 @app.put("/inventory/categories/{cid}")
-async def update_inventory_category(cid: int, body: InventoryCategoryCreate, cu: dict = Depends(require_admin)):
+async def update_inventory_category(cid: int, body: InventoryCategoryCreate, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         conn.execute("UPDATE inventory_categories SET name=?, notes=? WHERE id=?", (body.name.strip(), body.notes or "", cid))
         return {"ok": True}
 
 @app.delete("/inventory/categories/{cid}")
-async def delete_inventory_category(cid: int, cu: dict = Depends(require_admin)):
+async def delete_inventory_category(cid: int, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         in_use = conn.execute("SELECT COUNT(*) c FROM inventory_products WHERE category_id=?", (cid,)).fetchone()["c"]
         if in_use:
@@ -9079,13 +9020,13 @@ async def delete_inventory_category(cid: int, cu: dict = Depends(require_admin))
 
 # ── الموردون ──
 @app.get("/inventory/suppliers")
-async def list_inventory_suppliers(cu: dict = Depends(get_user)):
+async def list_inventory_suppliers(cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM inventory_suppliers ORDER BY name").fetchall()
         return [dict(r) for r in rows]
 
 @app.post("/inventory/suppliers")
-async def create_inventory_supplier(body: InventorySupplierCreate, cu: dict = Depends(require_admin)):
+async def create_inventory_supplier(body: InventorySupplierCreate, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         cur = conn.execute("""INSERT INTO inventory_suppliers(name,phone,email,address,notes,company_name,manager_name,business_sector)
                               VALUES(?,?,?,?,?,?,?,?)""",
@@ -9094,7 +9035,7 @@ async def create_inventory_supplier(body: InventorySupplierCreate, cu: dict = De
         return {"id": cur.lastrowid}
 
 @app.put("/inventory/suppliers/{sid}")
-async def update_inventory_supplier(sid: int, body: InventorySupplierCreate, cu: dict = Depends(require_admin)):
+async def update_inventory_supplier(sid: int, body: InventorySupplierCreate, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         conn.execute("""UPDATE inventory_suppliers SET name=?,phone=?,email=?,address=?,notes=?,
                        company_name=?,manager_name=?,business_sector=? WHERE id=?""",
@@ -9103,7 +9044,7 @@ async def update_inventory_supplier(sid: int, body: InventorySupplierCreate, cu:
         return {"ok": True}
 
 @app.delete("/inventory/suppliers/{sid}")
-async def delete_inventory_supplier(sid: int, cu: dict = Depends(require_admin)):
+async def delete_inventory_supplier(sid: int, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         conn.execute("UPDATE inventory_products SET supplier_id=NULL WHERE supplier_id=?", (sid,))
         conn.execute("DELETE FROM inventory_suppliers WHERE id=?", (sid,))
@@ -9112,7 +9053,7 @@ async def delete_inventory_supplier(sid: int, cu: dict = Depends(require_admin))
 
 # ── المنتجات ──
 @app.get("/inventory/products")
-async def list_inventory_products(cu: dict = Depends(get_user), category_id: Optional[int] = None,
+async def list_inventory_products(cu: dict = Depends(require_superuser), category_id: Optional[int] = None,
                                    status: Optional[str] = None, search: Optional[str] = None):
     with get_db() as conn:
         cats = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_categories").fetchall()}
@@ -9130,7 +9071,7 @@ async def list_inventory_products(cu: dict = Depends(get_user), category_id: Opt
         return rows
 
 @app.post("/inventory/products")
-async def create_inventory_product(body: InventoryProductCreate, cu: dict = Depends(require_admin)):
+async def create_inventory_product(body: InventoryProductCreate, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         now = datetime.utcnow().isoformat() + "Z"
         cur = conn.execute("""INSERT INTO inventory_products
@@ -9146,7 +9087,7 @@ async def create_inventory_product(body: InventoryProductCreate, cu: dict = Depe
         return {"id": pid}
 
 @app.put("/inventory/products/{pid}")
-async def update_inventory_product(pid: int, body: InventoryProductCreate, cu: dict = Depends(require_admin)):
+async def update_inventory_product(pid: int, body: InventoryProductCreate, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         now = datetime.utcnow().isoformat() + "Z"
         conn.execute("""UPDATE inventory_products SET name=?,sku=?,category_id=?,supplier_id=?,brand=?,
@@ -9157,7 +9098,7 @@ async def update_inventory_product(pid: int, body: InventoryProductCreate, cu: d
         return {"ok": True}
 
 @app.delete("/inventory/products/{pid}")
-async def delete_inventory_product(pid: int, cu: dict = Depends(require_admin)):
+async def delete_inventory_product(pid: int, cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         conn.execute("DELETE FROM inventory_products WHERE id=?", (pid,))
         conn.execute("DELETE FROM inventory_movements WHERE product_id=?", (pid,))
@@ -9166,7 +9107,7 @@ async def delete_inventory_product(pid: int, cu: dict = Depends(require_admin)):
 
 # ── حركات المخزون ──
 @app.get("/inventory/movements")
-async def list_inventory_movements(cu: dict = Depends(require_admin_or_reporter), product_id: Optional[int] = None, limit: int = 500):
+async def list_inventory_movements(cu: dict = Depends(require_superuser), product_id: Optional[int] = None, limit: int = 500):
     with get_db() as conn:
         q = """SELECT m.*, p.name as product_name, p.unit as product_unit
                FROM inventory_movements m LEFT JOIN inventory_products p ON p.id=m.product_id WHERE 1=1"""
@@ -9177,7 +9118,7 @@ async def list_inventory_movements(cu: dict = Depends(require_admin_or_reporter)
         return [dict(r) for r in conn.execute(q, params).fetchall()]
 
 @app.post("/inventory/movements")
-async def create_inventory_movement(body: InventoryMovementCreate, cu: dict = Depends(require_admin)):
+async def create_inventory_movement(body: InventoryMovementCreate, cu: dict = Depends(require_superuser)):
     if body.movement_type not in ("in", "out", "return", "adjust"):
         raise HTTPException(400, "نوع حركة غير صالح")
     with get_db() as conn:
@@ -10271,7 +10212,7 @@ async def update_forecast_settings(body: dict, cu: dict = Depends(require_admin)
 
 # ── التنبيهات (منتجات منخفضة/منتهية) ──
 @app.get("/inventory/alerts")
-async def inventory_alerts(cu: dict = Depends(require_admin_or_reporter)):
+async def inventory_alerts(cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         cats = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_categories").fetchall()}
         sups = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_suppliers").fetchall()}
@@ -10283,7 +10224,7 @@ async def inventory_alerts(cu: dict = Depends(require_admin_or_reporter)):
 
 # ── Dashboard ──
 @app.get("/inventory/dashboard")
-async def inventory_dashboard(cu: dict = Depends(require_admin_or_reporter)):
+async def inventory_dashboard(cu: dict = Depends(require_superuser)):
     with get_db() as conn:
         total_items = conn.execute("SELECT COUNT(*) c FROM inventory_products").fetchone()["c"]
         stock_value = conn.execute("SELECT COALESCE(SUM(quantity*purchase_price),0) v FROM inventory_products").fetchone()["v"]
