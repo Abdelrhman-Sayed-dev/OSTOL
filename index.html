@@ -2820,14 +2820,17 @@ function buildAdminNav() {
     {id:'shifts-table',          icon:'⏱️',  label:'جدول الورديات'},
     {id:'equipment-op-card',     icon:'📋',  label:'بطاقة تشغيل المعدات'},
     /* equipment-trips tab removed */
-    {id:'inventory-mgmt', icon:'📦', label:'إدارة المخزون', separator:true},
-    {id:'inv-overview',        icon:'📦', label:'نظرة عامة'},
-    {id:'inv-products',        icon:'🧰', label:'المنتجات'},
-    {id:'inv-categories',      icon:'🏷️', label:'الفئات'},
-    {id:'inv-suppliers',       icon:'🚚', label:'الموردون'},
-    {id:'inv-movements',       icon:'🔄', label:'حركات المخزون'},
-    {id:'inv-alerts',          icon:'🚨', label:'التنبيهات'},
   ];
+  // إدارة المخزون: للسوبر يوزر فقط
+  if(isSuperuser()) {
+    base.push({id:'inventory-mgmt', icon:'📦', label:'إدارة المخزون', separator:true});
+    base.push({id:'inv-overview',        icon:'📦', label:'نظرة عامة'});
+    base.push({id:'inv-products',        icon:'🧰', label:'المنتجات'});
+    base.push({id:'inv-categories',      icon:'🏷️', label:'الفئات'});
+    base.push({id:'inv-suppliers',       icon:'🚚', label:'الموردون'});
+    base.push({id:'inv-movements',       icon:'🔄', label:'حركات المخزون'});
+    base.push({id:'inv-alerts',          icon:'🚨', label:'التنبيهات'});
+  }
   if(isSuperuser()) {
     base.push({id:'super-decisions',   icon:'🏛️', label:'اتخاذ قرار'});
     base.push({id:'super-fraud',       icon:'🔍', label:'كشف التلاعب'});
@@ -2968,6 +2971,11 @@ async function renderSection(id) {
   // وقّف الـ live tracking لو كنا في الخريطة وبنروح section تاني
   if(id !== 'map') stopLiveTracking();
   const c = document.getElementById('pageContent');
+  // إدارة المخزون: للسوبر يوزر فقط — امنع الوصول المباشر حتى لو عن طريق الرابط
+  if((id === 'inventory-mgmt' || id.startsWith('inv-')) && !isSuperuser()) {
+    c.innerHTML = '<div class="empty-state"><div class="empty-icon">🚫</div><p>غير مصرح لك بالوصول لهذا القسم</p></div>';
+    return;
+  }
   c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
   switch(id) {
     case 'overview':       await renderOverview(); break;
