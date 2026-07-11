@@ -21404,7 +21404,6 @@ async function renderWorkshopInspectionReports() {
     <div class="card">
       <div class="card-header">
         <div class="card-title">📝 محاضر الفحص</div>
-        <button class="btn btn-primary btn-sm" onclick="openInspectionReportModal(null)">➕ محضر فحص جديد</button>
       </div>
       <div class="table-wrap" style="overflow-x:auto">
         <table>
@@ -21422,9 +21421,9 @@ async function renderWorkshopInspectionReports() {
                 <td>${r.inspector_name||'—'}</td>
                 <td>${r.odometer_reading!=null ? r.odometer_reading.toLocaleString('ar-EG') : '—'}</td>
                 <td>${INSPECTION_RESULT_LABELS[r.result]||r.result}</td>
-                <td>${r.quote_id ? `<button class="btn btn-outline btn-sm" onclick='viewQuoteItemsFromReport(${JSON.stringify(r).replace(/'/g,"&#39;")})'>🧾 ${r.quote_number||'عرض البنود'}</button>` : '—'}</td>
+                <td>${r.quote_number||'—'}</td>
                 <td style="white-space:nowrap">
-                  <button class="btn btn-outline btn-sm" onclick='openInspectionReportModal(${JSON.stringify(r).replace(/'/g,"&#39;")})'>✏️ تعديل</button>
+                  <button class="btn btn-outline btn-sm" onclick='reviewInspectionReport(${JSON.stringify(r).replace(/'/g,"&#39;")})'>📝 مراجعة البنود</button>
                   <button class="btn btn-danger btn-sm" onclick="deleteInspectionReport(${r.id})">🗑️ حذف</button>
                 </td>
               </tr>`).join('') : `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد محاضر فحص بعد</p></div></td></tr>`}
@@ -21434,8 +21433,8 @@ async function renderWorkshopInspectionReports() {
     </div>`;
 }
 
-/* ── عرض بنود مقايسة الإصلاح المرتبطة بمحضر الفحص ── */
-function viewQuoteItemsFromReport(r) {
+/* ── مراجعة محضر الفحص: عرض بنود المقايسة المرتبطة مع خيار مقبول/مرفوض لكل بند ── */
+function reviewInspectionReport(r) {
   let sections = [], meta = {};
   try {
     const parsed = JSON.parse(r.quote_items_json || '[]');
@@ -21446,9 +21445,19 @@ function viewQuoteItemsFromReport(r) {
   let totalMfg = 0, totalParts = 0;
   sections.forEach(sec => (sec.items||[]).forEach(it => { totalMfg += it.mfg||0; totalParts += it.parts||0; }));
 
+  // القرارات المحفوظة سابقاً لهذا المحضر (لو موجودة)
+  let savedDecisions = {};
+  try {
+    const parsedItems = JSON.parse(r.items_json || '{}');
+    if (parsedItems && typeof parsedItems === 'object' && !Array.isArray(parsedItems)) savedDecisions = parsedItems;
+  } catch(e) {}
+  window._irDecisions = { ...savedDecisions };
+
+  const totalItemsCount = sections.reduce((n, sec) => n + (sec.items||[]).length, 0);
+
   openModal(`
     <div class="modal-header">
-      <div class="modal-title">🧾 بنود مقايسة الإصلاح رقم ${r.quote_number||''}</div>
+      <div class="modal-title">📝 بنود مقايسة الإصلاح رقم ${r.quote_number||''}</div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem">
@@ -21457,21 +21466,31 @@ function viewQuoteItemsFromReport(r) {
       </span>
       ${meta.disassembly_cost ? `<span style="background:#fef3c7;color:#92400e;padding:.3rem .7rem;border-radius:8px;font-size:.8rem;font-weight:700">تكلفة الفك والفحص وإعادة التجميع: ${(meta.disassembly_cost||0).toLocaleString('ar-EG')} جنيه</span>` : ''}
     </div>
-    ${sections.length ? sections.map(sec => `
+    ${sections.length ? sections.map((sec,si) => `
       <div style="margin-bottom:.8rem">
         ${sec.title ? `<div style="font-weight:700;margin-bottom:.4rem;color:#1e3a5f">${sec.title}</div>` : ''}
         <table style="width:100%;border-collapse:collapse;font-size:.85rem">
           <thead><tr style="background:#f1f5f9">
             <th style="padding:.4rem;text-align:right;border:1px solid #e2e8f0">بيان العمل</th>
-            <th style="padding:.4rem;border:1px solid #e2e8f0;width:120px">المصنعيات</th>
-            <th style="padding:.4rem;border:1px solid #e2e8f0;width:120px">قطع الغيار</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:110px">المصنعيات</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:110px">قطع الغيار</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:190px">القرار</th>
           </tr></thead>
           <tbody>
-            ${(sec.items||[]).map(it=>`<tr>
+            ${(sec.items||[]).map((it,ii)=>{
+              const key = `s${si}i${ii}`;
+              const decision = window._irDecisions[key] || '';
+              return `<tr id="row_${key}">
               <td style="padding:.4rem;border:1px solid #e2e8f0">${it.name||''}</td>
               <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">${(it.mfg||0).toLocaleString('ar-EG')}</td>
               <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">${(it.parts||0).toLocaleString('ar-EG')}</td>
-            </tr>`).join('')}
+              <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">
+                <div style="display:flex;gap:.3rem;justify-content:center">
+                  <button type="button" id="acc_${key}" class="btn btn-sm" style="${decision==='accepted' ? 'background:#16a34a;color:#fff;border-color:#16a34a' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1'}" onclick="setItemDecision('${key}','accepted')">✅ مقبول</button>
+                  <button type="button" id="rej_${key}" class="btn btn-sm" style="${decision==='rejected' ? 'background:#dc2626;color:#fff;border-color:#dc2626' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1'}" onclick="setItemDecision('${key}','rejected')">❌ مرفوض</button>
+                </div>
+              </td>
+            </tr>`;}).join('')}
           </tbody>
         </table>
       </div>`).join('') : `<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد بنود مسجلة</p></div>`}
@@ -21482,106 +21501,50 @@ function viewQuoteItemsFromReport(r) {
       </div>` : ''}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>
+      ${totalItemsCount ? `<button class="btn btn-primary" id="irSaveDecisionsBtn">💾 حفظ القرارات</button>` : ''}
     </div>`, 'modal-lg');
+
+  const saveBtn = document.getElementById('irSaveDecisionsBtn');
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      const decisions = window._irDecisions || {};
+      const decidedCount = Object.keys(decisions).length;
+      let result = r.result || 'pending';
+      if (totalItemsCount > 0) {
+        if (decidedCount < totalItemsCount) result = 'pending';
+        else if (Object.values(decisions).includes('rejected')) result = 'needs_repair';
+        else result = 'pass';
+      }
+      const payload = {
+        report_number: r.report_number || '',
+        car_id: r.car_id,
+        driver_id: r.driver_id || null,
+        quote_id: r.quote_id || null,
+        inspection_date: r.inspection_date || '',
+        inspector_name: r.inspector_name || '',
+        odometer_reading: r.odometer_reading ?? null,
+        result,
+        findings: r.findings || '',
+        items_json: JSON.stringify(decisions),
+        notes: r.notes || '',
+      };
+      saveBtn.disabled = true; saveBtn.textContent = 'جاري...';
+      try {
+        await apiCall(`/workshop/inspection-reports/${r.id}`, 'PUT', payload);
+        showNotification('✅ تم حفظ قرارات البنود', 'success');
+        closeModal(); renderWorkshopInspectionReports();
+      } catch(e) { showNotification(e.message, 'error'); saveBtn.disabled = false; saveBtn.textContent = '💾 حفظ القرارات'; }
+    };
+  }
 }
 
-function openInspectionReportModal(r) {
-  const cars = window._irCars || [];
-  const drvs = window._irDrivers || [];
-  openModal(`
-    <div class="modal-header">
-      <div class="modal-title">${r ? '✏️ تعديل محضر فحص' : '➕ محضر فحص جديد'}</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>رقم المحضر</label>
-        <input type="text" id="irNum" value="${r?.report_number||''}" placeholder="سيتم توليده تلقائياً إن ترك فارغاً">
-      </div>
-      <div class="form-group">
-        <label>تاريخ الفحص *</label>
-        <input type="date" id="irDate" value="${r?.inspection_date||new Date().toISOString().slice(0,10)}">
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>المركبة *</label>
-        <select id="irCar">
-          <option value="">— اختر —</option>
-          ${cars.map(c=>`<option value="${c.id}" ${r?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}${c.model?' | '+c.model:''}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>السائق (اختياري)</label>
-        <select id="irDriver">
-          <option value="">— بدون —</option>
-          ${drvs.map(d=>`<option value="${d.id}" ${r?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>اسم الفاحص</label>
-        <input type="text" id="irInspector" value="${r?.inspector_name||''}" placeholder="اسم مهندس/فني الفحص">
-      </div>
-      <div class="form-group">
-        <label>قراءة العداد (كم)</label>
-        <input type="number" id="irOdo" min="0" step="1" value="${r?.odometer_reading??''}" placeholder="مثال: 54000">
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>نتيجة الفحص *</label>
-      <select id="irResult">
-        ${Object.keys(INSPECTION_RESULT_LABELS).map(k=>`<option value="${k}" ${(r?.result||'pending')===k?'selected':''}>${INSPECTION_RESULT_LABELS[k]}</option>`).join('')}
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label>الملاحظات الفنية / نتائج الفحص التفصيلية</label>
-      <textarea id="irFindings" rows="4" placeholder="اكتب هنا تفاصيل ما تم فحصه والملاحظات...">${r?.findings||''}</textarea>
-    </div>
-
-    <div class="form-group">
-      <label>ملاحظات إضافية</label>
-      <textarea id="irNotes" rows="2">${r?.notes||''}</textarea>
-    </div>
-
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
-      <button class="btn btn-primary" id="irSubmitBtn">💾 حفظ</button>
-    </div>`);
-
-  document.getElementById('irSubmitBtn').onclick = async () => {
-    const carId = document.getElementById('irCar').value;
-    const date  = document.getElementById('irDate').value;
-    if (!carId) return showNotification('يرجى اختيار المركبة', 'error');
-    if (!date)  return showNotification('يرجى تحديد تاريخ الفحص', 'error');
-    const driverVal = document.getElementById('irDriver').value;
-    const odoVal     = document.getElementById('irOdo').value;
-    const payload = {
-      report_number: document.getElementById('irNum').value.trim(),
-      car_id: parseInt(carId),
-      driver_id: driverVal ? parseInt(driverVal) : null,
-      inspection_date: date,
-      inspector_name: document.getElementById('irInspector').value.trim(),
-      odometer_reading: odoVal !== '' ? parseFloat(odoVal) : null,
-      result: document.getElementById('irResult').value,
-      findings: document.getElementById('irFindings').value.trim(),
-      notes: document.getElementById('irNotes').value.trim(),
-    };
-    const btn = document.getElementById('irSubmitBtn');
-    btn.disabled = true; btn.textContent = 'جاري...';
-    try {
-      if (r) await apiCall(`/workshop/inspection-reports/${r.id}`, 'PUT', payload);
-      else   await apiCall('/workshop/inspection-reports', 'POST', payload);
-      showNotification('✅ تم حفظ محضر الفحص', 'success');
-      closeModal(); renderWorkshopInspectionReports();
-    } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ'; }
-  };
+function setItemDecision(key, decision) {
+  window._irDecisions = window._irDecisions || {};
+  window._irDecisions[key] = decision;
+  const accBtn = document.getElementById(`acc_${key}`);
+  const rejBtn = document.getElementById(`rej_${key}`);
+  if (accBtn) accBtn.style.cssText = decision==='accepted' ? 'background:#16a34a;color:#fff;border-color:#16a34a' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1';
+  if (rejBtn) rejBtn.style.cssText = decision==='rejected' ? 'background:#dc2626;color:#fff;border-color:#dc2626' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1';
 }
 
 async function deleteInspectionReport(id) {
