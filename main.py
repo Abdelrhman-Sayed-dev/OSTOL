@@ -1,6 +1,65 @@
 # ══════════════════════════════════════════════════════
 # FLEET MANAGEMENT SYSTEM — main.py
 # ══════════════════════════════════════════════════════
+# فهرس الأقسام (بترتيب ظهورها الفعلي في الملف) — كل رقم هنا يطابق
+# رقم نفس القسم كـ تعليق داخل الكود، ابحث عنه (Ctrl+F) للوصول السريع.
+#
+#   1. ENVIRONMENT — REQUIRED (no fallback secrets)
+#   2. STRUCTURED LOGGING
+#   3. DATABASE — SQLite with WAL mode + proper indexing
+#   4. AUTH — Access + Refresh Token system
+#   5. RATE LIMITER
+#   6. SECURITY HEADERS MIDDLEWARE
+#   7. PYDANTIC MODELS
+#   8. APP SETUP
+#   9. SUPER ADMIN — Role Management Endpoints
+#   10. IMPORT: جدول الصيانة الدورية (maintenance_schedule)
+#   11. GLOBAL EXCEPTION HANDLER
+#   12. HELPERS
+#   13. AUTH ENDPOINTS
+#   14. USER AVATAR — رفع وجلب صورة البروفايل للمستخدم
+#   15. AUDIO UPLOAD — File system, NOT base64 in DB
+#   16. DRIVERS
+#   17. CARS
+#   18. PERMISSIONS
+#   19. DRIVER PHOTOS — رفع وعرض صور السائقين
+#   20. LIVE LOCATION — real-time driver tracking
+#   21. TRIPS — with pagination
+#   22. USERS
+#   23. WORKSHOPS
+#   24. OPERATIONAL CARD PAGE 2 — زيوت وكاوتش وبطاريات
+#   25. GARAGE RECORDS
+#   26. EMERGENCY — Audio stored as file, not base64
+#   27. SETTINGS
+#   28. ADMIN — RESET DATA (protected with password)
+#   29. SUPERUSER — Admin Management + Audit Logs
+#   30. DRIVER REQUESTS
+#   31. MAINTENANCE SCHEDULE (جدول الصيانة الدورية)
+#   32. BRANCHES LIST — لقائمة الفروع المتاحة
+#   33. OPERATIONAL CARD REPORT
+#   34. OPERATIONAL REPORT — PER DRIVER BREAKDOWN
+#   35. ANOMALOUS TRIPS DIAGNOSTIC
+#   36. BULK IMPORT — CSV / Excel
+#   37. PERMISSIONS BULK IMPORT — CSV / Excel
+#   38. LAST ODOMETER — آخر عداد لمركبة (للسائق عند بدء الرحلة)
+#   39. FRAUD DETECTION — كشف التلاعب
+#   40. VOICE NOTES — رسائل صوتية من السوبر
+#   41. MAINTENANCE SCHEDULE — CRUD + ALERTS
+#   42. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
+#   43. MONTHLY REPORT — تقرير شهري شامل
+#   44. DRIVER KPI — مؤشرات أداء السائقين
+#   45. RENTAL EQUIPMENT — المعدات المستأجرة
+#   46. RENTAL EQUIPMENT — معدات مستأجرة (من الداتابيز)
+#   47. EQUIPMENT — معدات (جدول منفصل - بدون لوحة، الكود هو المعرف)
+#   48. EQUIPMENT OPERATORS — مشغلو المعدات (نظام ورديات)
+#   49. السركي — تقرير حضور السائقين من الرحلات
+#   50. 📷 OCR Odometer — EasyOCR (مجاني 100%، pip فقط، بدون apt)
+#   51. VIRTUAL INVENTORY MODULE — إدارة المخزون
+#   52. FORECAST ENGINE — Planning & Forecast Module
+#   53. مراجعة العمليات — Workshop Approval Workflow (تفويل + صيانة معاً)
+#   54. ENTRY POINT
+# ══════════════════════════════════════════════════════
+
 import asyncio
 import base64
 import csv
@@ -8988,7 +9047,7 @@ def _inv_product_row(r: dict, cat_map: dict, sup_map: dict) -> dict:
 
 # ── الفئات ──
 @app.get("/inventory/categories")
-async def list_inventory_categories(cu: dict = Depends(require_superuser)):
+async def list_inventory_categories(cu: dict = Depends(get_user)):
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM inventory_categories ORDER BY name").fetchall()
         return [dict(r) for r in rows]
@@ -9020,7 +9079,7 @@ async def delete_inventory_category(cid: int, cu: dict = Depends(require_superus
 
 # ── الموردون ──
 @app.get("/inventory/suppliers")
-async def list_inventory_suppliers(cu: dict = Depends(require_superuser)):
+async def list_inventory_suppliers(cu: dict = Depends(get_user)):
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM inventory_suppliers ORDER BY name").fetchall()
         return [dict(r) for r in rows]
@@ -9053,7 +9112,7 @@ async def delete_inventory_supplier(sid: int, cu: dict = Depends(require_superus
 
 # ── المنتجات ──
 @app.get("/inventory/products")
-async def list_inventory_products(cu: dict = Depends(require_superuser), category_id: Optional[int] = None,
+async def list_inventory_products(cu: dict = Depends(get_user), category_id: Optional[int] = None,
                                    status: Optional[str] = None, search: Optional[str] = None):
     with get_db() as conn:
         cats = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM inventory_categories").fetchall()}

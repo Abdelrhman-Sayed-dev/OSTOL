@@ -11195,14 +11195,35 @@ function togglePartsSourceFields() {
   const direct = document.getElementById('wPartsDirectFields');
   if (inv) inv.style.display = (v === 'Inventory') ? 'block' : 'none';
   if (direct) direct.style.display = (v === 'DirectPurchase') ? 'block' : 'none';
+  if (v === 'Inventory') updatePartsCategoryProducts();
+}
+
+// ── Virtual Inventory: تحديث قائمة "المنتج" بناءً على "الفئة" المختارة ──
+function updatePartsCategoryProducts() {
+  const catId = document.getElementById('wPartsCategory')?.value;
+  const productSel = document.getElementById('wInvProduct');
+  if (!productSel) return;
+  const allProducts = window._invProducts || [];
+  const filtered = catId ? allProducts.filter(p => String(p.category_id) === String(catId)) : allProducts;
+  if (!catId) {
+    productSel.innerHTML = '<option value="">-- اختر الفئة أولاً --</option>';
+    return;
+  }
+  if (!filtered.length) {
+    productSel.innerHTML = '<option value="">-- لا توجد منتجات في هذه الفئة --</option>';
+    return;
+  }
+  productSel.innerHTML = '<option value="">-- اختر المنتج --</option>' +
+    filtered.map(p => '<option value="' + p.id + '">' + p.name + ' (متاح: ' + p.quantity + ' ' + (p.unit||'') + ')</option>').join('');
 }
 
 async function dpWsModal(type) {
   const _isOp = currentUser?.role === 'operator';
 
-  // ── Virtual Inventory: تحميل قائمة المنتجات (للاستخدام في مصدر القطعة) ──
+  // ── Virtual Inventory: تحميل قائمة المنتجات والفئات (للاستخدام في مصدر القطعة) ──
   if (type !== 'fuel' && !type.startsWith('fuel_') && type !== 'other' && !window._invProducts) {
     try { window._invProducts = await apiCall('/inventory/products'); } catch(e) { window._invProducts = []; }
+    try { window._invCategories = await apiCall('/inventory/categories'); } catch(e) { window._invCategories = []; }
   }
 
   // ── Operator: نجيب بيانات المعدة من _opData أو active shift ──
@@ -11345,15 +11366,16 @@ async function dpWsModal(type) {
   // ── Virtual Inventory: مصدر القطعة (لكل أنواع الصيانة، إلا "أخرى") ──
   let partsSourceBlock = '';
   if (!isFuelType && type !== 'other') {
-    const invProductsOpts = (window._invProducts || []).map(p =>
-      '<option value="' + p.id + '">' + p.name + ' (متاح: ' + p.quantity + ' ' + (p.unit||'') + ')</option>').join('');
+    const invCategoriesOpts = (window._invCategories || []).map(c =>
+      '<option value="' + c.id + '">' + c.name + '</option>').join('');
     partsSourceBlock =
       '<div class="form-group"><label>📦 مصدر القطعة <span class="req">*</span></label>' +
       '<select id="wPartsSource" onchange="togglePartsSourceFields()"><option value="">-- اختر --</option>' +
       '<option value="Inventory">📦 من مخزون الشركة</option>' +
       '<option value="DirectPurchase">🛒 شراء مباشر من الخارج</option></select></div>' +
       '<div id="wPartsInventoryFields" style="display:none">' +
-      '<div class="form-group"><label>المنتج <span class="req">*</span></label><select id="wInvProduct"><option value="">-- اختر المنتج --</option>' + invProductsOpts + '</select></div></div>' +
+      '<div class="form-group"><label>الفئة <span class="req">*</span></label><select id="wPartsCategory" onchange="updatePartsCategoryProducts()"><option value="">-- اختر الفئة --</option>' + invCategoriesOpts + '</select></div>' +
+      '<div class="form-group"><label>المنتج <span class="req">*</span></label><select id="wInvProduct"><option value="">-- اختر الفئة أولاً --</option></select></div></div>' +
       '<div id="wPartsDirectFields" style="display:none">' +
       '<div class="form-group"><label>المورد أو المحل <span class="req">*</span></label><input type="text" id="wDirectSupplier" placeholder="اسم المحل/المورد"></div>' +
       '<div class="form-group"><label>التكلفة <span class="req">*</span></label><input type="number" id="wDirectCost" placeholder="0.00" step="0.01" min="0"></div>' +
