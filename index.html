@@ -2851,12 +2851,14 @@ function buildAdminNav() {
     base.push({id:'super-voice',    icon:'🎙️', label:'رسائل صوتية'});
     base.push({id:'super-reassign', icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'driver-photos',  icon:'📷', label:'صور السائقين'});
+    base.push({id:'super-licenses', icon:'⚠️', label:'تنبيهات الرخص'});
   }
   if(isSuperAdmin()) {
     base.push({id:'super-voice',        icon:'🎙️', label:'رسائل صوتية'});
     base.push({id:'super-reassign',     icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'driver-photos',      icon:'📷', label:'صور السائقين'});
     base.push({id:'sa-my-admins',       icon:'👥', label:'أدمنزي'});
+    base.push({id:'super-licenses',     icon:'⚠️', label:'تنبيهات الرخص'});
   }
   return base;
 }
@@ -3253,7 +3255,7 @@ async function renderOverview() {
     return `<tr><td>${t.id}</td><td>${dName}</td><td dir="ltr"><strong>${cPlate}</strong></td><td style="font-size:.78rem;color:var(--muted)">${t.start_time?(isSuperuser()?fmtDT(t.start_time):fmtDate(t.start_time)):'—'}</td><td>${badge}</td></tr>`;
   }).join('');
 
-  // ملاحظة: تنبيهات الرخص انتقلت لتاب 'تنبيهات الرخص' عند السوبر يوزر
+  // ملاحظة: تنبيهات الرخص موجودة في تاب 'تنبيهات الرخص' (متاح للسوبر يوزر والأدمنز)
   // جيب تنبيهات الصيانة المتأخرة أو القريبة
   const maintAlerts = await apiCall('/maintenance/alerts').catch(()=>[]);
   window._maintenanceAlertCount = maintAlerts.length;
@@ -9373,8 +9375,8 @@ async function pollNotifications() {
     }
     window._pendingRequestsCount=newCount;
   }catch(e){}
-  // حساب عدد تنبيهات الرخص (السوبر فقط)
-  if(isSuperuser()){
+  // حساب عدد تنبيهات الرخص (للسوبر يوزر والأدمنز)
+  if(isSuperuser() || isAdmin() || isSuperAdmin()){
     try{
       const allDrvs=await apiCall('/drivers').catch(()=>[]);
       const d60=new Date(Date.now()+60*864e5).toISOString().split('T')[0];
@@ -11737,7 +11739,7 @@ async function deleteRoleUser(role, uid, username) {
 // Named aliases so the rest of the codebase (and nav callbacks) continue to work unchanged
 
 // ══════════════════════════════════════════════════════
-// تنبيهات الرخص — سوبر يوزر فقط
+// تنبيهات الرخص — متاحة للسوبر يوزر والأدمنز
 // ══════════════════════════════════════════════════════
 async function renderSuperLicenses() {
   const c = document.getElementById('pageContent');
