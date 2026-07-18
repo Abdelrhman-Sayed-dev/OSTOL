@@ -7779,115 +7779,6 @@ async def list_equipment(
     return {"equipment": rows, "summary": summary}
 
 
-@app.get("/equipment/{eq_id}")
-async def get_equipment(eq_id: int, cu: dict = Depends(require_admin_or_reporter)):
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM equipment WHERE id=?", (eq_id,)).fetchone()
-    if not row:
-        raise HTTPException(404, "المعدة غير موجودة")
-    return dict(row)
-
-
-class EquipmentCreate(BaseModel):
-    car_code:       str
-    equipment_name: str
-    brand:          str = ""
-    model:          str = ""
-    year:           str = ""
-    chassis:        str = ""
-    engine_number:  str = ""
-    equipment_type: str = "معدات تحريك تربة"
-    ownership_type: str = "مملوكة"
-    branch:         str = ""
-    sector:         str = ""
-    project:        str = ""
-    license_expiry: str = ""
-    status:         str = "active"
-    notes:          str = ""
-    rental_source:  str = ""
-    monthly_rate:   float = 0.0
-    rental_start:   str = ""
-    rental_end:     str = ""
-
-
-@app.post("/equipment")
-async def create_equipment(body: EquipmentCreate, cu: dict = Depends(require_admin)):
-    if not body.car_code.strip():
-        raise HTTPException(400, "الكود مطلوب")
-    if not body.equipment_name.strip():
-        raise HTTPException(400, "اسم المعدة مطلوب")
-    try:
-        with get_db() as conn:
-            # migration دفاعي — أضف الأعمدة الجديدة لو مش موجودة
-            for _col, _def in [
-                ("ownership_type", "TEXT DEFAULT 'مملوكة'"),
-                ("rental_source",  "TEXT DEFAULT ''"),
-                ("monthly_rate",   "REAL DEFAULT 0"),
-                ("rental_start",   "TEXT DEFAULT ''"),
-                ("rental_end",     "TEXT DEFAULT ''"),
-            ]:
-                try: conn.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
-                except Exception: pass
-            conn.execute("""
-                INSERT INTO equipment
-                (car_code,equipment_name,brand,model,year,chassis,engine_number,
-                 equipment_type,ownership_type,branch,sector,project,license_expiry,status,notes,
-                 rental_source,monthly_rate,rental_start,rental_end)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (body.car_code.strip(), body.equipment_name.strip(),
-                  body.brand, body.model, body.year, body.chassis, body.engine_number,
-                  body.equipment_type, body.ownership_type,
-                  body.branch, body.sector, body.project,
-                  body.license_expiry, body.status, body.notes,
-                  body.rental_source, body.monthly_rate, body.rental_start, body.rental_end))
-            eq_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        return {"id": eq_id, "message": "تم إضافة المعدة بنجاح"}
-    except Exception as e:
-        if "UNIQUE" in str(e):
-            raise HTTPException(409, f"الكود '{body.car_code}' موجود بالفعل")
-        raise HTTPException(500, str(e))
-
-
-@app.put("/equipment/{eq_id}")
-async def update_equipment(eq_id: int, body: EquipmentCreate, cu: dict = Depends(require_admin)):
-    with get_db() as conn:
-        row = conn.execute("SELECT id FROM equipment WHERE id=?", (eq_id,)).fetchone()
-        if not row:
-            raise HTTPException(404, "المعدة غير موجودة")
-        # migration دفاعي
-        for _col, _def in [
-            ("ownership_type", "TEXT DEFAULT 'مملوكة'"),
-            ("rental_source",  "TEXT DEFAULT ''"),
-            ("monthly_rate",   "REAL DEFAULT 0"),
-            ("rental_start",   "TEXT DEFAULT ''"),
-            ("rental_end",     "TEXT DEFAULT ''"),
-        ]:
-            try: conn.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
-            except Exception: pass
-        conn.execute("""
-            UPDATE equipment SET
-                car_code=?, equipment_name=?, brand=?, model=?, year=?, chassis=?,
-                engine_number=?, equipment_type=?, ownership_type=?,
-                branch=?, sector=?, project=?, license_expiry=?, status=?, notes=?,
-                rental_source=?, monthly_rate=?, rental_start=?, rental_end=?
-            WHERE id=?
-        """, (body.car_code.strip(), body.equipment_name.strip(),
-              body.brand, body.model, body.year, body.chassis, body.engine_number,
-              body.equipment_type, body.ownership_type,
-              body.branch, body.sector, body.project,
-              body.license_expiry, body.status, body.notes,
-              body.rental_source, body.monthly_rate, body.rental_start, body.rental_end,
-              eq_id))
-    return {"message": "تم التعديل بنجاح"}
-
-
-@app.delete("/equipment/{eq_id}")
-async def delete_equipment(eq_id: int, cu: dict = Depends(require_admin)):
-    with get_db() as conn:
-        conn.execute("DELETE FROM equipment WHERE id=?", (eq_id,))
-    return {"message": "تم الحذف"}
-
-
 @app.get("/equipment/log")
 async def get_equipment_log(
     branch:  str = Query(None),
@@ -8016,6 +7907,141 @@ async def get_unused_equipment(
     return {"unused_equipment": unused, "total": len(unused)}
 
 
+@app.get("/equipment/import/template")
+async def equipment_import_template(cu: dict = Depends(require_admin)):
+    """تحميل قالب CSV للمعدات"""
+    from fastapi.responses import Response
+    cols = ["car_code","equipment_name","brand","model","year","chassis",
+            "engine_number","equipment_type","branch","sector","project","status","notes"]
+    samples = [
+        ["12/5/347","اسكيد لودر","CATERPILLAR","246C","2015","CH123456","",
+         "معدات تحريك تربة","إدارة صيانة القصور","قطاع القاهرة الكبرى","","active",""],
+        ["12/5/926","مان لفت","MANITOU","180 ATJ","2018","","",
+         "معدات رفع","حلوان","قطاع القاهرة الكبرى","","active",""],
+        ["27/2/2333","مولد كهرباء 50 ك","FG WILSON","P50","2016","","",
+         "معدات ثابتة","مدينة نصر","قطاع القاهرة الكبرى","","active",""],
+    ]
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(cols)
+    for s in samples:
+        writer.writerow(s)
+    return Response(
+        content=buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=equipment_template.csv"}
+    )
+
+
+@app.get("/equipment/{eq_id}")
+async def get_equipment(eq_id: int, cu: dict = Depends(require_admin_or_reporter)):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM equipment WHERE id=?", (eq_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "المعدة غير موجودة")
+    return dict(row)
+
+
+class EquipmentCreate(BaseModel):
+    car_code:       str
+    equipment_name: str
+    brand:          str = ""
+    model:          str = ""
+    year:           str = ""
+    chassis:        str = ""
+    engine_number:  str = ""
+    equipment_type: str = "معدات تحريك تربة"
+    ownership_type: str = "مملوكة"
+    branch:         str = ""
+    sector:         str = ""
+    project:        str = ""
+    license_expiry: str = ""
+    status:         str = "active"
+    notes:          str = ""
+    rental_source:  str = ""
+    monthly_rate:   float = 0.0
+    rental_start:   str = ""
+    rental_end:     str = ""
+
+
+@app.post("/equipment")
+async def create_equipment(body: EquipmentCreate, cu: dict = Depends(require_admin)):
+    if not body.car_code.strip():
+        raise HTTPException(400, "الكود مطلوب")
+    if not body.equipment_name.strip():
+        raise HTTPException(400, "اسم المعدة مطلوب")
+    try:
+        with get_db() as conn:
+            # migration دفاعي — أضف الأعمدة الجديدة لو مش موجودة
+            for _col, _def in [
+                ("ownership_type", "TEXT DEFAULT 'مملوكة'"),
+                ("rental_source",  "TEXT DEFAULT ''"),
+                ("monthly_rate",   "REAL DEFAULT 0"),
+                ("rental_start",   "TEXT DEFAULT ''"),
+                ("rental_end",     "TEXT DEFAULT ''"),
+            ]:
+                try: conn.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
+                except Exception: pass
+            conn.execute("""
+                INSERT INTO equipment
+                (car_code,equipment_name,brand,model,year,chassis,engine_number,
+                 equipment_type,ownership_type,branch,sector,project,license_expiry,status,notes,
+                 rental_source,monthly_rate,rental_start,rental_end)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (body.car_code.strip(), body.equipment_name.strip(),
+                  body.brand, body.model, body.year, body.chassis, body.engine_number,
+                  body.equipment_type, body.ownership_type,
+                  body.branch, body.sector, body.project,
+                  body.license_expiry, body.status, body.notes,
+                  body.rental_source, body.monthly_rate, body.rental_start, body.rental_end))
+            eq_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        return {"id": eq_id, "message": "تم إضافة المعدة بنجاح"}
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            raise HTTPException(409, f"الكود '{body.car_code}' موجود بالفعل")
+        raise HTTPException(500, str(e))
+
+
+@app.put("/equipment/{eq_id}")
+async def update_equipment(eq_id: int, body: EquipmentCreate, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM equipment WHERE id=?", (eq_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "المعدة غير موجودة")
+        # migration دفاعي
+        for _col, _def in [
+            ("ownership_type", "TEXT DEFAULT 'مملوكة'"),
+            ("rental_source",  "TEXT DEFAULT ''"),
+            ("monthly_rate",   "REAL DEFAULT 0"),
+            ("rental_start",   "TEXT DEFAULT ''"),
+            ("rental_end",     "TEXT DEFAULT ''"),
+        ]:
+            try: conn.execute(f"ALTER TABLE equipment ADD COLUMN {_col} {_def}")
+            except Exception: pass
+        conn.execute("""
+            UPDATE equipment SET
+                car_code=?, equipment_name=?, brand=?, model=?, year=?, chassis=?,
+                engine_number=?, equipment_type=?, ownership_type=?,
+                branch=?, sector=?, project=?, license_expiry=?, status=?, notes=?,
+                rental_source=?, monthly_rate=?, rental_start=?, rental_end=?
+            WHERE id=?
+        """, (body.car_code.strip(), body.equipment_name.strip(),
+              body.brand, body.model, body.year, body.chassis, body.engine_number,
+              body.equipment_type, body.ownership_type,
+              body.branch, body.sector, body.project,
+              body.license_expiry, body.status, body.notes,
+              body.rental_source, body.monthly_rate, body.rental_start, body.rental_end,
+              eq_id))
+    return {"message": "تم التعديل بنجاح"}
+
+
+@app.delete("/equipment/{eq_id}")
+async def delete_equipment(eq_id: int, cu: dict = Depends(require_admin)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM equipment WHERE id=?", (eq_id,))
+    return {"message": "تم الحذف"}
+
+
 # ── Equipment Import ──
 @app.post("/equipment/import/preview")
 async def equipment_import_preview(
@@ -8116,31 +8142,6 @@ async def equipment_import_confirm(
         "skipped": len(skipped), "skipped_items": skipped,
     }
 
-
-@app.get("/equipment/import/template")
-async def equipment_import_template(cu: dict = Depends(require_admin)):
-    """تحميل قالب CSV للمعدات"""
-    from fastapi.responses import Response
-    cols = ["car_code","equipment_name","brand","model","year","chassis",
-            "engine_number","equipment_type","branch","sector","project","status","notes"]
-    samples = [
-        ["12/5/347","اسكيد لودر","CATERPILLAR","246C","2015","CH123456","",
-         "معدات تحريك تربة","إدارة صيانة القصور","قطاع القاهرة الكبرى","","active",""],
-        ["12/5/926","مان لفت","MANITOU","180 ATJ","2018","","",
-         "معدات رفع","حلوان","قطاع القاهرة الكبرى","","active",""],
-        ["27/2/2333","مولد كهرباء 50 ك","FG WILSON","P50","2016","","",
-         "معدات ثابتة","مدينة نصر","قطاع القاهرة الكبرى","","active",""],
-    ]
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(cols)
-    for s in samples:
-        writer.writerow(s)
-    return Response(
-        content=buf.getvalue().encode("utf-8-sig"),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=equipment_template.csv"}
-    )
 
 # ══════════════════════════════════════════════════════
 # 48. EQUIPMENT OPERATORS — مشغلو المعدات (نظام ورديات)
