@@ -2740,8 +2740,9 @@ const NAV_ITEM_MODULE = {
   'ws-external-ops':'workshop', 'ws-vouchers':'workshop',
   'op-card':'ops', emergencies:'ops', 'ops-review':'ops',
   'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment', 'equipment-op-card':'equipment',
+  'equipment-log':'equipment', 'equipment-unused':'equipment',
   'inv-overview':'inventory', 'inv-products':'inventory', 'inv-categories':'inventory', 'inv-suppliers':'inventory',
-  'inv-movements':'inventory', 'inv-alerts':'inventory',
+  'inv-movements':'inventory', 'inv-alerts':'inventory', 'inv-platforms':'inventory',
   'monthly-report':'reports', 'driver-kpi':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
@@ -2819,6 +2820,8 @@ function buildAdminNav() {
     {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
     {id:'shifts-table',          icon:'⏱️',  label:'جدول الورديات'},
     {id:'equipment-op-card',     icon:'📋',  label:'بطاقة تشغيل المعدات'},
+    {id:'equipment-log',         icon:'📊',  label:'سركي المعدات'},
+    {id:'equipment-unused',      icon:'🛑',  label:'معدات غير مستخدمة'},
     /* equipment-trips tab removed */
   ];
   // إدارة المخزون: للسوبر يوزر فقط
@@ -2828,6 +2831,7 @@ function buildAdminNav() {
     base.push({id:'inv-products',        icon:'🧰', label:'المنتجات'});
     base.push({id:'inv-categories',      icon:'🏷️', label:'الفئات'});
     base.push({id:'inv-suppliers',       icon:'🚚', label:'الموردون'});
+    base.push({id:'inv-platforms',       icon:'🚛', label:'منصات الإمداد'});
     base.push({id:'inv-movements',       icon:'🔄', label:'حركات المخزون'});
     base.push({id:'inv-alerts',          icon:'🚨', label:'التنبيهات'});
   }
@@ -3015,6 +3019,7 @@ async function renderSection(id) {
     case 'inv-products': await renderInventoryProducts(); break;
     case 'inv-categories': await renderInventoryCategories(); break;
     case 'inv-suppliers': await renderInventorySuppliers(); break;
+    case 'inv-platforms': await renderSupplyPlatforms(); break;
     case 'inv-movements': await renderInventoryMovements(); break;
     case 'ws-repair-quotes': await renderWorkshopRepairQuotes(); break;
     case 'ws-inspection-reports': await renderWorkshopInspectionReports(); break;
@@ -3033,6 +3038,8 @@ async function renderSection(id) {
     /* equipment-trips case removed */
     case 'equipment-list':    await renderEquipmentSection(); break;
     case 'equipment-op-card': await renderEquipmentOpCard(); break;
+    case 'equipment-log':     await renderEquipmentLog(); break;
+    case 'equipment-unused':  await renderEquipmentUnused(); break;
 
     case 'driver-trip':    await renderDriverTrip(); break;
     case 'driver-workshop':await renderDriverWorkshop(); break;
@@ -5072,6 +5079,21 @@ async function renderWorkshopStats() {
       phBtn.replaceWith(btn);
     }
   }
+}
+
+function switchWsTab(tab, btnEl) {
+  const tabs = ['fuel', 'oils', 'main', 'parts'];
+  tabs.forEach(t => {
+    const panel = document.getElementById('wsTabPanel_' + t);
+    if (panel) panel.style.display = (t === tab) ? '' : 'none';
+    const btn = document.getElementById('wsTab_' + t);
+    if (!btn) return;
+    const isActive = (t === tab);
+    btn.style.color = isActive ? '#059669' : '#64748b';
+    btn.style.borderBottom = isActive ? '2px solid #10b981' : 'none';
+    const underline = btn.querySelector('span');
+    if (underline) underline.style.display = isActive ? '' : 'none';
+  });
 }
 
 async function renderWorkshopRecords() {
@@ -9440,7 +9462,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops-stats' : 'overview');
   renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
@@ -10025,14 +10047,46 @@ async function renderDriverSinglePage() {
               'placeholder="0.0" value="' + (lastEndHours||'') + '">' +
             (lastEndHours ? '<div style="font-size:.75rem;color:#06B6D4;margin-top:.4rem;text-align:center">✅ من نهاية آخر وردية (' + lastEndHours + ' ساعة)</div>' : '') +
           '</div>' +
+          '<div class="form-group">' +
+            '<label style="font-weight:800;color:#1e3a5f">📷 صورة بدء الوردية <span class="req">*</span></label>' +
+            '<div style="font-size:.72rem;color:#64748b;margin-bottom:.4rem">صورة إلزامية للمعدة/العداد عند بدء كل وردية — لا يمكن بدء الوردية بدونها.</div>' +
+            '<div id="dpStartPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">' +
+              '<img id="dpStartPhotoPreview" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:1.5px solid #e2e8f0">' +
+            '</div>' +
+            '<label for="dpStartPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;' +
+              'border:1.5px dashed #cbd5e1;border-radius:10px;padding:.75rem;cursor:pointer;' +
+              'color:#475569;font-size:.85rem;font-weight:700;background:#f8fafc">' +
+              '<span id="dpStartPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>' +
+            '</label>' +
+            '<input type="file" id="dpStartPhotoInput" accept="image/*" capture="environment" style="display:none">' +
+          '</div>' +
         '</div>' +
         '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
 
         '<button class="btn btn-primary" id="dpStartOk" style="font-size:1rem;padding:.75rem 2rem">▶ ابدأ الوردية</button></div>'
       );
+      window._dpStartPhotoData = '';
+      const _dpStartPhotoInput = document.getElementById('dpStartPhotoInput');
+      if (_dpStartPhotoInput) {
+        _dpStartPhotoInput.onchange = (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            window._dpStartPhotoData = reader.result;
+            const preview = document.getElementById('dpStartPhotoPreview');
+            const wrap    = document.getElementById('dpStartPhotoPreviewWrap');
+            if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
+            const lbl = document.getElementById('dpStartPhotoBtnLabel');
+            if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
+          };
+          reader.readAsDataURL(file);
+        };
+      }
       document.getElementById('dpStartOk').onclick = async function() {
         const hours = parseFloat(document.getElementById('dpStartOdo').value);
         if (isNaN(hours)) return showNotification('أدخل عداد الساعات', 'error');
+        if (!window._dpStartPhotoData) return showNotification('📷 صورة بدء الوردية مطلوبة — ارفع صورة قبل البدء', 'error');
         const btn = document.getElementById('dpStartOk');
         btn.disabled = true; btn.textContent = '⏳ جاري...';
         try {
@@ -10048,8 +10102,10 @@ async function renderDriverSinglePage() {
             branch:         _opData.branch || '',
             notes:          '',
             start_location: _startLoc,
+            start_photo:    window._dpStartPhotoData || '',
           });
           showNotification('✅ بدأت الوردية!', 'success');
+          window._dpStartPhotoData = '';
           closeModal(); await renderDriverSinglePage();
         } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '▶ ابدأ الوردية'; }
       };
@@ -11188,16 +11244,50 @@ function toggleFuelSourceFields() {
   const v = document.getElementById('wFuelSource')?.value;
   const company = document.getElementById('wFuelCompanyFields');
   const external = document.getElementById('wFuelExternalFields');
+  const platform = document.getElementById('wFuelPlatformFields');
   if (company) company.style.display = (v === 'CompanyStation') ? 'block' : 'none';
   if (external) external.style.display = (v === 'ExternalStation') ? 'block' : 'none';
+  if (platform) platform.style.display = (v === 'SupplyPlatform') ? 'block' : 'none';
+  if (v === 'SupplyPlatform') updateFuelPlatformProducts();
 }
 function togglePartsSourceFields() {
   const v = document.getElementById('wPartsSource')?.value;
   const inv = document.getElementById('wPartsInventoryFields');
   const direct = document.getElementById('wPartsDirectFields');
+  const platform = document.getElementById('wPartsPlatformFields');
   if (inv) inv.style.display = (v === 'Inventory') ? 'block' : 'none';
   if (direct) direct.style.display = (v === 'DirectPurchase') ? 'block' : 'none';
+  if (platform) platform.style.display = (v === 'SupplyPlatform') ? 'block' : 'none';
   if (v === 'Inventory') updatePartsCategoryProducts();
+  if (v === 'SupplyPlatform') updatePartsPlatformProducts();
+}
+
+// ── منصات الإمداد: تحديث قائمة الأصناف المتاحة داخل المنصة المختارة (وقود) ──
+function updateFuelPlatformProducts() {
+  const platformId = document.getElementById('wFuelPlatform')?.value;
+  const productSel = document.getElementById('wFuelPlatformProduct');
+  if (!productSel) return;
+  const platforms = window._supplyPlatforms || [];
+  const platform = platforms.find(p => String(p.id) === String(platformId));
+  const stock = platform ? (platform.stock || []) : [];
+  if (!platformId) { productSel.innerHTML = '<option value="">-- اختر المنصة أولاً --</option>'; return; }
+  if (!stock.length) { productSel.innerHTML = '<option value="">-- لا يوجد رصيد وقود بهذه المنصة --</option>'; return; }
+  productSel.innerHTML = '<option value="">-- اختر نوع الوقود --</option>' +
+    stock.map(s => `<option value="${s.product_id}">${s.name} (متاح: ${s.quantity} ${s.unit||''})</option>`).join('');
+}
+
+// ── منصات الإمداد: تحديث قائمة الأصناف المتاحة داخل المنصة المختارة (قطع غيار) ──
+function updatePartsPlatformProducts() {
+  const platformId = document.getElementById('wPartsPlatform')?.value;
+  const productSel = document.getElementById('wPartsPlatformProduct');
+  if (!productSel) return;
+  const platforms = window._supplyPlatforms || [];
+  const platform = platforms.find(p => String(p.id) === String(platformId));
+  const stock = platform ? (platform.stock || []) : [];
+  if (!platformId) { productSel.innerHTML = '<option value="">-- اختر المنصة أولاً --</option>'; return; }
+  if (!stock.length) { productSel.innerHTML = '<option value="">-- لا يوجد رصيد بهذه المنصة --</option>'; return; }
+  productSel.innerHTML = '<option value="">-- اختر الصنف --</option>' +
+    stock.map(s => `<option value="${s.product_id}">${s.name} (متاح: ${s.quantity} ${s.unit||''})</option>`).join('');
 }
 
 // ── Virtual Inventory: تحديث قائمة "المنتج" بناءً على "الفئة" المختارة ──
@@ -11226,6 +11316,10 @@ async function dpWsModal(type) {
   if (type !== 'fuel' && !type.startsWith('fuel_') && type !== 'other' && !window._invProducts) {
     try { window._invProducts = await apiCall('/inventory/products'); } catch(e) { window._invProducts = []; }
     try { window._invCategories = await apiCall('/inventory/categories'); } catch(e) { window._invCategories = []; }
+  }
+  // ── منصات الإمداد: تحميل قائمة المنصات ورصيدها (تُستخدم كمصدر للوقود أو القطع) ──
+  if (!window._supplyPlatforms) {
+    try { window._supplyPlatforms = await apiCall('/supply-platforms'); } catch(e) { window._supplyPlatforms = []; }
   }
 
   // ── Operator: نجيب بيانات المعدة من _opData أو active shift ──
@@ -11353,11 +11447,17 @@ async function dpWsModal(type) {
   // ── Virtual Inventory: مصدر الوقود (لكل أنواع التفويل) ──
   let fuelSourceBlock = '';
   if (isFuelType) {
+    const platformOpts = (window._supplyPlatforms || []).filter(p=>p.status==='active').map(p =>
+      '<option value="' + p.id + '">' + p.code + (p.plate?(' — '+p.plate):'') + '</option>').join('');
     fuelSourceBlock =
       '<div class="form-group"><label>⛽ مصدر الوقود <span class="req">*</span></label>' +
       '<select id="wFuelSource" onchange="toggleFuelSourceFields()"><option value="">-- اختر --</option>' +
-      '<option value="CompanyStation">🏢 محطة الشركة</option><option value="ExternalStation">🏪 محطة خارجية</option></select></div>' +
+      '<option value="CompanyStation">🏢 محطة الشركة</option><option value="ExternalStation">🏪 محطة خارجية</option>' +
+      '<option value="SupplyPlatform">🚛 منصة إمداد (تانك متحرك)</option></select></div>' +
       '<div id="wFuelCompanyFields" style="display:none"></div>' +
+      '<div id="wFuelPlatformFields" style="display:none">' +
+      '<div class="form-group"><label>المنصة <span class="req">*</span></label><select id="wFuelPlatform" onchange="updateFuelPlatformProducts()"><option value="">-- اختر المنصة --</option>' + platformOpts + '</select></div>' +
+      '<div class="form-group"><label>نوع الوقود <span class="req">*</span></label><select id="wFuelPlatformProduct"><option value="">-- اختر المنصة أولاً --</option></select></div></div>' +
       '<div id="wFuelExternalFields" style="display:none">' +
       '<div class="form-group"><label>📷 صورة الفاتورة (اختياري)</label>' +
       '<div id="wInvoicePhotoPreviewWrap" style="display:none;margin-bottom:.5rem"><img id="wInvoicePhotoPreview" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)"></div>' +
@@ -11370,14 +11470,20 @@ async function dpWsModal(type) {
   if (!isFuelType && type !== 'other') {
     const invCategoriesOpts = (window._invCategories || []).map(c =>
       '<option value="' + c.id + '">' + c.name + '</option>').join('');
+    const platformOpts2 = (window._supplyPlatforms || []).filter(p=>p.status==='active').map(p =>
+      '<option value="' + p.id + '">' + p.code + (p.plate?(' — '+p.plate):'') + '</option>').join('');
     partsSourceBlock =
       '<div class="form-group"><label>📦 مصدر القطعة <span class="req">*</span></label>' +
       '<select id="wPartsSource" onchange="togglePartsSourceFields()"><option value="">-- اختر --</option>' +
       '<option value="Inventory">📦 من مخزون الشركة</option>' +
-      '<option value="DirectPurchase">🛒 شراء مباشر من الخارج</option></select></div>' +
+      '<option value="DirectPurchase">🛒 شراء مباشر من الخارج</option>' +
+      '<option value="SupplyPlatform">🚛 منصة إمداد (تانك متحرك)</option></select></div>' +
       '<div id="wPartsInventoryFields" style="display:none">' +
       '<div class="form-group"><label>الفئة <span class="req">*</span></label><select id="wPartsCategory" onchange="updatePartsCategoryProducts()"><option value="">-- اختر الفئة --</option>' + invCategoriesOpts + '</select></div>' +
       '<div class="form-group"><label>المنتج <span class="req">*</span></label><select id="wInvProduct"><option value="">-- اختر الفئة أولاً --</option></select></div></div>' +
+      '<div id="wPartsPlatformFields" style="display:none">' +
+      '<div class="form-group"><label>المنصة <span class="req">*</span></label><select id="wPartsPlatform" onchange="updatePartsPlatformProducts()"><option value="">-- اختر المنصة --</option>' + platformOpts2 + '</select></div>' +
+      '<div class="form-group"><label>الصنف <span class="req">*</span></label><select id="wPartsPlatformProduct"><option value="">-- اختر المنصة أولاً --</option></select></div></div>' +
       '<div id="wPartsDirectFields" style="display:none">' +
       '<div class="form-group"><label>المورد أو المحل <span class="req">*</span></label><input type="text" id="wDirectSupplier" placeholder="اسم المحل/المورد"></div>' +
       '<div class="form-group"><label>التكلفة <span class="req">*</span></label><input type="number" id="wDirectCost" placeholder="0.00" step="0.01" min="0"></div>' +
@@ -11451,25 +11557,35 @@ async function dpWsModal(type) {
 
     // ── Virtual Inventory: مصدر الوقود (إلزامي للتفويل) ──
     const isFuelSubmit = selWsType.startsWith('fuel_');
-    let fuelSource = '', stationName = '', pumpNumber = '';
+    let fuelSource = '', stationName = '', pumpNumber = '', fuelPlatformId = null;
     if (isFuelSubmit) {
       fuelSource = document.getElementById('wFuelSource')?.value || '';
-      if (!fuelSource) return showNotification('اختر مصدر الوقود: محطة الشركة أو محطة خارجية', 'error');
+      if (!fuelSource) return showNotification('اختر مصدر الوقود: محطة الشركة أو محطة خارجية أو منصة إمداد', 'error');
       if (fuelSource === 'ExternalStation') {
         price = 0; // تحدد القيمة لاحقاً من الإدارة
+      } else if (fuelSource === 'SupplyPlatform') {
+        fuelPlatformId = parseInt(document.getElementById('wFuelPlatform')?.value) || null;
+        if (!fuelPlatformId) return showNotification('اختر منصة الإمداد', 'error');
+        window._wsFuelPlatformProductId = parseInt(document.getElementById('wFuelPlatformProduct')?.value) || null;
+        if (!window._wsFuelPlatformProductId) return showNotification('اختر نوع الوقود من رصيد المنصة', 'error');
       } else {
         // محطة الشركة — لا حاجة لإدخال إضافي
       }
     }
 
     // ── Virtual Inventory: مصدر القطعة (إلزامي للصيانة، إلا "أخرى") ──
-    let partsSource = '', invProductId = null, directSupplier = '', directCost = null;
+    let partsSource = '', invProductId = null, directSupplier = '', directCost = null, partsPlatformId = null;
     if (!isFuelSubmit && type !== 'other') {
       partsSource = document.getElementById('wPartsSource')?.value || '';
       if (!partsSource) return showNotification('اختر مصدر القطعة', 'error');
       if (partsSource === 'Inventory') {
         invProductId = parseInt(document.getElementById('wInvProduct')?.value) || null;
         if (!invProductId) return showNotification('اختر المنتج من المخزون', 'error');
+      } else if (partsSource === 'SupplyPlatform') {
+        partsPlatformId = parseInt(document.getElementById('wPartsPlatform')?.value) || null;
+        if (!partsPlatformId) return showNotification('اختر منصة الإمداد', 'error');
+        invProductId = parseInt(document.getElementById('wPartsPlatformProduct')?.value) || null;
+        if (!invProductId) return showNotification('اختر الصنف من رصيد المنصة', 'error');
       } else if (partsSource === 'DirectPurchase') {
         directSupplier = document.getElementById('wDirectSupplier')?.value?.trim() || '';
         directCost = parseFloat(document.getElementById('wDirectCost')?.value) || null;
@@ -11499,8 +11615,9 @@ async function dpWsModal(type) {
       odometer_photo: window._wsOdoPhotoData || '',
       invoice_photo: window._wsInvoicePhotoData || '',
       fuel_source: fuelSource, station_name: stationName, pump_number: pumpNumber,
-      parts_source: partsSource, inventory_product_id: invProductId,
+      parts_source: partsSource, inventory_product_id: fuelSource === 'SupplyPlatform' ? window._wsFuelPlatformProductId : invProductId,
       direct_purchase_supplier: directSupplier, direct_purchase_cost: directCost,
+      platform_id: fuelSource === 'SupplyPlatform' ? fuelPlatformId : (partsSource === 'SupplyPlatform' ? partsPlatformId : null),
       location: ''
     };
 
@@ -16339,9 +16456,141 @@ function renderEquipmentMgmtOverview() {
         <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">سجل التشغيل</div>
         <div style="font-size:.83rem;color:#64748b">سجل ورديات المشغلين والساعات</div>
       </div>
+      <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
+           onmouseover="this.style.borderColor='#1e3a5f'" onmouseout="this.style.borderColor='transparent'"
+           onclick="navigateTo('equipment-log')">
+        <div style="font-size:2.5rem;margin-bottom:.75rem">📊</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">سركي المعدات</div>
+        <div style="font-size:.83rem;color:#64748b">عدد الورديات، ساعات التشغيل، المشغلين، الإنتاجية</div>
+      </div>
+      <div class="card" style="padding:1.5rem;cursor:pointer;transition:.2s;border:2px solid transparent"
+           onmouseover="this.style.borderColor='#dc2626'" onmouseout="this.style.borderColor='transparent'"
+           onclick="navigateTo('equipment-unused')">
+        <div style="font-size:2.5rem;margin-bottom:.75rem">🛑</div>
+        <div style="font-size:1.1rem;font-weight:800;color:#1e3a5f;margin-bottom:.35rem">معدات غير مستخدمة</div>
+        <div style="font-size:.83rem;color:#64748b">المعدات المتوقفة يوم أو أكثر</div>
+      </div>
     </div>
   `;
 }
+
+// EQUIPMENT LOG — سركي المعدات (ورديات / ساعات / مشغلين / إنتاجية)
+// ══════════════════════════════════════════════════════════════════
+async function renderEquipmentLog() {
+  const el = document.getElementById('pageContent');
+  if (!el) return;
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">' +
+      '<div>' +
+        '<h2 style="margin:0;font-size:1.35rem;font-weight:900;color:#0f172a">📊 سركي المعدات</h2>' +
+        '<p style="margin:.2rem 0 0;font-size:.82rem;color:#64748b">عدد الورديات، ساعات التشغيل الفعلية، أسماء المشغلين، ومعدل الإنتاجية لكل معدة</p>' +
+      '</div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="renderEquipmentLog()">🔄 تحديث</button>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div class="srch-bar">' +
+        '<input type="text" id="eqLogSearch" placeholder="🔍 اسم المعدة / الكود..." style="flex:2;min-width:200px" ' +
+          'oninput="clearTimeout(window._eqLogDeb);window._eqLogDeb=setTimeout(loadEquipmentLog,320)">' +
+      '</div>' +
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">' +
+        '<thead><tr style="background:var(--tbl-th-bg)">' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">#</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المعدة</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الكود</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الفرع</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">عدد الورديات</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">ساعات التشغيل الفعلية</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المشغلون</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الإنتاجية (ساعة/وردية)</th>' +
+        '</tr></thead>' +
+        '<tbody id="eqLogTableBody"><tr><td colspan="8" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
+      '</table></div>' +
+    '</div>';
+  await loadEquipmentLog();
+}
+
+async function loadEquipmentLog() {
+  const tbody = document.getElementById('eqLogTableBody');
+  if (!tbody) return;
+  const search = document.getElementById('eqLogSearch')?.value || '';
+  let url = '/equipment/log';
+  if (search) url += '?search=' + encodeURIComponent(search);
+  try {
+    const data = await apiCall(url);
+    const rows = data.equipment_log || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:3rem;color:#94a3b8">لا توجد بيانات</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r, i) => `
+      <tr>
+        <td style="padding:.6rem 1rem">${i + 1}</td>
+        <td style="padding:.6rem 1rem;font-weight:700">${r.equipment_name || '—'}</td>
+        <td style="padding:.6rem 1rem;font-family:monospace">${r.car_code || '—'}</td>
+        <td style="padding:.6rem 1rem">${r.branch || '—'}</td>
+        <td style="padding:.6rem 1rem;text-align:center;font-weight:700">${r.shift_count}</td>
+        <td style="padding:.6rem 1rem;text-align:center;font-weight:700;color:#2563eb">${r.total_hours}</td>
+        <td style="padding:.6rem 1rem">${(r.operators || []).join('، ') || '—'}</td>
+        <td style="padding:.6rem 1rem;text-align:center;font-weight:700;color:#16a34a">${r.productivity}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:3rem;color:#dc2626">' + (e.message || 'خطأ في تحميل البيانات') + '</td></tr>';
+  }
+}
+
+
+// EQUIPMENT UNUSED — معدات غير مستخدمة (يوم أو أكثر بدون تشغيل)
+// ══════════════════════════════════════════════════════════════════
+async function renderEquipmentUnused() {
+  const el = document.getElementById('pageContent');
+  if (!el) return;
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">' +
+      '<div>' +
+        '<h2 style="margin:0;font-size:1.35rem;font-weight:900;color:#0f172a">🛑 معدات غير مستخدمة</h2>' +
+        '<p style="margin:.2rem 0 0;font-size:.82rem;color:#64748b">المعدات النشطة اللي مرّ عليها يوم أو أكثر من غير تشغيل</p>' +
+      '</div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="renderEquipmentUnused()">🔄 تحديث</button>' +
+    '</div>' +
+    '<div class="card">' +
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">' +
+        '<thead><tr style="background:var(--tbl-th-bg)">' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">#</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المعدة</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الكود</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الفرع</th>' +
+          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">آخر استخدام</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">عدد أيام التوقف</th>' +
+        '</tr></thead>' +
+        '<tbody id="eqUnusedTableBody"><tr><td colspan="6" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
+      '</table></div>' +
+    '</div>';
+  try {
+    const data = await apiCall('/equipment/unused');
+    const rows = data.unused_equipment || [];
+    const tbody = document.getElementById('eqUnusedTableBody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:3rem;color:#16a34a">✅ كل المعدات النشطة تعمل بانتظام</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r, i) => `
+      <tr>
+        <td style="padding:.6rem 1rem">${i + 1}</td>
+        <td style="padding:.6rem 1rem;font-weight:700">${r.equipment_name || '—'}</td>
+        <td style="padding:.6rem 1rem;font-family:monospace">${r.car_code || '—'}</td>
+        <td style="padding:.6rem 1rem">${r.branch || '—'}</td>
+        <td style="padding:.6rem 1rem">${r.last_used_at ? r.last_used_at.slice(0,16).replace('T',' ') : 'لم تُستخدم من قبل'}</td>
+        <td style="padding:.6rem 1rem;text-align:center;font-weight:700;color:#dc2626">${r.idle_days !== null && r.idle_days !== undefined ? r.idle_days : '—'}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    const tbody = document.getElementById('eqUnusedTableBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:3rem;color:#dc2626">' + (e.message || 'خطأ في تحميل البيانات') + '</td></tr>';
+  }
+}
+
 
 // EQUIPMENT OPERATORS — مشغلو المعدات
 // ══════════════════════════════════════════════════════════════════
@@ -19331,6 +19580,122 @@ async function renderInventorySuppliers() {
   });
 }
 
+// ── منصات الإمداد (مخازن متحركة: تانك سولار/عربة) ──
+async function renderSupplyPlatforms() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const [platforms, products] = await Promise.all([
+    apiCall('/supply-platforms').catch(()=>[]),
+    apiCall('/inventory/products').catch(()=>[]),
+  ]);
+  window._supplyPlatforms = platforms; window._invProducts = products;
+
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🚛 منصات الإمداد (مخازن متحركة)</div>
+        <button class="btn btn-primary btn-sm" onclick="openSupplyPlatformModal(null)">➕ إضافة منصة</button>
+      </div>
+      <div style="padding:0 1.2rem .5rem;color:var(--text-3);font-size:.8rem">
+        كل منصة (عربة/تانك متحرك) بتحمل رصيد وقود و/أو قطع غيار خاص بيها، بيتزود من المخزن الرئيسي (تعبئة)، وبيتسحب منه عند التفويل أو صرف قطعة.
+      </div>
+      <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
+        <table style="width:100%"><thead><tr>
+          <th>الكود</th><th>رقم العربية</th><th>السائق</th><th>المدير المسؤول</th><th>الرخصة</th><th>الحالة</th><th>الرصيد الحالي</th><th></th>
+        </tr></thead><tbody id="platformTbody"></tbody></table>
+      </div>
+    </div>`;
+  renderSupplyPlatformRows();
+}
+
+function renderSupplyPlatformRows() {
+  const rows = window._supplyPlatforms || [];
+  document.getElementById('platformTbody').innerHTML = rows.length ? rows.map(p => `
+    <tr>
+      <td><strong>${p.code}</strong></td><td>${p.plate||'—'}</td><td>${p.driver_name||'—'}</td>
+      <td>${p.manager_name||'—'}</td><td>${p.license_number||'—'}</td>
+      <td>${p.status==='active' ? '<span style="color:#16a34a">🟢 نشطة</span>' : '<span style="color:#dc2626">🔴 متوقفة</span>'}</td>
+      <td style="font-size:.8rem">${
+        (p.stock&&p.stock.length) ? p.stock.map(s=>`${s.name}: <strong>${s.quantity}</strong> ${s.unit||''}`).join('<br>') : '<span style="color:var(--text-3)">فارغة</span>'
+      }</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="openSupplyPlatformFillModal(${p.id})">⛽ تعبئة</button>
+        <button class="btn btn-ghost btn-sm" onclick='openSupplyPlatformModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteSupplyPlatform(${p.id})" style="color:#dc2626">🗑️</button>
+      </td>
+    </tr>`).join('') : `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد منصات إمداد بعد</p></div></td></tr>`;
+}
+
+function openSupplyPlatformModal(p) {
+  openModal(`
+    <div class="modal-header"><div class="modal-title">${p?'✏️ تعديل منصة إمداد':'➕ إضافة منصة إمداد'}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>كود المنصة <span class="req">*</span></label><input type="text" id="spCode" value="${p?.code||''}" placeholder="مثال: SP-01"></div>
+    <div class="form-group"><label>رقم العربية</label><input type="text" id="spPlate" value="${p?.plate||''}"></div>
+    <div class="form-group"><label>اسم السائق</label><input type="text" id="spDriver" value="${p?.driver_name||''}"></div>
+    <div class="form-group"><label>اسم المدير المسؤول</label><input type="text" id="spManager" value="${p?.manager_name||''}"></div>
+    <div class="form-group"><label>رقم الرخصة</label><input type="text" id="spLicense" value="${p?.license_number||''}"></div>
+    <div class="form-group"><label>الحالة</label><select id="spStatus">
+      <option value="active" ${(!p||p.status==='active')?'selected':''}>🟢 نشطة</option>
+      <option value="inactive" ${p?.status==='inactive'?'selected':''}>🔴 متوقفة</option>
+    </select></div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="spNotes">${p?.notes||''}</textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="spSaveBtn">💾 حفظ</button>
+    </div>`);
+  document.getElementById('spSaveBtn').onclick = async () => {
+    const code = document.getElementById('spCode').value.trim();
+    if (!code) return showNotification('كود المنصة مطلوب', 'error');
+    const body = {
+      code, plate: document.getElementById('spPlate').value.trim(),
+      driver_name: document.getElementById('spDriver').value.trim(),
+      manager_name: document.getElementById('spManager').value.trim(),
+      license_number: document.getElementById('spLicense').value.trim(),
+      status: document.getElementById('spStatus').value,
+      notes: document.getElementById('spNotes').value.trim(),
+    };
+    try {
+      if (p) await apiCall(`/supply-platforms/${p.id}`, 'PUT', body);
+      else await apiCall('/supply-platforms', 'POST', body);
+      showNotification('✅ تم الحفظ', 'success'); closeModal(); renderSupplyPlatforms();
+    } catch(e) { showNotification(e.message, 'error'); }
+  };
+}
+
+async function deleteSupplyPlatform(id) {
+  if (!confirm('تأكيد حذف المنصة؟ سيتم حذف رصيدها وحركاتها أيضاً')) return;
+  try { await apiCall(`/supply-platforms/${id}`, 'DELETE'); showNotification('✅ تم الحذف', 'success'); renderSupplyPlatforms(); }
+  catch(e) { showNotification(e.message, 'error'); }
+}
+
+function openSupplyPlatformFillModal(platformId) {
+  const products = window._invProducts || [];
+  openModal(`
+    <div class="modal-header"><div class="modal-title">⛽ تعبئة منصة إمداد</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label>الصنف (وقود أو قطعة) <span class="req">*</span></label>
+      <select id="spfProduct"><option value="">-- اختر --</option>
+        ${products.map(pr=>`<option value="${pr.id}">${pr.name} (متاح بالمخزن الرئيسي: ${pr.quantity} ${pr.unit||''})</option>`).join('')}
+      </select></div>
+    <div class="form-group"><label>الكمية <span class="req">*</span></label><input type="number" id="spfQty" step="0.01" min="0" placeholder="0"></div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="spfNotes"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="spfSaveBtn">⛽ تعبئة</button>
+    </div>`);
+  document.getElementById('spfSaveBtn').onclick = async () => {
+    const product_id = parseInt(document.getElementById('spfProduct').value) || null;
+    const quantity = parseFloat(document.getElementById('spfQty').value) || 0;
+    if (!product_id) return showNotification('اختر الصنف', 'error');
+    if (!quantity || quantity <= 0) return showNotification('أدخل الكمية', 'error');
+    try {
+      await apiCall(`/supply-platforms/${platformId}/fill`, 'POST', {
+        product_id, quantity, notes: document.getElementById('spfNotes').value.trim()
+      });
+      showNotification('✅ تمت التعبئة', 'success'); closeModal(); renderSupplyPlatforms();
+    } catch(e) { showNotification(e.message, 'error'); }
+  };
+}
+
 // ── محرك CRUD عام بسيط (للفئات والموردين) ──
 async function renderInventorySimpleCrud(cfg) {
   const c = document.getElementById('pageContent');
@@ -22115,7 +22480,7 @@ function openOpsReviewDetail(id) {
   const isFuel = r.type.startsWith('fuel_');
   const wt = WT[r.type] || {icon:'🔧', label:r.type};
   const st = r.approval_status || 'pending';
-  const FUEL_SRC_LABELS = {CompanyStation:'⛽ محطة الشركة', ExternalStation:'🏪 محطة خارجية'};
+  const FUEL_SRC_LABELS = {CompanyStation:'⛽ محطة الشركة', ExternalStation:'🏪 محطة خارجية', SupplyPlatform:'🚛 منصة إمداد'};
   const PARTS_SRC_LABELS = {Inventory:'📦 من مخزون الشركة', DirectPurchase:'🛒 شراء مباشر من الخارج', InventoryPurchase:'📥 شراء وإضافة للمخزن'};
   const STATUS_BADGE = {pending:'⏳ معلق', approved:'✅ معتمد', rejected:'❌ مرفوض'};
 
@@ -22192,7 +22557,7 @@ function openOpsReviewDetail(id) {
   const summaryCardsHtml = isFuel ? `
     <div class="opsr-card"><div class="opsr-card-icon">🚚</div><div class="opsr-card-label">المركبة</div><div class="opsr-card-value">${r.vehicle_plate||'—'}</div></div>
     <div class="opsr-card"><div class="opsr-card-icon">👨</div><div class="opsr-card-label">السائق</div><div class="opsr-card-value">${r.driver_name||'—'}</div></div>
-    <div class="opsr-card"><div class="opsr-card-icon">⛽</div><div class="opsr-card-label">مصدر الوقود</div><div class="opsr-card-value">${FUEL_SRC_LABELS[r.fuel_source]||'—'}${r.station_name?' ('+r.station_name+')':''}</div></div>
+    <div class="opsr-card"><div class="opsr-card-icon">⛽</div><div class="opsr-card-label">مصدر الوقود</div><div class="opsr-card-value">${FUEL_SRC_LABELS[r.fuel_source]||'—'}${r.station_name?' ('+r.station_name+')':''}${r.fuel_source==='SupplyPlatform'?(' — '+(r.platform_code||'')+(r.platform_product_name?(' / '+r.platform_product_name):'')):''}</div></div>
     <div class="opsr-card"><div class="opsr-card-icon">📊</div><div class="opsr-card-label">قراءة العداد</div><div class="opsr-card-value">${r.odometer_reading??'—'}</div></div>
     ${qtyCardHtml}
     ${priceCardHtml}

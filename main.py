@@ -931,6 +931,46 @@ def _safe_add_columns(c):
         FOREIGN KEY(quote_id) REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
     )""")
 
+    # ── منصات الإمداد (مخازن متحركة — تانك سولار على عربة، ممكن يحمل وقود أو قطع غيار) ──
+    c.execute("""CREATE TABLE IF NOT EXISTS supply_platforms(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL UNIQUE,
+        plate TEXT DEFAULT '',
+        driver_name TEXT DEFAULT '',
+        manager_name TEXT DEFAULT '',
+        license_number TEXT DEFAULT '',
+        status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive')),
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+    )""")
+    # رصيد كل منصة من كل منتج (سولار/بنزين/قطع غيار...) — مخزون فرعي متحرك
+    c.execute("""CREATE TABLE IF NOT EXISTS supply_platform_stock(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity REAL DEFAULT 0,
+        updated_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(platform_id) REFERENCES supply_platforms(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES inventory_products(id) ON DELETE CASCADE,
+        UNIQUE(platform_id, product_id)
+    )""")
+    # حركات كل منصة: تعبئة (fill) من المخزن الرئيسي، أو سحب (draw) عند التفويل/الصرف
+    c.execute("""CREATE TABLE IF NOT EXISTS supply_platform_movements(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        movement_type TEXT NOT NULL CHECK(movement_type IN ('fill','draw','adjust')),
+        quantity REAL NOT NULL,
+        ref_type TEXT DEFAULT '',
+        ref_id INTEGER,
+        username TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY(platform_id) REFERENCES supply_platforms(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES inventory_products(id) ON DELETE CASCADE
+    )""")
+
     for idx_sql in [
         "CREATE INDEX IF NOT EXISTS idx_inv_products_cat ON inventory_products(category_id)",
         "CREATE INDEX IF NOT EXISTS idx_inv_products_sup ON inventory_products(supplier_id)",
@@ -946,6 +986,10 @@ def _safe_add_columns(c):
         "CREATE INDEX IF NOT EXISTS idx_extop_quote ON workshop_external_ops(quote_id)",
         "CREATE INDEX IF NOT EXISTS idx_voucher_car ON workshop_vouchers(car_id)",
         "CREATE INDEX IF NOT EXISTS idx_voucher_quote ON workshop_vouchers(quote_id)",
+        "CREATE INDEX IF NOT EXISTS idx_platform_stock_platform ON supply_platform_stock(platform_id)",
+        "CREATE INDEX IF NOT EXISTS idx_platform_stock_product ON supply_platform_stock(product_id)",
+        "CREATE INDEX IF NOT EXISTS idx_platform_mv_platform ON supply_platform_movements(platform_id)",
+        "CREATE INDEX IF NOT EXISTS idx_platform_mv_product ON supply_platform_movements(product_id)",
     ]:
         try: c.execute(idx_sql)
         except Exception: pass
@@ -958,7 +1002,7 @@ def _safe_add_columns(c):
     # تصنيفات أساسية افتراضية (مرة واحدة فقط لو الجدول فاضي)
     try:
         if c.execute("SELECT COUNT(*) FROM inventory_categories").fetchone()[0] == 0:
-            for cat_name in ["الإطارات","البطاريات","العمرات","الفرامل","الزيوت والفلاتر","الكهرباء","التبريد","العفشة","أخرى"]:
+            for cat_name in ["الوقود","الإطارات","البطاريات","العمرات","الفرامل","الزيوت والفلاتر","الكهرباء","التبريد","العفشة","أخرى"]:
                 c.execute("INSERT INTO inventory_categories(name) VALUES(?)", (cat_name,))
     except Exception:
         pass
@@ -1595,15 +1639,17 @@ class WorkshopCreate(BaseModel):
     item_spec:     Optional[str]   = ""    # المقاس
     receiver_name: Optional[str]   = ""    # اسم المتسلم
     # ── Virtual Inventory: مصدر الوقود (للتفويل) ──
-    fuel_source:   Optional[str]   = ""    # CompanyStation | ExternalStation
+    fuel_source:   Optional[str]   = ""    # CompanyStation | ExternalStation | SupplyPlatform
     station_name:  Optional[str]   = ""    # اسم المحطة الخارجية
     pump_number:   Optional[str]   = ""    # رقم المضخة (محطة الشركة)
     invoice_photo: Optional[str]   = ""    # base64 صورة الفاتورة
     # ── Virtual Inventory: مصدر القطعة (للصيانة) ──
-    parts_source:  Optional[str]   = ""    # Inventory | DirectPurchase
-    inventory_product_id: Optional[int] = None   # المنتج المصروف من المخزن
+    parts_source:  Optional[str]   = ""    # Inventory | DirectPurchase | SupplyPlatform
+    inventory_product_id: Optional[int] = None   # المنتج المصروف من المخزن أو من منصة الإمداد
     direct_purchase_supplier: Optional[str] = ""  # المورد/المحل (شراء مباشر)
     direct_purchase_cost: Optional[float] = None  # تكلفة الشراء المباشر
+    # ── منصات الإمداد: المخزن المتحرك اللي تم السحب منه (وقود أو قطعة) ──
+    platform_id: Optional[int] = None
 
 
 class EmergencyCreate(BaseModel):
@@ -3206,17 +3252,27 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
 
     # ── Virtual Inventory: مصدر الوقود (إلزامي لكل أنواع التفويل) ──
     if IS_FUEL_TYPE:
-        if rec.fuel_source not in ("CompanyStation", "ExternalStation"):
-            raise HTTPException(400, "اختر مصدر الوقود: محطة الشركة أو محطة خارجية")
+        if rec.fuel_source not in ("CompanyStation", "ExternalStation", "SupplyPlatform"):
+            raise HTTPException(400, "اختر مصدر الوقود: محطة الشركة أو محطة خارجية أو منصة إمداد")
+        if rec.fuel_source == "SupplyPlatform":
+            if not rec.platform_id:
+                raise HTTPException(400, "اختر منصة الإمداد")
+            if not rec.inventory_product_id:
+                raise HTTPException(400, "اختر نوع الوقود المسحوب من منصة الإمداد")
 
     # ── Virtual Inventory: مصدر القطعة (إلزامي لكل أنواع الصيانة، إلا "أخرى") ──
     if IS_PARTS_TYPE:
-        if rec.parts_source not in ("Inventory", "DirectPurchase"):
-            raise HTTPException(400, "اختر مصدر القطعة: من المخزن أو شراء مباشر من الخارج")
+        if rec.parts_source not in ("Inventory", "DirectPurchase", "SupplyPlatform"):
+            raise HTTPException(400, "اختر مصدر القطعة: من المخزن أو شراء مباشر من الخارج أو منصة إمداد")
         if rec.parts_source == "Inventory" and not rec.inventory_product_id:
             raise HTTPException(400, "اختر المنتج من المخزون")
         if rec.parts_source == "DirectPurchase" and not (rec.direct_purchase_supplier or "").strip():
             raise HTTPException(400, "اسم المورد أو المحل مطلوب للشراء المباشر")
+        if rec.parts_source == "SupplyPlatform":
+            if not rec.platform_id:
+                raise HTTPException(400, "اختر منصة الإمداد")
+            if not rec.inventory_product_id:
+                raise HTTPException(400, "اختر القطعة المسحوبة من منصة الإمداد")
 
     def _save_b64_image(b64_data, prefix):
         if not b64_data:
@@ -3311,6 +3367,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             ("price_edited_at", "TEXT DEFAULT ''"),
             ("quantity_edited_by", "TEXT DEFAULT ''"),
             ("quantity_edited_at", "TEXT DEFAULT ''"),
+            ("platform_id", "INTEGER"),
         ]
         _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
         for _wc, _wd in _ws_extra_cols:
@@ -3326,6 +3383,22 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             if (prow["quantity"] or 0) < qty:
                 raise HTTPException(400, f"الكمية المتاحة من «{prow['name']}» غير كافية (متاح {prow['quantity']})")
 
+        # ── منصات الإمداد: لو المصدر "منصة إمداد" (وقود أو قطعة) تأكد من توافر الكمية في تانك المنصة ──
+        if (IS_FUEL_TYPE and rec.fuel_source == "SupplyPlatform") or (IS_PARTS_TYPE and rec.parts_source == "SupplyPlatform"):
+            plat_row = c.execute("SELECT code, status FROM supply_platforms WHERE id=?", (rec.platform_id,)).fetchone()
+            if not plat_row:
+                raise HTTPException(404, "منصة الإمداد غير موجودة")
+            if plat_row["status"] != "active":
+                raise HTTPException(400, "منصة الإمداد غير نشطة")
+            pstock = c.execute("""SELECT s.quantity, p.name, p.unit FROM supply_platform_stock s
+                                   JOIN inventory_products p ON p.id = s.product_id
+                                   WHERE s.platform_id=? AND s.product_id=?""",
+                                (rec.platform_id, rec.inventory_product_id)).fetchone()
+            if not pstock or (pstock["quantity"] or 0) < qty:
+                avail = pstock["quantity"] if pstock else 0
+                pname = pstock["name"] if pstock else "الصنف"
+                raise HTTPException(400, f"الكمية المتاحة من «{pname}» في منصة الإمداد «{plat_row['code']}» غير كافية (متاح {avail})")
+
         # المشغل: driver_id يبقى NULL، نحفظ operator_id بشكل منفصل
         try:
             if cu["role"] == "operator":
@@ -3336,8 +3409,9 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
                               doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo,
                               fuel_source,station_name,pump_number,invoice_photo,
-                              parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status)
-                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')""",
+                              parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status,
+                              platform_id)
+                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)""",
                           (op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
                            rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                            rec.description or "", rec.tire_action or "", rec.location or "",
@@ -3345,15 +3419,17 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                            rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
                            odometer_photo_url,
                            rec.fuel_source or "", rec.station_name or "", rec.pump_number or "", invoice_photo_url,
-                           rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost))
+                           rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost,
+                           rec.platform_id))
             else:
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,is_operator,type,quantity,price,notes,created_at,
                               operation_type,vehicle_id,odometer_reading,description,tire_action,location,
                               doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo,
                               fuel_source,station_name,pump_number,invoice_photo,
-                              parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status)
-                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')""",
+                              parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status,
+                              platform_id)
+                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)""",
                       (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
                        rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                        rec.description or "", rec.tire_action or "", rec.location or "",
@@ -3361,7 +3437,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                        rec.item_name or "", rec.item_spec or "", rec.receiver_name or "",
                        odometer_photo_url,
                        rec.fuel_source or "", rec.station_name or "", rec.pump_number or "", invoice_photo_url,
-                       rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost))
+                       rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost,
+                       rec.platform_id))
             rid = c.lastrowid
         except Exception as _ws_err:
             log.error(f"[WORKSHOP] INSERT failed: {_ws_err}")
@@ -3374,6 +3451,15 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             c.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
                          VALUES(?,'out',?,'workshop',?,?,?,?)""",
                       (rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", now))
+
+        # ── منصات الإمداد: سحب الكمية من رصيد المنصة (وقود أو قطعة) وتسجيل حركة "سحب" ──
+        if (IS_FUEL_TYPE and rec.fuel_source == "SupplyPlatform") or (IS_PARTS_TYPE and rec.parts_source == "SupplyPlatform"):
+            c.execute("""UPDATE supply_platform_stock SET quantity = quantity - ?, updated_at=?
+                         WHERE platform_id=? AND product_id=?""",
+                      (qty, now, rec.platform_id, rec.inventory_product_id))
+            c.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
+                         VALUES(?,?,'draw',?,'workshop',?,?,?,?)""",
+                      (rec.platform_id, rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", now))
 
         vp = None
         if rec.vehicle_id:
@@ -3446,11 +3532,15 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
 async def get_workshops(cu: dict = Depends(get_user), branch: Optional[str] = None, month: Optional[str] = None):
     q = """SELECT w.*,
                   COALESCE(d.name, op.name) as driver_name,
-                  c.plate as vehicle_plate
+                  c.plate as vehicle_plate,
+                  sp.code as platform_code,
+                  ip.name as platform_product_name
            FROM workshop_records w
            LEFT JOIN drivers d ON w.driver_id=d.id AND (w.is_operator IS NULL OR w.is_operator=0)
            LEFT JOIN equipment_operators op ON w.operator_id=op.id
-           LEFT JOIN cars c ON w.vehicle_id=c.id"""
+           LEFT JOIN cars c ON w.vehicle_id=c.id
+           LEFT JOIN supply_platforms sp ON w.platform_id=sp.id
+           LEFT JOIN inventory_products ip ON w.inventory_product_id=ip.id"""
     with get_db() as conn:
         c = conn.cursor()
         branch = _effective_branch(cu, branch)
@@ -7798,6 +7888,134 @@ async def delete_equipment(eq_id: int, cu: dict = Depends(require_admin)):
     return {"message": "تم الحذف"}
 
 
+@app.get("/equipment/log")
+async def get_equipment_log(
+    branch:  str = Query(None),
+    eq_type: str = Query(None),
+    search:  str = Query(None),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """
+    سجل المعدات — لكل معدة: عدد الورديات، عدد ساعات التشغيل الفعلية،
+    أسماء المشغلين اللي شغّلوها، ومعدل الإنتاجية (متوسط ساعات العمل في الوردية).
+    """
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        eff_branch = _branch_filter(cu) or branch
+        q = "SELECT * FROM equipment WHERE 1=1"
+        params: list = []
+        if eff_branch:
+            q += " AND branch=?"; params.append(eff_branch)
+        if eq_type:
+            q += " AND equipment_type=?"; params.append(eq_type)
+        if search:
+            q += " AND (equipment_name LIKE ? OR car_code LIKE ?)"
+            s = f"%{search}%"; params += [s, s]
+        q += " ORDER BY branch, equipment_name"
+        equip_rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+
+        shift_rows = conn.execute("""
+            SELECT s.equipment_id, s.status, s.start_hours, s.end_hours, o.name AS operator_name
+            FROM operator_shifts s
+            LEFT JOIN equipment_operators o ON o.id = s.operator_id
+        """).fetchall()
+
+    by_equip: dict = {}
+    for r in shift_rows:
+        eqid = r["equipment_id"] or ""
+        if not eqid:
+            continue
+        agg = by_equip.setdefault(eqid, {"shift_count": 0, "total_hours": 0.0, "operators": set()})
+        agg["shift_count"] += 1
+        if r["operator_name"]:
+            agg["operators"].add(r["operator_name"])
+        if r["status"] == "ended" and r["end_hours"] is not None and r["start_hours"] is not None \
+           and r["end_hours"] > r["start_hours"]:
+            agg["total_hours"] += (r["end_hours"] - r["start_hours"])
+
+    log_rows = []
+    for e in equip_rows:
+        agg = by_equip.get(e["car_code"], {"shift_count": 0, "total_hours": 0.0, "operators": set()})
+        shift_count  = agg["shift_count"]
+        total_hours  = round(agg["total_hours"], 2)
+        productivity = round(total_hours / shift_count, 2) if shift_count else 0.0
+        log_rows.append({
+            "id":              e["id"],
+            "car_code":        e["car_code"],
+            "equipment_name":  e["equipment_name"],
+            "equipment_type":  e.get("equipment_type", ""),
+            "branch":          e.get("branch", ""),
+            "status":          e.get("status", ""),
+            "shift_count":     shift_count,
+            "total_hours":     total_hours,
+            "operators":       sorted(agg["operators"]),
+            "productivity":    productivity,   # متوسط ساعات التشغيل لكل وردية
+        })
+    return {"equipment_log": log_rows}
+
+
+@app.get("/equipment/unused")
+async def get_unused_equipment(
+    branch: str = Query(None),
+    min_idle_days: float = Query(1.0),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """
+    المعدات غير المستخدمة — المعدات اللي عدى عليها يوم (أو المدة المحددة) على الأقل
+    وهي مش شغالة (مفيش وردية نشطة، وآخر وردية انتهت من مدة أطول من الحد المسموح،
+    أو مفيش أي وردية لها أساساً).
+    """
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        eff_branch = _branch_filter(cu) or branch
+        q = "SELECT * FROM equipment WHERE status='active'"
+        params: list = []
+        if eff_branch:
+            q += " AND branch=?"; params.append(eff_branch)
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+
+        last_shifts = {}
+        for r in conn.execute("""
+            SELECT equipment_id, status, end_time, start_time
+            FROM operator_shifts
+            ORDER BY start_time DESC
+        """).fetchall():
+            eqid = r["equipment_id"] or ""
+            if eqid and eqid not in last_shifts:
+                last_shifts[eqid] = dict(r)
+
+    now = datetime.utcnow()
+    unused = []
+    for e in rows:
+        last = last_shifts.get(e["car_code"])
+        if last and last["status"] == "active":
+            continue  # شغالة دلوقتي
+        if last:
+            ref_time_str = last.get("end_time") or last.get("start_time")
+        else:
+            ref_time_str = e.get("created_at")
+        idle_days = None
+        if ref_time_str:
+            try:
+                ref_time = datetime.fromisoformat(ref_time_str.replace("Z", ""))
+                idle_days = round((now - ref_time).total_seconds() / 86400, 1)
+            except Exception:
+                idle_days = None
+        # لو مفيش أي تاريخ مرجعي، اعتبرها غير مستخدمة (لم تُستخدم إطلاقاً)
+        if idle_days is None or idle_days >= min_idle_days:
+            unused.append({
+                "id":             e["id"],
+                "car_code":       e["car_code"],
+                "equipment_name": e["equipment_name"],
+                "equipment_type": e.get("equipment_type", ""),
+                "branch":         e.get("branch", ""),
+                "last_used_at":   ref_time_str or None,
+                "idle_days":      idle_days,
+            })
+    unused.sort(key=lambda x: (x["idle_days"] is None, -(x["idle_days"] or 0)))
+    return {"unused_equipment": unused, "total": len(unused)}
+
+
 # ── Equipment Import ──
 @app.post("/equipment/import/preview")
 async def equipment_import_preview(
@@ -7978,6 +8196,11 @@ def _ensure_operator_tables(conn):
     except Exception: pass
     try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN fuel_type TEXT DEFAULT ''")
     except Exception: pass
+    # Migration: أضف صورة بدء الوردية (إلزامية عند البدء)
+    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN start_photo TEXT DEFAULT ''")
+    except Exception: pass
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_photo ON operator_shifts(start_photo)")
+    except Exception: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_op ON operator_shifts(operator_id)")
     except: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_status ON operator_shifts(status)")
@@ -8047,6 +8270,7 @@ class ShiftStart(BaseModel):
     branch:         str = ""
     notes:          str = ""
     start_location: str = ""
+    start_photo:    str = ""   # إلزامي — صورة المعدة/العداد عند بدء الوردية (base64)
 
 
 class ShiftEnd(BaseModel):
@@ -8556,19 +8780,47 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
         if body.fuel_liters and body.fuel_liters > 400:
             raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
+        # ── صورة بدء الوردية: إلزامية دائماً ──
+        if not (body.start_photo or "").strip():
+            raise HTTPException(400, "📷 صورة بدء الوردية مطلوبة — ارفع صورة قبل البدء")
+
+        def _save_shift_photo(b64_data, prefix):
+            if not b64_data:
+                return ""
+            import re as _re_sh
+            try:
+                _m = _re_sh.match(r"data:image/(\w+);base64,(.+)", b64_data, _re_sh.DOTALL)
+                _ext = _m.group(1) if _m else "jpg"
+                _b64data = _m.group(2) if _m else b64_data
+                _raw_bytes = base64.b64decode(_b64data)
+                if len(_raw_bytes) >= 2 and _raw_bytes[0] == 0xFF and _raw_bytes[1] == 0xD8: _ext = "jpg"
+                elif len(_raw_bytes) >= 4 and _raw_bytes[0] == 0x89 and _raw_bytes[1:4] == b"PNG": _ext = "png"
+                elif len(_raw_bytes) >= 3 and _raw_bytes[:3] == b"GIF": _ext = "gif"
+                elif len(_raw_bytes) >= 12 and _raw_bytes[:4] == b"RIFF" and _raw_bytes[8:12] == b"WEBP": _ext = "webp"
+                _fname = f"{prefix}_{body.operator_id or 0}_{uuid.uuid4().hex}.{_ext}"
+                (UPLOAD_DIR / _fname).write_bytes(_raw_bytes)
+                return f"/uploads/{_fname}"
+            except Exception as _photo_err:
+                log.error(f"[SHIFT] photo save failed ({prefix}): {_photo_err}")
+                raise HTTPException(400, "صورة غير صالحة")
+
+        start_photo_url = _save_shift_photo(body.start_photo, "shift_start")
+        if not start_photo_url:
+            raise HTTPException(400, "📷 صورة بدء الوردية مطلوبة — ارفع صورة قبل البدء")
+
         # اسحب نوع الملكية الحقيقي من جدول المعدات (مش من الـ body) — الملكية خاصية المعدة نفسها
         eq_row = conn.execute("SELECT ownership_type FROM equipment WHERE car_code=?", (body.equipment_id,)).fetchone()
         real_ownership = (eq_row["ownership_type"] if eq_row and eq_row["ownership_type"] else None) or body.ownership_type
         conn.execute("""INSERT INTO operator_shifts
             (operator_id,equipment_id,equipment_name,shift_type,start_time,
-             start_hours,fuel_liters,fuel_type,ownership_type,project,branch,notes,start_location,status)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active')""",
+             start_hours,fuel_liters,fuel_type,ownership_type,project,branch,notes,start_location,start_photo,status)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active')""",
             (body.operator_id, body.equipment_id, body.equipment_name, body.shift_type,
              datetime.utcnow().isoformat(), body.start_hours, body.fuel_liters,
              body.fuel_type, real_ownership,
-             body.project, body.branch, body.notes, body.start_location or ""))
+             body.project, body.branch, body.notes, body.start_location or "", start_photo_url))
         sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    return {"id": sid, "message": "بدأت الوردية"}
+    return {"id": sid, "message": "بدأت الوردية", "start_photo": start_photo_url}
 
 
 @app.post("/operators/shifts/{sid}/end")
@@ -9019,6 +9271,18 @@ class InventoryMovementCreate(BaseModel):
     product_id: int; movement_type: str  # in | out | return | adjust
     quantity: float; notes: Optional[str] = ""
 
+class SupplyPlatformCreate(BaseModel):
+    code: str; plate: Optional[str] = ""
+    driver_name: Optional[str] = ""; manager_name: Optional[str] = ""
+    license_number: Optional[str] = ""; status: Optional[str] = "active"
+    notes: Optional[str] = ""
+
+class SupplyPlatformFill(BaseModel):
+    product_id: int; quantity: float; notes: Optional[str] = ""
+
+class SupplyPlatformAdjust(BaseModel):
+    product_id: int; quantity: float; notes: Optional[str] = ""  # تعيين الكمية مباشرة
+
 class RepairQuoteCreate(BaseModel):
     quote_number: Optional[str] = ""; car_id: int; driver_id: Optional[int] = None
     quote_date: Optional[str] = ""; status: Optional[str] = "draft"
@@ -9197,6 +9461,124 @@ async def create_inventory_movement(body: InventoryMovementCreate, cu: dict = De
                               VALUES(?,?,?,'manual',?,?,?)""",
                             (body.product_id, body.movement_type, body.quantity, cu.get("username",""), body.notes or "", now))
         return {"id": cur.lastrowid}
+
+
+# ══════════════════════════════════════════════════════
+# منصات الإمداد — مخازن متحركة (تانك سولار/عربة تحمل وقود أو قطع غيار)
+# ══════════════════════════════════════════════════════
+@app.get("/supply-platforms")
+async def list_supply_platforms(cu: dict = Depends(get_user)):
+    with get_db() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT * FROM supply_platforms ORDER BY code").fetchall()]
+        for r in rows:
+            stock = conn.execute("""SELECT p.id product_id, p.name, p.unit, s.quantity
+                                     FROM supply_platform_stock s JOIN inventory_products p ON p.id=s.product_id
+                                     WHERE s.platform_id=? ORDER BY p.name""", (r["id"],)).fetchall()
+            r["stock"] = [dict(x) for x in stock]
+        return rows
+
+@app.post("/supply-platforms")
+async def create_supply_platform(body: SupplyPlatformCreate, cu: dict = Depends(require_superuser)):
+    code = body.code.strip()
+    if not code:
+        raise HTTPException(400, "كود المنصة مطلوب")
+    with get_db() as conn:
+        if conn.execute("SELECT id FROM supply_platforms WHERE code=?", (code,)).fetchone():
+            raise HTTPException(400, "الكود مستخدم بالفعل")
+        now = datetime.utcnow().isoformat() + "Z"
+        cur = conn.execute("""INSERT INTO supply_platforms(code,plate,driver_name,manager_name,license_number,status,notes,created_at,updated_at)
+                               VALUES(?,?,?,?,?,?,?,?,?)""",
+                            (code, body.plate or "", body.driver_name or "", body.manager_name or "",
+                             body.license_number or "", body.status or "active", body.notes or "", now, now))
+        return {"id": cur.lastrowid}
+
+@app.put("/supply-platforms/{pid}")
+async def update_supply_platform(pid: int, body: SupplyPlatformCreate, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM supply_platforms WHERE id=?", (pid,)).fetchone():
+            raise HTTPException(404, "المنصة غير موجودة")
+        dup = conn.execute("SELECT id FROM supply_platforms WHERE code=? AND id!=?", (body.code.strip(), pid)).fetchone()
+        if dup:
+            raise HTTPException(400, "الكود مستخدم بالفعل")
+        now = datetime.utcnow().isoformat() + "Z"
+        conn.execute("""UPDATE supply_platforms SET code=?,plate=?,driver_name=?,manager_name=?,
+                        license_number=?,status=?,notes=?,updated_at=? WHERE id=?""",
+                     (body.code.strip(), body.plate or "", body.driver_name or "", body.manager_name or "",
+                      body.license_number or "", body.status or "active", body.notes or "", now, pid))
+        return {"ok": True}
+
+@app.delete("/supply-platforms/{pid}")
+async def delete_supply_platform(pid: int, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        conn.execute("DELETE FROM supply_platform_stock WHERE platform_id=?", (pid,))
+        conn.execute("DELETE FROM supply_platform_movements WHERE platform_id=?", (pid,))
+        conn.execute("DELETE FROM supply_platforms WHERE id=?", (pid,))
+        return {"ok": True}
+
+@app.get("/supply-platforms/{pid}/movements")
+async def list_supply_platform_movements(pid: int, cu: dict = Depends(require_admin_or_reporter), limit: int = 500):
+    with get_db() as conn:
+        rows = conn.execute("""SELECT m.*, p.name product_name, p.unit product_unit
+                                FROM supply_platform_movements m JOIN inventory_products p ON p.id=m.product_id
+                                WHERE m.platform_id=? ORDER BY m.id DESC LIMIT ?""", (pid, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+@app.post("/supply-platforms/{pid}/fill")
+async def fill_supply_platform(pid: int, body: SupplyPlatformFill, cu: dict = Depends(require_admin)):
+    """تعبئة تانك المنصة — يسحب الكمية من المخزن الرئيسي ويضيفها لرصيد المنصة."""
+    if body.quantity <= 0:
+        raise HTTPException(400, "الكمية يجب أن تكون أكبر من صفر")
+    with get_db() as conn:
+        plat = conn.execute("SELECT id FROM supply_platforms WHERE id=?", (pid,)).fetchone()
+        if not plat:
+            raise HTTPException(404, "المنصة غير موجودة")
+        prow = conn.execute("SELECT quantity, name FROM inventory_products WHERE id=?", (body.product_id,)).fetchone()
+        if not prow:
+            raise HTTPException(404, "المنتج غير موجود في المخزون الرئيسي")
+        if (prow["quantity"] or 0) < body.quantity:
+            raise HTTPException(400, f"الكمية المتاحة من «{prow['name']}» بالمخزن الرئيسي غير كافية (متاح {prow['quantity']})")
+        now = datetime.utcnow().isoformat() + "Z"
+        # سحب من المخزن الرئيسي
+        conn.execute("UPDATE inventory_products SET quantity=quantity-?, updated_at=? WHERE id=?",
+                     (body.quantity, now, body.product_id))
+        conn.execute("""INSERT INTO inventory_movements(product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
+                        VALUES(?,'out',?,'platform_fill',?,?,?,?)""",
+                     (body.product_id, body.quantity, pid, cu.get("username",""), body.notes or "", now))
+        # إضافة لرصيد المنصة
+        existing = conn.execute("SELECT id, quantity FROM supply_platform_stock WHERE platform_id=? AND product_id=?",
+                                (pid, body.product_id)).fetchone()
+        if existing:
+            conn.execute("UPDATE supply_platform_stock SET quantity=quantity+?, updated_at=? WHERE id=?",
+                         (body.quantity, now, existing["id"]))
+        else:
+            conn.execute("INSERT INTO supply_platform_stock(platform_id,product_id,quantity,updated_at) VALUES(?,?,?,?)",
+                         (pid, body.product_id, body.quantity, now))
+        conn.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,username,notes,created_at)
+                        VALUES(?,?,'fill',?,'manual',?,?,?)""",
+                     (pid, body.product_id, body.quantity, cu.get("username",""), body.notes or "", now))
+        return {"ok": True}
+
+@app.post("/supply-platforms/{pid}/adjust")
+async def adjust_supply_platform_stock(pid: int, body: SupplyPlatformAdjust, cu: dict = Depends(require_superuser)):
+    """تعديل يدوي لرصيد صنف داخل منصة (جرد)."""
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM supply_platforms WHERE id=?", (pid,)).fetchone():
+            raise HTTPException(404, "المنصة غير موجودة")
+        if not conn.execute("SELECT id FROM inventory_products WHERE id=?", (body.product_id,)).fetchone():
+            raise HTTPException(404, "المنتج غير موجود")
+        now = datetime.utcnow().isoformat() + "Z"
+        existing = conn.execute("SELECT id FROM supply_platform_stock WHERE platform_id=? AND product_id=?",
+                                (pid, body.product_id)).fetchone()
+        if existing:
+            conn.execute("UPDATE supply_platform_stock SET quantity=?, updated_at=? WHERE id=?",
+                         (body.quantity, now, existing["id"]))
+        else:
+            conn.execute("INSERT INTO supply_platform_stock(platform_id,product_id,quantity,updated_at) VALUES(?,?,?,?)",
+                         (pid, body.product_id, body.quantity, now))
+        conn.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,username,notes,created_at)
+                        VALUES(?,?,'adjust',?,'manual',?,?,?)""",
+                     (pid, body.product_id, body.quantity, cu.get("username",""), body.notes or "", now))
+        return {"ok": True}
 
 
 # ── مقايسات الإصلاح (الورشة) ──
