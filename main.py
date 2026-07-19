@@ -7951,9 +7951,11 @@ async def get_unused_equipment(
     return {"unused_equipment": unused, "total": len(unused)}
 
 
-@app.get("/equipment/report/{car_code}")
-async def get_equipment_report(car_code: str, cu: dict = Depends(require_admin_or_reporter)):
-    """تقرير تفصيلي وقابل للطباعة عن معدة واحدة — كل الورديات، المشغلين، الساعات، الإنتاجية"""
+@app.get("/equipment/report")
+async def get_equipment_report(car_code: str = Query(...), cu: dict = Depends(require_admin_or_reporter)):
+    """تقرير تفصيلي وقابل للطباعة عن معدة واحدة — كل الورديات، المشغلين، الساعات، الإنتاجية
+    ملحوظة: car_code بتيجي كـ query param مش path param، لأن أكواد بعض المعدات فيها '/' (زي 00/01/65)
+    وده كان بيكسر الراوت لو اتبعت جوا الـ path."""
     with get_db() as conn:
         _ensure_operator_tables(conn)
         eq_row = conn.execute("SELECT * FROM equipment WHERE car_code=?", (car_code,)).fetchone()
@@ -7999,6 +8001,7 @@ async def get_equipment_report(car_code: str, cu: dict = Depends(require_admin_o
             "notes":           d.get("notes", ""),
             "status":          d.get("status", ""),
             "start_photo":     d.get("start_photo", ""),
+            "productivity":    d.get("productivity", ""),
         })
 
     shift_count = len(shifts)
@@ -8309,6 +8312,9 @@ def _ensure_operator_tables(conn):
     except Exception: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_photo ON operator_shifts(start_photo)")
     except Exception: pass
+    # Migration: أضف عمود إنتاجية المشغل (اختياري، بيدخله المشغل نفسه عند إنهاء الوردية)
+    try: conn.execute("ALTER TABLE operator_shifts ADD COLUMN productivity TEXT DEFAULT ''")
+    except Exception: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_op ON operator_shifts(operator_id)")
     except: pass
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_op_shifts_status ON operator_shifts(status)")
@@ -8387,6 +8393,7 @@ class ShiftEnd(BaseModel):
     fuel_type:    str = ""
     notes:        str = ""
     end_location: str = ""
+    productivity: str = ""   # اختياري — إنتاجية المشغل في اليوم، بيدخلها هو نفسه عند إنهاء الوردية
 
 
 @app.on_event("startup")
@@ -8947,11 +8954,12 @@ async def end_shift(sid: int, body: ShiftEnd, cu: dict = Depends(get_user)):
         elif cu["role"] not in ("admin", "superuser"):
             raise HTTPException(403, "صلاحيات غير كافية")
         conn.execute("""UPDATE operator_shifts SET
-            end_time=?, end_hours=?, fuel_liters=?, fuel_type=?, notes=?, end_location=?, status='ended'
+            end_time=?, end_hours=?, fuel_liters=?, fuel_type=?, notes=?, end_location=?, productivity=?, status='ended'
             WHERE id=?""",
             (datetime.utcnow().isoformat(), body.end_hours, body.fuel_liters,
              body.fuel_type or shift["fuel_type"] or "",
-             body.notes or shift["notes"], body.end_location or "", sid))
+             body.notes or shift["notes"], body.end_location or "",
+             (body.productivity or "").strip(), sid))
     return {"message": "انتهت الوردية"}
 
 

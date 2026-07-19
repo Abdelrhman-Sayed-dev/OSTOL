@@ -10183,6 +10183,11 @@ async function renderDriverSinglePage() {
               'placeholder="' + (startHours ? (parseFloat(startHours)+1).toFixed(1) : '0.0') + '">' +
             (startHours ? '<div style="font-size:.75rem;color:#94a3b8;margin-top:.35rem;text-align:center">يجب أن يكون أكبر من (' + startHours + ')</div>' : '') +
           '</div>' +
+          '<div class="form-group">' +
+            '<label style="font-weight:800;color:#1e3a5f">📈 إنتاجيتك في اليوم (اختياري)</label>' +
+            '<div style="font-size:.72rem;color:#64748b;margin-bottom:.4rem">اكتب لخّص إنتاجيتك النهارده — مثال: عدد الرحلات، الكمية المنقولة، المساحة اللي خلصتها...</div>' +
+            '<textarea id="dpEndProductivity" class="form-control" rows="2" placeholder="مثال: 5 رحلات — 40 متر مكعب"></textarea>' +
+          '</div>' +
         '</div>' +
         '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>' +
         '<button class="btn btn-danger" id="dpEndOk" style="font-size:1rem;padding:.75rem 2rem">✔ إنهاء الوردية</button></div>'
@@ -10192,11 +10197,12 @@ async function renderDriverSinglePage() {
         if (isNaN(endHours)) return showNotification('أدخل عداد الساعات', 'error');
         if (startHours !== '' && endHours < parseFloat(startHours))
           return showNotification('عداد النهاية يجب أن يكون أكبر من البداية (' + startHours + ')', 'error');
+        const productivity = document.getElementById('dpEndProductivity')?.value.trim() || '';
         const btn = document.getElementById('dpEndOk');
         btn.disabled = true; btn.textContent = '⏳ جاري...';
         try {
           const _endLoc = await silentGetLocation(8000);
-          await apiCall('/operators/shifts/' + activeShift.id + '/end', 'POST', {end_hours: endHours, fuel_liters: 0, notes: '', end_location: _endLoc});
+          await apiCall('/operators/shifts/' + activeShift.id + '/end', 'POST', {end_hours: endHours, fuel_liters: 0, notes: '', end_location: _endLoc, productivity});
           showNotification('✅ انتهت الوردية!', 'success');
           closeModal(); await renderDriverSinglePage();
         } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '✔ إنهاء الوردية'; }
@@ -16105,6 +16111,34 @@ async function generateEquipmentOpCard() {
       </div>
     </div>` : `<div style="font-size:.8rem;color:#94a3b8;margin-top:.8rem">لا توجد ورديات في هذه الفترة</div>`;
 
+  // ── تفاصيل الورديات يومًا بيوم مع إنتاجية كل مشغل (اختيارية) ──
+  const shiftsSorted = [...shifts].sort((a,b) => (a.start_time||'') < (b.start_time||'') ? 1 : -1);
+  const shiftDetailRows = shiftsSorted.map((s,i) => `
+    <tr>
+      <td style="text-align:center;color:#94a3b8;font-size:.78rem">${i+1}</td>
+      <td style="font-weight:700">${s.operator_name||'—'}</td>
+      <td style="text-align:center">${fmtDt(s.start_time)}</td>
+      <td style="text-align:center">${s.working_hours!=null ? s.working_hours.toFixed(1)+' س' : '—'}</td>
+      <td style="text-align:center">${s.status==='active' ? '🟢 جارية' : '⚪ منتهية'}</td>
+      <td style="font-size:.82rem">${s.productivity ? s.productivity : '<span style="color:#cbd5e1">—</span>'}</td>
+    </tr>`).join('');
+  const shiftsDetailHtml = shiftsSorted.length ? `
+    <div class="op-drivers-section" style="margin-top:1rem">
+      <div style="font-weight:800;font-size:.88rem;color:#334155;margin-bottom:.6rem">
+        📈 تفاصيل الورديات وإنتاجية كل مشغل
+      </div>
+      <div style="overflow-x:auto">
+        <table class="op-table">
+          <thead><tr>
+            <th style="width:36px">#</th><th>المشغل</th><th style="text-align:center">تاريخ الوردية</th>
+            <th style="text-align:center">ساعات التشغيل</th><th style="text-align:center">الحالة</th>
+            <th>الإنتاجية (كما أدخلها المشغل)</th>
+          </tr></thead>
+          <tbody>${shiftDetailRows}</tbody>
+        </table>
+      </div>
+    </div>` : '';
+
   // ── ثانياً: جدول الزيوت ──
   const OIL_COL_MAP = {oil_motor:'motor',oil_gear:'gear',oil_brake:'brake',oil_hydro:'hydraulic',oil_grease:'grease',oil:'other',filter:'other',filter_oil:'motor'};
   const OIL_COL_IDX = {motor:0,gear:1,brake:2,hydraulic:3,grease:4,other:5};
@@ -16214,6 +16248,7 @@ async function generateEquipmentOpCard() {
       <!-- المشغلون في نهاية الصفحة الأولى -->
       <div style="padding:0 1.2rem 1.4rem">
         ${operatorsHtml}
+        ${shiftsDetailHtml}
       </div>
     </div>
 
@@ -16594,107 +16629,91 @@ async function renderEquipmentLog() {
     '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">' +
       '<div>' +
         '<h2 style="margin:0;font-size:1.35rem;font-weight:900;color:#0f172a">📊 سركي المعدات</h2>' +
-        '<p style="margin:.2rem 0 0;font-size:.82rem;color:#64748b">عدد الورديات، ساعات التشغيل الفعلية، أسماء المشغلين، ومعدل الإنتاجية لكل معدة</p>' +
+        '<p style="margin:.2rem 0 0;font-size:.82rem;color:#64748b">ابحث عن المعدة واضغط "عرض" لعرض تقرير تفصيلي قابل للطباعة عنها</p>' +
       '</div>' +
-      '<button class="btn btn-ghost btn-sm" onclick="renderEquipmentLog()">🔄 تحديث</button>' +
     '</div>' +
     '<div class="card">' +
-      '<div class="srch-bar">' +
-        '<input type="text" id="eqLogSearch" placeholder="🔍 اسم المعدة / الكود..." style="flex:2;min-width:200px" ' +
-          'oninput="clearTimeout(window._eqLogDeb);window._eqLogDeb=setTimeout(loadEquipmentLog,320)">' +
+      '<div style="padding:1rem 1.2rem;display:flex;gap:.6rem;flex-wrap:wrap">' +
+        '<input type="text" id="eqLogSearch" placeholder="🔍 ابحث باسم المعدة أو الكود..." style="flex:1;min-width:240px" ' +
+          'oninput="clearTimeout(window._eqLogDeb);window._eqLogDeb=setTimeout(searchEquipmentLog,320)" ' +
+          'onkeydown="if(event.key===\'Enter\'){clearTimeout(window._eqLogDeb);searchEquipmentLog();}">' +
+        '<button class="btn btn-primary btn-sm" onclick="clearTimeout(window._eqLogDeb);searchEquipmentLog()">🔍 بحث</button>' +
       '</div>' +
-      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.86rem">' +
-        '<thead><tr style="background:var(--tbl-th-bg)">' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">#</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المعدة</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الكود</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الفرع</th>' +
-          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">عدد الورديات</th>' +
-          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">ساعات التشغيل الفعلية</th>' +
-          '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المشغلون</th>' +
-          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الإنتاجية (ساعة/وردية)</th>' +
-          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem"></th>' +
-        '</tr></thead>' +
-        '<tbody id="eqLogTableBody"><tr><td colspan="9" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
-      '</table></div>' +
-    '</div>';
-  await loadEquipmentLog();
+      '<div id="eqLogResults" style="padding:0 1.2rem 1.2rem">' +
+        '<div class="empty-state"><div class="empty-icon">🔍</div><p>ابحث باسم المعدة أو الكود لعرض تقريرها</p></div>' +
+      '</div>' +
+    '</div>' +
+    '<div id="eqReportWrap"></div>';
 }
 
-async function loadEquipmentLog() {
-  const tbody = document.getElementById('eqLogTableBody');
-  if (!tbody) return;
-  const search = document.getElementById('eqLogSearch')?.value || '';
-  let url = '/equipment/log';
-  if (search) url += '?search=' + encodeURIComponent(search);
+async function searchEquipmentLog() {
+  const results = document.getElementById('eqLogResults');
+  if (!results) return;
+  const search = document.getElementById('eqLogSearch')?.value.trim() || '';
+  if (!search) {
+    results.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>ابحث باسم المعدة أو الكود لعرض تقريرها</p></div>';
+    return;
+  }
+  results.innerHTML = '<div style="text-align:center;padding:1.5rem;color:#94a3b8">⏳ جاري البحث...</div>';
   try {
-    const data = await apiCall(url);
+    const data = await apiCall('/equipment/log?search=' + encodeURIComponent(search));
     const rows = data.equipment_log || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:3rem;color:#94a3b8">لا توجد بيانات</td></tr>';
+      results.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد معدة مطابقة لبحثك</p></div>';
       return;
     }
-    tbody.innerHTML = rows.map((r, i) => `
-      <tr>
-        <td style="padding:.6rem 1rem">${i + 1}</td>
-        <td style="padding:.6rem 1rem;font-weight:700">${r.equipment_name || '—'}</td>
-        <td style="padding:.6rem 1rem;font-family:monospace">${r.car_code || '—'}</td>
-        <td style="padding:.6rem 1rem">${r.branch || '—'}</td>
-        <td style="padding:.6rem 1rem;text-align:center;font-weight:700">${r.shift_count}</td>
-        <td style="padding:.6rem 1rem;text-align:center;font-weight:700;color:#2563eb">${r.total_hours}</td>
-        <td style="padding:.6rem 1rem">${(r.operators || []).join('، ') || '—'}</td>
-        <td style="padding:.6rem 1rem;text-align:center;font-weight:700;color:#16a34a">${r.productivity}</td>
-        <td style="padding:.6rem 1rem;text-align:center;white-space:nowrap">
-          <button class="btn btn-outline btn-sm" onclick="openEquipmentReport('${(r.car_code||'').replace(/'/g,"\\'")}')">👁️ عرض</button>
-        </td>
-      </tr>
+    results.innerHTML = rows.map(r => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.8rem;padding:.7rem .9rem;
+                  border:1.5px solid #e2e8f0;border-radius:10px;margin-bottom:.5rem;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:800;color:#1e3a5f">${r.equipment_name || '—'}</div>
+          <div style="font-size:.76rem;color:#64748b;font-family:monospace">${r.car_code || '—'} ${r.branch ? '— ' + r.branch : ''}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openEquipmentReport('${(r.car_code||'').replace(/'/g,"\\'")}')">👁️ عرض التقرير</button>
+      </div>
     `).join('');
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:3rem;color:#dc2626">' + (e.message || 'خطأ في تحميل البيانات') + '</td></tr>';
+    results.innerHTML = '<div class="empty-state"><div class="empty-icon">❌</div><p>' + (e.message || 'خطأ في البحث') + '</p></div>';
   }
 }
 
 /* ══════════════════════════════════════════
-   تقرير تفصيلي قابل للطباعة لمعدة واحدة
+   تقرير تفصيلي قابل للطباعة لمعدة واحدة — يظهر جوا الصفحة نفسها
 ══════════════════════════════════════════ */
 async function openEquipmentReport(carCode) {
   if (!carCode) return;
-  openModal(
-    '<div class="modal-header"><div class="modal-title">📋 تقرير المعدة</div><button class="modal-close" onclick="closeModal()">✕</button></div>' +
-    '<div id="eqReportBody" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:#94a3b8">⏳ جاري تحميل التقرير...</div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>' +
-    '<button class="btn btn-primary" id="eqReportPrintBtn" style="display:none" onclick="window.print()">🖨️ طباعة</button></div>',
-    'modal-lg'
-  );
+  const wrap = document.getElementById('eqReportWrap');
+  if (!wrap) return;
+  wrap.scrollIntoView({behavior:'smooth', block:'start'});
+  wrap.innerHTML = '<div class="card" style="margin-top:1rem;padding:2rem;text-align:center;color:#94a3b8">⏳ جاري تحميل التقرير...</div>';
   try {
-    const data = await apiCall('/equipment/report/' + encodeURIComponent(carCode));
-    window._eqReportData = data;
+    const data = await apiCall('/equipment/report?car_code=' + encodeURIComponent(carCode));
     _renderEquipmentReportBody(data);
-    const pBtn = document.getElementById('eqReportPrintBtn');
-    if (pBtn) pBtn.style.display = 'inline-flex';
   } catch (e) {
-    const body = document.getElementById('eqReportBody');
-    if (body) body.innerHTML = '<div style="color:#dc2626;text-align:center;padding:2rem">' + (e.message || 'تعذر تحميل التقرير') + '</div>';
+    wrap.innerHTML = '<div class="card" style="margin-top:1rem;padding:2rem;text-align:center;color:#dc2626">' + (e.message || 'تعذر تحميل التقرير') + '</div>';
   }
 }
 
 function _renderEquipmentReportBody(data) {
-  const body = document.getElementById('eqReportBody');
-  if (!body) return;
+  const wrap = document.getElementById('eqReportWrap');
+  if (!wrap) return;
   const eq = data.equipment || {};
   const shifts = data.shifts || [];
   const s = data.summary || {};
   const fmtDT = (v) => v ? String(v).slice(0,16).replace('T',' ') : '—';
 
-  body.innerHTML = `
+  wrap.innerHTML = `
+    <div class="card no-print" style="margin-top:1rem;padding:.8rem 1.2rem;display:flex;justify-content:space-between;align-items:center">
+      <button class="btn btn-ghost btn-sm" onclick="renderEquipmentLog()">🔙 رجوع للبحث</button>
+      <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ طباعة التقرير</button>
+    </div>
+    <div class="card" style="margin-top:.8rem;padding:1.2rem">
     <div id="eqReportPrintArea">
       <style>
         @media print {
-          .no-print, .sidebar, .topbar, .modal-header, .modal-footer, .modal-close { display:none !important; }
+          .no-print, .sidebar, .topbar { display:none !important; }
           @page { size: A4 portrait; margin: 10mm 14mm; }
           body, html { background:#fff !important; }
-          .modal-overlay { position:static !important; background:#fff !important; padding:0 !important; display:block !important; }
-          .modal { position:static !important; box-shadow:none !important; max-height:none !important; overflow:visible !important; width:100% !important; margin:0 !important; padding:0 !important; }
           #eqReportPrintArea { font-size: 10pt; color:#000; }
         }
         #eqReportPrintArea table { width:100%; border-collapse:collapse; font-size:.82rem; }
@@ -16751,7 +16770,7 @@ function _renderEquipmentReportBody(data) {
       <table>
         <thead><tr>
           <th>المشغل</th><th>نوع الوردية</th><th>بداية</th><th>نهاية</th>
-          <th>عداد البداية</th><th>عداد النهاية</th><th>ساعات فعلية</th><th>الوقود</th><th>الحالة</th>
+          <th>عداد البداية</th><th>عداد النهاية</th><th>ساعات فعلية</th><th>الوقود</th><th>الحالة</th><th>الإنتاجية</th>
         </tr></thead>
         <tbody>
           ${shifts.length ? shifts.map(sh => `
@@ -16765,9 +16784,11 @@ function _renderEquipmentReportBody(data) {
               <td style="font-weight:700;color:#2563eb">${sh.actual_hours ?? '—'}</td>
               <td>${sh.fuel_liters ? sh.fuel_liters + ' لتر' : '—'}</td>
               <td>${sh.status==='active' ? '🟢 جارية' : '⚪ منتهية'}</td>
-            </tr>`).join('') : '<tr><td colspan="9" style="color:#94a3b8">لا توجد ورديات مسجلة</td></tr>'}
+              <td style="font-size:.78rem">${sh.productivity ? sh.productivity : '—'}</td>
+            </tr>`).join('') : '<tr><td colspan="10" style="color:#94a3b8">لا توجد ورديات مسجلة</td></tr>'}
         </tbody>
       </table>
+    </div>
     </div>
   `;
 }
@@ -20541,22 +20562,24 @@ function rqAddSection(sec) {
       <button type="button" class="btn btn-ghost btn-sm" onclick="rqAddItem('${secId}')" title="إضافة بند">➕ بند</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('${secId}').remove(); _rqRecalcTotal()" style="color:#dc2626" title="حذف القسم">🗑️</button>
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:.78rem;table-layout:fixed">
+    <div style="overflow-x:auto">
+    <table style="width:100%;min-width:980px;border-collapse:collapse;font-size:.8rem">
       <thead style="background:#1e3a5f;color:#fff">
         <tr>
-          <th style="padding:.35rem .5rem;text-align:right;width:auto">بيان الأعمال</th>
-          <th style="padding:.35rem;width:110px">الفئة</th>
-          <th style="padding:.35rem;width:90px">الكمية</th>
-          <th style="padding:.35rem;width:90px">نوع الوحدة</th>
-          <th style="padding:.35rem;width:100px">السعر</th>
-          <th style="padding:.35rem;width:100px">قيمة المصنعيات</th>
-          <th style="padding:.35rem;width:100px">قطع الغيار</th>
-          <th style="padding:.35rem;width:100px">نوع البند</th>
-          <th style="padding:.35rem;width:32px"></th>
+          <th style="padding:.4rem .5rem;text-align:right;min-width:160px">بيان الأعمال</th>
+          <th style="padding:.4rem;width:130px">الفئة</th>
+          <th style="padding:.4rem;width:90px">الكمية</th>
+          <th style="padding:.4rem;width:120px">نوع الوحدة</th>
+          <th style="padding:.4rem;width:100px">السعر</th>
+          <th style="padding:.4rem;width:120px">قيمة المصنعيات</th>
+          <th style="padding:.4rem;width:120px">قطع الغيار</th>
+          <th style="padding:.4rem;width:140px">نوع البند</th>
+          <th style="padding:.4rem;width:40px"></th>
         </tr>
       </thead>
       <tbody class="rqItemsBody" data-sec="${secId}"></tbody>
-    </table>`;
+    </table>
+    </div>`;
   container.appendChild(div);
   // تحميل البنود إن وجدت
   if (sec?.items?.length) sec.items.forEach(it => rqAddItem(secId, it));
@@ -20572,36 +20595,36 @@ function rqAddItem(secId, item) {
   const tr = document.createElement('tr');
   const unitVal = item?.unit || 'قطعة';
   tr.innerHTML = `
-    <td style="border:1px solid #ddd;padding:.3rem .4rem">
-      <input type="text" class="rqItemName" value="${item?.name||''}" placeholder="وصف العمل أو القطعة" style="width:100%">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <input type="text" class="rqItemName" value="${item?.name||''}" placeholder="وصف العمل أو القطعة" style="width:100%;min-width:150px;box-sizing:border-box">
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem">
-      <input type="text" class="rqItemCategory" value="${item?.category||''}" placeholder="الفئة" style="width:100%;min-width:90px;box-sizing:border-box">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <input type="text" class="rqItemCategory" value="${item?.category||''}" placeholder="الفئة" style="width:100%;min-width:110px;box-sizing:border-box">
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem">
-      <input type="number" class="rqItemQty" value="${item?.qty??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:70px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <input type="number" class="rqItemQty" value="${item?.qty??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:75px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem">
-      <select class="rqItemUnit" style="width:100%;min-width:80px;box-sizing:border-box">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <select class="rqItemUnit" style="width:100%;min-width:105px;box-sizing:border-box;font-size:.8rem">
         ${RQ_UNITS.map(u=>`<option value="${u}" ${unitVal===u?'selected':''}>${u}</option>`).join('')}
       </select>
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem">
-      <input type="number" class="rqItemPrice" value="${item?.price??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:80px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <input type="number" class="rqItemPrice" value="${item?.price??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:85px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem;width:130px">
-      <input type="number" class="rqItemMfg" value="${item?.mfg??''}" placeholder="0" step="0.01" style="width:100%;min-width:90px;box-sizing:border-box" oninput="_rqRecalcTotal()">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <input type="number" class="rqItemMfg" value="${item?.mfg??''}" placeholder="0" step="0.01" style="width:100%;min-width:105px;box-sizing:border-box" oninput="_rqRecalcTotal()">
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem;width:130px">
-      <input type="number" class="rqItemParts" value="${item?.parts??''}" placeholder="0" step="0.01" style="width:100%;min-width:90px;box-sizing:border-box" oninput="_rqRecalcTotal()">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <input type="number" class="rqItemParts" value="${item?.parts??''}" placeholder="0" step="0.01" style="width:100%;min-width:105px;box-sizing:border-box" oninput="_rqRecalcTotal()">
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem">
-      <select class="rqItemType" style="width:100%;min-width:80px;box-sizing:border-box">
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <select class="rqItemType" style="width:100%;min-width:125px;box-sizing:border-box;font-size:.8rem">
         <option value="internal" ${(item?.item_type||'internal')==='internal'?'selected':''}>🏠 داخلي</option>
         <option value="external" ${item?.item_type==='external'?'selected':''}>🚚 خارجي</option>
       </select>
     </td>
-    <td style="border:1px solid #ddd;text-align:center">
+    <td style="border:1px solid #ddd;text-align:center;padding:.35rem .2rem">
       <button type="button" onclick="this.closest('tr').remove(); _rqRecalcTotal()" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:14px">✕</button>
     </td>`;
   tbody.appendChild(tr);
