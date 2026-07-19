@@ -2747,7 +2747,7 @@ const NAV_ITEM_MODULE = {
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
   'super-admins':'admin', 'super-reporters':'admin', 'super-workshop-admins':'admin', 'super-reassign':'admin',
-  'super-logs':'admin', 'super-sarky':'admin', 'driver-photos':'admin',
+  'super-logs':'admin', 'super-sarky':'admin', 'driver-photos':'admin', 'super-notes':'admin',
   'driver-trip':'driverFlat', 'driver-workshop':'driverFlat', 'driver-emergency':'driverFlat',
 };
 window._openNavModule = window._openNavModule || null;
@@ -2850,6 +2850,7 @@ function buildAdminNav() {
     base.push({id:'su-change-password', icon:'🔑', label:'تغيير كلمة المرور'});
     base.push({id:'super-sarky',       icon:'📅', label:'السركي'});
     base.push({id:'driver-photos',      icon:'📷', label:'صور السائقين'});
+    base.push({id:'super-notes',        icon:'📝', label:'ملاحظات السوبر يوزرز'});
   }
   if(currentUser && currentUser.role === 'admin') {
     base.push({id:'super-voice',    icon:'🎙️', label:'رسائل صوتية'});
@@ -3010,6 +3011,7 @@ async function renderSection(id) {
     case 'super-workshop-admins': await renderSuperWorkshopAdmins(); break;
     case 'super-reassign':  await renderSuperReassign(); break;
     case 'super-logs':           await renderSuperLogs(); break;
+    case 'super-notes':          await renderSuperNotes(); break;
     case 'su-change-password':   renderSuChangePassword(); break;
     case 'super-sarky':     await renderSuperSarky(); break;
     case 'driver-photos': await renderDriverPhotosSection(); break;
@@ -9462,7 +9464,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops-stats' : 'overview');
   renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
@@ -9783,19 +9785,16 @@ async function renderDriverSinglePage() {
         if(!_myDriverData) return '';
         const today = new Date().toISOString().split('T')[0];
         const d30   = new Date(Date.now()+30*864e5).toISOString().split('T')[0];
-        const d60   = new Date(Date.now()+60*864e5).toISOString().split('T')[0];
         const dl    = _myDriverData.driver_license_expiry||'';
         const vl    = _myDriverData.vehicle_license_expiry||'';
         const alerts = [];
         if(dl){
           if(dl<today)      alerts.push({msg:`🔴 رخصة القيادة منتهية منذ ${dl} — يرجى التجديد فوراً`,color:'#ef4444',bg:'#fef2f2',border:'#fca5a5'});
           else if(dl<=d30)  alerts.push({msg:`🟠 رخصة القيادة تنتهي في ${dl} (أقل من 30 يوم)`,color:'#f97316',bg:'#fff7ed',border:'#fed7aa'});
-          else if(dl<=d60)  alerts.push({msg:`🟡 رخصة القيادة تنتهي في ${dl} (أقل من 60 يوم)`,color:'#d97706',bg:'#fffbeb',border:'#fde68a'});
         }
         if(vl){
           if(vl<today)      alerts.push({msg:`🔴 رخصة المركبة منتهية منذ ${vl} — يرجى التجديد فوراً`,color:'#ef4444',bg:'#fef2f2',border:'#fca5a5'});
           else if(vl<=d30)  alerts.push({msg:`🟠 رخصة المركبة تنتهي في ${vl} (أقل من 30 يوم)`,color:'#f97316',bg:'#fff7ed',border:'#fed7aa'});
-          else if(vl<=d60)  alerts.push({msg:`🟡 رخصة المركبة تنتهي في ${vl} (أقل من 60 يوم)`,color:'#d97706',bg:'#fffbeb',border:'#fde68a'});
         }
         if(!alerts.length) return '';
         return alerts.map(a=>`
@@ -12517,6 +12516,118 @@ async function doReassignConfirm(fixed, plate) {
   window._allPerms = null;
   window._allCars  = null;
 }
+
+// SUPERUSER NOTES — ملاحظات مشتركة بين السوبر يوزرز
+// ══════════════════════════════════════════════════════════════════
+async function renderSuperNotes() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+
+  c.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">📝 ملاحظات السوبر يوزرز</div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div style="padding:1rem">
+        <textarea id="suNoteInput" rows="3" placeholder="اكتب ملاحظة أو اقتراح للسوبر يوزرز التانيين..."
+          style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:.75rem;font-family:inherit;font-size:.9rem;resize:vertical"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:.6rem">
+          <button class="btn btn-primary btn-sm" id="suNoteSendBtn" onclick="submitSuperNote()">📩 إرسال</button>
+        </div>
+      </div>
+    </div>
+    <div id="suNotesList"><div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div></div>
+  `;
+  await loadSuperNotes();
+}
+
+async function loadSuperNotes() {
+  const list = document.getElementById('suNotesList');
+  if (!list) return;
+  try {
+    const data = await apiCall('/superuser-notes');
+    const notes = data.notes || [];
+    if (!notes.length) {
+      list.innerHTML = '<div class="empty-state"><div class="empty-icon">🗒️</div><p>لا توجد ملاحظات بعد — اكتب أول ملاحظة!</p></div>';
+      return;
+    }
+    list.innerHTML = notes.map(n => {
+      const isMine = currentUser && currentUser.username === n.author_username;
+      const time = n.updated_at ? n.updated_at : n.created_at;
+      const editedTag = n.updated_at ? ' <span style="color:#94a3b8;font-size:.7rem">(معدّلة)</span>' : '';
+      return `
+        <div class="card" style="margin-bottom:.75rem" id="suNote_${n.id}">
+          <div style="padding:.9rem 1.1rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+              <div style="display:flex;align-items:center;gap:.5rem">
+                <span style="font-weight:800;color:#1e3a5f;font-size:.88rem">👤 ${n.author_username}</span>
+                <span style="font-size:.72rem;color:#94a3b8;font-family:monospace">${(time||'').slice(0,16).replace('T',' ')}</span>${editedTag}
+              </div>
+              ${isMine ? `
+                <div style="display:flex;gap:.4rem">
+                  <button class="btn btn-ghost btn-sm" onclick="editSuperNote(${n.id})" title="تعديل">✏️</button>
+                  <button class="btn btn-ghost btn-sm" onclick="deleteSuperNote(${n.id})" title="حذف">🗑️</button>
+                </div>` : ''}
+            </div>
+            <div id="suNoteContent_${n.id}" style="font-size:.88rem;color:#0f172a;white-space:pre-wrap;line-height:1.6">${(n.content||'').replace(/</g,'&lt;')}</div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+async function submitSuperNote() {
+  const input = document.getElementById('suNoteInput');
+  const btn = document.getElementById('suNoteSendBtn');
+  const content = input?.value?.trim();
+  if (!content) return showNotification('اكتب ملاحظة قبل الإرسال', 'error');
+  btn.disabled = true; btn.textContent = '⏳ جاري...';
+  try {
+    await apiCall('/superuser-notes', 'POST', { content });
+    input.value = '';
+    showNotification('✅ تم إضافة الملاحظة', 'success');
+    await loadSuperNotes();
+  } catch (e) {
+    showNotification(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '📩 إرسال';
+  }
+}
+
+function editSuperNote(id) {
+  const el = document.getElementById(`suNoteContent_${id}`);
+  if (!el) return;
+  const original = el.innerText;
+  el.innerHTML = `
+    <textarea id="suNoteEdit_${id}" rows="3" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:.6rem;font-family:inherit;font-size:.88rem">${original}</textarea>
+    <div style="display:flex;gap:.4rem;margin-top:.5rem">
+      <button class="btn btn-primary btn-sm" onclick="saveSuperNote(${id})">💾 حفظ</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadSuperNotes()">إلغاء</button>
+    </div>`;
+}
+
+async function saveSuperNote(id) {
+  const ta = document.getElementById(`suNoteEdit_${id}`);
+  const content = ta?.value?.trim();
+  if (!content) return showNotification('اكتب ملاحظة قبل الحفظ', 'error');
+  try {
+    await apiCall(`/superuser-notes/${id}`, 'PUT', { content });
+    showNotification('✅ تم التعديل', 'success');
+    await loadSuperNotes();
+  } catch (e) { showNotification(e.message, 'error'); }
+}
+
+async function deleteSuperNote(id) {
+  if (!confirm('هل تريد حذف هذه الملاحظة؟')) return;
+  try {
+    await apiCall(`/superuser-notes/${id}`, 'DELETE');
+    showNotification('✅ تم الحذف', 'success');
+    await loadSuperNotes();
+  } catch (e) { showNotification(e.message, 'error'); }
+}
+
 
 async function renderSuperLogs() {
   const c = document.getElementById('pageContent');
@@ -16502,8 +16613,9 @@ async function renderEquipmentLog() {
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">ساعات التشغيل الفعلية</th>' +
           '<th style="padding:.7rem 1rem;text-align:right;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">المشغلون</th>' +
           '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem">الإنتاجية (ساعة/وردية)</th>' +
+          '<th style="padding:.7rem 1rem;text-align:center;font-weight:700;color:var(--tbl-th-color);font-size:.76rem"></th>' +
         '</tr></thead>' +
-        '<tbody id="eqLogTableBody"><tr><td colspan="8" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
+        '<tbody id="eqLogTableBody"><tr><td colspan="9" style="text-align:center;padding:3rem;color:#94a3b8">⏳ جاري التحميل...</td></tr></tbody>' +
       '</table></div>' +
     '</div>';
   await loadEquipmentLog();
@@ -16519,7 +16631,7 @@ async function loadEquipmentLog() {
     const data = await apiCall(url);
     const rows = data.equipment_log || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:3rem;color:#94a3b8">لا توجد بيانات</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:3rem;color:#94a3b8">لا توجد بيانات</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map((r, i) => `
@@ -16532,11 +16644,132 @@ async function loadEquipmentLog() {
         <td style="padding:.6rem 1rem;text-align:center;font-weight:700;color:#2563eb">${r.total_hours}</td>
         <td style="padding:.6rem 1rem">${(r.operators || []).join('، ') || '—'}</td>
         <td style="padding:.6rem 1rem;text-align:center;font-weight:700;color:#16a34a">${r.productivity}</td>
+        <td style="padding:.6rem 1rem;text-align:center;white-space:nowrap">
+          <button class="btn btn-outline btn-sm" onclick="openEquipmentReport('${(r.car_code||'').replace(/'/g,"\\'")}')">👁️ عرض</button>
+        </td>
       </tr>
     `).join('');
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:3rem;color:#dc2626">' + (e.message || 'خطأ في تحميل البيانات') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:3rem;color:#dc2626">' + (e.message || 'خطأ في تحميل البيانات') + '</td></tr>';
   }
+}
+
+/* ══════════════════════════════════════════
+   تقرير تفصيلي قابل للطباعة لمعدة واحدة
+══════════════════════════════════════════ */
+async function openEquipmentReport(carCode) {
+  if (!carCode) return;
+  openModal(
+    '<div class="modal-header"><div class="modal-title">📋 تقرير المعدة</div><button class="modal-close" onclick="closeModal()">✕</button></div>' +
+    '<div id="eqReportBody" style="min-height:200px;display:flex;align-items:center;justify-content:center;color:#94a3b8">⏳ جاري تحميل التقرير...</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button>' +
+    '<button class="btn btn-primary" id="eqReportPrintBtn" style="display:none" onclick="window.print()">🖨️ طباعة</button></div>',
+    'modal-lg'
+  );
+  try {
+    const data = await apiCall('/equipment/report/' + encodeURIComponent(carCode));
+    window._eqReportData = data;
+    _renderEquipmentReportBody(data);
+    const pBtn = document.getElementById('eqReportPrintBtn');
+    if (pBtn) pBtn.style.display = 'inline-flex';
+  } catch (e) {
+    const body = document.getElementById('eqReportBody');
+    if (body) body.innerHTML = '<div style="color:#dc2626;text-align:center;padding:2rem">' + (e.message || 'تعذر تحميل التقرير') + '</div>';
+  }
+}
+
+function _renderEquipmentReportBody(data) {
+  const body = document.getElementById('eqReportBody');
+  if (!body) return;
+  const eq = data.equipment || {};
+  const shifts = data.shifts || [];
+  const s = data.summary || {};
+  const fmtDT = (v) => v ? String(v).slice(0,16).replace('T',' ') : '—';
+
+  body.innerHTML = `
+    <div id="eqReportPrintArea">
+      <style>
+        @media print {
+          .no-print, .sidebar, .topbar, .modal-header, .modal-footer, .modal-close { display:none !important; }
+          @page { size: A4 portrait; margin: 10mm 14mm; }
+          body, html { background:#fff !important; }
+          .modal-overlay { position:static !important; background:#fff !important; padding:0 !important; display:block !important; }
+          .modal { position:static !important; box-shadow:none !important; max-height:none !important; overflow:visible !important; width:100% !important; margin:0 !important; padding:0 !important; }
+          #eqReportPrintArea { font-size: 10pt; color:#000; }
+        }
+        #eqReportPrintArea table { width:100%; border-collapse:collapse; font-size:.82rem; }
+        #eqReportPrintArea th, #eqReportPrintArea td { border:1px solid #cbd5e1; padding:.45rem .6rem; text-align:center; }
+        #eqReportPrintArea th { background:#1e3a5f; color:#fff; font-size:.76rem; }
+      </style>
+
+      <div style="text-align:center;margin-bottom:1rem;border-bottom:2px solid #1e3a5f;padding-bottom:.7rem">
+        <div style="font-size:1.2rem;font-weight:900;color:#1e3a5f">تقرير تفصيلي — سركي المعدة</div>
+        <div style="font-size:.8rem;color:#64748b;margin-top:.2rem">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1rem;font-size:.86rem">
+        <div><strong>اسم المعدة:</strong> ${eq.equipment_name || '—'}</div>
+        <div><strong>الكود:</strong> ${eq.car_code || '—'}</div>
+        <div><strong>النوع:</strong> ${eq.equipment_type || '—'}</div>
+        <div><strong>الماركة/الموديل:</strong> ${(eq.brand||'')} ${(eq.model||'')}</div>
+        <div><strong>الفرع:</strong> ${eq.branch || '—'}</div>
+        <div><strong>القطاع:</strong> ${eq.sector || '—'}</div>
+        <div><strong>المشروع:</strong> ${eq.project || '—'}</div>
+        <div><strong>سنة الصنع:</strong> ${eq.year || '—'}</div>
+        <div><strong>رقم الشاسيه:</strong> ${eq.chassis || '—'}</div>
+        <div><strong>رقم الموتور:</strong> ${eq.engine_number || '—'}</div>
+        <div><strong>الرقم التسلسلي:</strong> ${eq.serial_no || '—'}</div>
+        <div><strong>السعة:</strong> ${eq.capacity || '—'}</div>
+        <div><strong>ملكية المعدة:</strong> ${eq.ownership_type || '—'}</div>
+        <div><strong>الحالة:</strong> ${eq.status || '—'}</div>
+        <div><strong>انتهاء الرخصة:</strong> ${eq.license_expiry || '—'}</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1.2rem">
+        <div style="background:#eef2ff;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#3730a3;font-weight:700">عدد الورديات</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#3730a3">${s.shift_count||0}</div>
+        </div>
+        <div style="background:#eff6ff;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#1d4ed8;font-weight:700">ساعات التشغيل الفعلية</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#1d4ed8">${s.total_hours||0}</div>
+        </div>
+        <div style="background:#f0fdf4;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#166534;font-weight:700">الإنتاجية (ساعة/وردية)</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#166534">${s.productivity||0}</div>
+        </div>
+        <div style="background:#fff7ed;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#9a3412;font-weight:700">عدد المشغلين</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#9a3412">${(s.operators||[]).length}</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">👷 المشغلون اللي شغّلوا المعدة</div>
+      <div style="margin-bottom:1.2rem;font-size:.85rem">${(s.operators&&s.operators.length) ? s.operators.join('، ') : 'لا يوجد'}</div>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">📋 سجل الورديات التفصيلي</div>
+      <table>
+        <thead><tr>
+          <th>المشغل</th><th>نوع الوردية</th><th>بداية</th><th>نهاية</th>
+          <th>عداد البداية</th><th>عداد النهاية</th><th>ساعات فعلية</th><th>الوقود</th><th>الحالة</th>
+        </tr></thead>
+        <tbody>
+          ${shifts.length ? shifts.map(sh => `
+            <tr>
+              <td>${sh.operator_name||'—'}</td>
+              <td>${sh.shift_type==='night'?'ليلية':(sh.shift_type==='extended'?'ممتدة':'نهارية')}</td>
+              <td>${fmtDT(sh.start_time)}</td>
+              <td>${fmtDT(sh.end_time)}</td>
+              <td>${sh.start_hours ?? '—'}</td>
+              <td>${sh.end_hours ?? '—'}</td>
+              <td style="font-weight:700;color:#2563eb">${sh.actual_hours ?? '—'}</td>
+              <td>${sh.fuel_liters ? sh.fuel_liters + ' لتر' : '—'}</td>
+              <td>${sh.status==='active' ? '🟢 جارية' : '⚪ منتهية'}</td>
+            </tr>`).join('') : '<tr><td colspan="9" style="color:#94a3b8">لا توجد ورديات مسجلة</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 
@@ -20308,13 +20541,18 @@ function rqAddSection(sec) {
       <button type="button" class="btn btn-ghost btn-sm" onclick="rqAddItem('${secId}')" title="إضافة بند">➕ بند</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('${secId}').remove(); _rqRecalcTotal()" style="color:#dc2626" title="حذف القسم">🗑️</button>
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:.82rem;table-layout:fixed">
+    <table style="width:100%;border-collapse:collapse;font-size:.78rem;table-layout:fixed">
       <thead style="background:#1e3a5f;color:#fff">
         <tr>
           <th style="padding:.35rem .5rem;text-align:right;width:auto">بيان الأعمال</th>
-          <th style="padding:.35rem;width:130px">قيمة المصنعيات</th>
-          <th style="padding:.35rem;width:130px">قطع الغيار</th>
-          <th style="padding:.35rem;width:36px"></th>
+          <th style="padding:.35rem;width:110px">الفئة</th>
+          <th style="padding:.35rem;width:90px">الكمية</th>
+          <th style="padding:.35rem;width:90px">نوع الوحدة</th>
+          <th style="padding:.35rem;width:100px">السعر</th>
+          <th style="padding:.35rem;width:100px">قيمة المصنعيات</th>
+          <th style="padding:.35rem;width:100px">قطع الغيار</th>
+          <th style="padding:.35rem;width:100px">نوع البند</th>
+          <th style="padding:.35rem;width:32px"></th>
         </tr>
       </thead>
       <tbody class="rqItemsBody" data-sec="${secId}"></tbody>
@@ -20325,25 +20563,59 @@ function rqAddSection(sec) {
   else rqAddItem(secId);
 }
 
+const RQ_UNITS = ['قطعة','متر','لتر','كيلو','طقم','علبة','أخرى'];
+
 /* ── إضافة بند داخل قسم ── */
 function rqAddItem(secId, item) {
   const tbody = document.querySelector(`[data-sec="${secId}"]`);
   if (!tbody) return;
   const tr = document.createElement('tr');
+  const unitVal = item?.unit || 'قطعة';
   tr.innerHTML = `
     <td style="border:1px solid #ddd;padding:.3rem .4rem">
       <input type="text" class="rqItemName" value="${item?.name||''}" placeholder="وصف العمل أو القطعة" style="width:100%">
     </td>
-    <td style="border:1px solid #ddd;padding:.3rem .4rem;width:130px">
-      <input type="number" class="rqItemMfg" value="${item?.mfg??''}" placeholder="0" step="0.01" style="width:100%;min-width:110px;box-sizing:border-box" oninput="_rqRecalcTotal()">
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <input type="text" class="rqItemCategory" value="${item?.category||''}" placeholder="الفئة" style="width:100%;min-width:90px;box-sizing:border-box">
+    </td>
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <input type="number" class="rqItemQty" value="${item?.qty??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:70px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
+    </td>
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <select class="rqItemUnit" style="width:100%;min-width:80px;box-sizing:border-box">
+        ${RQ_UNITS.map(u=>`<option value="${u}" ${unitVal===u?'selected':''}>${u}</option>`).join('')}
+      </select>
+    </td>
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <input type="number" class="rqItemPrice" value="${item?.price??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:80px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
     </td>
     <td style="border:1px solid #ddd;padding:.3rem .4rem;width:130px">
-      <input type="number" class="rqItemParts" value="${item?.parts??''}" placeholder="0" step="0.01" style="width:100%;min-width:110px;box-sizing:border-box" oninput="_rqRecalcTotal()">
+      <input type="number" class="rqItemMfg" value="${item?.mfg??''}" placeholder="0" step="0.01" style="width:100%;min-width:90px;box-sizing:border-box" oninput="_rqRecalcTotal()">
+    </td>
+    <td style="border:1px solid #ddd;padding:.3rem .4rem;width:130px">
+      <input type="number" class="rqItemParts" value="${item?.parts??''}" placeholder="0" step="0.01" style="width:100%;min-width:90px;box-sizing:border-box" oninput="_rqRecalcTotal()">
+    </td>
+    <td style="border:1px solid #ddd;padding:.3rem .4rem">
+      <select class="rqItemType" style="width:100%;min-width:80px;box-sizing:border-box">
+        <option value="internal" ${(item?.item_type||'internal')==='internal'?'selected':''}>🏠 داخلي</option>
+        <option value="external" ${item?.item_type==='external'?'selected':''}>🚚 خارجي</option>
+      </select>
     </td>
     <td style="border:1px solid #ddd;text-align:center">
       <button type="button" onclick="this.closest('tr').remove(); _rqRecalcTotal()" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:14px">✕</button>
     </td>`;
   tbody.appendChild(tr);
+}
+
+/* ── لما الكمية أو السعر يتغيروا، احسب قيمة قطع الغيار = الكمية × السعر تلقائياً ── */
+function _rqOnQtyPriceChange(el) {
+  const tr = el.closest('tr');
+  if (!tr) return;
+  const qty   = parseFloat(tr.querySelector('.rqItemQty')?.value)   || 0;
+  const price = parseFloat(tr.querySelector('.rqItemPrice')?.value) || 0;
+  const partsInput = tr.querySelector('.rqItemParts');
+  if (partsInput && qty && price) partsInput.value = (qty * price).toFixed(2);
+  _rqRecalcTotal();
 }
 
 /* ── تجميع بيانات الأقسام من الـ DOM ── */
@@ -20353,10 +20625,15 @@ function _rqCollectSections() {
     const title = secDiv.querySelector('.rqSecTitle')?.value.trim() || '';
     const items = [];
     secDiv.querySelectorAll('tbody tr').forEach(tr => {
-      const name  = tr.querySelector('.rqItemName')?.value.trim()  || '';
-      const mfg   = parseFloat(tr.querySelector('.rqItemMfg')?.value)   || 0;
-      const parts = parseFloat(tr.querySelector('.rqItemParts')?.value) || 0;
-      if (name || mfg || parts) items.push({name, mfg, parts});
+      const name     = tr.querySelector('.rqItemName')?.value.trim()     || '';
+      const category = tr.querySelector('.rqItemCategory')?.value.trim() || '';
+      const qty      = parseFloat(tr.querySelector('.rqItemQty')?.value)   || 0;
+      const unit     = tr.querySelector('.rqItemUnit')?.value             || 'قطعة';
+      const price    = parseFloat(tr.querySelector('.rqItemPrice')?.value) || 0;
+      const mfg      = parseFloat(tr.querySelector('.rqItemMfg')?.value)   || 0;
+      const parts    = parseFloat(tr.querySelector('.rqItemParts')?.value) || 0;
+      const itemType = tr.querySelector('.rqItemType')?.value || 'internal';
+      if (name || mfg || parts || qty || price) items.push({name, category, qty, unit, price, mfg, parts, item_type: itemType});
     });
     if (title || items.length) result.push({title, items});
   });
@@ -21830,7 +22107,7 @@ async function renderWorkshopInspectionReports() {
     </div>`;
 }
 
-/* ── مراجعة محضر الفحص: عرض بنود المقايسة المرتبطة مع خيار مقبول/مرفوض لكل بند ── */
+/* ── مراجعة محضر الفحص: عرض بنود المقايسة المرتبطة مع خيار مقبول/جاري الفحص/مرفوض لكل بند ── */
 function reviewInspectionReport(r) {
   let sections = [], meta = {};
   try {
@@ -21842,15 +22119,26 @@ function reviewInspectionReport(r) {
   let totalMfg = 0, totalParts = 0;
   sections.forEach(sec => (sec.items||[]).forEach(it => { totalMfg += it.mfg||0; totalParts += it.parts||0; }));
 
-  // القرارات المحفوظة سابقاً لهذا المحضر (لو موجودة)
+  // القرارات المحفوظة سابقاً لهذا المحضر (لو موجودة) — تدعم الصيغة القديمة (نص) والجديدة (object بحالة وسبب)
   let savedDecisions = {};
   try {
     const parsedItems = JSON.parse(r.items_json || '{}');
-    if (parsedItems && typeof parsedItems === 'object' && !Array.isArray(parsedItems)) savedDecisions = parsedItems;
+    if (parsedItems && typeof parsedItems === 'object' && !Array.isArray(parsedItems)) {
+      Object.keys(parsedItems).forEach(k => {
+        const v = parsedItems[k];
+        savedDecisions[k] = (typeof v === 'string') ? { status: v, reason: '' } : v;
+      });
+    }
   } catch(e) {}
   window._irDecisions = { ...savedDecisions };
 
   const totalItemsCount = sections.reduce((n, sec) => n + (sec.items||[]).length, 0);
+
+  const IR_STATUS_BTNS = [
+    { key:'accepted',    icon:'✅', label:'مقبول',       color:'#16a34a' },
+    { key:'in_progress', icon:'🔄', label:'جاري الفحص',  color:'#d97706' },
+    { key:'rejected',    icon:'❌', label:'مرفوض',       color:'#dc2626' },
+  ];
 
   openModal(`
     <div class="modal-header">
@@ -21869,22 +22157,32 @@ function reviewInspectionReport(r) {
         <table style="width:100%;border-collapse:collapse;font-size:.85rem">
           <thead><tr style="background:#f1f5f9">
             <th style="padding:.4rem;text-align:right;border:1px solid #e2e8f0">بيان العمل</th>
-            <th style="padding:.4rem;border:1px solid #e2e8f0;width:110px">المصنعيات</th>
-            <th style="padding:.4rem;border:1px solid #e2e8f0;width:110px">قطع الغيار</th>
-            <th style="padding:.4rem;border:1px solid #e2e8f0;width:190px">القرار</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:100px">المصنعيات</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:100px">قطع الغيار</th>
+            <th style="padding:.4rem;border:1px solid #e2e8f0;width:230px">القرار</th>
           </tr></thead>
           <tbody>
             ${(sec.items||[]).map((it,ii)=>{
               const key = `s${si}i${ii}`;
-              const decision = window._irDecisions[key] || '';
+              const decision = window._irDecisions[key] || {};
+              const status = decision.status || '';
+              const reason = decision.reason || '';
               return `<tr id="row_${key}">
               <td style="padding:.4rem;border:1px solid #e2e8f0">${it.name||''}</td>
               <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">${(it.mfg||0).toLocaleString('ar-EG')}</td>
               <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">${(it.parts||0).toLocaleString('ar-EG')}</td>
               <td style="padding:.4rem;border:1px solid #e2e8f0;text-align:center">
-                <div style="display:flex;gap:.3rem;justify-content:center">
-                  <button type="button" id="acc_${key}" class="btn btn-sm" style="${decision==='accepted' ? 'background:#16a34a;color:#fff;border-color:#16a34a' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1'}" onclick="setItemDecision('${key}','accepted')">✅ مقبول</button>
-                  <button type="button" id="rej_${key}" class="btn btn-sm" style="${decision==='rejected' ? 'background:#dc2626;color:#fff;border-color:#dc2626' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1'}" onclick="setItemDecision('${key}','rejected')">❌ مرفوض</button>
+                <div style="display:flex;gap:.3rem;justify-content:center;flex-wrap:wrap">
+                  ${IR_STATUS_BTNS.map(b => `
+                    <button type="button" id="dec_${b.key}_${key}" class="btn btn-sm"
+                      style="${status===b.key ? `background:${b.color};color:#fff;border-color:${b.color}` : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1'}"
+                      onclick="setItemDecision('${key}','${b.key}')">${b.icon} ${b.label}</button>
+                  `).join('')}
+                </div>
+                <div id="reasonWrap_${key}" style="display:${status==='rejected'?'block':'none'};margin-top:.4rem">
+                  <textarea id="reason_${key}" rows="2" placeholder="اكتب سبب الرفض هنا (إلزامي)..."
+                    style="width:100%;border:1.5px solid #fca5a5;border-radius:6px;padding:.4rem;font-size:.78rem"
+                    oninput="_irSetReason('${key}', this.value)">${reason}</textarea>
                 </div>
               </td>
             </tr>`;}).join('')}
@@ -21905,11 +22203,21 @@ function reviewInspectionReport(r) {
   if (saveBtn) {
     saveBtn.onclick = async () => {
       const decisions = window._irDecisions || {};
-      const decidedCount = Object.keys(decisions).length;
+      // تحقق: أي بند مرفوض لازم يكون له سبب رفض مكتوب
+      for (const key of Object.keys(decisions)) {
+        const d = decisions[key];
+        if (d && d.status === 'rejected' && !(d.reason||'').trim()) {
+          showNotification('📝 لازم تكتب سبب الرفض لكل بند مرفوض', 'error');
+          const ta = document.getElementById(`reason_${key}`);
+          if (ta) ta.focus();
+          return;
+        }
+      }
+      const decidedCount = Object.values(decisions).filter(d => d && (d.status === 'accepted' || d.status === 'rejected')).length;
       let result = r.result || 'pending';
       if (totalItemsCount > 0) {
         if (decidedCount < totalItemsCount) result = 'pending';
-        else if (Object.values(decisions).includes('rejected')) result = 'needs_repair';
+        else if (Object.values(decisions).some(d => d && d.status === 'rejected')) result = 'needs_repair';
         else result = 'pass';
       }
       const payload = {
@@ -21935,13 +22243,24 @@ function reviewInspectionReport(r) {
   }
 }
 
-function setItemDecision(key, decision) {
+function setItemDecision(key, status) {
   window._irDecisions = window._irDecisions || {};
-  window._irDecisions[key] = decision;
-  const accBtn = document.getElementById(`acc_${key}`);
-  const rejBtn = document.getElementById(`rej_${key}`);
-  if (accBtn) accBtn.style.cssText = decision==='accepted' ? 'background:#16a34a;color:#fff;border-color:#16a34a' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1';
-  if (rejBtn) rejBtn.style.cssText = decision==='rejected' ? 'background:#dc2626;color:#fff;border-color:#dc2626' : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1';
+  const prevReason = (window._irDecisions[key] && window._irDecisions[key].reason) || '';
+  window._irDecisions[key] = { status, reason: status === 'rejected' ? prevReason : '' };
+  ['accepted','in_progress','rejected'].forEach(k => {
+    const btn = document.getElementById(`dec_${k}_${key}`);
+    if (!btn) return;
+    const color = k==='accepted' ? '#16a34a' : (k==='in_progress' ? '#d97706' : '#dc2626');
+    btn.style.cssText = status===k ? `background:${color};color:#fff;border-color:${color}` : 'background:#f1f5f9;color:#334155;border:1px solid #cbd5e1';
+  });
+  const reasonWrap = document.getElementById(`reasonWrap_${key}`);
+  if (reasonWrap) reasonWrap.style.display = status === 'rejected' ? 'block' : 'none';
+}
+
+function _irSetReason(key, val) {
+  window._irDecisions = window._irDecisions || {};
+  if (!window._irDecisions[key]) window._irDecisions[key] = { status: 'rejected', reason: '' };
+  window._irDecisions[key].reason = val;
 }
 
 async function deleteInspectionReport(id) {
@@ -21960,15 +22279,47 @@ const EXTOP_STATUS_LABELS = {
 async function renderWorkshopExternalOps() {
   const c = document.getElementById('pageContent');
   c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
-  const [ops, cars, drvs, quotes] = await Promise.all([
+  const [ops, cars, drvs, quotes, extItemsRes] = await Promise.all([
     apiCall('/workshop/external-ops').catch(()=>[]),
     apiCall('/cars').catch(()=>[]),
     apiCall('/drivers').catch(()=>[]),
     apiCall('/workshop/repair-quotes').catch(()=>[]),
+    apiCall('/workshop/repair-quotes/external-items').catch(()=>({external_items:[]})),
   ]);
   window._eoCars = cars; window._eoDrivers = drvs; window._eoQuotes = quotes;
+  const extItems = extItemsRes.external_items || [];
 
   c.innerHTML = `
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header">
+        <div class="card-title">🚚 بنود خارجية من المقايسات</div>
+      </div>
+      <div style="padding:0 1.2rem .6rem;font-size:.8rem;color:#64748b">كل بند اتحدد نوع تشغيله "خارجي" داخل أي مقايسة إصلاح — بيظهر هنا تلقائياً</div>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>رقم المقايسة</th><th>المركبة</th><th>القسم</th><th>البند</th><th>الفئة</th>
+            <th>الكمية</th><th>الوحدة</th><th>السعر</th><th>المصنعيات</th><th>قطع الغيار</th>
+          </tr></thead>
+          <tbody>
+            ${extItems.length ? extItems.map(it=>`
+              <tr>
+                <td><strong>${it.quote_number||'—'}</strong></td>
+                <td>${it.car_plate||'—'}</td>
+                <td>${it.section_title||'—'}</td>
+                <td>${it.item_name||'—'}</td>
+                <td>${it.category||'—'}</td>
+                <td>${it.qty||0}</td>
+                <td>${it.unit||'—'}</td>
+                <td>${(it.price||0).toLocaleString('ar-EG')} جنيه</td>
+                <td>${(it.mfg||0).toLocaleString('ar-EG')} جنيه</td>
+                <td>${(it.parts||0).toLocaleString('ar-EG')} جنيه</td>
+              </tr>`).join('') : `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد بنود خارجية من المقايسات حالياً</p></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-header">
         <div class="card-title">🚚 طلبات التشغيل الخارجي</div>
@@ -22131,13 +22482,17 @@ const VOUCHER_STATUS_LABELS = { draft: '📝 مسودة', issued: '✅ تم ال
 async function renderWorkshopVouchers() {
   const c = document.getElementById('pageContent');
   c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
-  const [vouchers, cars, drvs, quotes] = await Promise.all([
+  const [vouchers, cars, drvs, quotes, equipRes, reports] = await Promise.all([
     apiCall('/workshop/vouchers').catch(()=>[]),
     apiCall('/cars').catch(()=>[]),
     apiCall('/drivers').catch(()=>[]),
     apiCall('/workshop/repair-quotes').catch(()=>[]),
+    apiCall('/equipment').catch(()=>({equipment:[]})),
+    apiCall('/workshop/inspection-reports').catch(()=>[]),
   ]);
+  const equipment = equipRes.equipment || equipRes || [];
   window._vchCars = cars; window._vchDrivers = drvs; window._vchQuotes = quotes;
+  window._vchEquipment = equipment; window._vchReports = reports;
 
   c.innerHTML = `
     <div class="card">
@@ -22148,14 +22503,14 @@ async function renderWorkshopVouchers() {
       <div class="table-wrap" style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>رقم الإذن</th><th>المركبة</th><th>المستلم</th><th>الغرض</th>
+            <th>رقم الإذن</th><th>المركبة/المعدة</th><th>المستلم</th><th>الغرض</th>
             <th>الإجمالي</th><th>المقايسة</th><th>الحالة</th><th></th>
           </tr></thead>
           <tbody>
             ${vouchers.length ? vouchers.map(v=>`
               <tr>
                 <td><strong>${v.voucher_number||'—'}</strong></td>
-                <td>${v.car_plate||'—'}</td>
+                <td>${v.car_plate || (v.equipment_id ? `🛠️ ${v.equipment_name||v.equipment_id}` : '—')}</td>
                 <td>${v.recipient_name||'—'}</td>
                 <td>${v.purpose||'—'}</td>
                 <td><strong>${(v.total_amount||0).toLocaleString('ar-EG')} جنيه</strong></td>
@@ -22176,8 +22531,11 @@ function openVoucherModal(v) {
   const cars = window._vchCars || [];
   const drvs = window._vchDrivers || [];
   const quotes = window._vchQuotes || [];
+  const equipment = window._vchEquipment || [];
   let items = [];
   try { items = JSON.parse(v?.items_json || '[]'); if(!Array.isArray(items)) items = []; } catch(e) { items = []; }
+
+  const targetType = v?.equipment_id ? 'equipment' : 'car';
 
   openModal(`
     <div class="modal-header">
@@ -22196,26 +22554,45 @@ function openVoucherModal(v) {
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>المركبة *</label>
+    <div class="form-group">
+      <label style="font-weight:800">نوع الصنف المصروف له <span style="color:#dc2626">*</span></label>
+      <div style="display:flex;gap:1rem;margin:.3rem 0 .5rem">
+        <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
+          <input type="radio" name="vchTargetType" value="car" ${targetType==='car'?'checked':''} onchange="_vchOnTargetTypeChange()"> 🚗 مركبة (نمرة العربية)
+        </label>
+        <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
+          <input type="radio" name="vchTargetType" value="equipment" ${targetType==='equipment'?'checked':''} onchange="_vchOnTargetTypeChange()"> 🛠️ معدة (رقم المعدة)
+        </label>
+      </div>
+      <div id="vchCarWrap" style="display:${targetType==='car'?'block':'none'}">
         <select id="vchCar">
-          <option value="">— اختر —</option>
+          <option value="">— اختر رقم العربية —</option>
           ${cars.map(c=>`<option value="${c.id}" ${v?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group">
-        <label>السائق (اختياري)</label>
-        <select id="vchDriver">
-          <option value="">— بدون —</option>
-          ${drvs.map(d=>`<option value="${d.id}" ${v?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+      <div id="vchEquipWrap" style="display:${targetType==='equipment'?'block':'none'}">
+        <select id="vchEquip">
+          <option value="">— اختر رقم/كود المعدة —</option>
+          ${equipment.map(e=>`<option value="${e.car_code}" ${v?.equipment_id===e.car_code?'selected':''}>${e.car_code} | ${e.equipment_name||''}</option>`).join('')}
         </select>
       </div>
+      <div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">⚠️ إدخال رقم المركبة أو رقم المعدة إلزامي — لازم تختار واحد منهم.</div>
     </div>
 
     <div class="form-group">
-      <label>مرتبط بمقايسة إصلاح (اختياري)</label>
-      <select id="vchQuote">
+      <label>السائق (اختياري)</label>
+      <select id="vchDriver">
+        <option value="">— بدون —</option>
+        ${drvs.map(d=>`<option value="${d.id}" ${v?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label style="display:flex;justify-content:space-between;align-items:center">
+        <span>مرتبط بمقايسة إصلاح (اختياري)</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="vchImportBtn" style="display:none">📥 استيراد البنود المقبولة</button>
+      </label>
+      <select id="vchQuote" onchange="_vchOnQuoteChange()">
         <option value="">— بدون ربط —</option>
         ${quotes.map(q=>`<option value="${q.id}" ${v?.quote_id===q.id?'selected':''}>${q.quote_number} — ${q.car_plate||''}</option>`).join('')}
       </select>
@@ -22234,7 +22611,7 @@ function openVoucherModal(v) {
 
     <div class="form-group">
       <label style="display:flex;justify-content:space-between;align-items:center">
-        <span>بنود الصرف</span>
+        <span>بنود الصرف (الكمية = الكمية اللي هتتصرف فعلياً) <span style="color:#dc2626">*</span></span>
         <button type="button" class="btn btn-ghost btn-sm" onclick="vchAddItem()">➕ إضافة بند</button>
       </label>
       <div id="vchItemsContainer" style="display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem"></div>
@@ -22265,19 +22642,25 @@ function openVoucherModal(v) {
   if (items.length) items.forEach(it => vchAddItem(it));
   else vchAddItem();
   _vchRecalcTotal();
+  _vchOnQuoteChange();
 
   document.getElementById('vchSubmitBtn').onclick = async () => {
-    const carId = document.getElementById('vchCar').value;
-    if (!carId) return showNotification('يرجى اختيار المركبة', 'error');
+    const targetType = document.querySelector('input[name="vchTargetType"]:checked')?.value || 'car';
+    const carId = targetType === 'car' ? document.getElementById('vchCar').value : '';
+    const equipId = targetType === 'equipment' ? document.getElementById('vchEquip').value : '';
+    if (!carId && !equipId) return showNotification('📌 لازم تدخل رقم المعدة أو نمرة العربية', 'error');
     const recipient = document.getElementById('vchRecipient').value.trim();
     if (!recipient) return showNotification('يرجى إدخال اسم المستلم', 'error');
     const driverVal = document.getElementById('vchDriver').value;
     const quoteVal = document.getElementById('vchQuote').value;
     const itemsData = _vchCollectItems();
+    if (!itemsData.length) return showNotification('أضف بند صرف واحد على الأقل', 'error');
+    if (itemsData.some(it => !it.qty || it.qty <= 0)) return showNotification('📦 لازم تدخل كمية الصرف (أكبر من صفر) لكل بند', 'error');
     const total = itemsData.reduce((s,it)=>s+(it.amount||0),0);
     const payload = {
       voucher_number: document.getElementById('vchNum').value.trim(),
-      car_id: parseInt(carId),
+      car_id: carId ? parseInt(carId) : null,
+      equipment_id: equipId || '',
       driver_id: driverVal ? parseInt(driverVal) : null,
       quote_id: quoteVal ? parseInt(quoteVal) : null,
       recipient_name: recipient,
@@ -22299,13 +22682,73 @@ function openVoucherModal(v) {
   };
 }
 
+function _vchOnTargetTypeChange() {
+  const type = document.querySelector('input[name="vchTargetType"]:checked')?.value || 'car';
+  const carWrap = document.getElementById('vchCarWrap');
+  const equipWrap = document.getElementById('vchEquipWrap');
+  if (carWrap)   carWrap.style.display   = type === 'car' ? 'block' : 'none';
+  if (equipWrap) equipWrap.style.display = type === 'equipment' ? 'block' : 'none';
+}
+
+/* ── إظهار زر الاستيراد لما يتم اختيار مقايسة، واستيراد البنود المقبولة من محضر الفحص المرتبط ── */
+function _vchOnQuoteChange() {
+  const quoteVal = document.getElementById('vchQuote')?.value;
+  const importBtn = document.getElementById('vchImportBtn');
+  if (!importBtn) return;
+  importBtn.style.display = quoteVal ? 'inline-flex' : 'none';
+  importBtn.onclick = () => _vchImportAcceptedItems(parseInt(quoteVal));
+}
+
+function _vchImportAcceptedItems(quoteId) {
+  const quotes  = window._vchQuotes  || [];
+  const reports = window._vchReports || [];
+  const quote  = quotes.find(q => q.id === quoteId);
+  const report = reports.find(r => r.quote_id === quoteId);
+  if (!quote) return showNotification('المقايسة غير موجودة', 'error');
+  if (!report) return showNotification('لا يوجد محضر فحص مرتبط بهذه المقايسة بعد', 'error');
+
+  let sections = [], meta = {};
+  try {
+    const parsed = JSON.parse(quote.items_json || '[]');
+    if (parsed && typeof parsed === 'object' && parsed.sections) { meta = parsed; sections = parsed.sections || []; }
+    else if (Array.isArray(parsed)) { sections = parsed; }
+  } catch(e) {}
+
+  let decisions = {};
+  try {
+    const parsedItems = JSON.parse(report.items_json || '{}');
+    if (parsedItems && typeof parsedItems === 'object' && !Array.isArray(parsedItems)) decisions = parsedItems;
+  } catch(e) {}
+
+  const acceptedItems = [];
+  sections.forEach((sec, si) => (sec.items||[]).forEach((it, ii) => {
+    const key = `s${si}i${ii}`;
+    const d = decisions[key];
+    const status = (typeof d === 'string') ? d : (d && d.status);
+    if (status === 'accepted') acceptedItems.push(it);
+  }));
+
+  if (!acceptedItems.length) return showNotification('لا توجد بنود مقبولة في محضر الفحص المرتبط', 'error');
+
+  // فضي الحاوية الحالية واملأها بالبنود المقبولة
+  document.getElementById('vchItemsContainer').innerHTML = '';
+  acceptedItems.forEach(it => {
+    const qty    = it.qty || 1;
+    const price  = it.price || 0;
+    const amount = (price && qty) ? qty * price : ((it.mfg||0) + (it.parts||0));
+    vchAddItem({ name: it.name || '', qty, amount });
+  });
+  _vchRecalcTotal();
+  showNotification(`✅ تم استيراد ${acceptedItems.length} بند مقبول — راجع كمية الصرف لكل بند`, 'success');
+}
+
 function vchAddItem(item) {
   const container = document.getElementById('vchItemsContainer');
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:.5rem;align-items:center';
   row.innerHTML = `
     <input type="text" class="vchItemName" value="${item?.name||''}" placeholder="اسم الصنف/البند" style="flex:2">
-    <input type="number" class="vchItemQty" value="${item?.qty??1}" min="0" step="1" placeholder="الكمية" style="flex:1;min-width:80px" oninput="_vchRecalcTotal()">
+    <input type="number" class="vchItemQty" value="${item?.qty??''}" min="0.01" step="1" placeholder="الكمية المصروفة *" style="flex:1;min-width:110px" oninput="_vchRecalcTotal()">
     <input type="number" class="vchItemAmount" value="${item?.amount??''}" min="0" step="0.01" placeholder="القيمة" style="flex:1;min-width:100px" oninput="_vchRecalcTotal()">
     <button type="button" onclick="this.closest('div').remove(); _vchRecalcTotal()" style="color:#dc2626;background:none;border:none;cursor:pointer;font-size:16px">✕</button>`;
   container.appendChild(row);

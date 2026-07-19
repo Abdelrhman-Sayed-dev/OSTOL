@@ -65,6 +65,7 @@ import base64
 import csv
 import hashlib
 import io
+import json
 import math
 import os
 import uuid
@@ -914,7 +915,8 @@ def _safe_add_columns(c):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         voucher_number TEXT DEFAULT '',
         quote_id INTEGER DEFAULT NULL,
-        car_id INTEGER NOT NULL,
+        car_id INTEGER DEFAULT NULL,
+        equipment_id TEXT DEFAULT '',
         driver_id INTEGER DEFAULT NULL,
         recipient_name TEXT DEFAULT '',
         purpose TEXT DEFAULT '',
@@ -930,6 +932,48 @@ def _safe_add_columns(c):
         FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
         FOREIGN KEY(quote_id) REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
     )""")
+    # migration: equipment_id لو الجدول كان موجود من قبل بدونه، وخلي car_id يقبل NULL
+    try:
+        vch_cols = [r[1] for r in c.execute("PRAGMA table_info(workshop_vouchers)").fetchall()]
+        if "equipment_id" not in vch_cols:
+            c.execute("ALTER TABLE workshop_vouchers ADD COLUMN equipment_id TEXT DEFAULT ''")
+        # لو car_id لسه NOT NULL من قبل (جدول قديم) — نعيد إنشاء الجدول بدون القيد عشان نسمح بالصرف على معدة بدل مركبة
+        vch_col_info = c.execute("PRAGMA table_info(workshop_vouchers)").fetchall()
+        car_col = next((col for col in vch_col_info if col[1] == 'car_id'), None)
+        if car_col and car_col[3] == 1:  # notnull=1
+            c.execute("ALTER TABLE workshop_vouchers RENAME TO workshop_vouchers_old")
+            c.execute("""CREATE TABLE workshop_vouchers(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                voucher_number TEXT DEFAULT '',
+                quote_id INTEGER DEFAULT NULL,
+                car_id INTEGER DEFAULT NULL,
+                equipment_id TEXT DEFAULT '',
+                driver_id INTEGER DEFAULT NULL,
+                recipient_name TEXT DEFAULT '',
+                purpose TEXT DEFAULT '',
+                items_json TEXT DEFAULT '[]',
+                total_amount REAL DEFAULT 0,
+                issue_date TEXT DEFAULT '',
+                issued_by TEXT DEFAULT '',
+                status TEXT DEFAULT 'draft' CHECK(status IN ('draft','issued','cancelled')),
+                notes TEXT DEFAULT '',
+                created_by TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE SET NULL,
+                FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE SET NULL,
+                FOREIGN KEY(quote_id) REFERENCES workshop_repair_quotes(id) ON DELETE SET NULL
+            )""")
+            c.execute("""INSERT INTO workshop_vouchers
+                (id,voucher_number,quote_id,car_id,equipment_id,driver_id,recipient_name,purpose,
+                 items_json,total_amount,issue_date,issued_by,status,notes,created_by,created_at)
+                SELECT id,voucher_number,quote_id,
+                       CASE WHEN car_id=0 THEN NULL ELSE car_id END,
+                       COALESCE(equipment_id,''),driver_id,recipient_name,purpose,
+                       items_json,total_amount,issue_date,issued_by,status,notes,created_by,created_at
+                FROM workshop_vouchers_old""")
+            c.execute("DROP TABLE workshop_vouchers_old")
+    except Exception:
+        pass
 
     # ── منصات الإمداد (مخازن متحركة — تانك سولار على عربة، ممكن يحمل وقود أو قطع غيار) ──
     c.execute("""CREATE TABLE IF NOT EXISTS supply_platforms(
@@ -7907,6 +7951,69 @@ async def get_unused_equipment(
     return {"unused_equipment": unused, "total": len(unused)}
 
 
+@app.get("/equipment/report/{car_code}")
+async def get_equipment_report(car_code: str, cu: dict = Depends(require_admin_or_reporter)):
+    """تقرير تفصيلي وقابل للطباعة عن معدة واحدة — كل الورديات، المشغلين، الساعات، الإنتاجية"""
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        eq_row = conn.execute("SELECT * FROM equipment WHERE car_code=?", (car_code,)).fetchone()
+        if not eq_row:
+            raise HTTPException(404, "المعدة غير موجودة")
+        equipment = dict(eq_row)
+
+        shift_rows = conn.execute("""
+            SELECT s.*, o.name AS operator_name, o.phone AS operator_phone, o.national_id AS operator_national_id
+            FROM operator_shifts s
+            LEFT JOIN equipment_operators o ON o.id = s.operator_id
+            WHERE s.equipment_id=?
+            ORDER BY s.start_time DESC
+        """, (car_code,)).fetchall()
+
+    shifts = []
+    total_hours = 0.0
+    operators_set = set()
+    for r in shift_rows:
+        d = dict(r)
+        actual_hours = None
+        if d.get("status") == "ended" and d.get("end_hours") is not None and d.get("start_hours") is not None \
+           and d["end_hours"] > d["start_hours"]:
+            actual_hours = round(d["end_hours"] - d["start_hours"], 2)
+            total_hours += actual_hours
+        if d.get("operator_name"):
+            operators_set.add(d["operator_name"])
+        shifts.append({
+            "id":              d["id"],
+            "operator_name":   d.get("operator_name") or "—",
+            "operator_phone":  d.get("operator_phone") or "",
+            "shift_type":      d.get("shift_type", ""),
+            "start_time":      d.get("start_time", ""),
+            "end_time":        d.get("end_time", ""),
+            "start_hours":     d.get("start_hours", 0),
+            "end_hours":       d.get("end_hours", 0),
+            "actual_hours":    actual_hours,
+            "fuel_liters":     d.get("fuel_liters", 0),
+            "fuel_type":       d.get("fuel_type", ""),
+            "ownership_type":  d.get("ownership_type", ""),
+            "project":         d.get("project", ""),
+            "branch":          d.get("branch", ""),
+            "notes":           d.get("notes", ""),
+            "status":          d.get("status", ""),
+            "start_photo":     d.get("start_photo", ""),
+        })
+
+    shift_count = len(shifts)
+    productivity = round(total_hours / shift_count, 2) if shift_count else 0.0
+    summary = {
+        "shift_count":    shift_count,
+        "total_hours":    round(total_hours, 2),
+        "operators":      sorted(operators_set),
+        "productivity":   productivity,
+        "first_shift_at": shifts[-1]["start_time"] if shifts else None,
+        "last_shift_at":  shifts[0]["start_time"] if shifts else None,
+    }
+    return {"equipment": equipment, "shifts": shifts, "summary": summary}
+
+
 @app.get("/equipment/import/template")
 async def equipment_import_template(cu: dict = Depends(require_admin)):
     """تحميل قالب CSV للمعدات"""
@@ -9656,6 +9763,23 @@ class InspectionReportCreate(BaseModel):
 
 INSPECTION_RESULTS = ("pass", "fail", "needs_repair", "pending")
 
+
+def _validate_inspection_decisions(items_json: str):
+    """أي بند اتحدد 'مرفوض' لازم يكون له سبب رفض مكتوب."""
+    try:
+        decisions = json.loads(items_json or "{}")
+    except Exception:
+        return
+    if not isinstance(decisions, dict):
+        return
+    for key, val in decisions.items():
+        if isinstance(val, dict) and val.get("status") == "rejected":
+            if not (val.get("reason") or "").strip():
+                raise HTTPException(400, f"لازم تدخل سبب الرفض للبند المرفوض ({key})")
+        elif val == "rejected":
+            # صيغة قديمة (نص فقط) بدون سبب — نرفضها لضمان وجود السبب دايماً
+            raise HTTPException(400, f"لازم تدخل سبب الرفض للبند المرفوض ({key})")
+
 @app.get("/workshop/inspection-reports")
 async def list_inspection_reports(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
@@ -9678,6 +9802,7 @@ async def list_inspection_reports(cu: dict = Depends(require_admin_or_reporter))
 async def create_inspection_report(body: InspectionReportCreate, cu: dict = Depends(require_workshop_admin)):
     if body.result not in INSPECTION_RESULTS:
         raise HTTPException(400, "نتيجة فحص غير صالحة")
+    _validate_inspection_decisions(body.items_json)
     with get_db() as conn:
         if not conn.execute("SELECT id FROM cars WHERE id=?", (body.car_id,)).fetchone():
             raise HTTPException(404, "المركبة غير موجودة")
@@ -9700,6 +9825,7 @@ async def create_inspection_report(body: InspectionReportCreate, cu: dict = Depe
 async def update_inspection_report(rid: int, body: InspectionReportCreate, cu: dict = Depends(require_workshop_admin)):
     if body.result not in INSPECTION_RESULTS:
         raise HTTPException(400, "نتيجة فحص غير صالحة")
+    _validate_inspection_decisions(body.items_json)
     with get_db() as conn:
         if not conn.execute("SELECT id FROM workshop_inspection_reports WHERE id=?", (rid,)).fetchone():
             raise HTTPException(404, "المحضر غير موجود")
@@ -9805,7 +9931,8 @@ async def delete_external_op(eid: int, cu: dict = Depends(require_workshop_admin
 class VoucherCreate(BaseModel):
     voucher_number: Optional[str] = ""
     quote_id: Optional[int] = None
-    car_id: int
+    car_id: Optional[int] = None
+    equipment_id: Optional[str] = ""   # كود المعدة (car_code) — بديل عن car_id لو الصنف معدة مش مركبة
     driver_id: Optional[int] = None
     recipient_name: Optional[str] = ""
     purpose: Optional[str] = ""
@@ -9818,16 +9945,67 @@ class VoucherCreate(BaseModel):
 
 VOUCHER_STATUSES = ("draft", "issued", "cancelled")
 
+
+def _validate_voucher_target(conn, body: "VoucherCreate"):
+    """لازم يتحدد إما مركبة (car_id) أو معدة (equipment_id) — واحد منهم إجباري."""
+    car_id = body.car_id if (body.car_id and body.car_id > 0) else None
+    equipment_id = (body.equipment_id or "").strip()
+    if not car_id and not equipment_id:
+        raise HTTPException(400, "لازم تدخل رقم المعدة أو نمرة العربية")
+    if car_id and not conn.execute("SELECT id FROM cars WHERE id=?", (car_id,)).fetchone():
+        raise HTTPException(404, "المركبة غير موجودة")
+    if equipment_id and not conn.execute("SELECT id FROM equipment WHERE car_code=?", (equipment_id,)).fetchone():
+        raise HTTPException(404, "رقم المعدة غير موجود")
+    return car_id, equipment_id
+    # لازم تدخل كمية الصرف لكل بند — يتم التحقق منها في items_json من الفرونت إند
+
+@app.get("/workshop/repair-quotes/external-items")
+async def list_external_quote_items(cu: dict = Depends(require_admin_or_reporter)):
+    """كل البنود (من كل المقايسات) اللي نوع تشغيلها 'خارجي' — تُستخدم فى صفحة طلبات التشغيل الخارجي"""
+    with get_db() as conn:
+        cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
+        quotes = [dict(r) for r in conn.execute(
+            "SELECT id,quote_number,car_id,items_json,quote_date FROM workshop_repair_quotes ORDER BY id DESC"
+        ).fetchall()]
+    result = []
+    for q in quotes:
+        try:
+            parsed = json.loads(q.get("items_json") or "[]")
+        except Exception:
+            continue
+        sections = parsed.get("sections", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+        for si, sec in enumerate(sections):
+            for ii, it in enumerate(sec.get("items", []) if isinstance(sec, dict) else []):
+                if isinstance(it, dict) and it.get("item_type") == "external":
+                    result.append({
+                        "quote_id":       q["id"],
+                        "quote_number":   q.get("quote_number", ""),
+                        "quote_date":     q.get("quote_date", ""),
+                        "car_plate":      cars.get(q.get("car_id"), ""),
+                        "section_title":  sec.get("title", "") if isinstance(sec, dict) else "",
+                        "item_name":      it.get("name", ""),
+                        "category":       it.get("category", ""),
+                        "qty":            it.get("qty", 0),
+                        "unit":           it.get("unit", ""),
+                        "price":          it.get("price", 0),
+                        "mfg":            it.get("mfg", 0),
+                        "parts":          it.get("parts", 0),
+                    })
+    return {"external_items": result}
+
+
 @app.get("/workshop/vouchers")
 async def list_vouchers(cu: dict = Depends(require_admin_or_reporter)):
     with get_db() as conn:
         cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
         drvs = {r["id"]: r["name"] for r in conn.execute("SELECT id,name FROM drivers").fetchall()}
+        equip = {r["car_code"]: r["equipment_name"] for r in conn.execute("SELECT car_code,equipment_name FROM equipment").fetchall()}
         quotes = {r["id"]: r["quote_number"] for r in conn.execute("SELECT id,quote_number FROM workshop_repair_quotes").fetchall()}
         rows = [dict(r) for r in conn.execute("SELECT * FROM workshop_vouchers ORDER BY id DESC").fetchall()]
         for r in rows:
             r["car_plate"] = cars.get(r.get("car_id"), "")
             r["driver_name"] = drvs.get(r.get("driver_id"), "")
+            r["equipment_name"] = equip.get(r.get("equipment_id"), "") if r.get("equipment_id") else ""
             r["quote_number"] = quotes.get(r.get("quote_id"), "")
         return rows
 
@@ -9836,16 +10014,15 @@ async def create_voucher(body: VoucherCreate, cu: dict = Depends(require_worksho
     if body.status not in VOUCHER_STATUSES:
         raise HTTPException(400, "حالة غير صالحة")
     with get_db() as conn:
-        if not conn.execute("SELECT id FROM cars WHERE id=?", (body.car_id,)).fetchone():
-            raise HTTPException(404, "المركبة غير موجودة")
+        car_id, equipment_id = _validate_voucher_target(conn, body)
         now = datetime.utcnow().isoformat() + "Z"
         voucher_number = body.voucher_number or f"VCH-{int(datetime.utcnow().timestamp())}"
         driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
         cur = conn.execute("""INSERT INTO workshop_vouchers
-                              (voucher_number,quote_id,car_id,driver_id,recipient_name,purpose,
+                              (voucher_number,quote_id,car_id,equipment_id,driver_id,recipient_name,purpose,
                                items_json,total_amount,issue_date,issued_by,status,notes,created_by,created_at)
-                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (voucher_number, body.quote_id, body.car_id, driver_id_val, body.recipient_name or "",
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (voucher_number, body.quote_id, car_id, equipment_id, driver_id_val, body.recipient_name or "",
                              body.purpose or "", body.items_json or "[]", body.total_amount or 0,
                              body.issue_date or now[:10], body.issued_by or cu.get("username", ""),
                              body.status or "draft", body.notes or "", cu.get("username", ""), now))
@@ -9860,11 +10037,12 @@ async def update_voucher(vid: int, body: VoucherCreate, cu: dict = Depends(requi
     with get_db() as conn:
         if not conn.execute("SELECT id FROM workshop_vouchers WHERE id=?", (vid,)).fetchone():
             raise HTTPException(404, "الإذن غير موجود")
+        car_id, equipment_id = _validate_voucher_target(conn, body)
         driver_id_val = body.driver_id if (body.driver_id and body.driver_id > 0) else None
         conn.execute("""UPDATE workshop_vouchers SET voucher_number=?,quote_id=COALESCE(?,quote_id),
-                       car_id=?,driver_id=?,recipient_name=?,purpose=?,items_json=?,total_amount=?,
+                       car_id=?,equipment_id=?,driver_id=?,recipient_name=?,purpose=?,items_json=?,total_amount=?,
                        issue_date=?,issued_by=?,status=?,notes=? WHERE id=?""",
-                      (body.voucher_number or "", body.quote_id, body.car_id, driver_id_val, body.recipient_name or "",
+                      (body.voucher_number or "", body.quote_id, car_id, equipment_id, driver_id_val, body.recipient_name or "",
                        body.purpose or "", body.items_json or "[]", body.total_amount or 0, body.issue_date or "",
                        body.issued_by or "", body.status, body.notes or "", vid))
         write_audit_log(cu["user_id"], cu["username"], cu["role"],
@@ -10976,6 +11154,92 @@ async def update_workshop_quantity(wid: int, body: WorkshopQuantityUpdate, cu: d
         )
         log_event("workshop_quantity_edit", record_id=wid, note=f"new_quantity={body.quantity}")
         return {"ok": True, "quantity": body.quantity, "quantity_edited_by": editor_name}
+
+
+# ══════════════════════════════════════════════════════
+# 53.5 SUPERUSER NOTES — ملاحظات مشتركة بين السوبر يوزرز
+# ══════════════════════════════════════════════════════
+
+def _ensure_superuser_notes_table(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS superuser_notes (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_username TEXT NOT NULL,
+        content         TEXT NOT NULL,
+        created_at      TEXT DEFAULT (datetime('now')),
+        updated_at      TEXT DEFAULT ''
+    )""")
+    try: conn.execute("CREATE INDEX IF NOT EXISTS idx_su_notes_created ON superuser_notes(created_at)")
+    except Exception: pass
+
+
+@app.on_event("startup")
+async def _migrate_superuser_notes():
+    with get_db() as conn:
+        _ensure_superuser_notes_table(conn)
+
+
+class SuperNoteCreate(BaseModel):
+    content: str
+
+
+@app.get("/superuser-notes")
+async def list_superuser_notes(cu: dict = Depends(require_superuser)):
+    """كل الملاحظات المشتركة بين السوبر يوزرز — ترتيب من الأحدث للأقدم"""
+    with get_db() as conn:
+        _ensure_superuser_notes_table(conn)
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM superuser_notes ORDER BY id DESC"
+        ).fetchall()]
+    return {"notes": rows}
+
+
+@app.post("/superuser-notes")
+async def create_superuser_note(body: SuperNoteCreate, cu: dict = Depends(require_superuser)):
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(400, "اكتب ملاحظة قبل الإرسال")
+    if len(content) > 4000:
+        raise HTTPException(400, "الملاحظة طويلة جداً")
+    with get_db() as conn:
+        _ensure_superuser_notes_table(conn)
+        conn.execute(
+            "INSERT INTO superuser_notes(author_username, content, created_at) VALUES(?,?,?)",
+            (cu["username"], content, datetime.utcnow().isoformat())
+        )
+        nid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    return {"id": nid, "message": "تم إضافة الملاحظة"}
+
+
+@app.put("/superuser-notes/{note_id}")
+async def update_superuser_note(note_id: int, body: SuperNoteCreate, cu: dict = Depends(require_superuser)):
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(400, "اكتب ملاحظة قبل الحفظ")
+    with get_db() as conn:
+        _ensure_superuser_notes_table(conn)
+        row = conn.execute("SELECT * FROM superuser_notes WHERE id=?", (note_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "الملاحظة غير موجودة")
+        if row["author_username"] != cu["username"]:
+            raise HTTPException(403, "تقدر تعدّل ملاحظاتك أنت فقط")
+        conn.execute(
+            "UPDATE superuser_notes SET content=?, updated_at=? WHERE id=?",
+            (content, datetime.utcnow().isoformat(), note_id)
+        )
+    return {"message": "تم تعديل الملاحظة"}
+
+
+@app.delete("/superuser-notes/{note_id}")
+async def delete_superuser_note(note_id: int, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        _ensure_superuser_notes_table(conn)
+        row = conn.execute("SELECT * FROM superuser_notes WHERE id=?", (note_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "الملاحظة غير موجودة")
+        if row["author_username"] != cu["username"]:
+            raise HTTPException(403, "تقدر تحذف ملاحظاتك أنت فقط")
+        conn.execute("DELETE FROM superuser_notes WHERE id=?", (note_id,))
+    return {"message": "تم حذف الملاحظة"}
 
 
 # ══════════════════════════════════════════════════════
