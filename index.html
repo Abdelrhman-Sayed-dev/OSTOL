@@ -16626,13 +16626,14 @@ async function renderEquipmentLog() {
   const el = document.getElementById('pageContent');
   if (!el) return;
   el.innerHTML =
-    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">' +
+    '<style>@media print { .no-print { display:none !important; } }</style>' +
+    '<div class="no-print" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem">' +
       '<div>' +
         '<h2 style="margin:0;font-size:1.35rem;font-weight:900;color:#0f172a">📊 سركي المعدات</h2>' +
         '<p style="margin:.2rem 0 0;font-size:.82rem;color:#64748b">ابحث عن المعدة واضغط "عرض" لعرض تقرير تفصيلي قابل للطباعة عنها</p>' +
       '</div>' +
     '</div>' +
-    '<div class="card">' +
+    '<div class="card no-print">' +
       '<div style="padding:1rem 1.2rem;display:flex;gap:.6rem;flex-wrap:wrap">' +
         '<input type="text" id="eqLogSearch" placeholder="🔍 ابحث باسم المعدة أو الكود..." style="flex:1;min-width:240px" ' +
           'oninput="clearTimeout(window._eqLogDeb);window._eqLogDeb=setTimeout(searchEquipmentLog,320)" ' +
