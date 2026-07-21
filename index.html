@@ -14145,128 +14145,175 @@ async function renderEquipmentOperatorKpiSection() {
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 
   c.innerHTML = `
-    <div class="page-header">
+    <style>@media print { .no-print { display:none !important; } }</style>
+    <div class="page-header no-print">
       <div class="page-title">🏆 تحليل أداء مشغلي المعدات</div>
     </div>
 
-    <div class="card" style="margin-bottom:1rem;border-radius:14px">
+    <div class="card no-print" style="margin-bottom:1rem;border-radius:14px">
       <div style="padding:.75rem 1.1rem">
         <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
           <div>
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الشهر</label>
-            <input type="month" id="eqKpiMonth" value="${defaultMonth}"
+            <input type="month" id="eqKpiMonth" value="${defaultMonth}" onchange="_eqKpiReloadOperatorList()"
               style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
           </div>
           <div style="min-width:160px">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفرع</label>
-            <input type="text" id="eqKpiBranch" placeholder="كل الفروع" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem;width:100%">
+            <input type="text" id="eqKpiBranch" placeholder="كل الفروع" onchange="_eqKpiReloadOperatorList()" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem;width:100%">
           </div>
-          <button class="btn btn-primary" onclick="loadEquipmentOperatorKpi()" style="height:36px;white-space:nowrap">🔍 عرض</button>
+          <div style="position:relative;min-width:260px;flex:1">
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">🔍 ابحث باسم المشغل</label>
+            <input type="text" id="eqKpiSearch" placeholder="اكتب اسم المشغل..." autocomplete="off"
+              oninput="_eqKpiOnSearchInput(this.value)" onfocus="_eqKpiOnSearchInput(this.value)"
+              style="padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.88rem;width:100%;box-sizing:border-box">
+            <div id="eqKpiDropdown" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:50;
+                background:#fff;border:1.5px solid var(--border);border-radius:9px;margin-top:.3rem;
+                max-height:260px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.1)"></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div id="eqKpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.85rem;margin-bottom:1.1rem"></div>
-
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">📋 تفاصيل مشغلي المعدات</div>
-        <input type="text" id="eqKpiSearch" placeholder="ابحث باسم المشغل..."
-          oninput="filterEquipmentKpiTable(this.value)"
-          style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:200px">
-      </div>
-      <div class="table-wrap" style="overflow-x:auto">
-        <table id="eqKpiTable">
-          <thead>
-            <tr>
-              <th style="width:36px">#</th>
-              <th>المشغل</th>
-              <th>الفرع</th>
-              <th style="text-align:center">النقاط الكلية</th>
-              <th style="text-align:center">الورديات</th>
-              <th style="text-align:center">ساعات التشغيل</th>
-              <th style="text-align:center">وقود (لتر/ساعة)</th>
-              <th>المعدات المشغّلة</th>
-              <th style="text-align:center">تكلفة الصيانة</th>
-              <th style="text-align:center">التصنيف</th>
-            </tr>
-          </thead>
-          <tbody id="eqKpiTableBody">
-            <tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">اختر الشهر ثم اضغط «عرض»</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <div id="eqKpiReportWrap"></div>
   `;
 
-  await loadEquipmentOperatorKpi();
+  await _eqKpiReloadOperatorList();
 }
 
-let _eqKpiData = [];
+let _eqKpiOperatorList = [];
 
-async function loadEquipmentOperatorKpi() {
+async function _eqKpiReloadOperatorList() {
   const month  = document.getElementById('eqKpiMonth')?.value || '';
   const branch = document.getElementById('eqKpiBranch')?.value?.trim() || '';
-  const tbody  = document.getElementById('eqKpiTableBody');
-  const summary = document.getElementById('eqKpiSummary');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
-
   try {
     let url = `/reports/equipment-operator-kpi?month=${month}`;
     if (branch) url += `&branch=${encodeURIComponent(branch)}`;
     const data = await apiCall(url);
-    _eqKpiData = data.operators || [];
-
-    if (summary) {
-      const avgScore = _eqKpiData.length ? (_eqKpiData.reduce((s,d)=>s+d.total_score,0)/_eqKpiData.length) : 0;
-      const excellent = _eqKpiData.filter(d=>d.total_score>=85).length;
-      const needsImprove = _eqKpiData.filter(d=>d.total_score<50).length;
-      summary.innerHTML = `
-        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#eef2ff;color:#4338ca">👷</div>
-          <div><div class="kpi-stat-val">${data.total_operators||0}</div><div class="kpi-stat-lbl">عدد المشغلين</div></div></div>
-        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#ecfdf5;color:#059669">📊</div>
-          <div><div class="kpi-stat-val">${avgScore.toFixed(1)}</div><div class="kpi-stat-lbl">متوسط النقاط</div></div></div>
-        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#eff6ff;color:#2563eb">⏱️</div>
-          <div><div class="kpi-stat-val">${data.avg_hours||0}</div><div class="kpi-stat-lbl">متوسط الساعات</div></div></div>
-        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#f0fdf4;color:#16a34a">🏆</div>
-          <div><div class="kpi-stat-val">${excellent}</div><div class="kpi-stat-lbl">مشغلون ممتازون</div></div></div>
-        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#fef2f2;color:#dc2626">⚠️</div>
-          <div><div class="kpi-stat-val">${needsImprove}</div><div class="kpi-stat-lbl">يحتاجون تحسين</div></div></div>
-      `;
-    }
-    _renderEquipmentKpiTable(_eqKpiData);
+    _eqKpiOperatorList = data.operators || [];
   } catch (e) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:#dc2626">${e.message||'خطأ في تحميل البيانات'}</td></tr>`;
+    _eqKpiOperatorList = [];
   }
 }
 
-function _renderEquipmentKpiTable(rows) {
-  const tbody = document.getElementById('eqKpiTableBody');
-  if (!tbody) return;
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات لهذا الشهر</td></tr>`;
+function _eqKpiOnSearchInput(q) {
+  const dd = document.getElementById('eqKpiDropdown');
+  if (!dd) return;
+  const query = (q||'').trim();
+  const matches = query
+    ? _eqKpiOperatorList.filter(r => (r.operator_name||'').includes(query))
+    : _eqKpiOperatorList;
+  if (!matches.length) {
+    dd.style.display = 'block';
+    dd.innerHTML = `<div style="padding:.7rem 1rem;color:#94a3b8;font-size:.85rem">لا يوجد مشغل مطابق</div>`;
     return;
   }
-  tbody.innerHTML = rows.map((r,i) => `
-    <tr>
-      <td>${r.rank||i+1}</td>
-      <td style="font-weight:700">${r.operator_name}</td>
-      <td>${r.branch||'—'}</td>
-      <td style="text-align:center;font-weight:900">${r.total_score}</td>
-      <td style="text-align:center">${r.shifts}</td>
-      <td style="text-align:center;font-weight:700;color:#2563eb">${r.hours}</td>
-      <td style="text-align:center">${r.consumption ?? '—'}</td>
-      <td style="font-size:.78rem">${(r.equipment_operated||[]).join('، ')||'—'}</td>
-      <td style="text-align:center">${(r.maint_cost||0).toLocaleString('ar-EG')} جنيه</td>
-      <td style="text-align:center"><span class="kpi-grade-badge" style="background:${r.grade_color}22;color:${r.grade_color}">${r.grade}</span></td>
-    </tr>
-  `).join('');
+  dd.style.display = 'block';
+  dd.innerHTML = matches.slice(0,30).map(r => `
+    <div onclick="_eqKpiSelectOperator(${r.operator_id})" style="padding:.6rem 1rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f1f5f9"
+      onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+      <span style="font-weight:700">${r.operator_name}</span>
+      <span style="font-size:.76rem;color:#94a3b8">${r.branch||'—'}</span>
+    </div>`).join('');
 }
 
-function filterEquipmentKpiTable(q) {
-  const query = (q||'').trim();
-  if (!query) return _renderEquipmentKpiTable(_eqKpiData);
-  _renderEquipmentKpiTable(_eqKpiData.filter(r => (r.operator_name||'').includes(query)));
+function _eqKpiSelectOperator(operatorId) {
+  const dd = document.getElementById('eqKpiDropdown');
+  if (dd) dd.style.display = 'none';
+  const r = _eqKpiOperatorList.find(x => x.operator_id === operatorId);
+  const input = document.getElementById('eqKpiSearch');
+  if (input && r) input.value = r.operator_name;
+  if (r) _renderOperatorKpiReport(r);
+}
+
+// إغلاق الدروب داون عند الضغط بره الصندوق
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('eqKpiDropdown');
+  const search = document.getElementById('eqKpiSearch');
+  if (dd && search && !search.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+});
+
+function _renderOperatorKpiReport(r) {
+  const wrap = document.getElementById('eqKpiReportWrap');
+  if (!wrap) return;
+  wrap.scrollIntoView({behavior:'smooth', block:'start'});
+
+  wrap.innerHTML = `
+    <div class="card no-print" style="margin-top:1rem;padding:.8rem 1.2rem;display:flex;justify-content:flex-end">
+      <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ طباعة التقرير</button>
+    </div>
+    <div class="card" style="margin-top:.8rem;padding:1.2rem">
+    <div id="opKpiPrintArea">
+      <style>
+        @media print {
+          .no-print, .sidebar, .topbar { display:none !important; }
+          @page { size: A4 portrait; margin: 10mm 14mm; }
+          body, html { background:#fff !important; }
+          #opKpiPrintArea { font-size: 10pt; color:#000; }
+        }
+        #opKpiPrintArea table { width:100%; border-collapse:collapse; font-size:.82rem; }
+        #opKpiPrintArea th, #opKpiPrintArea td { border:1px solid #cbd5e1; padding:.45rem .6rem; text-align:center; }
+        #opKpiPrintArea th { background:#1e3a5f; color:#fff; font-size:.76rem; }
+      </style>
+
+      <div style="text-align:center;margin-bottom:1rem;border-bottom:2px solid #1e3a5f;padding-bottom:.7rem">
+        <div style="font-size:1.2rem;font-weight:900;color:#1e3a5f">تقرير أداء مشغل معدات (KPI)</div>
+        <div style="font-size:.8rem;color:#64748b;margin-top:.2rem">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1rem;font-size:.86rem">
+        <div><strong>اسم المشغل:</strong> ${r.operator_name||'—'}</div>
+        <div><strong>الفرع:</strong> ${r.branch||'—'}</div>
+        <div><strong>الشهر:</strong> ${r.month||'—'}</div>
+        <div><strong>التصنيف:</strong> <span style="color:${r.grade_color};font-weight:800">${r.grade}</span></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1.2rem">
+        <div style="background:#eef2ff;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#3730a3;font-weight:700">النقاط الكلية</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#3730a3">${r.total_score}</div>
+        </div>
+        <div style="background:#eff6ff;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#1d4ed8;font-weight:700">عدد الورديات</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#1d4ed8">${r.shifts}</div>
+        </div>
+        <div style="background:#f0fdf4;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#166534;font-weight:700">ساعات التشغيل</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#166534">${r.hours}</div>
+        </div>
+        <div style="background:#fff7ed;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#9a3412;font-weight:700">وقود (لتر/ساعة)</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#9a3412">${r.consumption ?? '—'}</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">📊 تفصيل النقاط</div>
+      <table style="margin-bottom:1.2rem">
+        <thead><tr><th>عدد الورديات (20%)</th><th>ساعات التشغيل (60%)</th><th>كفاءة الوقود (20%)</th></tr></thead>
+        <tbody><tr>
+          <td>${r.shifts_score}</td><td>${r.hours_score}</td><td>${r.fuel_score ?? '—'}</td>
+        </tr></tbody>
+      </table>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">🛠️ المعدات التي شغّلها</div>
+      <div style="margin-bottom:1.2rem;font-size:.85rem">${(r.equipment_operated&&r.equipment_operated.length) ? r.equipment_operated.join('، ') : 'لا يوجد'}</div>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">💰 تكلفة الصيانة المرتبطة بمعداته هذا الشهر</div>
+      <div style="margin-bottom:1.2rem;font-size:.85rem;font-weight:700">${(r.maint_cost||0).toLocaleString('ar-EG')} جنيه</div>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">📈 إنتاجية المشغل (كما أدخلها بنفسه)</div>
+      ${(r.productivity_notes && r.productivity_notes.length) ? `
+        <ul style="margin:0 0 1rem;padding-right:1.2rem;font-size:.85rem;line-height:1.8">
+          ${r.productivity_notes.map(n=>`<li>${n}</li>`).join('')}
+        </ul>` : `<div style="margin-bottom:1.2rem;font-size:.85rem;color:#94a3b8">لم يُدخل المشغل أي ملاحظات إنتاجية هذا الشهر</div>`}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.82rem;color:#64748b">
+        <div><strong>أول وردية:</strong> ${r.first_shift ? String(r.first_shift).slice(0,16).replace('T',' ') : '—'}</div>
+        <div><strong>آخر وردية:</strong> ${r.last_shift ? String(r.last_shift).slice(0,16).replace('T',' ') : '—'}</div>
+      </div>
+    </div>
+    </div>
+  `;
 }
 
 
