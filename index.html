@@ -2743,7 +2743,7 @@ const NAV_ITEM_MODULE = {
   'equipment-log':'equipment', 'equipment-unused':'equipment',
   'inv-overview':'inventory', 'inv-products':'inventory', 'inv-categories':'inventory', 'inv-suppliers':'inventory',
   'inv-movements':'inventory', 'inv-alerts':'inventory', 'inv-platforms':'inventory',
-  'monthly-report':'reports', 'driver-kpi':'reports',
+  'monthly-report':'reports', 'driver-kpi':'reports', 'equipment-operator-kpi':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
   'super-admins':'admin', 'super-reporters':'admin', 'super-workshop-admins':'admin', 'super-reassign':'admin',
@@ -2815,6 +2815,7 @@ function buildAdminNav() {
     {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
+    {id:'equipment-operator-kpi', icon:'🏆', label:'KPI مشغلي المعدات'},
     {id:'equipment-mgmt', icon:'🏗️', label:'إدارة المعدات', separator:true},
     {id:'equipment-list',        icon:'⚙️',  label:'قائمة المعدات'},
     {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
@@ -3030,6 +3031,7 @@ async function renderSection(id) {
     case 'inv-alerts': await renderInventoryAlerts(); break;
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
+    case 'equipment-operator-kpi': await renderEquipmentOperatorKpiSection(); break;
     case 'shifts-table':         await renderShiftsTable(); break;
     case 'equipment-operators': await renderEquipmentOperators(); break;
     case 'shifts-table':         await renderShiftsTable(); break;
@@ -9464,7 +9466,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','_sep_fleet','_sep_ops','_sep_reports'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','equipment-operator-kpi','_sep_fleet','_sep_ops','_sep_reports'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops-stats' : 'overview');
   renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
@@ -14133,6 +14135,141 @@ function kpiSelectBranch(val,label){
 }
 
 let _kpiData = [];
+
+// ══════════════════════════════════════════════════════════════════
+// KPI مشغلي المعدات — نفس فلسفة KPI السائقين لكن بالساعات بدل الكيلومترات
+// ══════════════════════════════════════════════════════════════════
+async function renderEquipmentOperatorKpiSection() {
+  const c = document.getElementById('pageContent');
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  c.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">🏆 تحليل أداء مشغلي المعدات</div>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem;border-radius:14px">
+      <div style="padding:.75rem 1.1rem">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الشهر</label>
+            <input type="month" id="eqKpiMonth" value="${defaultMonth}"
+              style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
+          </div>
+          <div style="min-width:160px">
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفرع</label>
+            <input type="text" id="eqKpiBranch" placeholder="كل الفروع" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem;width:100%">
+          </div>
+          <button class="btn btn-primary" onclick="loadEquipmentOperatorKpi()" style="height:36px;white-space:nowrap">🔍 عرض</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="eqKpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.85rem;margin-bottom:1.1rem"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 تفاصيل مشغلي المعدات</div>
+        <input type="text" id="eqKpiSearch" placeholder="ابحث باسم المشغل..."
+          oninput="filterEquipmentKpiTable(this.value)"
+          style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:200px">
+      </div>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table id="eqKpiTable">
+          <thead>
+            <tr>
+              <th style="width:36px">#</th>
+              <th>المشغل</th>
+              <th>الفرع</th>
+              <th style="text-align:center">النقاط الكلية</th>
+              <th style="text-align:center">الورديات</th>
+              <th style="text-align:center">ساعات التشغيل</th>
+              <th style="text-align:center">وقود (لتر/ساعة)</th>
+              <th>المعدات المشغّلة</th>
+              <th style="text-align:center">تكلفة الصيانة</th>
+              <th style="text-align:center">التصنيف</th>
+            </tr>
+          </thead>
+          <tbody id="eqKpiTableBody">
+            <tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">اختر الشهر ثم اضغط «عرض»</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  await loadEquipmentOperatorKpi();
+}
+
+let _eqKpiData = [];
+
+async function loadEquipmentOperatorKpi() {
+  const month  = document.getElementById('eqKpiMonth')?.value || '';
+  const branch = document.getElementById('eqKpiBranch')?.value?.trim() || '';
+  const tbody  = document.getElementById('eqKpiTableBody');
+  const summary = document.getElementById('eqKpiSummary');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
+
+  try {
+    let url = `/reports/equipment-operator-kpi?month=${month}`;
+    if (branch) url += `&branch=${encodeURIComponent(branch)}`;
+    const data = await apiCall(url);
+    _eqKpiData = data.operators || [];
+
+    if (summary) {
+      const avgScore = _eqKpiData.length ? (_eqKpiData.reduce((s,d)=>s+d.total_score,0)/_eqKpiData.length) : 0;
+      const excellent = _eqKpiData.filter(d=>d.total_score>=85).length;
+      const needsImprove = _eqKpiData.filter(d=>d.total_score<50).length;
+      summary.innerHTML = `
+        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#eef2ff;color:#4338ca">👷</div>
+          <div><div class="kpi-stat-val">${data.total_operators||0}</div><div class="kpi-stat-lbl">عدد المشغلين</div></div></div>
+        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#ecfdf5;color:#059669">📊</div>
+          <div><div class="kpi-stat-val">${avgScore.toFixed(1)}</div><div class="kpi-stat-lbl">متوسط النقاط</div></div></div>
+        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#eff6ff;color:#2563eb">⏱️</div>
+          <div><div class="kpi-stat-val">${data.avg_hours||0}</div><div class="kpi-stat-lbl">متوسط الساعات</div></div></div>
+        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#f0fdf4;color:#16a34a">🏆</div>
+          <div><div class="kpi-stat-val">${excellent}</div><div class="kpi-stat-lbl">مشغلون ممتازون</div></div></div>
+        <div class="kpi-stat-card"><div class="kpi-stat-icon" style="background:#fef2f2;color:#dc2626">⚠️</div>
+          <div><div class="kpi-stat-val">${needsImprove}</div><div class="kpi-stat-lbl">يحتاجون تحسين</div></div></div>
+      `;
+    }
+    _renderEquipmentKpiTable(_eqKpiData);
+  } catch (e) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:#dc2626">${e.message||'خطأ في تحميل البيانات'}</td></tr>`;
+  }
+}
+
+function _renderEquipmentKpiTable(rows) {
+  const tbody = document.getElementById('eqKpiTableBody');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات لهذا الشهر</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r,i) => `
+    <tr>
+      <td>${r.rank||i+1}</td>
+      <td style="font-weight:700">${r.operator_name}</td>
+      <td>${r.branch||'—'}</td>
+      <td style="text-align:center;font-weight:900">${r.total_score}</td>
+      <td style="text-align:center">${r.shifts}</td>
+      <td style="text-align:center;font-weight:700;color:#2563eb">${r.hours}</td>
+      <td style="text-align:center">${r.consumption ?? '—'}</td>
+      <td style="font-size:.78rem">${(r.equipment_operated||[]).join('، ')||'—'}</td>
+      <td style="text-align:center">${(r.maint_cost||0).toLocaleString('ar-EG')} جنيه</td>
+      <td style="text-align:center"><span class="kpi-grade-badge" style="background:${r.grade_color}22;color:${r.grade_color}">${r.grade}</span></td>
+    </tr>
+  `).join('');
+}
+
+function filterEquipmentKpiTable(q) {
+  const query = (q||'').trim();
+  if (!query) return _renderEquipmentKpiTable(_eqKpiData);
+  _renderEquipmentKpiTable(_eqKpiData.filter(r => (r.operator_name||'').includes(query)));
+}
+
+
 
 async function loadKpiData() {
   const month  = document.getElementById('kpiMonth')?.value || '';
@@ -20209,12 +20346,14 @@ function openInvMovementModal() {
 async function renderWorkshopRepairQuotes() {
   const c = document.getElementById('pageContent');
   c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
-  const [quotes, cars, drvs] = await Promise.all([
+  const [quotes, cars, drvs, equipRes] = await Promise.all([
     apiCall('/workshop/repair-quotes').catch(()=>[]),
     apiCall('/cars').catch(()=>[]),
     apiCall('/drivers').catch(()=>[]),
+    apiCall('/equipment').catch(()=>({equipment:[]})),
   ]);
   window._rqCars = cars; window._rqDrivers = drvs; window._rqList = quotes;
+  window._rqEquipment = equipRes.equipment || equipRes || [];
   const statusLabels = {draft:'📝 مسودة', approved:'🟢 معتمدة', done:'✅ منفذة', cancelled:'❌ ملغاة'};
 
   c.innerHTML = `
@@ -20277,12 +20416,12 @@ async function renderWorkshopRepairQuotes() {
       </div>
       <div style="padding:0 1.2rem 1.2rem;overflow-x:auto">
         <table style="width:100%"><thead><tr>
-          <th>رقم المقايسة</th><th>المركبة</th><th>الورشة المنفذة</th><th>التاريخ</th><th>الحالة</th><th>الإجمالي الكلي</th><th></th>
+          <th>رقم المقايسة</th><th>المركبة/المعدة</th><th>الورشة المنفذة</th><th>التاريخ</th><th>الحالة</th><th>الإجمالي الكلي</th><th></th>
         </tr></thead><tbody>
           ${quotes.length ? quotes.map(q=>`
             <tr>
               <td><strong>${q.quote_number||'—'}</strong></td>
-              <td>${q.car_plate||'—'}</td>
+              <td>${q.car_plate || (q.equipment_id ? `🛠️ ${q.equipment_name||q.equipment_id}` : '—')}</td>
               <td>${q.workshop_name||'—'}</td>
               <td>${q.quote_date||'—'}</td>
               <td>${statusLabels[q.status]||q.status}</td>
@@ -20307,6 +20446,7 @@ async function renderWorkshopRepairQuotes() {
 function openRepairQuoteModal(q) {
   const cars = window._rqCars || [];
   const drvs = window._rqDrivers || [];
+  const equipment = window._rqEquipment || [];
   let sections = [], meta = {};
   try {
     if (q?.items_json) {
@@ -20372,18 +20512,32 @@ function openRepairQuoteModal(q) {
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>المركبة / المعدة *</label>
+    <div class="form-group">
+      <label style="font-weight:800">المركبة / المعدة <span style="color:#dc2626">*</span></label>
+      <div style="display:flex;gap:1rem;margin:.3rem 0 .5rem">
+        <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
+          <input type="radio" name="rqTargetType" value="car" ${!q?.equipment_id?'checked':''} onchange="_rqOnTargetTypeChange()"> 🚗 مركبة
+        </label>
+        <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
+          <input type="radio" name="rqTargetType" value="equipment" ${q?.equipment_id?'checked':''} onchange="_rqOnTargetTypeChange()"> 🛠️ معدة
+        </label>
+      </div>
+      <div id="rqCarWrap" style="display:${!q?.equipment_id?'block':'none'}">
         <select id="rqCar" onchange="_rqOnCarChange()">
           <option value="">— اختر —</option>
           ${cars.map(c=>`<option value="${c.id}" data-chassis="${c.chassis||''}" ${q?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}${c.model?' | '+c.model:''}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group">
-        <label>رقم الشاسيه</label>
-        <input type="text" id="rqChassis" value="${meta.chassis_number||q?.chassis_number||(cars.find(c=>c.id===q?.car_id)?.chassis)||''}" placeholder="يُملأ تلقائياً عند اختيار المركبة">
+      <div id="rqEquipWrap" style="display:${q?.equipment_id?'block':'none'}">
+        <select id="rqEquip">
+          <option value="">— اختر رقم/كود المعدة —</option>
+          ${equipment.map(e=>`<option value="${e.car_code}" ${q?.equipment_id===e.car_code?'selected':''}>${e.car_code} | ${e.equipment_name||''}</option>`).join('')}
+        </select>
       </div>
+    </div>
+    <div class="form-group">
+      <label>رقم الشاسيه</label>
+      <input type="text" id="rqChassis" value="${meta.chassis_number||q?.chassis_number||(cars.find(c=>c.id===q?.car_id)?.chassis)||''}" placeholder="يُملأ تلقائياً عند اختيار المركبة">
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
@@ -20500,8 +20654,10 @@ function openRepairQuoteModal(q) {
   _rqRecalcTotal();
 
   document.getElementById('rqSaveBtn').onclick = async () => {
-    const carId = parseInt(document.getElementById('rqCar').value) || null;
-    if (!carId) { showNotification('من فضلك اختر المركبة', 'error'); return; }
+    const targetType = document.querySelector('input[name="rqTargetType"]:checked')?.value || 'car';
+    const carId = targetType === 'car' ? (parseInt(document.getElementById('rqCar').value) || null) : null;
+    const equipId = targetType === 'equipment' ? document.getElementById('rqEquip').value : '';
+    if (!carId && !equipId) { showNotification('📌 لازم تدخل رقم المعدة أو نمرة العربية', 'error'); return; }
     if (!document.getElementById('rqNum').value.trim()) { showNotification('من فضلك أدخل رقم المقايسة', 'error'); return; }
 
     const sectionsData = _rqCollectSections();
@@ -20539,6 +20695,7 @@ function openRepairQuoteModal(q) {
     const body = {
       quote_number: document.getElementById('rqNum').value.trim(),
       car_id:       carId,
+      equipment_id: equipId || '',
       quote_date:   document.getElementById('rqDate').value,
       status:       document.getElementById('rqStatus').value,
       items_json:   JSON.stringify(fullPayload),
@@ -20553,6 +20710,14 @@ function openRepairQuoteModal(q) {
       renderWorkshopRepairQuotes();
     } catch(e) { showNotification(e.message, 'error'); }
   };
+}
+
+function _rqOnTargetTypeChange() {
+  const type = document.querySelector('input[name="rqTargetType"]:checked')?.value || 'car';
+  const carWrap = document.getElementById('rqCarWrap');
+  const equipWrap = document.getElementById('rqEquipWrap');
+  if (carWrap)   carWrap.style.display   = type === 'car' ? 'block' : 'none';
+  if (equipWrap) equipWrap.style.display = type === 'equipment' ? 'block' : 'none';
 }
 
 /* ── إضافة قسم جديد (مثل: أعمال ورش المحركات) ── */
@@ -22111,14 +22276,14 @@ async function renderWorkshopInspectionReports() {
       <div class="table-wrap" style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>رقم المحضر</th><th>المركبة</th><th>السائق</th><th>تاريخ الفحص</th>
+            <th>رقم المحضر</th><th>المركبة/المعدة</th><th>السائق</th><th>تاريخ الفحص</th>
             <th>الفاحص</th><th>قراءة العداد</th><th>النتيجة</th><th>المقايسة المرتبطة</th><th></th>
           </tr></thead>
           <tbody>
             ${reports.length ? reports.map(r=>`
               <tr>
                 <td><strong>${r.report_number||'—'}</strong></td>
-                <td>${r.car_plate||'—'}</td>
+                <td>${r.car_plate || (r.equipment_id ? `🛠️ ${r.equipment_name||r.equipment_id}` : '—')}</td>
                 <td>${r.driver_name||'—'}</td>
                 <td>${r.inspection_date||'—'}</td>
                 <td>${r.inspector_name||'—'}</td>
@@ -22251,7 +22416,8 @@ function reviewInspectionReport(r) {
       }
       const payload = {
         report_number: r.report_number || '',
-        car_id: r.car_id,
+        car_id: r.car_id || null,
+        equipment_id: r.equipment_id || '',
         driver_id: r.driver_id || null,
         quote_id: r.quote_id || null,
         inspection_date: r.inspection_date || '',
@@ -22308,14 +22474,16 @@ const EXTOP_STATUS_LABELS = {
 async function renderWorkshopExternalOps() {
   const c = document.getElementById('pageContent');
   c.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
-  const [ops, cars, drvs, quotes, extItemsRes] = await Promise.all([
+  const [ops, cars, drvs, quotes, extItemsRes, equipRes] = await Promise.all([
     apiCall('/workshop/external-ops').catch(()=>[]),
     apiCall('/cars').catch(()=>[]),
     apiCall('/drivers').catch(()=>[]),
     apiCall('/workshop/repair-quotes').catch(()=>[]),
     apiCall('/workshop/repair-quotes/external-items').catch(()=>({external_items:[]})),
+    apiCall('/equipment').catch(()=>({equipment:[]})),
   ]);
   window._eoCars = cars; window._eoDrivers = drvs; window._eoQuotes = quotes;
+  window._eoEquipment = equipRes.equipment || equipRes || [];
   const extItems = extItemsRes.external_items || [];
 
   c.innerHTML = `
@@ -22357,14 +22525,14 @@ async function renderWorkshopExternalOps() {
       <div class="table-wrap" style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>رقم الطلب</th><th>المركبة</th><th>الورشة الخارجية</th><th>سبب التشغيل الخارجي</th>
+            <th>رقم الطلب</th><th>المركبة/المعدة</th><th>الورشة الخارجية</th><th>سبب التشغيل الخارجي</th>
             <th>التكلفة التقديرية</th><th>المصنعيات</th><th>المقايسة</th><th>الحالة</th><th></th>
           </tr></thead>
           <tbody>
             ${ops.length ? ops.map(o=>`
               <tr>
                 <td><strong>${o.request_number||'—'}</strong></td>
-                <td>${o.car_plate||'—'}</td>
+                <td>${o.car_plate || (o.equipment_id ? `🛠️ ${o.equipment_name||o.equipment_id}` : '—')}</td>
                 <td>${o.workshop_name||'—'}</td>
                 <td>${o.reason||'—'}</td>
                 <td>${(o.estimated_cost||0).toLocaleString('ar-EG')} جنيه</td>
@@ -22386,6 +22554,8 @@ function openExternalOpModal(o) {
   const cars = window._eoCars || [];
   const drvs = window._eoDrivers || [];
   const quotes = window._eoQuotes || [];
+  const equipment = window._eoEquipment || [];
+  const targetType = o?.equipment_id ? 'equipment' : 'car';
   openModal(`
     <div class="modal-header">
       <div class="modal-title">${o ? '✏️ تعديل طلب تشغيل خارجي' : '➕ طلب تشغيل خارجي جديد'}</div>
@@ -22403,21 +22573,36 @@ function openExternalOpModal(o) {
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-      <div class="form-group">
-        <label>المركبة *</label>
+    <div class="form-group">
+      <label style="font-weight:800">المركبة / المعدة <span style="color:#dc2626">*</span></label>
+      <div style="display:flex;gap:1rem;margin:.3rem 0 .5rem">
+        <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
+          <input type="radio" name="eoTargetType" value="car" ${targetType==='car'?'checked':''} onchange="_eoOnTargetTypeChange()"> 🚗 مركبة
+        </label>
+        <label style="display:flex;align-items:center;gap:.3rem;font-weight:600;cursor:pointer">
+          <input type="radio" name="eoTargetType" value="equipment" ${targetType==='equipment'?'checked':''} onchange="_eoOnTargetTypeChange()"> 🛠️ معدة
+        </label>
+      </div>
+      <div id="eoCarWrap" style="display:${targetType==='car'?'block':'none'}">
         <select id="eoCar">
           <option value="">— اختر —</option>
           ${cars.map(c=>`<option value="${c.id}" ${o?.car_id===c.id?'selected':''}>${c.plate}${c.car_name?' | '+c.car_name:''}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group">
-        <label>السائق (اختياري)</label>
-        <select id="eoDriver">
-          <option value="">— بدون —</option>
-          ${drvs.map(d=>`<option value="${d.id}" ${o?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+      <div id="eoEquipWrap" style="display:${targetType==='equipment'?'block':'none'}">
+        <select id="eoEquip">
+          <option value="">— اختر رقم/كود المعدة —</option>
+          ${equipment.map(e=>`<option value="${e.car_code}" ${o?.equipment_id===e.car_code?'selected':''}>${e.car_code} | ${e.equipment_name||''}</option>`).join('')}
         </select>
       </div>
+    </div>
+
+    <div class="form-group">
+      <label>السائق (اختياري)</label>
+      <select id="eoDriver">
+        <option value="">— بدون —</option>
+        ${drvs.map(d=>`<option value="${d.id}" ${o?.driver_id===d.id?'selected':''}>${d.name}</option>`).join('')}
+      </select>
     </div>
 
     <div class="form-group">
@@ -22467,15 +22652,18 @@ function openExternalOpModal(o) {
     </div>`);
 
   document.getElementById('eoSubmitBtn').onclick = async () => {
-    const carId = document.getElementById('eoCar').value;
-    if (!carId) return showNotification('يرجى اختيار المركبة', 'error');
+    const targetType = document.querySelector('input[name="eoTargetType"]:checked')?.value || 'car';
+    const carId = targetType === 'car' ? document.getElementById('eoCar').value : '';
+    const equipId = targetType === 'equipment' ? document.getElementById('eoEquip').value : '';
+    if (!carId && !equipId) return showNotification('📌 لازم تدخل رقم المعدة أو نمرة العربية', 'error');
     const workshopName = document.getElementById('eoWorkshop').value.trim();
     if (!workshopName) return showNotification('يرجى إدخال اسم الورشة الخارجية', 'error');
     const driverVal = document.getElementById('eoDriver').value;
     const quoteVal = document.getElementById('eoQuote').value;
     const payload = {
       request_number: document.getElementById('eoNum').value.trim(),
-      car_id: parseInt(carId),
+      car_id: carId ? parseInt(carId) : null,
+      equipment_id: equipId || '',
       driver_id: driverVal ? parseInt(driverVal) : null,
       quote_id: quoteVal ? parseInt(quoteVal) : null,
       workshop_name: workshopName,
@@ -22495,6 +22683,14 @@ function openExternalOpModal(o) {
       closeModal(); renderWorkshopExternalOps();
     } catch(e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ'; }
   };
+}
+
+function _eoOnTargetTypeChange() {
+  const type = document.querySelector('input[name="eoTargetType"]:checked')?.value || 'car';
+  const carWrap = document.getElementById('eoCarWrap');
+  const equipWrap = document.getElementById('eoEquipWrap');
+  if (carWrap)   carWrap.style.display   = type === 'car' ? 'block' : 'none';
+  if (equipWrap) equipWrap.style.display = type === 'equipment' ? 'block' : 'none';
 }
 
 async function deleteExternalOp(id) {
