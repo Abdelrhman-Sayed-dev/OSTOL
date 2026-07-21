@@ -13945,196 +13945,188 @@ async function renderDriverKpiSection() {
   const c = document.getElementById('pageContent');
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const branches = await loadBranches();
+  window._driverKpiBranches = branches;
 
   c.innerHTML = `
-    <style>
-      .kpi-stat-card{
-        background:#fff;
-        border-radius:18px;
-        border:1.5px solid var(--border);
-        box-shadow:0 2px 12px rgba(15,23,42,.06);
-        padding:1rem 1.1rem;
-        display:flex;
-        align-items:center;
-        gap:.75rem;
-        transition:transform .15s, box-shadow .15s;
-      }
-      .kpi-stat-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(15,23,42,.1)}
-      .kpi-stat-icon{
-        width:42px;height:42px;border-radius:12px;
-        display:flex;align-items:center;justify-content:center;
-        font-size:1.2rem;flex-shrink:0;
-      }
-      .kpi-stat-val{font-size:1.25rem;font-weight:900;line-height:1.1;margin-bottom:.2rem;letter-spacing:-.5px}
-      .kpi-stat-lbl{font-size:.7rem;color:var(--muted);font-weight:600;letter-spacing:.2px}
-      .kpi-chart-card{background:#fff;border-radius:16px;border:1.5px solid var(--border);box-shadow:var(--shadow-sm);padding:1.1rem 1.25rem}
-      .kpi-chart-title{font-size:.88rem;font-weight:800;color:var(--text);margin-bottom:.75rem;display:flex;align-items:center;gap:.4rem}
-      .kpi-bar-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem}
-      .kpi-bar-name{font-size:.76rem;font-weight:600;color:var(--text-2);text-align:right;width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .kpi-bar-track{flex:1;background:#f1f5f9;border-radius:4px;height:22px;overflow:hidden;position:relative}
-      .kpi-bar-fill{height:100%;border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding-right:.4rem;font-size:.72rem;font-weight:800;color:#fff;transition:width .6s ease}
-      .kpi-donut-wrap{display:flex;align-items:center;gap:1rem}
-      .kpi-legend-item{display:flex;align-items:center;gap:.4rem;font-size:.78rem;margin-bottom:.35rem}
-      .kpi-legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
-      .kpi-grade-badge{display:inline-block;padding:.2rem .75rem;border-radius:20px;font-size:.75rem;font-weight:700}
-    </style>
-
-    <div class="page-header">
+    <style>@media print { .no-print { display:none !important; } }</style>
+    <div class="page-header no-print">
       <div class="page-title">🏆 تحليل أداء السائقين</div>
-      <div style="display:flex;gap:.5rem;align-items:center">
-        <button class="btn btn-outline btn-sm" onclick="exportKpiCSV()">📥 تصدير CSV</button>
-      </div>
     </div>
 
-    <!-- فلاتر -->
-    <div class="card" style="margin-bottom:1rem;border-radius:14px;overflow:visible">
-      <div style="padding:.75rem 1.1rem;overflow:visible">
-        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;overflow:visible">
+    <div class="card no-print" style="margin-bottom:1rem;border-radius:14px;overflow:visible">
+      <div style="padding:.75rem 1.1rem">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
           <div>
-            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفترة</label>
-            <div style="display:flex;align-items:center;gap:.4rem">
-              <input type="date" id="kpiDateFrom" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
-              <span style="color:#94a3b8;font-size:.8rem">إلى</span>
-              <input type="date" id="kpiDateTo" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
-            </div>
-          </div>
-          <div>
-            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">أو تحديد شهر</label>
-            <input type="month" id="kpiMonth" value="${defaultMonth}"
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الشهر</label>
+            <input type="month" id="drKpiMonth" value="${defaultMonth}" onchange="_drKpiReloadDriverList()"
               style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
           </div>
           <div style="min-width:160px">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفرع</label>
-            <div class="cs-wrapper" id="kpiBranchWrap">
-              <input type="hidden" id="kpiBranchVal" value="">
-              <div class="cs-trigger" id="kpiBranchTrigger" onclick="toggleKpiBranchDd()" tabindex="0">
-                <span class="cs-label cs-placeholder" id="kpiBranchLabel">كل الفروع</span>
-                <span class="cs-arrow">▼</span>
-              </div>
-              <div class="cs-dropdown" id="kpiBranchDd">
-                <div class="cs-list" id="kpiBranchList"></div>
-              </div>
-            </div>
+            <select id="drKpiBranch" onchange="_drKpiReloadDriverList()"
+              style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem;width:100%">
+              <option value="">كل الفروع</option>
+              ${branches.map(b=>`<option value="${b}">${b}</option>`).join('')}
+            </select>
           </div>
-          <button class="btn btn-primary" onclick="loadKpiData()" style="height:36px;white-space:nowrap">🔍 عرض</button>
+          <div style="position:relative;min-width:260px;flex:1">
+            <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">🔍 ابحث باسم السائق</label>
+            <input type="text" id="drKpiSearch" placeholder="اكتب اسم السائق..." autocomplete="off"
+              oninput="_drKpiOnSearchInput(this.value)" onfocus="_drKpiOnSearchInput(this.value)"
+              style="padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.88rem;width:100%;box-sizing:border-box">
+            <div id="drKpiDropdown" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:50;
+                background:#fff;border:1.5px solid var(--border);border-radius:9px;margin-top:.3rem;
+                max-height:260px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.1)"></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- KPI Cards -->
-    <div id="kpiSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:.85rem;margin-bottom:1.1rem"></div>
-
-    <!-- الصف الأول: أفضل 10 + توزيع التصنيف + مقارنة الفروع + اتجاه الأداء -->
-    <div style="display:grid;grid-template-columns:2fr 1.2fr 1.4fr 1.4fr;gap:1rem;margin-bottom:1rem">
-      <div class="kpi-chart-card">
-        <div class="kpi-chart-title">🏆 أفضل 10 سائقين حسب النقاط</div>
-        <div id="kpiTop10Chart"></div>
-      </div>
-      <div class="kpi-chart-card">
-        <div class="kpi-chart-title">🎯 توزيع السائقين حسب التصنيف</div>
-        <div id="kpiDonutChart" style="display:flex;flex-direction:column;align-items:center"></div>
-      </div>
-      <div class="kpi-chart-card">
-        <div class="kpi-chart-title">📊 مقارنة الفروع (متوسط النقاط)</div>
-        <div id="kpiBranchChart"></div>
-      </div>
-      <div class="kpi-chart-card">
-        <div class="kpi-chart-title">📈 اتجاه الأداء العام (متوسط النقاط)</div>
-        <canvas id="kpiTrendCanvas" width="300" height="220"></canvas>
-      </div>
-    </div>
-
-    <!-- جدول تفاصيل السائقين -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">📋 تفاصيل السائقين</div>
-        <input type="text" id="kpiSearch" placeholder="ابحث باسم السائق..."
-          oninput="filterKpiTable(this.value)"
-          style="padding:.4rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:200px">
-      </div>
-      <div class="table-wrap">
-        <table id="kpiTable">
-          <thead>
-            <tr>
-              <th style="width:36px">#</th>
-              <th>السائق</th>
-              <th>الفرع</th>
-              <th style="text-align:center">النقاط الكلية</th>
-              <th style="text-align:center">الرحلات</th>
-              <th style="text-align:center">الكيلومترات</th>
-              <th style="text-align:center">وقود ل/100كم</th>
-              <th style="text-align:center">زيوت ل/1000كم</th>
-              <th style="text-align:center">طوارئ</th>
-              <th style="text-align:center">التصنيف</th>
-              <th style="text-align:center">تفاصيل</th>
-            </tr>
-          </thead>
-          <tbody id="kpiTableBody">
-            <tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">اختر الفترة ثم اضغط «عرض»</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <div id="drKpiReportWrap"></div>
   `;
 
-  // تحميل الفروع للـ dropdown
+  await _drKpiReloadDriverList();
+}
+
+let _drKpiDriverList = [];
+
+async function _drKpiReloadDriverList() {
+  const month  = document.getElementById('drKpiMonth')?.value || '';
+  const branch = document.getElementById('drKpiBranch')?.value?.trim() || '';
   try {
-    const drvs = await apiCall('/drivers');
-    const branches = [...new Set((drvs||[]).map(d=>d.branch).filter(Boolean))].sort();
-    window._kpiBranches = branches;
-    _kpiRenderBranchList();
-    document.addEventListener('click', function _kpiBrOut(e){
-      const wrap=document.getElementById('kpiBranchWrap');
-      if(wrap&&!wrap.contains(e.target)){
-        document.getElementById('kpiBranchDd')?.classList.remove('cs-open');
-        document.getElementById('kpiBranchTrigger')?.classList.remove('cs-open');
-      }
-    });
-  } catch(e){}
-
-  // تعيين تواريخ افتراضية للشهر الحالي
-  const now2=new Date(), y=now2.getFullYear(), m=String(now2.getMonth()+1).padStart(2,'0');
-  const lastDay=new Date(y,now2.getMonth()+1,0).getDate();
-  document.getElementById('kpiDateFrom').value=`${y}-${m}-01`;
-  document.getElementById('kpiDateTo').value=`${y}-${m}-${String(lastDay).padStart(2,'0')}`;
-
-  await loadKpiData();
+    let url = `/reports/driver-kpi?month=${month}`;
+    if (branch) url += `&branch=${encodeURIComponent(branch)}`;
+    const data = await apiCall(url);
+    _drKpiDriverList = data.drivers || [];
+  } catch (e) {
+    _drKpiDriverList = [];
+  }
 }
 
-function _kpiRenderBranchList() {
-  const list=document.getElementById('kpiBranchList'); if(!list) return;
-  const branches=window._kpiBranches||[];
-  list.innerHTML='';
-  const allDiv=document.createElement('div');
-  allDiv.className='cs-option cs-selected';
-  allDiv.textContent='كل الفروع';
-  allDiv.addEventListener('click',()=>kpiSelectBranch('','كل الفروع'));
-  list.appendChild(allDiv);
-  branches.forEach(b=>{
-    const d=document.createElement('div');
-    d.className='cs-option';
-    d.textContent=b;
-    d.addEventListener('click',()=>kpiSelectBranch(b,b));
-    list.appendChild(d);
-  });
+function _drKpiOnSearchInput(q) {
+  const dd = document.getElementById('drKpiDropdown');
+  if (!dd) return;
+  const query = (q||'').trim();
+  const matches = query
+    ? _drKpiDriverList.filter(r => (r.driver_name||'').includes(query))
+    : _drKpiDriverList;
+  if (!matches.length) {
+    dd.style.display = 'block';
+    dd.innerHTML = `<div style="padding:.7rem 1rem;color:#94a3b8;font-size:.85rem">لا يوجد سائق مطابق</div>`;
+    return;
+  }
+  dd.style.display = 'block';
+  dd.innerHTML = matches.slice(0,30).map(r => `
+    <div onclick="_drKpiSelectDriver(${r.driver_id})" style="padding:.6rem 1rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f1f5f9"
+      onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+      <span style="font-weight:700">${r.driver_name}</span>
+      <span style="font-size:.76rem;color:#94a3b8">${r.branch||'—'}</span>
+    </div>`).join('');
 }
 
-function toggleKpiBranchDd(){
-  const dd=document.getElementById('kpiBranchDd'),tr=document.getElementById('kpiBranchTrigger');
-  if(!dd||!tr) return;
-  const open=dd.classList.contains('cs-open');
-  dd.classList.toggle('cs-open',!open); tr.classList.toggle('cs-open',!open);
+function _drKpiSelectDriver(driverId) {
+  const dd = document.getElementById('drKpiDropdown');
+  if (dd) dd.style.display = 'none';
+  const r = _drKpiDriverList.find(x => x.driver_id === driverId);
+  const input = document.getElementById('drKpiSearch');
+  if (input && r) input.value = r.driver_name;
+  if (r) _renderDriverKpiReport(r);
 }
 
-function kpiSelectBranch(val,label){
-  document.getElementById('kpiBranchVal').value=val;
-  const lbl=document.getElementById('kpiBranchLabel');
-  if(lbl){lbl.textContent=label||'كل الفروع';lbl.classList.toggle('cs-placeholder',!val);}
-  document.getElementById('kpiBranchDd')?.classList.remove('cs-open');
-  document.getElementById('kpiBranchTrigger')?.classList.remove('cs-open');
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('drKpiDropdown');
+  const search = document.getElementById('drKpiSearch');
+  if (dd && search && !search.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+});
+
+function _renderDriverKpiReport(r) {
+  const wrap = document.getElementById('drKpiReportWrap');
+  if (!wrap) return;
+  wrap.scrollIntoView({behavior:'smooth', block:'start'});
+
+  wrap.innerHTML = `
+    <div class="card no-print" style="margin-top:1rem;padding:.8rem 1.2rem;display:flex;justify-content:flex-end">
+      <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ طباعة التقرير</button>
+    </div>
+    <div class="card" style="margin-top:.8rem;padding:1.2rem">
+    <div id="drKpiPrintArea">
+      <style>
+        @media print {
+          .no-print, .sidebar, .topbar { display:none !important; }
+          @page { size: A4 portrait; margin: 10mm 14mm; }
+          body, html { background:#fff !important; }
+          #drKpiPrintArea { font-size: 10pt; color:#000; }
+        }
+        #drKpiPrintArea table { width:100%; border-collapse:collapse; font-size:.82rem; }
+        #drKpiPrintArea th, #drKpiPrintArea td { border:1px solid #cbd5e1; padding:.45rem .6rem; text-align:center; }
+        #drKpiPrintArea th { background:#1e3a5f; color:#fff; font-size:.76rem; }
+      </style>
+
+      <div style="text-align:center;margin-bottom:1rem;border-bottom:2px solid #1e3a5f;padding-bottom:.7rem">
+        <div style="font-size:1.2rem;font-weight:900;color:#1e3a5f">تقرير أداء سائق (KPI)</div>
+        <div style="font-size:.8rem;color:#64748b;margin-top:.2rem">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1rem;font-size:.86rem">
+        <div><strong>اسم السائق:</strong> ${r.driver_name||'—'}</div>
+        <div><strong>الفرع:</strong> ${r.branch||'—'}</div>
+        <div><strong>الشهر:</strong> ${r.month||'—'}</div>
+        <div><strong>التصنيف:</strong> <span style="color:${r.grade_color};font-weight:800">${r.grade}</span></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1.2rem">
+        <div style="background:#eef2ff;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#3730a3;font-weight:700">النقاط الكلية</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#3730a3">${r.total_score}</div>
+        </div>
+        <div style="background:#eff6ff;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#1d4ed8;font-weight:700">عدد الرحلات</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#1d4ed8">${r.trips}</div>
+        </div>
+        <div style="background:#f0fdf4;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#166534;font-weight:700">الكيلومترات</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#166534">${r.km}</div>
+        </div>
+        <div style="background:#fff7ed;border-radius:10px;padding:.7rem;text-align:center">
+          <div style="font-size:.72rem;color:#9a3412;font-weight:700">وقود (لتر/100كم)</div>
+          <div style="font-size:1.3rem;font-weight:900;color:#9a3412">${r.consumption ?? '—'}</div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">📊 تفصيل النقاط</div>
+      <table style="margin-bottom:1.2rem">
+        <thead><tr>
+          <th>الرحلات (10%)</th><th>الكيلومترات (40%)</th><th>الوقود (40%)</th>
+          <th>الزيوت (5%)</th><th>الطوارئ (5%)</th>
+        </tr></thead>
+        <tbody><tr>
+          <td>${r.trips_score}</td><td>${r.km_score}</td><td>${r.fuel_score ?? '—'}</td>
+          <td>${r.oil_score ?? '—'}</td><td>${r.emg_score}</td>
+        </tr></tbody>
+      </table>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.2rem;font-size:.85rem">
+        <div><strong>⛽ وقود مستهلك:</strong> ${r.fuel_liters||0} لتر (${(r.fuel_cost||0).toLocaleString('ar-EG')} جنيه)</div>
+        <div><strong>🛢️ زيوت مستهلكة:</strong> ${r.oil_liters||0} لتر ${r.oil_per_1000!=null ? `(${r.oil_per_1000} لتر/1000كم)` : ''}</div>
+        <div><strong>🚨 عدد الطوارئ/الحوادث:</strong> ${r.emergencies||0}</div>
+        <div><strong>🛠️ طلبات صيانة مفتوحة:</strong> ${r.open_requests||0}</div>
+      </div>
+
+      <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">💰 تكلفة الصيانة هذا الشهر</div>
+      <div style="margin-bottom:1.2rem;font-size:.85rem;font-weight:700">
+        ${(r.maint_cost||0).toLocaleString('ar-EG')} جنيه (${r.maint_count||0} طلب)
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.82rem;color:#64748b">
+        <div><strong>أول رحلة:</strong> ${r.first_trip ? String(r.first_trip).slice(0,16).replace('T',' ') : '—'}</div>
+        <div><strong>آخر رحلة:</strong> ${r.last_trip ? String(r.last_trip).slice(0,16).replace('T',' ') : '—'}</div>
+      </div>
+    </div>
+    </div>
+  `;
 }
 
-let _kpiData = [];
 
 // ══════════════════════════════════════════════════════════════════
 // KPI مشغلي المعدات — نفس فلسفة KPI السائقين لكن بالساعات بدل الكيلومترات
@@ -14143,6 +14135,7 @@ async function renderEquipmentOperatorKpiSection() {
   const c = document.getElementById('pageContent');
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const branches = await loadBranches();
 
   c.innerHTML = `
     <style>@media print { .no-print { display:none !important; } }</style>
@@ -14160,7 +14153,11 @@ async function renderEquipmentOperatorKpiSection() {
           </div>
           <div style="min-width:160px">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">الفرع</label>
-            <input type="text" id="eqKpiBranch" placeholder="كل الفروع" onchange="_eqKpiReloadOperatorList()" style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem;width:100%">
+            <select id="eqKpiBranch" onchange="_eqKpiReloadOperatorList()"
+              style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem;width:100%">
+              <option value="">كل الفروع</option>
+              ${branches.map(b=>`<option value="${b}">${b}</option>`).join('')}
+            </select>
           </div>
           <div style="position:relative;min-width:260px;flex:1">
             <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">🔍 ابحث باسم المشغل</label>
@@ -14314,499 +14311,6 @@ function _renderOperatorKpiReport(r) {
     </div>
     </div>
   `;
-}
-
-
-
-async function loadKpiData() {
-  const month  = document.getElementById('kpiMonth')?.value || '';
-  const branch = document.getElementById('kpiBranchVal')?.value?.trim() || '';
-  const dateFrom = document.getElementById('kpiDateFrom')?.value || '';
-  const dateTo   = document.getElementById('kpiDateTo')?.value || '';
-  const tbody  = document.getElementById('kpiTableBody');
-  const summary = document.getElementById('kpiSummary');
-
-  if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:2rem">⏳ جاري التحميل...</td></tr>`;
-
-  try {
-    let url = `/reports/driver-kpi?month=${month}`;
-    if (branch) url += `&branch=${encodeURIComponent(branch)}`;
-    if (dateFrom) url += `&date_from=${dateFrom}`;
-    if (dateTo) url += `&date_to=${dateTo}`;
-
-    const data = await apiCall(url);
-    _kpiData = data.drivers || [];
-
-    // ── ملخص KPI Cards ──
-    const active    = _kpiData.length;
-    const avgScore  = active ? Math.round(_kpiData.reduce((s,d)=>s+d.total_score,0)/active) : 0;
-    const totalTrips= _kpiData.reduce((s,d)=>s+(d.trips||0),0);
-    const totalEmg  = _kpiData.reduce((s,d)=>s+(d.emergencies||0),0);
-    const excellent = _kpiData.filter(d=>d.grade==='ممتاز').length;
-
-    if (summary) summary.innerHTML = [
-      {label:'إجمالي السائقين', value:active,                             icon:'👥', iconBg:'#e0e7ff', color:'#4338ca'},
-      {label:'إجمالي الرحلات',  value:totalTrips.toLocaleString('ar-EG'), icon:'🚗', iconBg:'#d1fae5', color:'#059669'},
-      {label:'إجمالي الطوارئ',  value:totalEmg,                           icon:'🚨', iconBg:'#fee2e2', color:'#dc2626'},
-      {label:'تصنيف ممتاز',      value:excellent+' سائق',                  icon:'🏆', iconBg:'#fef9c3', color:'#ca8a04'},
-    ].map(s=>`
-      <div class="kpi-stat-card">
-        <div class="kpi-stat-icon" style="background:${s.iconBg}">${s.icon}</div>
-        <div style="min-width:0">
-          <div class="kpi-stat-val" style="color:${s.color}">${s.value}</div>
-          <div class="kpi-stat-lbl">${s.label}</div>
-        </div>
-      </div>`).join('');
-
-    renderKpiTable(_kpiData);
-    _renderKpiCharts(_kpiData);
-
-  } catch(e) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#ef4444;padding:2rem">❌ ${e.message}</td></tr>`;
-  }
-}
-
-function _renderKpiCharts(rows) {
-  if(!rows || !rows.length) return;
-
-  // ── 1. أفضل 10 بار شارت ──
-  const top10El = document.getElementById('kpiTop10Chart');
-  if(top10El) {
-    const top10 = rows.slice(0,10);
-    const maxScore = top10[0]?.total_score||100;
-    const COLORS = ['#1a9968','#22c55e','#4ade80','#6ee7b7','#34d399','#10b981','#059669','#047857','#065f46','#064e3b'];
-    top10El.innerHTML = top10.map((d,i)=>{
-      const pct = Math.round((d.total_score/maxScore)*100);
-      const col = COLORS[i]||'#22c55e';
-      const shortName = d.driver_name.split(' ').slice(0,2).join(' ');
-      return `<div class="kpi-bar-row">
-        <div class="kpi-bar-name" title="${d.driver_name}">${shortName}</div>
-        <div class="kpi-bar-track">
-          <div class="kpi-bar-fill" style="width:${pct}%;background:${col}">${d.total_score}</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-
-  // ── 2. Donut توزيع التصنيف ──
-  const donutEl = document.getElementById('kpiDonutChart');
-  if(donutEl) {
-    const grades = [
-      {label:'ممتاز',       color:'#22c55e', min:85},
-      {label:'جيد جداً',    color:'#3b82f6', min:70},
-      {label:'جيد',         color:'#f59e0b', min:50},
-      {label:'ضعيف',        color:'#ef4444', min:0},
-    ];
-    const counts = grades.map(g=>{
-      if(g.label==='ممتاز') return {...g, count: rows.filter(d=>d.total_score>=85).length};
-      if(g.label==='جيد جداً') return {...g, count: rows.filter(d=>d.total_score>=70&&d.total_score<85).length};
-      if(g.label==='جيد') return {...g, count: rows.filter(d=>d.total_score>=50&&d.total_score<70).length};
-      return {...g, count: rows.filter(d=>d.total_score<50).length};
-    }).filter(g=>g.count>0);
-    const total=rows.length;
-    // SVG donut
-    let svg=`<svg viewBox="0 0 120 120" width="130" height="130">`;
-    let offset=0;
-    const cx=60,cy=60,r=45,stroke=22;
-    const circ=2*Math.PI*r;
-    counts.forEach(g=>{
-      const pct=g.count/total;
-      const dash=pct*circ;
-      const angle=offset*circ;
-      svg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${g.color}" stroke-width="${stroke}"
-        stroke-dasharray="${dash} ${circ-dash}"
-        stroke-dashoffset="${circ/4-angle}"
-        style="transition:stroke-dasharray .5s"/>`;
-      offset+=pct;
-    });
-    svg+=`<text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="14" font-weight="900" fill="#1e293b">${total}</text>`;
-    svg+=`<text x="${cx}" y="${cy+12}" text-anchor="middle" font-size="7" fill="#64748b">إجمالي السائقين</text>`;
-    svg+=`</svg>`;
-    const legend=counts.map(g=>`<div class="kpi-legend-item"><div class="kpi-legend-dot" style="background:${g.color}"></div><span>${g.label} — ${Math.round(g.count/total*100)}%</span></div>`).join('');
-    donutEl.innerHTML=`<div class="kpi-donut-wrap">${svg}<div>${legend}</div></div>`;
-  }
-
-  // ── 3. مقارنة الفروع ──
-  const branchEl = document.getElementById('kpiBranchChart');
-  if(branchEl) {
-    const branchMap={};
-    rows.forEach(d=>{const b=d.branch||'غير محدد';if(!branchMap[b])branchMap[b]={sum:0,count:0};branchMap[b].sum+=d.total_score;branchMap[b].count++;});
-    const branchData=Object.entries(branchMap).map(([b,v])=>({branch:b,avg:Math.round(v.sum/v.count)})).sort((a,b)=>b.avg-a.avg).slice(0,6);
-    const maxAvg=branchData[0]?.avg||100;
-    const branchColors=['#06b6d4','#22c55e','#8b5cf6','#f59e0b','#3b82f6','#10b981'];
-    branchEl.innerHTML=branchData.map((b,i)=>`<div class="kpi-bar-row">
-      <div class="kpi-bar-name" title="${b.branch}">${b.branch}</div>
-      <div class="kpi-bar-track">
-        <div class="kpi-bar-fill" style="width:${Math.round(b.avg/maxAvg*100)}%;background:${branchColors[i]||'#22c55e'}">${b.avg}%</div>
-      </div>
-    </div>`).join('');
-  }
-
-  // ── 4. Trend line — بيانات حقيقية من الـ API ──
-  // نرسم placeholder فوراً، ثم نجيب البيانات الحقيقية async
-  const trendCanvas=document.getElementById('kpiTrendCanvas');
-  if(trendCanvas) {
-    const ctx=trendCanvas.getContext('2d');
-    const W=trendCanvas.width, H=trendCanvas.height;
-    ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='#94a3b8';ctx.font='12px Cairo,sans-serif';ctx.textAlign='center';
-    ctx.fillText('⏳ جاري تحميل بيانات الاتجاه...', W/2, H/2);
-  }
-  // نشغّل الـ fetch بدون await
-  _loadAndDrawTrend();
-}
-
-// ── دالة مستقلة لجلب ورسم بيانات الـ trend الحقيقية ──
-async function _loadAndDrawTrend() {
-  const trendCanvas = document.getElementById('kpiTrendCanvas');
-  if (!trendCanvas) return;
-  const ctx = trendCanvas.getContext('2d');
-  const W = trendCanvas.width, H = trendCanvas.height;
-
-  try {
-    const branch = document.getElementById('kpiBranchVal')?.value?.trim() || '';
-    const branchParam = branch ? `&branch=${encodeURIComponent(branch)}` : '';
-
-    // آخر 6 شهور من الشهر الحالي للخلف
-    const now = new Date();
-    const monthsToFetch = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      const label = d.toLocaleDateString('ar-EG', {month:'short', year:'2-digit'});
-      monthsToFetch.push({ ym, label });
-    }
-
-    // fetch موازي لكل الشهور
-    const results = await Promise.all(
-      monthsToFetch.map(async m => {
-        try {
-          const data = await apiCall(`/reports/driver-kpi?month=${m.ym}${branchParam}`);
-          const drivers = data.drivers || [];
-          if (!drivers.length) return { ...m, avg: null };
-          const avg = Math.round(drivers.reduce((s, d) => s + d.total_score, 0) / drivers.length);
-          return { ...m, avg };
-        } catch { return { ...m, avg: null }; }
-      })
-    );
-
-    // فلتر الشهور اللي فيها بيانات فعلية
-    const validPoints = results.filter(r => r.avg !== null);
-
-    ctx.clearRect(0, 0, W, H);
-
-    if (validPoints.length === 0) {
-      ctx.fillStyle = '#94a3b8'; ctx.font = '11px Cairo,sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText('لا توجد بيانات بعد', W/2, H/2);
-      return;
-    }
-
-    if (validPoints.length === 1) {
-      const x = W/2, y = H/2 - 10;
-      ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2);
-      ctx.fillStyle='#22c55e'; ctx.fill();
-      ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
-      ctx.fillStyle='#1e293b'; ctx.font='bold 10px Cairo,sans-serif'; ctx.textAlign='center';
-      ctx.fillText(validPoints[0].avg+'%', x, y-12);
-      ctx.fillStyle='#94a3b8'; ctx.font='9px Cairo,sans-serif';
-      ctx.fillText(validPoints[0].label, x, H-5);
-      return;
-    }
-
-    const vals = validPoints.map(p => p.avg);
-    const PAD = {t:24,r:20,b:30,l:44};
-    const minV = Math.min(...vals) - 5;
-    const maxV = Math.max(...vals) + 5;
-    const toX = i => PAD.l + (W-PAD.l-PAD.r)*i/(validPoints.length-1);
-    const toY = v => H-PAD.b - (H-PAD.t-PAD.b)*(v-minV)/(maxV-minV);
-
-    // grid + Y labels
-    ctx.strokeStyle='#f1f5f9'; ctx.lineWidth=1;
-    for (let i=0; i<=4; i++) {
-      const y = PAD.t + (H-PAD.t-PAD.b)*i/4;
-      ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke();
-      const yVal = Math.round(maxV - (maxV-minV)*i/4);
-      ctx.fillStyle='#cbd5e1'; ctx.font='8px Cairo,sans-serif'; ctx.textAlign='right';
-      ctx.fillText(yVal+'%', PAD.l-4, y+3);
-    }
-
-    // gradient fill تحت الخط
-    const grad = ctx.createLinearGradient(0, PAD.t, 0, H-PAD.b);
-    grad.addColorStop(0, 'rgba(34,197,94,0.18)');
-    grad.addColorStop(1, 'rgba(34,197,94,0)');
-    ctx.beginPath();
-    ctx.moveTo(toX(0), toY(vals[0]));
-    vals.forEach((v,i) => { if(i>0) ctx.lineTo(toX(i),toY(v)); });
-    ctx.lineTo(toX(vals.length-1), H-PAD.b);
-    ctx.lineTo(toX(0), H-PAD.b);
-    ctx.closePath();
-    ctx.fillStyle = grad; ctx.fill();
-
-    // الخط الرئيسي
-    ctx.beginPath(); ctx.strokeStyle='#22c55e'; ctx.lineWidth=2.5;
-    vals.forEach((v,i) => i===0 ? ctx.moveTo(toX(i),toY(v)) : ctx.lineTo(toX(i),toY(v)));
-    ctx.stroke();
-
-    // النقاط والتسميات
-    validPoints.forEach((p,i) => {
-      const x=toX(i), y=toY(p.avg);
-      ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2);
-      ctx.fillStyle='#22c55e'; ctx.fill();
-      ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
-      ctx.fillStyle='#1e293b'; ctx.font='bold 9px Cairo,sans-serif'; ctx.textAlign='center';
-      ctx.fillText(p.avg+'%', x, y-9);
-      ctx.fillStyle='#94a3b8'; ctx.font='8px Cairo,sans-serif';
-      ctx.fillText(p.label, x, H-4);
-    });
-
-  } catch(e) {
-    ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='#ef4444'; ctx.font='10px Cairo,sans-serif'; ctx.textAlign='center';
-    ctx.fillText('خطأ في تحميل البيانات', W/2, H/2);
-  }
-}
-
-function renderKpiTable(rows) {
-  const tbody = document.getElementById('kpiTableBody');
-  if (!tbody) return;
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:2rem;color:var(--muted)">لا توجد بيانات</td></tr>`;
-    return;
-  }
-
-  const avgKm = _kpiData.length ? (_kpiData.reduce((s,d)=>s+(d.avg_km_peers||0),0)/_kpiData.length) : 0;
-
-    // ── KPI Pagination ──
-  const _kpiPg    = getPage('kpi');
-  const _kpiPaged = paginateData(rows, _kpiPg, 15);
-  tbody.innerHTML = _kpiPaged.map(d => {
-    const barColor = d.total_score>=85?'#10b981':d.total_score>=70?'#3b82f6':d.total_score>=50?'#f97316':'#ef4444';
-    // SVG mini circle
-    const _R=20,_S=4,_C=2*Math.PI*_R,_D=(d.total_score/100)*_C;
-    const scoreBar = `
-      <div style="display:flex;align-items:center;gap:.6rem">
-        <svg viewBox="0 0 50 50" width="42" height="42" style="flex-shrink:0">
-          <circle cx="25" cy="25" r="${_R}" fill="none" stroke="${barColor}22" stroke-width="${_S}"/>
-          <circle cx="25" cy="25" r="${_R}" fill="none" stroke="${barColor}" stroke-width="${_S}"
-            stroke-linecap="round"
-            stroke-dasharray="${_D.toFixed(1)} ${(_C-_D).toFixed(1)}"
-            stroke-dashoffset="${(_C/4).toFixed(1)}"/>
-          <text x="25" y="29" text-anchor="middle" font-size="11" font-weight="900"
-                fill="${barColor}" font-family="Cairo,sans-serif">${d.total_score}</text>
-        </svg>
-        <div>
-          <div style="font-weight:900;color:${barColor};font-size:.9rem">${d.total_score}%</div>
-          <div style="font-size:.68rem;color:var(--muted)">${d.grade}</div>
-        </div>
-      </div>`;
-
-    const grade = `<span style="background:${d.grade_color}20;color:${d.grade_color};font-size:.75rem;padding:.2rem .7rem;border-radius:20px;font-weight:700">${d.grade}</span>`;
-    const rankEmoji = d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':`<span style="font-weight:700">#${d.rank}</span>`;
-
-    // الرحلات (10%)
-    const tripsCell = `<div style="text-align:center">
-      <div style="font-weight:700">${d.trips}</div>
-      <div style="font-size:.72rem;color:${d.trips_score>=85?'#10b981':d.trips_score>=50?'#f97316':'#ef4444'}">${d.trips_score??0}%</div>
-    </div>`;
-
-    // الكيلومترات (40%) - مع المقارنة بالمتوسط
-    const kmRef = d.avg_km_peers || 0;
-    const kmVsAvg = kmRef>0 ? (d.km>=kmRef*1.1?'↑':d.km<kmRef*0.9?'↓':'=') : '';
-    const kmCell = `<div style="text-align:center">
-      <div style="font-weight:700">${d.km.toLocaleString('ar-EG')} كم <span style="color:${kmVsAvg==='↑'?'#10b981':kmVsAvg==='↓'?'#ef4444':'#94a3b8'}">${kmVsAvg}</span></div>
-      <div style="font-size:.72rem;color:${d.km_score>=85?'#10b981':d.km_score>=50?'#f97316':'#ef4444'}">${d.km_score??0}%</div>
-    </div>`;
-
-    // وقود (40%)
-    const fuelCell = d.consumption!=null
-      ? `<div style="text-align:center">
-          <div style="font-weight:700;color:${d.consumption<=25?'#10b981':d.consumption<=30?'#3b82f6':d.consumption<=35?'#f97316':'#ef4444'}">${d.consumption}</div>
-          <div style="font-size:.72rem;color:${(d.fuel_score??0)>=85?'#10b981':(d.fuel_score??0)>=55?'#f97316':'#ef4444'}">${d.fuel_score??'—'}%</div>
-         </div>`
-      : `<span style="color:var(--muted);font-size:.8rem">—</span>`;
-
-    // زيوت (5%)
-    const oilCell = d.oil_per_1000!=null
-      ? `<div style="text-align:center">
-          <div style="font-weight:700;color:${d.oil_per_1000<=0.5?'#10b981':d.oil_per_1000<=1?'#3b82f6':d.oil_per_1000<=2?'#f97316':'#ef4444'}">${d.oil_per_1000}</div>
-          <div style="font-size:.72rem;color:${(d.oil_score??0)>=85?'#10b981':(d.oil_score??0)>=55?'#f97316':'#ef4444'}">${d.oil_score??'—'}%</div>
-         </div>`
-      : `<span style="color:var(--muted);font-size:.8rem">—</span>`;
-
-    // طوارئ (5%)
-    const emgCell = `<div style="text-align:center">
-      <div style="font-weight:700;color:${d.emergencies===0?'#10b981':'#ef4444'}">${d.emergencies} 🚨</div>
-      <div style="font-size:.72rem;color:${d.emg_score===100?'#10b981':d.emg_score>=60?'#f97316':'#ef4444'}">${d.emg_score}%</div>
-    </div>`;
-
-    return `<tr>
-      <td style="text-align:center;font-size:1.1rem">${rankEmoji}</td>
-      <td><strong>${d.driver_name}</strong></td>
-      <td style="font-size:.8rem;color:var(--muted)">${d.branch||'—'}</td>
-      <td>${scoreBar}</td>
-      <td>${tripsCell}</td>
-      <td>${kmCell}</td>
-      <td>${fuelCell}</td>
-      <td>${oilCell}</td>
-      <td>${emgCell}</td>
-      <td style="text-align:center">${grade}</td>
-      <td style="text-align:center">
-        <button class="btn btn-ghost btn-sm" onclick="showKpiDetail(${d.driver_id})" title="تفاصيل">📋</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function filterKpiTable(q) {
-  const filtered = q.trim()
-    ? _kpiData.filter(d => d.driver_name.includes(q.trim()))
-    : _kpiData;
-  renderKpiTable(filtered);
-}
-
-function showKpiDetail(driverId) {
-  const d = _kpiData.find(x => x.driver_id === driverId);
-  if (!d) return;
-
-  const meter = (label, score, detail) => {
-    // لو score=null — اعرض الصف بـ "بيانات غير كافية" بدل ما تخفيه
-    if (score === null || score === undefined) {
-      return `
-      <div style="margin-bottom:1rem">
-        <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
-          <span style="font-weight:700;font-size:.88rem">${label}</span>
-          <span style="color:#94a3b8;font-size:.82rem">بيانات غير كافية</span>
-        </div>
-        <div style="background:var(--border);border-radius:6px;height:10px;overflow:hidden">
-          <div style="width:0%;height:100%;background:#e2e8f0;border-radius:6px"></div>
-        </div>
-        ${detail ? `<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${detail}</div>` : ''}
-      </div>`;
-    }
-    const color = score>=85?'#10b981':score>=70?'#3b82f6':score>=50?'#f97316':'#ef4444';
-    return `
-      <div style="margin-bottom:1rem">
-        <div style="display:flex;justify-content:space-between;margin-bottom:.3rem">
-          <span style="font-weight:700;font-size:.88rem">${label}</span>
-          <span style="color:${color};font-weight:800">${score}%</span>
-        </div>
-        <div style="background:var(--border);border-radius:6px;height:10px;overflow:hidden">
-          <div style="width:${score}%;height:100%;background:${color};border-radius:6px;transition:width .5s"></div>
-        </div>
-        ${detail ? `<div style="font-size:.78rem;color:var(--muted);margin-top:.2rem">${detail}</div>` : ''}
-      </div>`;
-  };
-
-  // عرض الوقود الحقيقي (كل التفويلات) والمعدل المحسوب (بدون آخر تفويلة)
-  const fuelDisplay = d.fuel_liters > 0
-    ? d.fuel_liters + ' لتر' + (d.consumption ? ' | معدل: ' + d.consumption + ' ل/100كم' : ' (تفويلة واحدة — مش كافي لحساب المعدل)')
-    : null;
-  const fuelLabel  = '⛽ استهلاك الوقود — 40%' + (d.consumption ? ' (' + d.consumption + ' ل/100كم)' : '');
-
-  openModal(`
-    <div class="modal-header">
-      <div class="modal-title">🏆 تفاصيل KPI — ${d.driver_name}</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div style="padding:.5rem 0">
-
-      <!-- النقاط الكلية — SVG Circle Score -->
-      <div style="display:flex;align-items:center;gap:1.5rem;padding:1.2rem 1.5rem;background:var(--surface-2);border-radius:16px;margin-bottom:1.5rem">
-        ${ (() => {
-          const R = 52, STROKE = 10;
-          const circ = 2 * Math.PI * R;
-          const dash  = (d.total_score / 100) * circ;
-          const color = d.grade_color;
-          return `<svg viewBox="0 0 130 130" width="120" height="120" style="flex-shrink:0">
-            <!-- الحلقة الخلفية -->
-            <circle cx="65" cy="65" r="${R}" fill="none" stroke="${color}22" stroke-width="${STROKE}"/>
-            <!-- الحلقة المتقدمة -->
-            <circle cx="65" cy="65" r="${R}" fill="none" stroke="${color}" stroke-width="${STROKE}"
-              stroke-linecap="round"
-              stroke-dasharray="${dash.toFixed(1)} ${(circ - dash).toFixed(1)}"
-              stroke-dashoffset="${(circ / 4).toFixed(1)}"
-              style="transition:stroke-dasharray .6s ease"/>
-            <!-- النص -->
-            <text x="65" y="60" text-anchor="middle" font-size="22" font-weight="900"
-                  fill="${color}" font-family="Cairo,sans-serif">${d.total_score}</text>
-            <text x="65" y="76" text-anchor="middle" font-size="10" fill="${color}"
-                  font-family="Cairo,sans-serif">نقطة</text>
-          </svg>`;
-        })() }
-        <div style="flex:1">
-          <div style="font-size:1.4rem;font-weight:900;color:${d.grade_color}">${d.grade}</div>
-          <div style="font-size:.85rem;color:var(--muted);margin-top:.3rem">${d.month}</div>
-          <div style="font-size:.85rem;color:var(--muted);margin-top:.2rem">
-            الترتيب: ${d.rank===1?'🥇':d.rank===2?'🥈':d.rank===3?'🥉':'<strong>#'+d.rank+'</strong>'}
-          </div>
-          <!-- sub-scores سريع -->
-          <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem">
-            ${ [
-              {lbl:'رحلات',  v:d.trips_score,          w:'10%'},
-              {lbl:'كم',     v:d.km_score,              w:'40%'},
-              {lbl:'وقود',   v:d.fuel_score,            w:'40%'},
-              {lbl:'زيوت',   v:d.oil_score,             w:'5%'},
-              {lbl:'طوارئ',  v:d.emg_score,             w:'5%'},
-            ].map(s => {
-              const c = s.v==null?'#94a3b8':s.v>=85?'#10b981':s.v>=70?'#3b82f6':s.v>=50?'#f97316':'#ef4444';
-              const val = s.v!=null ? s.v+'%' : '—';
-              return `<div style="background:${c}18;border:1px solid ${c}44;border-radius:8px;padding:.2rem .5rem;font-size:.7rem;text-align:center">
-                <div style="color:var(--muted);font-size:.6rem">${s.lbl} <span style="opacity:.7">(${s.w})</span></div>
-                <div style="font-weight:800;color:${c}">${val}</div>
-              </div>`;
-            }).join('') }
-          </div>
-        </div>
-      </div>
-
-      <!-- المؤشرات بالأوزان الجديدة -->
-      <div style="margin-bottom:1.5rem">
-        ${meter('🗺️ عدد الرحلات — 10% ('+d.trips+' رحلة)', d.trips_score??null, 'كلما زادت الرحلات زادت النقاط')}
-        ${meter('📍 الكيلومترات — 40% ('+d.km.toLocaleString('ar-EG')+' كم)', d.km_score, 'المتوسط: '+(d.avg_km_peers||0).toLocaleString('ar-EG')+' كم')}
-        ${meter(fuelLabel, d.fuel_score??null, fuelDisplay)}
-        ${meter('🛢️ استهلاك الزيوت — 5%'+(d.oil_per_1000?' ('+d.oil_per_1000+' ل/1000كم)':''), d.oil_score??null, d.oil_liters>0?d.oil_liters+' لتر زيت':null)}
-        ${meter('🚨 الحوادث والطوارئ — 5% ('+d.emergencies+' حادثة)', d.emg_score, 'كلما قل عدد الحوادث زادت النقاط')}
-      </div>
-
-      <!-- إحصائيات إضافية -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
-        ${[
-          ['🗺️ الرحلات', d.trips+' رحلة'],
-          ['⛽ الوقود', d.fuel_liters > 0 ? d.fuel_liters + ' لتر' : '—'],
-          ['🔧 الورشة', d.maint_count+' سجل'],
-          ['💰 تكلفة الورشة', d.maint_cost>0?d.maint_cost.toLocaleString('ar-EG')+' ج':'—'],
-        ].map(([lbl,val])=>`
-          <div style="background:var(--surface-2);border-radius:10px;padding:.75rem;text-align:center">
-            <div style="font-size:.72rem;color:var(--muted)">${lbl}</div>
-            <div style="font-weight:700;margin-top:.2rem">${val}</div>
-          </div>`).join('')}
-      </div>
-    </div>
-  `);
-}
-
-function exportKpiCSV() {
-  if (!_kpiData.length) return showNotification('لا توجد بيانات للتصدير', 'error');
-  const headers = ['الترتيب','السائق','الفرع','النقاط الكلية','التصنيف',
-    'الرحلات','نقاط الرحلات(10%)','الكيلومترات','متوسط الكم','نقاط الكم(40%)',
-    'وقود(ل)','استهلاك ل/100كم','نقاط الوقود(40%)',
-    'زيوت(ل)','استهلاك ل/1000كم','نقاط الزيوت(5%)',
-    'طوارئ','نقاط الطوارئ(5%)'];
-  const rows = _kpiData.map(d=>[
-    d.rank, d.driver_name, d.branch, d.total_score+'%', d.grade,
-    d.trips, (d.trips_score??0)+'%',
-    d.km, d.avg_km_peers||0, (d.km_score??0)+'%',
-    d.fuel_liters, d.consumption??'', d.fuel_score!=null?d.fuel_score+'%':'—',
-    d.oil_liters||0, d.oil_per_1000??'', d.oil_score!=null?d.oil_score+'%':'—',
-    d.emergencies, d.emg_score+'%'
-  ]);
-  const csv = '\uFEFF' + [headers,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-  a.download = `kpi_${document.getElementById('kpiMonth')?.value||'report'}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  showNotification('✅ تم تصدير التقرير', 'success');
 }
 
 
