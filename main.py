@@ -379,12 +379,31 @@ def migrate_db():
             start_location TEXT DEFAULT '',
             end_location TEXT DEFAULT '',
             garage_location TEXT DEFAULT '',
+            start_odometer_photo TEXT DEFAULT '',
             notes TEXT DEFAULT '',
             FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
             FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE CASCADE
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_trips_driver ON trips(driver_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_trips_active ON trips(driver_id, end_time)")
+        # ── Check List اليومية قبل بدء الوردية (مشغل/سائق) ──
+        c.execute("""CREATE TABLE IF NOT EXISTS daily_checklists(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            driver_id INTEGER,
+            operator_id INTEGER,
+            car_id INTEGER,
+            checklist_date TEXT NOT NULL,
+            items TEXT NOT NULL DEFAULT '{}',
+            score REAL DEFAULT 0,
+            notes TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(driver_id, checklist_date),
+            FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+            FOREIGN KEY(operator_id) REFERENCES equipment_operators(id) ON DELETE CASCADE,
+            FOREIGN KEY(car_id) REFERENCES cars(id) ON DELETE CASCADE
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_driver_date ON daily_checklists(driver_id, checklist_date)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_operator_date ON daily_checklists(operator_id, checklist_date)")
         # WORKSHOPS
         c.execute("""CREATE TABLE IF NOT EXISTS workshop_records(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -558,7 +577,7 @@ def _safe_add_columns(c):
         log.warning(f"fixed_number index: {e}")
 
     existing = {}
-    for tbl in ["users","drivers","cars","emergency_reports","trips","workshop_records"]:
+    for tbl in ["users","drivers","cars","emergency_reports","trips","workshop_records","supply_platform_movements"]:
         try:
             c.execute(f"PRAGMA table_info({tbl})")
             existing[tbl] = {row["name"] for row in c.fetchall()}
@@ -700,7 +719,7 @@ def _safe_add_columns(c):
                                ("driver_message","TEXT DEFAULT ''"),
                                ("operator_id","INTEGER"),
                                ("is_operator","INTEGER DEFAULT 0")] ,
-        "trips":              [("garage_location","TEXT DEFAULT ''")],
+        "trips":              [("garage_location","TEXT DEFAULT ''"),("start_odometer_photo","TEXT DEFAULT ''")],
         "workshop_records":   [("location","TEXT DEFAULT ''"),("operation_type","TEXT DEFAULT ''"),
                                ("vehicle_id","INTEGER"),("odometer_reading","REAL"),
                                ("description","TEXT DEFAULT ''"),("tire_action","TEXT DEFAULT ''"),
@@ -732,6 +751,7 @@ def _safe_add_columns(c):
                                ("car_code","TEXT DEFAULT ''"),("engine_number","TEXT DEFAULT ''"),
                                ("year","TEXT DEFAULT ''"),("project","TEXT DEFAULT ''"),
                                ("branch","TEXT DEFAULT ''"),("equipment_type","TEXT DEFAULT ''")],
+        "supply_platform_movements": [("location","TEXT DEFAULT ''")],
     }
     for tbl, cols in additions.items():
         for col, col_type in cols:
@@ -1095,6 +1115,7 @@ def _safe_add_columns(c):
         ref_id INTEGER,
         username TEXT DEFAULT '',
         notes TEXT DEFAULT '',
+        location TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY(platform_id) REFERENCES supply_platforms(id) ON DELETE CASCADE,
         FOREIGN KEY(product_id) REFERENCES inventory_products(id) ON DELETE CASCADE
@@ -1728,6 +1749,7 @@ class PermResp(BaseModel):
 class TripStart(BaseModel):
     driver_id: int; car_id: int; start_odometer: float
     start_location: str = ""
+    start_odometer_photo: Optional[str] = ""   # base64 — إلزامية قبل بدء الوردية
 
 class TripEnd(BaseModel):
     trip_id: int; end_odometer: float
@@ -1739,6 +1761,7 @@ class TripResp(BaseModel):
     start_odometer: float; end_odometer: Optional[float]
     start_location: Optional[str]; end_location: Optional[str]
     garage_location: Optional[str]; notes: Optional[str]
+    start_odometer_photo: Optional[str] = ""
 
 class UserCreate(BaseModel):
     username: str
@@ -3174,6 +3197,8 @@ async def get_trips(cu: dict = Depends(get_user), branch: Optional[str] = None):
 async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
     if trip.start_odometer < 0:
         raise HTTPException(400, "العداد يجب أن يكون موجباً")
+    if not (trip.start_odometer_photo or "").strip():
+        raise HTTPException(400, "رفع صورة العداد إلزامي قبل بدء الوردية")
     with get_db() as conn:
         c = conn.cursor()
         if cu["role"] not in ("admin", "superuser"):
@@ -3187,6 +3212,27 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         c.execute("SELECT id FROM trips WHERE driver_id=? AND end_time IS NULL", (trip.driver_id,))
         if c.fetchone():
             raise HTTPException(400, "لديك رحلة نشطة — أنهها أولاً")
+
+        # ── حفظ صورة العداد (إلزامية) كملف بدلاً من base64 بالقاعدة ──
+        def _save_start_odo_photo(b64_data: str) -> str:
+            import re as _re_trip
+            try:
+                _m = _re_trip.match(r"data:image/(\w+);base64,(.+)", b64_data, _re_trip.DOTALL)
+                _ext = _m.group(1) if _m else "jpg"
+                _b64data = _m.group(2) if _m else b64_data
+                _raw_bytes = base64.b64decode(_b64data)
+                if len(_raw_bytes) >= 2 and _raw_bytes[0] == 0xFF and _raw_bytes[1] == 0xD8: _ext = "jpg"
+                elif len(_raw_bytes) >= 4 and _raw_bytes[0] == 0x89 and _raw_bytes[1:4] == b"PNG": _ext = "png"
+                elif len(_raw_bytes) >= 3 and _raw_bytes[:3] == b"GIF": _ext = "gif"
+                elif len(_raw_bytes) >= 12 and _raw_bytes[:4] == b"RIFF" and _raw_bytes[8:12] == b"WEBP": _ext = "webp"
+                _fname = f"trip_start_{trip.driver_id}_{uuid.uuid4().hex}.{_ext}"
+                (UPLOAD_DIR / _fname).write_bytes(_raw_bytes)
+                return f"/uploads/{_fname}"
+            except Exception as _photo_err:
+                log.error(f"[TRIP] start odometer photo save failed: {_photo_err}")
+                raise HTTPException(400, "صورة العداد غير صالحة")
+
+        start_odometer_photo_url = _save_start_odo_photo(trip.start_odometer_photo)
 
         # ── حدد موقع البداية الفعلي ──
         # الأولوية: (1) موقع صحيح من الـ frontend، (2) آخر موقع جراج مسجّل
@@ -3213,16 +3259,17 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
                       location=effective_start_location)
 
         now = datetime.utcnow().isoformat() + "Z"
-        c.execute("""INSERT INTO trips(driver_id,car_id,start_time,start_odometer,start_location,garage_location)
-                     VALUES(?,?,?,?,?,'')""",
-                  (trip.driver_id, trip.car_id, now, trip.start_odometer, effective_start_location))
+        c.execute("""INSERT INTO trips(driver_id,car_id,start_time,start_odometer,start_location,garage_location,start_odometer_photo)
+                     VALUES(?,?,?,?,?,'',?)""",
+                  (trip.driver_id, trip.car_id, now, trip.start_odometer, effective_start_location, start_odometer_photo_url))
         tid = c.lastrowid
         log_event("trip_started", trip_id=tid, driver_id=trip.driver_id,
                   car_id=trip.car_id, start_location=effective_start_location)
         return {"id":tid,"driver_id":trip.driver_id,"car_id":trip.car_id,
                 "start_time":now,"end_time":None,"start_odometer":trip.start_odometer,
                 "end_odometer":None,"start_location":effective_start_location,
-                "end_location":None,"garage_location":None,"notes":None}
+                "end_location":None,"garage_location":None,"notes":None,
+                "start_odometer_photo":start_odometer_photo_url}
 
 @app.post("/trips/end", response_model=TripResp)
 async def end_trip(te: TripEnd, cu: dict = Depends(get_user)):
@@ -3309,6 +3356,153 @@ async def end_current(body: dict, cu: dict = Depends(get_user)):
                   (now, end_odo, loc, notes, active["id"]))
         c.execute("SELECT * FROM trips WHERE id=?", (active["id"],))
         return enrich(dict(c.fetchone()))
+
+# ══════════════════════════════════════════════════════
+# 21-ب. CHECK LIST اليومية (قبل بدء الوردية للمشغل/السائق)
+# ══════════════════════════════════════════════════════
+CHECKLIST_ITEMS: Dict[str, str] = {
+    "engine_oil":    "زيت المحرك",
+    "coolant":       "مياه التبريد",
+    "brake_pedal":   "دواسة الفرامل",
+    "brake_oil":     "زيت الفرامل",
+    "battery":       "البطارية",
+    "gauges_lights": "العدادات ولمبات التنبيه",
+    "tires":         "الكاوتش",
+    "lighting":      "الإضاءة",
+    "wipers":        "مساحات الزجاج",
+}
+CHECKLIST_VALID_STATUSES = {"efficient", "not_efficient"}
+
+class DailyChecklistCreate(BaseModel):
+    driver_id: Optional[int] = None
+    operator_id: Optional[int] = None
+    car_id: Optional[int] = None
+    items: Dict[str, str]     # key من CHECKLIST_ITEMS -> 'efficient' | 'not_efficient'
+    notes: Optional[str] = ""
+
+def _calc_checklist_score(items: Dict[str, str]) -> float:
+    """نسبة البنود اللي شغالة بكفاءة من إجمالي بنود الـ Check List."""
+    total = len(CHECKLIST_ITEMS)
+    if total == 0:
+        return 0.0
+    efficient = sum(1 for k in CHECKLIST_ITEMS if items.get(k) == "efficient")
+    return round((efficient / total) * 100, 1)
+
+@app.get("/checklists/items")
+async def get_checklist_items(cu: dict = Depends(get_user)):
+    """قائمة بنود الـ Check List (الكود والاسم بالعربي) لعرضها في نموذج التعبئة."""
+    return [{"key": k, "label": v} for k, v in CHECKLIST_ITEMS.items()]
+
+@app.get("/checklists/today")
+async def get_today_checklist(
+    driver_id: int = Query(None), operator_id: int = Query(None),
+    cu: dict = Depends(get_user),
+):
+    """هل السائق/المشغل عبّأ الـ Check List اليوم بالفعل؟ (تعبئة مرة واحدة فقط يوميًا)"""
+    if not driver_id and not operator_id:
+        raise HTTPException(400, "driver_id أو operator_id مطلوب")
+    if cu["role"] not in ("admin", "superuser"):
+        if driver_id and driver_id != cu.get("driver_id"):
+            raise HTTPException(403, "غير مصرح")
+        if operator_id and operator_id != cu.get("operator_id"):
+            raise HTTPException(403, "غير مصرح")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    with get_db() as conn:
+        if driver_id:
+            row = conn.execute(
+                "SELECT * FROM daily_checklists WHERE driver_id=? AND checklist_date=?",
+                (driver_id, today)
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM daily_checklists WHERE operator_id=? AND checklist_date=?",
+                (operator_id, today)
+            ).fetchone()
+        if not row:
+            return {"submitted": False, "checklist": None}
+        d = dict(row)
+        d["items"] = json.loads(d["items"] or "{}")
+        return {"submitted": True, "checklist": d}
+
+@app.post("/checklists")
+async def create_daily_checklist(body: DailyChecklistCreate, cu: dict = Depends(get_user)):
+    """تسجيل الـ Check List اليومية قبل بدء العمل — للسائق أو مشغل المعدة. مرة واحدة فقط يوميًا."""
+    if not body.driver_id and not body.operator_id:
+        raise HTTPException(400, "driver_id أو operator_id مطلوب")
+    if cu["role"] not in ("admin", "superuser"):
+        if body.driver_id and body.driver_id != cu.get("driver_id"):
+            raise HTTPException(403, "لا يمكنك تسجيل Check List لسائق آخر")
+        if body.operator_id and body.operator_id != cu.get("operator_id"):
+            raise HTTPException(403, "لا يمكنك تسجيل Check List لمشغل آخر")
+
+    missing = [k for k in CHECKLIST_ITEMS if k not in body.items]
+    if missing:
+        raise HTTPException(400, f"يجب تحديد حالة كل البنود — ناقص: {', '.join(CHECKLIST_ITEMS[m] for m in missing)}")
+    invalid = {k: v for k, v in body.items.items() if k in CHECKLIST_ITEMS and v not in CHECKLIST_VALID_STATUSES}
+    if invalid:
+        raise HTTPException(400, "قيمة غير صحيحة لأحد البنود — استخدم 'تعمل بكفاءة' أو 'لا تعمل بكفاءة'")
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    with get_db() as conn:
+        if body.driver_id:
+            existing = conn.execute(
+                "SELECT id FROM daily_checklists WHERE driver_id=? AND checklist_date=?",
+                (body.driver_id, today)
+            ).fetchone()
+        else:
+            existing = conn.execute(
+                "SELECT id FROM daily_checklists WHERE operator_id=? AND checklist_date=?",
+                (body.operator_id, today)
+            ).fetchone()
+        if existing:
+            raise HTTPException(400, "تم تسجيل الـ Check List لهذا اليوم بالفعل — مرة واحدة فقط يوميًا")
+
+        clean_items = {k: body.items[k] for k in CHECKLIST_ITEMS}
+        score = _calc_checklist_score(clean_items)
+        now = datetime.utcnow().isoformat() + "Z"
+        cur = conn.execute(
+            """INSERT INTO daily_checklists(driver_id,operator_id,car_id,checklist_date,items,score,notes,created_at)
+               VALUES(?,?,?,?,?,?,?,?)""",
+            (body.driver_id, body.operator_id, body.car_id, today,
+             json.dumps(clean_items, ensure_ascii=False), score, body.notes or "", now)
+        )
+        log_event("daily_checklist_submitted", driver_id=body.driver_id, operator_id=body.operator_id,
+                  score=score, date=today)
+        return {"ok": True, "id": cur.lastrowid, "score": score, "checklist_date": today}
+
+@app.get("/checklists")
+async def list_daily_checklists(
+    date_from: str = Query(None, description="YYYY-MM-DD"),
+    date_to:   str = Query(None, description="YYYY-MM-DD"),
+    driver_id: int = Query(None),
+    operator_id: int = Query(None),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """عرض نتائج الـ Check List لكل السائقين/المشغلين — لصفحة Super User."""
+    with get_db() as conn:
+        q = """SELECT ck.*, d.name driver_name, d.branch driver_branch, c.plate car_plate,
+                      o.name operator_name, o.branch operator_branch
+               FROM daily_checklists ck
+               LEFT JOIN drivers d ON d.id = ck.driver_id
+               LEFT JOIN cars c ON c.id = ck.car_id
+               LEFT JOIN equipment_operators o ON o.id = ck.operator_id
+               WHERE 1=1"""
+        params: list = []
+        if date_from:
+            q += " AND ck.checklist_date >= ?"; params.append(date_from)
+        if date_to:
+            q += " AND ck.checklist_date <= ?"; params.append(date_to)
+        if driver_id:
+            q += " AND ck.driver_id = ?"; params.append(driver_id)
+        if operator_id:
+            q += " AND ck.operator_id = ?"; params.append(operator_id)
+        q += " ORDER BY ck.checklist_date DESC, ck.id DESC"
+        rows = [dict(r) for r in conn.execute(q, params).fetchall()]
+        for r in rows:
+            r["items"] = json.loads(r["items"] or "{}")
+            r["person_name"] = r["driver_name"] or r["operator_name"] or "—"
+            r["branch"] = r["driver_branch"] or r["operator_branch"] or ""
+        return rows
 
 # ══════════════════════════════════════════════════════
 # 22. USERS
@@ -3586,9 +3780,9 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             c.execute("""UPDATE supply_platform_stock SET quantity = quantity - ?, updated_at=?
                          WHERE platform_id=? AND product_id=?""",
                       (qty, now, rec.platform_id, rec.inventory_product_id))
-            c.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,ref_id,username,notes,created_at)
-                         VALUES(?,?,'draw',?,'workshop',?,?,?,?)""",
-                      (rec.platform_id, rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", now))
+            c.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,ref_id,username,notes,location,created_at)
+                         VALUES(?,?,'draw',?,'workshop',?,?,?,?,?)""",
+                      (rec.platform_id, rec.inventory_product_id, qty, rid, cu.get("username",""), rec.notes or "", rec.location or "", now))
 
         vp = None
         if rec.vehicle_id:
@@ -7157,14 +7351,16 @@ def _calc_kpi_score(
     target_km: float = 3000.0,
     oil_liters: float = 0.0, avg_km_all_drivers: float = 0.0,
     fuel_dist: Optional[float] = None,   # المسافة بين أول وآخر تفويلة (بدون آخر تفويلة)
+    checklist_score: Optional[float] = None,   # متوسط درجة الـ Check List اليومية خلال الشهر (0-100)
 ) -> dict:
     """
     حساب نقاط KPI لسائق واحد بالأوزان الجديدة:
       عدد الرحلات         → 10%
-      كمية الكيلومترات    → 40%
-      استهلاك الوقود      → 40%  (لو مفيش بيانات وقود يُعوَّض من الكم)
+      كمية الكيلومترات    → 35%
+      استهلاك الوقود      → 35%  (لو مفيش بيانات وقود يُعوَّض من الكم)
       استهلاك الزيوت      → 5%   (لو مفيش بيانات يُعوَّض من الكم)
       الحوادث والطوارئ    → 5%
+      الـ Check List اليومية → 10%  (لو مفيش تعبئة يُعوَّض من الكم)
     """
     # ── 1. عدد الرحلات (10%) ──
     if trips >= 20:
@@ -7249,12 +7445,13 @@ def _calc_kpi_score(
         emg_score = 0.0
 
     # ── حساب المجموع الموزون ──
-    # الأوزان الأساسية: رحلات 10% | كم 40% | وقود 40% | زيوت 5% | طوارئ 5%
-    W_TRIPS = 0.10
-    W_KM    = 0.40
-    W_FUEL  = 0.40
-    W_OIL   = 0.05
-    W_EMG   = 0.05
+    # الأوزان الأساسية: رحلات 10% | كم 35% | وقود 35% | زيوت 5% | طوارئ 5% | Check List 10%
+    W_TRIPS     = 0.10
+    W_KM        = 0.35
+    W_FUEL      = 0.35
+    W_OIL       = 0.05
+    W_EMG       = 0.05
+    W_CHECKLIST = 0.10
 
     weighted = trips_score * W_TRIPS + km_score * W_KM + emg_score * W_EMG
 
@@ -7273,6 +7470,14 @@ def _calc_kpi_score(
     else:
         weighted += km_score * W_OIL    # عوّض الزيوت بالكيلومترات
         avail_w  += W_OIL
+
+    # لو مفيش Check List مسجلة الشهر ده: وزنها ينتقل للكيلومترات
+    if checklist_score is not None:
+        weighted += checklist_score * W_CHECKLIST
+        avail_w  += W_CHECKLIST
+    else:
+        weighted += km_score * W_CHECKLIST
+        avail_w  += W_CHECKLIST
 
     total = round(weighted, 1)
 
@@ -7294,6 +7499,7 @@ def _calc_kpi_score(
         "fuel_score":   fuel_score,
         "oil_score":    oil_score,
         "emg_score":    emg_score,
+        "checklist_score": checklist_score,
         "consumption":  round((fuel_liters / effective_dist) * 100, 1) if (effective_dist > 50 and fuel_liters > 0) else None,
         "oil_per_1000": round((oil_liters / km) * 1000, 2) if km > 0 and oil_liters > 0 else None,
     }
@@ -7452,6 +7658,16 @@ async def driver_kpi_report(
             maint_cost  = float(wr["mc"] or 0)
             maint_count = int(wr["mcc"] or 0)
 
+            # ── متوسط درجة الـ Check List اليومية خلال الشهر ──
+            c.execute("""
+                SELECT AVG(score) as avg_score, COUNT(*) as cnt
+                FROM daily_checklists
+                WHERE driver_id=?
+                  AND checklist_date >= ? AND checklist_date < ?
+            """, (did, month_start, month_end))
+            ck = dict(c.fetchone())
+            checklist_avg = float(ck["avg_score"]) if ck["cnt"] else None
+
             raw_data.append({
                 "driver_id":        did,
                 "driver_name":      d["name"],
@@ -7469,6 +7685,7 @@ async def driver_kpi_report(
                 "maint_count":      maint_count,
                 "first_trip":       tr["first_trip"],
                 "last_trip":        tr["last_trip"],
+                "checklist_avg":    checklist_avg,
             })
 
         # ── متوسط الكيلومترات لكل السائقين (للمقارنة النسبية) ──
@@ -7487,6 +7704,7 @@ async def driver_kpi_report(
                 oil_liters=d["oil_liters"],
                 avg_km_all_drivers=avg_km,
                 fuel_dist=d.get("fuel_dist"),
+                checklist_score=d.get("checklist_avg"),
             )
             consumption = scores.pop("consumption", None)
 
@@ -7529,14 +7747,16 @@ async def driver_kpi_report(
 def _calc_operator_kpi_score(
     shifts: int, hours: float, fuel_liters: float,
     avg_hours_all_operators: float = 0.0, target_hours: float = 160.0,
+    checklist_score: Optional[float] = None,
 ) -> dict:
     """
     حساب نقاط KPI لمشغل معدة واحد:
-      عدد الورديات       → 20%
-      ساعات التشغيل      → 60%
+      عدد الورديات       → 15%
+      ساعات التشغيل      → 55%
       كفاءة استهلاك الوقود (لتر/ساعة) → 20%  (لو مفيش بيانات وقود يُعوَّض من الساعات)
+      الـ Check List اليومية → 10%  (لو مفيش تعبئة يُعوَّض من الساعات)
     """
-    # ── 1. عدد الورديات (20%) ──
+    # ── 1. عدد الورديات (15%) ──
     if shifts >= 20: shifts_score = 100.0
     elif shifts >= 15: shifts_score = 85.0
     elif shifts >= 10: shifts_score = 65.0
@@ -7544,7 +7764,7 @@ def _calc_operator_kpi_score(
     elif shifts >= 1:  shifts_score = 20.0
     else: shifts_score = 0.0
 
-    # ── 2. ساعات التشغيل (60%) — مقارنة بمتوسط باقي المشغلين ──
+    # ── 2. ساعات التشغيل (55%) — مقارنة بمتوسط باقي المشغلين ──
     ref_hours = avg_hours_all_operators if avg_hours_all_operators > 0 else target_hours
     if ref_hours > 0:
         ratio = hours / ref_hours
@@ -7569,12 +7789,17 @@ def _calc_operator_kpi_score(
         fuel_score = None
         consumption = None
 
-    W_SHIFTS, W_HOURS, W_FUEL = 0.20, 0.60, 0.20
+    W_SHIFTS, W_HOURS, W_FUEL, W_CHECKLIST = 0.15, 0.55, 0.20, 0.10
     weighted = shifts_score * W_SHIFTS + hours_score * W_HOURS
     if fuel_score is not None:
         weighted += fuel_score * W_FUEL
     else:
         weighted += hours_score * W_FUEL   # عوّض الوقود بالساعات
+
+    if checklist_score is not None:
+        weighted += checklist_score * W_CHECKLIST
+    else:
+        weighted += hours_score * W_CHECKLIST   # عوّض الـ Check List بالساعات
 
     total = round(weighted, 1)
     if total >= 85: grade, grade_color = "ممتاز", "#10b981"
@@ -7585,6 +7810,7 @@ def _calc_operator_kpi_score(
     return {
         "total_score": total, "grade": grade, "grade_color": grade_color,
         "shifts_score": shifts_score, "hours_score": hours_score, "fuel_score": fuel_score,
+        "checklist_score": checklist_score,
         "consumption": round(consumption, 2) if consumption is not None else None,
     }
 
@@ -7661,6 +7887,16 @@ async def equipment_operator_kpi_report(
                 """, (*equip_codes, month_start, month_end))
                 maint_cost = float(c.fetchone()[0] or 0)
 
+            # ── متوسط درجة الـ Check List اليومية خلال الشهر ──
+            c.execute("""
+                SELECT AVG(score) as avg_score, COUNT(*) as cnt
+                FROM daily_checklists
+                WHERE operator_id=?
+                  AND checklist_date >= ? AND checklist_date < ?
+            """, (oid, month_start, month_end))
+            ck = dict(c.fetchone())
+            checklist_avg = float(ck["avg_score"]) if ck["cnt"] else None
+
             raw_data.append({
                 "operator_id":         oid,
                 "operator_name":       op["name"],
@@ -7673,6 +7909,7 @@ async def equipment_operator_kpi_report(
                 "maint_cost":          maint_cost,
                 "first_shift":         shift_rows[-1]["start_time"] if shift_rows else None,
                 "last_shift":          shift_rows[0]["start_time"] if shift_rows else None,
+                "checklist_avg":       checklist_avg,
             })
 
         hours_values = [d["hours"] for d in raw_data if d["hours"] > 0]
@@ -7683,6 +7920,7 @@ async def equipment_operator_kpi_report(
             scores = _calc_operator_kpi_score(
                 shifts=d["shifts"], hours=d["hours"], fuel_liters=d["fuel_liters"],
                 avg_hours_all_operators=avg_hours,
+                checklist_score=d.get("checklist_avg"),
             )
             results.append({
                 "operator_id":        d["operator_id"],
@@ -9668,10 +9906,10 @@ class SupplyPlatformCreate(BaseModel):
     notes: Optional[str] = ""
 
 class SupplyPlatformFill(BaseModel):
-    product_id: int; quantity: float; notes: Optional[str] = ""
+    product_id: int; quantity: float; notes: Optional[str] = ""; location: Optional[str] = ""
 
 class SupplyPlatformAdjust(BaseModel):
-    product_id: int; quantity: float; notes: Optional[str] = ""  # تعيين الكمية مباشرة
+    product_id: int; quantity: float; notes: Optional[str] = ""; location: Optional[str] = ""  # تعيين الكمية مباشرة
 
 class RepairQuoteCreate(BaseModel):
     quote_number: Optional[str] = ""
@@ -9928,6 +10166,40 @@ async def list_supply_platform_movements(pid: int, cu: dict = Depends(require_ad
                                 WHERE m.platform_id=? ORDER BY m.id DESC LIMIT ?""", (pid, limit)).fetchall()
         return [dict(r) for r in rows]
 
+@app.get("/supply-platforms/{pid}/statement")
+async def get_supply_platform_statement(pid: int, cu: dict = Depends(require_admin_or_reporter), limit: int = 1000):
+    """كشف حساب لمنصة إمداد: عدد وتواريخ عمليات الملء، عدد وتواريخ عمليات التفريغ (السحب)،
+    وسجل كامل لكل العمليات مع موقع تنفيذ كل عملية."""
+    with get_db() as conn:
+        platform = conn.execute("SELECT * FROM supply_platforms WHERE id=?", (pid,)).fetchone()
+        if not platform:
+            raise HTTPException(404, "المنصة غير موجودة")
+        rows = conn.execute("""SELECT m.*, p.name product_name, p.unit product_unit
+                                FROM supply_platform_movements m JOIN inventory_products p ON p.id=m.product_id
+                                WHERE m.platform_id=? ORDER BY m.created_at DESC, m.id DESC LIMIT ?""",
+                             (pid, limit)).fetchall()
+        movements = [dict(r) for r in rows]
+        fills  = [m for m in movements if m["movement_type"] == "fill"]
+        draws  = [m for m in movements if m["movement_type"] == "draw"]
+        adjusts = [m for m in movements if m["movement_type"] == "adjust"]
+        return {
+            "platform": dict(platform),
+            "summary": {
+                "fills_count":  len(fills),
+                "draws_count":  len(draws),
+                "adjusts_count": len(adjusts),
+                "total_count":  len(movements),
+            },
+            "fills":     [{"id": m["id"], "created_at": m["created_at"], "location": m["location"],
+                            "product_name": m["product_name"], "quantity": m["quantity"],
+                            "username": m["username"], "notes": m["notes"]} for m in fills],
+            "draws":     [{"id": m["id"], "created_at": m["created_at"], "location": m["location"],
+                            "product_name": m["product_name"], "quantity": m["quantity"],
+                            "username": m["username"], "notes": m["notes"], "ref_type": m["ref_type"],
+                            "ref_id": m["ref_id"]} for m in draws],
+            "movements": movements,
+        }
+
 @app.post("/supply-platforms/{pid}/fill")
 async def fill_supply_platform(pid: int, body: SupplyPlatformFill, cu: dict = Depends(require_admin)):
     """تعبئة تانك المنصة — يسحب الكمية من المخزن الرئيسي ويضيفها لرصيد المنصة."""
@@ -9958,9 +10230,9 @@ async def fill_supply_platform(pid: int, body: SupplyPlatformFill, cu: dict = De
         else:
             conn.execute("INSERT INTO supply_platform_stock(platform_id,product_id,quantity,updated_at) VALUES(?,?,?,?)",
                          (pid, body.product_id, body.quantity, now))
-        conn.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,username,notes,created_at)
-                        VALUES(?,?,'fill',?,'manual',?,?,?)""",
-                     (pid, body.product_id, body.quantity, cu.get("username",""), body.notes or "", now))
+        conn.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,username,notes,location,created_at)
+                        VALUES(?,?,'fill',?,'manual',?,?,?,?)""",
+                     (pid, body.product_id, body.quantity, cu.get("username",""), body.notes or "", body.location or "", now))
         return {"ok": True}
 
 @app.post("/supply-platforms/{pid}/adjust")
@@ -9980,9 +10252,9 @@ async def adjust_supply_platform_stock(pid: int, body: SupplyPlatformAdjust, cu:
         else:
             conn.execute("INSERT INTO supply_platform_stock(platform_id,product_id,quantity,updated_at) VALUES(?,?,?,?)",
                          (pid, body.product_id, body.quantity, now))
-        conn.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,username,notes,created_at)
-                        VALUES(?,?,'adjust',?,'manual',?,?,?)""",
-                     (pid, body.product_id, body.quantity, cu.get("username",""), body.notes or "", now))
+        conn.execute("""INSERT INTO supply_platform_movements(platform_id,product_id,movement_type,quantity,ref_type,username,notes,location,created_at)
+                        VALUES(?,?,'adjust',?,'manual',?,?,?,?)""",
+                     (pid, body.product_id, body.quantity, cu.get("username",""), body.notes or "", body.location or "", now))
         return {"ok": True}
 
 
@@ -10258,6 +10530,139 @@ async def delete_external_op(eid: int, cu: dict = Depends(require_workshop_admin
         write_audit_log(cu["user_id"], cu["username"], cu["role"],
                         "delete_external_op", f"حذف طلب تشغيل خارجي #{eid}")
         return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════
+# أمر التشغيل — تجميعة للمقايسة + محضر الفحص + العمليات الداخلية/الخارجية
+# (بدون جدول جديد — مبني على البيانات الموجودة فعلاً في المقايسات)
+# ══════════════════════════════════════════════════════
+def _parse_quote_meta(items_json: str):
+    """يرجع (meta, sections) من items_json الخاص بالمقايسة — يدعم الصيغة القديمة والجديدة."""
+    meta, sections = {}, []
+    try:
+        parsed = json.loads(items_json or "[]")
+        if isinstance(parsed, dict) and "sections" in parsed:
+            meta = parsed
+            sections = parsed.get("sections", [])
+        elif isinstance(parsed, list):
+            sections = parsed
+    except Exception:
+        pass
+    return meta, sections
+
+@app.get("/workshop/work-orders")
+async def list_work_orders(cu: dict = Depends(require_admin_or_reporter)):
+    """قائمة أوامر التشغيل — كل مقايسة إصلاح لها رقم تشغيل (operation_number) مُدخل."""
+    with get_db() as conn:
+        cars = {r["id"]: r["plate"] for r in conn.execute("SELECT id,plate FROM cars").fetchall()}
+        equip = {r["car_code"]: r["equipment_name"] for r in conn.execute("SELECT car_code,equipment_name FROM equipment").fetchall()}
+        insp_counts = {}
+        for r in conn.execute("SELECT quote_id, COUNT(*) cnt FROM workshop_inspection_reports WHERE quote_id IS NOT NULL GROUP BY quote_id").fetchall():
+            insp_counts[r["quote_id"]] = r["cnt"]
+        extop_counts = {}
+        for r in conn.execute("SELECT quote_id, COUNT(*) cnt FROM workshop_external_ops WHERE quote_id IS NOT NULL GROUP BY quote_id").fetchall():
+            extop_counts[r["quote_id"]] = r["cnt"]
+
+        rows = conn.execute("SELECT * FROM workshop_repair_quotes ORDER BY id DESC").fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            meta, _ = _parse_quote_meta(d.get("items_json"))
+            op_number = (meta.get("operation_number") or "").strip()
+            if not op_number:
+                continue
+            result.append({
+                "quote_id":         d["id"],
+                "operation_number": op_number,
+                "quote_number":     d.get("quote_number", ""),
+                "quote_date":       d.get("quote_date", ""),
+                "status":           d.get("status", ""),
+                "car_plate":        cars.get(d.get("car_id"), ""),
+                "equipment_name":   equip.get(d.get("equipment_id"), "") if d.get("equipment_id") else "",
+                "total_value":      d.get("total_value", 0),
+                "operation_type":   meta.get("operation_type", "internal"),
+                "inspection_reports_count": insp_counts.get(d["id"], 0),
+                "external_ops_count":       extop_counts.get(d["id"], 0),
+            })
+        return result
+
+@app.get("/workshop/work-orders/{quote_id}")
+async def get_work_order_detail(quote_id: int, cu: dict = Depends(require_admin_or_reporter)):
+    """تفاصيل أمر تشغيل واحد: المقايسة المرتبطة + الأسعار المعتمدة من محضر الفحص +
+    كل العمليات الداخلية والخارجية الخاصة به."""
+    with get_db() as conn:
+        quote = conn.execute("SELECT * FROM workshop_repair_quotes WHERE id=?", (quote_id,)).fetchone()
+        if not quote:
+            raise HTTPException(404, "المقايسة غير موجودة")
+        quote_d = dict(quote)
+        meta, sections = _parse_quote_meta(quote_d.get("items_json"))
+        op_number = (meta.get("operation_number") or "").strip()
+        if not op_number:
+            raise HTTPException(404, "هذه المقايسة ليس لها رقم أمر تشغيل")
+
+        car = conn.execute("SELECT plate, model FROM cars WHERE id=?", (quote_d.get("car_id"),)).fetchone() if quote_d.get("car_id") else None
+        equip = conn.execute("SELECT equipment_name FROM equipment WHERE car_code=?", (quote_d.get("equipment_id"),)).fetchone() if quote_d.get("equipment_id") else None
+        quote_d["car_plate"] = car["plate"] if car else ""
+        quote_d["car_model"] = car["model"] if car else ""
+        quote_d["equipment_name"] = equip["equipment_name"] if equip else ""
+
+        # ── العمليات الداخلية / الخارجية من بنود المقايسة نفسها ──
+        internal_items, external_items = [], []
+        for si, sec in enumerate(sections):
+            for ii, it in enumerate(sec.get("items", []) or []):
+                entry = dict(it)
+                entry["section"] = sec.get("title", "")
+                entry["key"] = f"s{si}i{ii}"
+                (external_items if it.get("item_type") == "external" else internal_items).append(entry)
+
+        # ── محاضر الفحص المرتبطة + الأسعار المعتمدة (البنود اللي حالتها 'accepted') ──
+        insp_rows = conn.execute(
+            "SELECT * FROM workshop_inspection_reports WHERE quote_id=? ORDER BY id DESC", (quote_id,)
+        ).fetchall()
+        inspection_reports = []
+        approved_items = []
+        approved_total = 0.0
+        for insp in insp_rows:
+            insp_d = dict(insp)
+            try:
+                decisions = json.loads(insp_d.get("items_json") or "{}")
+            except Exception:
+                decisions = {}
+            if not isinstance(decisions, dict):
+                decisions = {}
+            insp_d["decisions"] = decisions
+            inspection_reports.append(insp_d)
+            for si, sec in enumerate(sections):
+                for ii, it in enumerate(sec.get("items", []) or []):
+                    key = f"s{si}i{ii}"
+                    dec = decisions.get(key)
+                    status = dec.get("status") if isinstance(dec, dict) else dec
+                    if status == "accepted":
+                        price_val = (it.get("mfg") or 0) + (it.get("parts") or 0)
+                        approved_total += price_val
+                        approved_items.append({
+                            **it, "key": key,
+                            "approved_price": round(price_val, 2),
+                            "report_number": insp_d.get("report_number", ""),
+                        })
+
+        # ── طلبات التشغيل الخارجي المستقلة المرتبطة بنفس المقايسة ──
+        ext_ops_rows = conn.execute(
+            "SELECT * FROM workshop_external_ops WHERE quote_id=? ORDER BY id DESC", (quote_id,)
+        ).fetchall()
+        external_ops = [dict(r) for r in ext_ops_rows]
+
+        return {
+            "operation_number":   op_number,
+            "quote":              quote_d,
+            "meta":               meta,
+            "internal_items":     internal_items,
+            "external_items":     external_items,
+            "inspection_reports": inspection_reports,
+            "approved_items":     approved_items,
+            "approved_total":     round(approved_total, 2),
+            "external_ops":       external_ops,
+        }
 
 
 # ── إذن الصرف (الورشة) ──

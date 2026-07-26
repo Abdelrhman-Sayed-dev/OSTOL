@@ -2737,13 +2737,13 @@ const NAV_ITEM_MODULE = {
   trips:'fleet', map:'fleet', drivers:'fleet', cars:'fleet', requests:'fleet',
   'workshops-stats':'workshop', workshops:'workshop', maintenance:'workshop', forecast:'workshop',
   'ws-attachments':'workshop', 'ws-repair-quotes':'workshop', 'ws-inspection-reports':'workshop',
-  'ws-external-ops':'workshop', 'ws-vouchers':'workshop',
+  'ws-external-ops':'workshop', 'ws-vouchers':'workshop', 'ws-work-orders':'workshop',
   'op-card':'ops', emergencies:'ops', 'ops-review':'ops',
   'equipment-list':'equipment', 'equipment-operators':'equipment', 'shifts-table':'equipment', 'equipment-op-card':'equipment',
   'equipment-log':'equipment', 'equipment-unused':'equipment',
   'inv-overview':'inventory', 'inv-products':'inventory', 'inv-categories':'inventory', 'inv-suppliers':'inventory',
   'inv-movements':'inventory', 'inv-alerts':'inventory', 'inv-platforms':'inventory',
-  'monthly-report':'reports', 'driver-kpi':'reports', 'equipment-operator-kpi':'reports',
+  'monthly-report':'reports', 'driver-kpi':'reports', 'equipment-operator-kpi':'reports', 'daily-checklist-report':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
   'super-admins':'admin', 'super-reporters':'admin', 'super-workshop-admins':'admin', 'super-reassign':'admin',
@@ -2811,11 +2811,13 @@ function buildAdminNav() {
     {id:'ws-inspection-reports', icon:'📝', label:'محاضر الفحص'},
     {id:'ws-external-ops', icon:'🚚', label:'طلب تشغيل خارجي'},
     {id:'ws-vouchers', icon:'💳', label:'إذن الصرف'},
+    {id:'ws-work-orders', icon:'🧾', label:'أمر التشغيل'},
     {id:'forecast',       icon:'🗓️', label:'خطط الصيانة والإصلاح'},
     {id:'_sep_reports', icon:'📊', label:'التقارير', separator:true},
     {id:'monthly-report',icon:'📄', label:'التقرير الشهري'},
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
     {id:'equipment-operator-kpi', icon:'🏆', label:'KPI مشغلي المعدات'},
+    {id:'daily-checklist-report', icon:'📋', label:'Check List اليومية'},
     {id:'equipment-mgmt', icon:'🏗️', label:'إدارة المعدات', separator:true},
     {id:'equipment-list',        icon:'⚙️',  label:'قائمة المعدات'},
     {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
@@ -3028,10 +3030,12 @@ async function renderSection(id) {
     case 'ws-inspection-reports': await renderWorkshopInspectionReports(); break;
     case 'ws-external-ops': await renderWorkshopExternalOps(); break;
     case 'ws-vouchers': await renderWorkshopVouchers(); break;
+    case 'ws-work-orders': await renderWorkOrders(); break;
     case 'inv-alerts': await renderInventoryAlerts(); break;
     case 'import-data':     await renderImportSection(); break;
     case 'driver-kpi':      await renderDriverKpiSection(); break;
     case 'equipment-operator-kpi': await renderEquipmentOperatorKpiSection(); break;
+    case 'daily-checklist-report': await renderDailyChecklistReportSection(); break;
     case 'shifts-table':         await renderShiftsTable(); break;
     case 'equipment-operators': await renderEquipmentOperators(); break;
     case 'shifts-table':         await renderShiftsTable(); break;
@@ -7788,6 +7792,9 @@ async function renderDriverTrip() {
     ? '<option value="">-- اختر المركبة --</option>'+allowedCars.map(c=>`<option value="${c.id}" ${activeTrip&&activeTrip.car_id===c.id?'selected':''}>${c.plate} — ${c.model}</option>`).join('')
     : '<option value="">⚠️ لا توجد مركبات مسموح بها</option>';
 
+  const checklistToday = await apiCall(`/checklists/today?driver_id=${currentUser.driver_id}`).catch(()=>({submitted:false, checklist:null}));
+  window._checklistSubmittedToday = !!checklistToday.submitted;
+
   // جيب آخر عداد للمركبة النشطة
   let lastOdo = null;
   if(activeTrip) {
@@ -7803,6 +7810,23 @@ async function renderDriverTrip() {
     <div class="driver-hero">
       <div class="driver-hero-icon">🚗</div>
       <div><h2>تسجيل رحلة</h2><p>الموقع يُسحب تلقائياً</p></div>
+    </div>
+
+    <div class="card" style="border:2px solid ${checklistToday.submitted?'#10b981':'#f59e0b'};background:${checklistToday.submitted?'#f0fdf9':'#fff7ed'};margin-bottom:1rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:.7rem">
+          <span style="font-size:1.7rem">${checklistToday.submitted?'✅':'📋'}</span>
+          <div>
+            <div style="font-weight:800;font-size:.92rem;color:${checklistToday.submitted?'#065f46':'#92400e'}">
+              ${checklistToday.submitted ? 'تم تسجيل Check List اليوم' : 'Check List اليومية مطلوبة قبل بدء الوردية'}
+            </div>
+            ${checklistToday.submitted
+              ? `<div style="font-size:.8rem;color:#047857;margin-top:.2rem">درجة الفحص: ${checklistToday.checklist?.score ?? 0}%</div>`
+              : `<div style="font-size:.8rem;color:#92400e;margin-top:.2rem">افحص المركبة وسجّل حالة كل بند قبل بدء الرحلة</div>`}
+          </div>
+        </div>
+        ${!checklistToday.submitted ? `<button class="btn btn-primary btn-sm" onclick="openDailyChecklistModal(${currentUser.driver_id}, null, () => renderDriverTrip())">📋 عبّئ الآن</button>` : ''}
+      </div>
     </div>
 
     ${activeTrip ? `
@@ -7851,6 +7875,20 @@ async function renderDriverTrip() {
           </div>
           <input type="hidden" id="startOdo" value="${lastOdo ?? ''}">
           <div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">🔒 يُحدَّد تلقائياً من آخر رحلة</div>
+        </div>
+
+        <div class="form-group">
+          <label style="font-weight:700;color:#1e3a5f">📷 صورة العداد <span class="req">*</span></label>
+          <div style="font-size:.72rem;color:#64748b;margin-bottom:.4rem">صورة إلزامية للعداد قبل بدء الرحلة.</div>
+          <div id="startOdoPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
+            <img id="startOdoPhotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1.5px solid #e2e8f0">
+          </div>
+          <label for="startOdoPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
+            border:1.5px dashed #cbd5e1;border-radius:10px;padding:.7rem;cursor:pointer;
+            color:#475569;font-size:.82rem;font-weight:700;background:#f8fafc">
+            <span id="startOdoPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
+          </label>
+          <input type="file" id="startOdoPhotoInput" accept="image/*" capture="environment" style="display:none">
         </div>
 
         <button class="btn btn-primary" id="startTripBtn"
@@ -7965,6 +8003,26 @@ async function renderDriverTrip() {
     }
   };
 
+  // ── صورة العداد عند بدء الرحلة ──
+  window._startOdoPhotoData = '';
+  const _startOdoPhotoInput = document.getElementById('startOdoPhotoInput');
+  if (_startOdoPhotoInput) {
+    _startOdoPhotoInput.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        window._startOdoPhotoData = reader.result;
+        const preview = document.getElementById('startOdoPhotoPreview');
+        const wrap    = document.getElementById('startOdoPhotoPreviewWrap');
+        if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
+        const lbl = document.getElementById('startOdoPhotoBtnLabel');
+        if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
   // ── START TRIP handler ──
   document.getElementById('startTripBtn')?.addEventListener('click', async () => {
     const car_id    = parseInt(document.getElementById('startCarId').value);
@@ -7972,11 +8030,14 @@ async function renderDriverTrip() {
     const btn = document.getElementById('startTripBtn');
     if(!car_id)          return showNotification('اختر المركبة','error');
     if(isNaN(start_odo)) return showNotification('لم يتم تحديد عداد البداية — اختر المركبة أولاً','error');
+    if(!window._startOdoPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل البدء','error');
+    if(!window._checklistSubmittedToday) return showNotification('📋 يجب تعبئة Check List اليومية أولاً قبل بدء الرحلة','error');
     btn.disabled=true; btn.textContent='🚀 جاري...';
     const location = await silentGetLocation();
     try{
-      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id,start_odometer:start_odo,start_location:location});
+      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id,start_odometer:start_odo,start_location:location,start_odometer_photo:window._startOdoPhotoData||''});
       showNotification('✅ بدأت الرحلة!','success');
+      window._startOdoPhotoData = '';
       await renderDriverTrip();
     }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='🚀 بدء الرحلة'; }
   });
@@ -8123,22 +8184,120 @@ async function openStartTripModal() {
     <div class="form-group"><label>المركبة <span class="req">*</span></label>
       <select id="stCarId">${allowedCars.length?'<option value="">-- اختر --</option>'+allowedCars.map(c=>`<option value="${c.id}">${c.plate} - ${c.model}</option>`).join(''):'<option value="">⚠️ لا توجد مركبات مسموح بها</option>'}</select></div>
     <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label><input type="number" id="stOdo" placeholder="قراءة العداد الحالية" min="0"></div>
+    <div class="form-group">
+      <label>📷 صورة العداد <span class="req">*</span></label>
+      <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.4rem">صورة إلزامية للعداد قبل بدء الرحلة.</div>
+      <div id="stOdoPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
+        <img id="stOdoPhotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)">
+      </div>
+      <label for="stOdoPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
+        border:1.5px dashed var(--border);border-radius:10px;padding:.7rem;cursor:pointer;
+        color:var(--text-2);font-size:.82rem;font-weight:600;background:var(--surface-2)">
+        <span id="stOdoPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
+      </label>
+      <input type="file" id="stOdoPhotoInput" accept="image/*" capture="environment" style="display:none">
+    </div>
     ${gpsPickerHTML('stLoc','موقع البداية')}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="stBtn">🚀 بدء الرحلة</button>
     </div>`);
+  window._stOdoPhotoData = '';
+  const _stOdoPhotoInput = document.getElementById('stOdoPhotoInput');
+  if (_stOdoPhotoInput) {
+    _stOdoPhotoInput.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        window._stOdoPhotoData = reader.result;
+        const preview = document.getElementById('stOdoPhotoPreview');
+        const wrap    = document.getElementById('stOdoPhotoPreviewWrap');
+        if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
+        const lbl = document.getElementById('stOdoPhotoBtnLabel');
+        if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
   document.getElementById('stBtn').onclick=async()=>{
     const car_id=document.getElementById('stCarId').value;
     const start_odometer=parseFloat(document.getElementById('stOdo').value);
     const start_location=document.getElementById('stLoc').value.trim();
     if(!car_id) return showNotification('اختر المركبة','error');
     if(isNaN(start_odometer)||start_odometer<0) return showNotification('عداد البداية غير صحيح','error');
+    if(!window._stOdoPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل البدء','error');
     const btn=document.getElementById('stBtn'); btn.disabled=true; btn.textContent='جاري...';
     try{
-      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:+car_id,start_odometer,start_location});
+      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:+car_id,start_odometer,start_location,start_odometer_photo:window._stOdoPhotoData||''});
       showNotification('✅ بدأت الرحلة! لا تنسَ تسجيل موقع الجراج 🅿️ في نهاية اليوم','success'); closeModal(); await renderDriverTrip();
     }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='🚀 بدء الرحلة';}
+  };
+}
+
+// ── Check List اليومية قبل بدء الوردية (سائق أو مشغل) ──
+async function openDailyChecklistModal(driverId, operatorId, onDone) {
+  let items;
+  try { items = await apiCall('/checklists/items'); }
+  catch(e) { showNotification(e.message, 'error'); return; }
+
+  const rowsHtml = items.map(it => `
+    <div class="form-group" style="border-bottom:1px solid var(--border);padding-bottom:.7rem;margin-bottom:.7rem">
+      <label style="font-weight:700;font-size:.9rem">${it.label}</label>
+      <div style="display:flex;gap:.5rem;margin-top:.4rem">
+        <button type="button" class="ckl-opt" data-key="${it.key}" data-val="efficient"
+          style="flex:1;padding:.6rem;border-radius:10px;border:1.5px solid #86efac;background:#f0fdf4;color:#166534;font-weight:700;font-size:.82rem;cursor:pointer">
+          ✅ تعمل بكفاءة
+        </button>
+        <button type="button" class="ckl-opt" data-key="${it.key}" data-val="not_efficient"
+          style="flex:1;padding:.6rem;border-radius:10px;border:1.5px solid #fca5a5;background:#fef2f2;color:#991b1b;font-weight:700;font-size:.82rem;cursor:pointer">
+          ⚠️ لا تعمل بكفاءة
+        </button>
+      </div>
+    </div>`).join('');
+
+  openModal(`
+    <div class="modal-header"><div class="modal-title">📋 Check List اليومية</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div style="font-size:.8rem;color:var(--text-3);margin-bottom:1rem">افحص كل بند وحدد حالته — تُعبَّأ مرة واحدة فقط يوميًا.</div>
+    <div id="cklItemsWrap">${rowsHtml}</div>
+    <div class="form-group"><label>ملاحظات (اختياري)</label><textarea id="cklNotes" rows="2" placeholder="أي ملاحظات إضافية..."></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="cklSaveBtn">💾 حفظ Check List</button>
+    </div>`, 'modal-lg');
+
+  window._cklAnswers = {};
+  document.querySelectorAll('.ckl-opt').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.key, val = btn.dataset.val;
+      window._cklAnswers[key] = val;
+      document.querySelectorAll(`.ckl-opt[data-key="${key}"]`).forEach(b => {
+        const selected = b.dataset.val === val;
+        b.style.outline = selected ? '3px solid ' + (val==='efficient' ? '#16a34a' : '#dc2626') : 'none';
+        b.style.opacity = selected ? '1' : '.55';
+      });
+    };
+  });
+
+  document.getElementById('cklSaveBtn').onclick = async () => {
+    const total = items.length;
+    const answered = Object.keys(window._cklAnswers).length;
+    if (answered < total) return showNotification('يجب تحديد حالة كل البنود', 'error');
+    const btn = document.getElementById('cklSaveBtn');
+    btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
+    try {
+      const payload = {
+        items: window._cklAnswers,
+        notes: document.getElementById('cklNotes').value.trim(),
+      };
+      if (operatorId) payload.operator_id = operatorId; else payload.driver_id = driverId;
+      const res = await apiCall('/checklists', 'POST', payload);
+      showNotification(`✅ تم حفظ Check List — الدرجة: ${res.score}%`, 'success');
+      closeModal();
+      if (typeof onDone === 'function') onDone();
+    } catch(e) {
+      showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ Check List';
+    }
   };
 }
 
@@ -9466,7 +9625,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','equipment-operator-kpi','_sep_fleet','_sep_ops','_sep_reports'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','equipment-operator-kpi','_sep_fleet','_sep_ops','_sep_reports','daily-checklist-report','ws-work-orders'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops-stats' : 'overview');
   renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
@@ -9609,6 +9768,12 @@ async function renderDriverSinglePage() {
   // بيانات السائق الحالي (للتحقق من رخصته)
   const _myDriverData = _isOp ? null : (allDrivers.find(d=>d.id===currentUser.driver_id)||null);
   window._typePrices = pricesData||{};
+
+  // ── حالة الـ Check List اليومية (سائق أو مشغل) ──
+  const _cklQ = _isOp ? `operator_id=${_opData.id}` : `driver_id=${currentUser.driver_id}`;
+  const checklistTodaySP = await apiCall(`/checklists/today?${_cklQ}`).catch(()=>({submitted:false, checklist:null}));
+  window._checklistSubmittedTodaySP = !!checklistTodaySP.submitted;
+  window._checklistScoreTodaySP = checklistTodaySP.checklist?.score ?? null;
   window._driverCar  = primaryCar;
 
   const activeTrip = _isOp ? null : (allTrips.find(t=>t.driver_id==currentUser.driver_id&&!t.end_time)||null);
@@ -10027,6 +10192,11 @@ async function renderDriverSinglePage() {
 
   // ── Start: رحلة للسائق / وردية للمشغل ──
   document.getElementById('dpStart')?.addEventListener('click', async () => {
+    if (!window._checklistSubmittedTodaySP) {
+      showNotification('📋 يجب تعبئة Check List اليومية أولاً قبل بدء ' + (_isOp ? 'الوردية' : 'الرحلة'), 'error');
+      openDailyChecklistModal(_isOp ? null : currentUser.driver_id, _isOp ? _opData.id : null, () => renderDriverSinglePage());
+      return;
+    }
     if (_isOp) {
       // ── بدء وردية للمشغل ──
       const assignedName = _opData?.current_equipment_name || '';
@@ -10142,19 +10312,52 @@ async function renderDriverSinglePage() {
                onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#e2e8f0'">
         `}
       </div>
+      <div class="form-group">
+        <label style="font-weight:800;color:#1e3a5f">📷 صورة العداد <span class="req">*</span></label>
+        <div style="font-size:.72rem;color:#64748b;margin-bottom:.4rem">صورة إلزامية للعداد عند بدء كل وردية — لا يمكن بدء الرحلة بدونها.</div>
+        <div id="dpTripStartPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
+          <img id="dpTripStartPhotoPreview" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:1.5px solid #e2e8f0">
+        </div>
+        <label for="dpTripStartPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
+          border:1.5px dashed #cbd5e1;border-radius:10px;padding:.75rem;cursor:pointer;
+          color:#475569;font-size:.85rem;font-weight:700;background:#f8fafc">
+          <span id="dpTripStartPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
+        </label>
+        <input type="file" id="dpTripStartPhotoInput" accept="image/*" capture="environment" style="display:none">
+      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
         <button class="btn btn-primary" id="dpStartOk" style="font-size:1rem;padding:.75rem 1.5rem">تأكيد وبدء ▶</button>
       </div>`);
+    window._dpTripStartPhotoData = '';
+    const _dpTripStartPhotoInput = document.getElementById('dpTripStartPhotoInput');
+    if (_dpTripStartPhotoInput) {
+      _dpTripStartPhotoInput.onchange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          window._dpTripStartPhotoData = reader.result;
+          const preview = document.getElementById('dpTripStartPhotoPreview');
+          const wrap    = document.getElementById('dpTripStartPhotoPreviewWrap');
+          if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
+          const lbl = document.getElementById('dpTripStartPhotoBtnLabel');
+          if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
+        };
+        reader.readAsDataURL(file);
+      };
+    }
     document.getElementById('dpStartOk').onclick=async()=>{
       const odo=parseFloat(document.getElementById('dpStartOdo').value);
       if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
+      if(!window._dpTripStartPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل البدء','error');
       const btn=document.getElementById('dpStartOk');
       btn.disabled=true; btn.textContent='جاري...';
       const loc=await silentGetLocation();
       try{
-        await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc});
+        await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc,start_odometer_photo:window._dpTripStartPhotoData||''});
         showNotification('✅ بدأت الرحلة!','success');
+        window._dpTripStartPhotoData = '';
         closeModal(); await renderDriverSinglePage();
       }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء ▶'; }
     };
@@ -13941,6 +14144,95 @@ async function doMaintenanceImportConfirm() {
 // ═══════════════════════════════════════════════════════
 // DRIVER KPI — مؤشرات أداء السائقين
 // ═══════════════════════════════════════════════════════
+// ── تقرير Check List اليومية (صفحة Super User) ──
+async function renderDailyChecklistReportSection() {
+  const c = document.getElementById('pageContent');
+  const today = new Date().toISOString().slice(0,10);
+  const monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10);
+
+  c.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">📋 Check List اليومية — السائقين والمشغلين</div>
+    </div>
+    <div class="card" style="margin-bottom:1rem;border-radius:14px">
+      <div style="padding:.75rem 1.1rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">من تاريخ</label>
+          <input type="date" id="cklFrom" value="${monthAgo}" onchange="_reloadChecklistReport()"
+            style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
+        </div>
+        <div>
+          <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">إلى تاريخ</label>
+          <input type="date" id="cklTo" value="${today}" onchange="_reloadChecklistReport()"
+            style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
+        </div>
+      </div>
+    </div>
+    <div id="cklReportWrap"></div>`;
+
+  await _reloadChecklistReport();
+}
+
+async function _reloadChecklistReport() {
+  const wrap = document.getElementById('cklReportWrap');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
+  const from = document.getElementById('cklFrom')?.value || '';
+  const to   = document.getElementById('cklTo')?.value || '';
+  let rows;
+  try {
+    let url = '/checklists?';
+    if (from) url += `date_from=${from}&`;
+    if (to)   url += `date_to=${to}&`;
+    rows = await apiCall(url);
+  } catch(e) { wrap.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; return; }
+
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد بيانات Check List في هذه الفترة</p></div>`;
+    return;
+  }
+
+  const notEfficientCount = r => Object.values(r.items||{}).filter(v => v === 'not_efficient').length;
+  const scoreColor = s => s >= 90 ? '#16a34a' : (s >= 70 ? '#f59e0b' : '#dc2626');
+
+  const rowsHtml = rows.map(r => `
+    <tr>
+      <td style="white-space:nowrap">${r.checklist_date}</td>
+      <td>${r.person_name || '—'} ${r.branch ? `<span style="color:var(--text-3);font-size:.78rem">(${r.branch})</span>` : ''}</td>
+      <td>${r.car_plate || '—'}</td>
+      <td><strong style="color:${scoreColor(r.score)}">${r.score}%</strong></td>
+      <td>${notEfficientCount(r) > 0 ? `<span style="color:#dc2626;font-weight:700">⚠️ ${notEfficientCount(r)} بند</span>` : '<span style="color:#16a34a">✅ الكل تمام</span>'}</td>
+      <td style="font-size:.78rem;color:var(--text-3)">${r.notes || '—'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick='_showChecklistDetail(${JSON.stringify(r).replace(/'/g,"&#39;")})'>👁️ التفاصيل</button></td>
+    </tr>`).join('');
+
+  wrap.innerHTML = `
+    <div class="card" style="overflow-x:auto">
+      <table style="width:100%"><thead><tr>
+        <th>التاريخ</th><th>الاسم</th><th>المركبة</th><th>الدرجة</th><th>البنود غير الفعّالة</th><th>ملاحظات</th><th></th>
+      </tr></thead><tbody>${rowsHtml}</tbody></table>
+    </div>`;
+}
+
+function _showChecklistDetail(r) {
+  const labels = {
+    engine_oil:'زيت المحرك', coolant:'مياه التبريد', brake_pedal:'دواسة الفرامل',
+    brake_oil:'زيت الفرامل', battery:'البطارية', gauges_lights:'العدادات ولمبات التنبيه',
+    tires:'الكاوتش', lighting:'الإضاءة', wipers:'مساحات الزجاج',
+  };
+  const rows = Object.entries(r.items||{}).map(([k,v]) => `
+    <tr>
+      <td>${labels[k]||k}</td>
+      <td>${v==='efficient' ? '<span style="color:#16a34a;font-weight:700">✅ تعمل بكفاءة</span>' : '<span style="color:#dc2626;font-weight:700">⚠️ لا تعمل بكفاءة</span>'}</td>
+    </tr>`).join('');
+  openModal(`
+    <div class="modal-header"><div class="modal-title">📋 تفاصيل Check List — ${r.person_name||''}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div style="font-size:.85rem;color:var(--text-3);margin-bottom:.7rem">${r.checklist_date} — الدرجة: ${r.score}%</div>
+    <table style="width:100%">${rows}</table>
+    ${r.notes ? `<div class="form-group" style="margin-top:1rem"><label>ملاحظات</label><div style="padding:.6rem;background:var(--bg-2);border-radius:8px;font-size:.85rem">${r.notes}</div></div>` : ''}
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button></div>`, 'modal-lg');
+}
+
 async function renderDriverKpiSection() {
   const c = document.getElementById('pageContent');
   const now = new Date();
@@ -19568,6 +19860,7 @@ function renderSupplyPlatformRows() {
       }</td>
       <td style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="openSupplyPlatformFillModal(${p.id})">⛽ تعبئة</button>
+        <button class="btn btn-ghost btn-sm" onclick="openSupplyPlatformStatementModal(${p.id})">📋 كشف حساب</button>
         <button class="btn btn-ghost btn-sm" onclick='openSupplyPlatformModal(${JSON.stringify(p).replace(/'/g,"&#39;")})'>✏️</button>
         <button class="btn btn-ghost btn-sm" onclick="deleteSupplyPlatform(${p.id})" style="color:#dc2626">🗑️</button>
       </td>
@@ -19636,12 +19929,57 @@ function openSupplyPlatformFillModal(platformId) {
     if (!product_id) return showNotification('اختر الصنف', 'error');
     if (!quantity || quantity <= 0) return showNotification('أدخل الكمية', 'error');
     try {
+      const location = await silentGetLocation(8000).catch(()=>'');
       await apiCall(`/supply-platforms/${platformId}/fill`, 'POST', {
-        product_id, quantity, notes: document.getElementById('spfNotes').value.trim()
+        product_id, quantity, notes: document.getElementById('spfNotes').value.trim(), location
       });
       showNotification('✅ تمت التعبئة', 'success'); closeModal(); renderSupplyPlatforms();
     } catch(e) { showNotification(e.message, 'error'); }
   };
+}
+
+// ── كشف حساب منصة إمداد ──
+async function openSupplyPlatformStatementModal(platformId) {
+  openModal(`<div class="modal-header"><div class="modal-title">📋 كشف حساب منصة إمداد</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div id="platformStatementBody"><div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div></div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button></div>`, 'modal-lg');
+  let data;
+  try { data = await apiCall(`/supply-platforms/${platformId}/statement`); }
+  catch(e) { document.getElementById('platformStatementBody').innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; return; }
+
+  const s = data.summary || {};
+  const typeLabel = t => t==='fill' ? '⛽ تعبئة' : (t==='draw' ? '📤 تفريغ (سحب)' : '⚖️ تعديل');
+  const rowsHtml = (data.movements||[]).map(m => `
+    <tr>
+      <td style="white-space:nowrap">${(m.created_at||'').replace('T',' ').replace('Z','')}</td>
+      <td>${typeLabel(m.movement_type)}</td>
+      <td>${m.product_name||'—'} ${m.product_unit||''}</td>
+      <td>${m.quantity}</td>
+      <td>${m.location ? formatLocation(m.location) : '<span style="color:var(--text-3)">—</span>'}</td>
+      <td>${m.username||'—'}</td>
+      <td style="font-size:.78rem;color:var(--text-3)">${m.notes||'—'}</td>
+    </tr>`).join('');
+
+  document.getElementById('platformStatementBody').innerHTML = `
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem">
+      <div style="flex:1;min-width:120px;padding:.7rem;background:var(--bg-2);border-radius:9px;text-align:center">
+        <div style="font-size:1.3rem;font-weight:700;color:#16a34a">${s.fills_count||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">عدد مرات الملء</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:.7rem;background:var(--bg-2);border-radius:9px;text-align:center">
+        <div style="font-size:1.3rem;font-weight:700;color:#dc2626">${s.draws_count||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">عدد مرات التفريغ</div>
+      </div>
+      <div style="flex:1;min-width:120px;padding:.7rem;background:var(--bg-2);border-radius:9px;text-align:center">
+        <div style="font-size:1.3rem;font-weight:700">${s.total_count||0}</div>
+        <div style="font-size:.75rem;color:var(--text-3)">إجمالي العمليات</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto;max-height:50vh">
+      <table style="width:100%"><thead><tr>
+        <th>التاريخ والوقت</th><th>نوع العملية</th><th>الصنف</th><th>الكمية</th><th>موقع التنفيذ</th><th>بواسطة</th><th>ملاحظات</th>
+      </tr></thead><tbody>${rowsHtml || `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد عمليات مسجلة</p></div></td></tr>`}</tbody></table>
+    </div>`;
 }
 
 // ── محرك CRUD عام بسيط (للفئات والموردين) ──
@@ -20118,6 +20456,29 @@ function openRepairQuoteModal(q) {
     </div>
 
     <!-- ─── 2) عمليات الإصلاح (أقسام + بنود) ─── -->
+    <datalist id="rqCategoryList">
+      <option value="قطع غيار">
+      <option value="زيوت وشحوم">
+      <option value="إطارات">
+      <option value="كهرباء">
+      <option value="دهان وسمكرة">
+      <option value="هيدروليك">
+      <option value="محرك">
+      <option value="فرامل">
+      <option value="ناقل حركة">
+      <option value="أخرى">
+    </datalist>
+    <datalist id="rqMfgTypeList">
+      <option value="الفحص">
+      <option value="الفك">
+      <option value="التركيب">
+      <option value="إعادة التجميع">
+      <option value="اللحام">
+      <option value="الدهان">
+      <option value="الضبط والمعايرة">
+      <option value="الاختبار">
+      <option value="أخرى">
+    </datalist>
     <div class="form-group">
       <label style="font-size:.95rem;font-weight:700;display:flex;justify-content:space-between;align-items:center">
         <span>2️⃣ عمليات الإصلاح (أقسام + بنود)</span>
@@ -20293,6 +20654,7 @@ function rqAddSection(sec) {
           <th style="padding:.4rem;width:90px">الكمية</th>
           <th style="padding:.4rem;width:120px">نوع الوحدة</th>
           <th style="padding:.4rem;width:100px">السعر</th>
+          <th style="padding:.4rem;width:140px">بند المصنعية</th>
           <th style="padding:.4rem;width:120px">قيمة المصنعيات</th>
           <th style="padding:.4rem;width:120px">قطع الغيار</th>
           <th style="padding:.4rem;width:140px">نوع البند</th>
@@ -20321,7 +20683,7 @@ function rqAddItem(secId, item) {
       <input type="text" class="rqItemName" value="${item?.name||''}" placeholder="وصف العمل أو القطعة" style="width:100%;min-width:150px;box-sizing:border-box">
     </td>
     <td style="border:1px solid #ddd;padding:.35rem .4rem">
-      <input type="text" class="rqItemCategory" value="${item?.category||''}" placeholder="الفئة" style="width:100%;min-width:110px;box-sizing:border-box">
+      <input type="text" class="rqItemCategory" list="rqCategoryList" value="${item?.category||''}" placeholder="اختر أو اكتب الفئة" style="width:100%;min-width:110px;box-sizing:border-box">
     </td>
     <td style="border:1px solid #ddd;padding:.35rem .4rem">
       <input type="number" class="rqItemQty" value="${item?.qty??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:75px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
@@ -20333,6 +20695,9 @@ function rqAddItem(secId, item) {
     </td>
     <td style="border:1px solid #ddd;padding:.35rem .4rem">
       <input type="number" class="rqItemPrice" value="${item?.price??''}" placeholder="0" min="0" step="0.01" style="width:100%;min-width:85px;box-sizing:border-box" oninput="_rqOnQtyPriceChange(this)">
+    </td>
+    <td style="border:1px solid #ddd;padding:.35rem .4rem">
+      <input type="text" class="rqItemMfgType" list="rqMfgTypeList" value="${item?.mfg_type||''}" placeholder="مثال: الفحص، الفك، التركيب" style="width:100%;min-width:120px;box-sizing:border-box">
     </td>
     <td style="border:1px solid #ddd;padding:.35rem .4rem">
       <input type="number" class="rqItemMfg" value="${item?.mfg??''}" placeholder="0" step="0.01" style="width:100%;min-width:105px;box-sizing:border-box" oninput="_rqRecalcTotal()">
@@ -20375,10 +20740,11 @@ function _rqCollectSections() {
       const qty      = parseFloat(tr.querySelector('.rqItemQty')?.value)   || 0;
       const unit     = tr.querySelector('.rqItemUnit')?.value             || 'قطعة';
       const price    = parseFloat(tr.querySelector('.rqItemPrice')?.value) || 0;
+      const mfgType  = tr.querySelector('.rqItemMfgType')?.value.trim()   || '';
       const mfg      = parseFloat(tr.querySelector('.rqItemMfg')?.value)   || 0;
       const parts    = parseFloat(tr.querySelector('.rqItemParts')?.value) || 0;
       const itemType = tr.querySelector('.rqItemType')?.value || 'internal';
-      if (name || mfg || parts || qty || price) items.push({name, category, qty, unit, price, mfg, parts, item_type: itemType});
+      if (name || mfg || parts || qty || price) items.push({name, category, qty, unit, price, mfg_type: mfgType, mfg, parts, item_type: itemType});
     });
     if (title || items.length) result.push({title, items});
   });
@@ -20454,18 +20820,24 @@ function printRepairQuote(q) {
   const grandTotal = subtotal + adminAmt + disassemblyCost;
 
   // ── صفوف الأعمال ──
+  const ITEM_TYPE_LABEL = {internal:'داخلي 🏠', external:'خارجي 🚚'};
   let rowsHtml = '';
   let rowNum = 1;
   sections.forEach((sec, si) => {
     if (sec.title) {
-      rowsHtml += `<tr class="section-header"><td colspan="2" style="text-align:right;padding:5px 10px">
+      rowsHtml += `<tr class="section-header"><td colspan="9" style="text-align:right;padding:5px 10px">
         <strong>${si+1 <= 9 ? si+1 : ''} — ${sec.title} :</strong>
-      </td><td></td><td></td></tr>`;
+      </td></tr>`;
     }
     (sec.items||[]).forEach(it => {
       rowsHtml += `<tr>
         <td style="text-align:center;border:1.5px solid #333;padding:5px">${rowNum++}</td>
-        <td class="desc" style="border:1.5px solid #333;padding:5px 10px;text-align:right">${it.name||''}</td>
+        <td class="desc" style="border:1.5px solid #333;padding:5px 10px;text-align:right">${it.name||''} ${it.item_type==='external'?'<span style="font-size:8pt">🚚</span>':''}</td>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${it.category||''}</td>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${it.qty||''}</td>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${it.unit||''}</td>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${(it.price||0)>0?(it.price).toLocaleString('ar-EG'):''}</td>
+        <td style="text-align:center;border:1.5px solid #333;padding:5px">${it.mfg_type||''}</td>
         <td style="text-align:center;border:1.5px solid #333;padding:5px">${(it.mfg||0)>0?(it.mfg).toLocaleString('ar-EG'):''}</td>
         <td style="text-align:center;border:1.5px solid #333;padding:5px">${(it.parts||0)>0?(it.parts).toLocaleString('ar-EG'):''}</td>
       </tr>`;
@@ -20474,7 +20846,7 @@ function printRepairQuote(q) {
   // صفوف فارغة
   const emptyCount = Math.max(0, 5 - rowNum + 1);
   for (let i = 0; i < emptyCount; i++) {
-    rowsHtml += `<tr><td style="border:1.5px solid #333;padding:7px">&nbsp;</td><td style="border:1.5px solid #333"></td><td style="border:1.5px solid #333"></td><td style="border:1.5px solid #333"></td></tr>`;
+    rowsHtml += `<tr>${'<td style="border:1.5px solid #333;padding:7px">&nbsp;</td>'.repeat(1)}${'<td style="border:1.5px solid #333"></td>'.repeat(8)}</tr>`;
   }
 
   // ── إجمالي قطع الغيار والمصنعيات (بالعمودين) ──
@@ -20540,38 +20912,43 @@ function printRepairQuote(q) {
     <table class="rq-items-table">
       <thead>
         <tr>
-          <th style="width:36px">م</th>
+          <th style="width:30px">م</th>
           <th style="text-align:right;padding:6px 10px">بيان الأعمال</th>
-          <th style="width:120px">قيمة المصنعيات</th>
-          <th style="width:120px">قطع الغيار</th>
+          <th style="width:70px">الفئة</th>
+          <th style="width:50px">الكمية</th>
+          <th style="width:55px">الوحدة</th>
+          <th style="width:65px">السعر</th>
+          <th style="width:85px">بند المصنعية</th>
+          <th style="width:90px">قيمة المصنعيات</th>
+          <th style="width:90px">قطع الغيار</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
       <tfoot>
         <tr class="total-row">
-          <td colspan="2" style="text-align:right;padding:5px 10px;border:1.5px solid #333">قيمة قطع الغيار والمصنعيات</td>
+          <td colspan="7" style="text-align:right;padding:5px 10px;border:1.5px solid #333">قيمة قطع الغيار والمصنعيات</td>
           <td style="border:1.5px solid #333">${totalMfg>0?totalMfg.toLocaleString('ar-EG'):''}</td>
           <td style="border:1.5px solid #333">${totalParts>0?totalParts.toLocaleString('ar-EG'):''}</td>
         </tr>
         <tr class="total-row">
-          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">إجمالي قيمة قطع الغيار والمصنعيات</td>
+          <td colspan="8" style="text-align:right;padding:5px 10px;border:1.5px solid #333">إجمالي قيمة قطع الغيار والمصنعيات</td>
           <td style="border:1.5px solid #333">${subtotal>0?subtotal.toLocaleString('ar-EG'):''}</td>
         </tr>
         <tr class="total-row">
-          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">يضاف ${adminPct}٪ مستلزمات تشغيل واختبارات جودة ومصاريف ادارية</td>
+          <td colspan="8" style="text-align:right;padding:5px 10px;border:1.5px solid #333">يضاف ${adminPct}٪ مستلزمات تشغيل واختبارات جودة ومصاريف ادارية</td>
           <td style="border:1.5px solid #333">${adminAmt>0?adminAmt.toLocaleString('ar-EG'):''}</td>
         </tr>
         <tr class="total-row">
-          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">3) نوع التشغيل في المقايسة</td>
+          <td colspan="8" style="text-align:right;padding:5px 10px;border:1.5px solid #333">3) نوع التشغيل في المقايسة</td>
           <td style="border:1.5px solid #333;font-weight:bold">${opType==='external' ? 'خارجي 🚚' : 'داخلي 🏠'}</td>
         </tr>
         ${opType==='external' ? `
         <tr class="total-row">
-          <td colspan="3" style="text-align:right;padding:5px 10px;border:1.5px solid #333">إجمالي المصنعيات (تشغيل خارجي)</td>
+          <td colspan="8" style="text-align:right;padding:5px 10px;border:1.5px solid #333">إجمالي المصنعيات (تشغيل خارجي)</td>
           <td style="border:1.5px solid #333">${totalMfg>0?totalMfg.toLocaleString('ar-EG'):''}</td>
         </tr>` : ''}
         <tr class="grand-row">
-          <td colspan="3" style="text-align:right;padding:6px 10px;border:2px solid #333">الإجمالي الكلي (شامل تكلفة الفك والفحص)</td>
+          <td colspan="8" style="text-align:right;padding:6px 10px;border:2px solid #333">الإجمالي الكلي (شامل تكلفة الفك والفحص)</td>
           <td style="border:2px solid #333">${grandTotal>0?grandTotal.toLocaleString('ar-EG'):''}</td>
         </tr>
       </tfoot>
@@ -22254,6 +22631,141 @@ async function deleteExternalOp(id) {
    إذن الصرف (ادمن الورش)
 ══════════════════════════════════════════ */
 const VOUCHER_STATUS_LABELS = { draft: '📝 مسودة', issued: '✅ تم الصرف', cancelled: '❌ ملغى' };
+
+// ══════════════════════════════════════════
+// أمر التشغيل — تجميعة من المقايسة + محضر الفحص + العمليات الداخلية/الخارجية
+// ══════════════════════════════════════════
+async function renderWorkOrders() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `<div class="page-header"><div class="page-title">🧾 أمر التشغيل</div></div>
+    <div id="woListWrap"><div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div></div>`;
+
+  let orders;
+  try { orders = await apiCall('/workshop/work-orders'); }
+  catch(e) { document.getElementById('woListWrap').innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; return; }
+
+  const wrap = document.getElementById('woListWrap');
+  if (!orders.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد أوامر تشغيل بعد — يُنشأ رقم أمر التشغيل من داخل مقايسة الإصلاح (حقل "رقم التشغيل")</p></div>`;
+    return;
+  }
+  const statusLabels = {draft:'📝 مسودة', approved:'🟢 معتمدة', done:'✅ منفذة', cancelled:'❌ ملغاة'};
+  const rowsHtml = orders.map(o => `
+    <tr>
+      <td><strong style="color:#1e3a5f">${o.operation_number}</strong></td>
+      <td>${o.quote_number || '—'}</td>
+      <td>${o.car_plate || o.equipment_name || '—'}</td>
+      <td style="white-space:nowrap">${o.quote_date || '—'}</td>
+      <td>${statusLabels[o.status] || o.status}</td>
+      <td>${o.operation_type === 'external' ? '🚚 خارجي' : '🏠 داخلي'}</td>
+      <td><strong>${(o.total_value||0).toLocaleString('ar-EG')}</strong> جنيه</td>
+      <td>${o.inspection_reports_count > 0 ? `📝 ${o.inspection_reports_count}` : '<span style="color:var(--text-3)">—</span>'}</td>
+      <td>${o.external_ops_count > 0 ? `🚚 ${o.external_ops_count}` : '<span style="color:var(--text-3)">—</span>'}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="openWorkOrderDetail(${o.quote_id})">👁️ فتح أمر التشغيل</button></td>
+    </tr>`).join('');
+
+  wrap.innerHTML = `
+    <div class="card" style="overflow-x:auto">
+      <table style="width:100%"><thead><tr>
+        <th>رقم أمر التشغيل</th><th>رقم المقايسة</th><th>المركبة/المعدة</th><th>التاريخ</th>
+        <th>الحالة</th><th>نوع التشغيل</th><th>القيمة الإجمالية</th><th>محاضر فحص</th><th>عمليات خارجية</th><th></th>
+      </tr></thead><tbody>${rowsHtml}</tbody></table>
+    </div>`;
+}
+
+async function openWorkOrderDetail(quoteId) {
+  let d;
+  try { d = await apiCall(`/workshop/work-orders/${quoteId}`); }
+  catch(e) { showNotification(e.message, 'error'); return; }
+
+  const q = d.quote || {};
+  const meta = d.meta || {};
+
+  const itemRow = it => `
+    <tr>
+      <td>${it.name||''}</td>
+      <td>${it.category||''}</td>
+      <td>${it.qty||''}</td>
+      <td>${it.unit||''}</td>
+      <td>${(it.mfg_type)||'—'}</td>
+      <td>${(it.mfg||0).toLocaleString('ar-EG')}</td>
+      <td>${(it.parts||0).toLocaleString('ar-EG')}</td>
+    </tr>`;
+
+  const internalHtml = d.internal_items?.length
+    ? `<table style="width:100%;font-size:.83rem"><thead><tr>
+         <th>البند</th><th>الفئة</th><th>الكمية</th><th>الوحدة</th><th>بند المصنعية</th><th>المصنعيات</th><th>قطع الغيار</th>
+       </tr></thead><tbody>${d.internal_items.map(itemRow).join('')}</tbody></table>`
+    : `<div style="color:var(--text-3);font-size:.85rem;padding:.5rem 0">لا توجد عمليات داخلية مسجلة</div>`;
+
+  const externalHtml = d.external_items?.length
+    ? `<table style="width:100%;font-size:.83rem"><thead><tr>
+         <th>البند</th><th>الفئة</th><th>الكمية</th><th>الوحدة</th><th>بند المصنعية</th><th>المصنعيات</th><th>قطع الغيار</th>
+       </tr></thead><tbody>${d.external_items.map(itemRow).join('')}</tbody></table>`
+    : `<div style="color:var(--text-3);font-size:.85rem;padding:.5rem 0">لا توجد عمليات خارجية ضمن بنود المقايسة</div>`;
+
+  const extOpsHtml = d.external_ops?.length
+    ? `<table style="width:100%;font-size:.83rem"><thead><tr>
+         <th>رقم الطلب</th><th>الورشة</th><th>السبب</th><th>التكلفة التقديرية</th><th>المصنعيات</th><th>الحالة</th>
+       </tr></thead><tbody>${d.external_ops.map(o=>`
+         <tr>
+           <td>${o.request_number||''}</td><td>${o.workshop_name||''}</td><td>${o.reason||''}</td>
+           <td>${(o.estimated_cost||0).toLocaleString('ar-EG')}</td>
+           <td>${(o.workmanship_cost||0).toLocaleString('ar-EG')}</td>
+           <td>${o.status||''}</td>
+         </tr>`).join('')}</tbody></table>`
+    : `<div style="color:var(--text-3);font-size:.85rem;padding:.5rem 0">لا توجد طلبات تشغيل خارجي مستقلة مرتبطة</div>`;
+
+  const approvedHtml = d.approved_items?.length
+    ? `<table style="width:100%;font-size:.83rem"><thead><tr>
+         <th>البند</th><th>رقم محضر الفحص</th><th>السعر المعتمد</th>
+       </tr></thead><tbody>${d.approved_items.map(it=>`
+         <tr><td>${it.name||''}</td><td>${it.report_number||''}</td><td><strong style="color:#16a34a">${(it.approved_price||0).toLocaleString('ar-EG')}</strong></td></tr>`).join('')}</tbody></table>`
+    : `<div style="color:var(--text-3);font-size:.85rem;padding:.5rem 0">لا توجد بنود معتمدة من محضر فحص بعد</div>`;
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🧾 أمر التشغيل رقم ${d.operation_number}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div style="background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:10px;padding:.8rem 1rem;margin-bottom:1rem">
+      <div style="font-weight:800;color:#3730a3;margin-bottom:.4rem">📋 المقايسة المرتبطة</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.85rem">
+        <div>رقم المقايسة: <strong>${q.quote_number||'—'}</strong></div>
+        <div>التاريخ: <strong>${q.quote_date||'—'}</strong></div>
+        <div>المركبة/المعدة: <strong>${q.car_plate || q.equipment_name || '—'}</strong></div>
+        <div>الورشة المنفذة: <strong>${meta.workshop_name||'—'}</strong></div>
+        <div>القيمة الإجمالية: <strong>${(q.total_value||0).toLocaleString('ar-EG')} جنيه</strong></div>
+        <div>نوع التشغيل: <strong>${(meta.operation_type==='external')?'🚚 خارجي':'🏠 داخلي'}</strong></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:.6rem" onclick='closeModal();printRepairQuote(${JSON.stringify(q).replace(/'/g,"&#39;")})'>🖨️ طباعة المقايسة</button>
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <div style="font-weight:800;color:#166534;margin-bottom:.4rem">✅ الأسعار المعتمدة من محضر الفحص
+        ${d.approved_total ? `<span style="background:#dcfce7;color:#166534;padding:.15rem .6rem;border-radius:8px;font-size:.8rem;margin-right:.4rem">إجمالي: ${d.approved_total.toLocaleString('ar-EG')} جنيه</span>` : ''}
+      </div>
+      ${approvedHtml}
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <div style="font-weight:800;color:#1e3a5f;margin-bottom:.4rem">🏠 العمليات الداخلية</div>
+      ${internalHtml}
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <div style="font-weight:800;color:#b45309;margin-bottom:.4rem">🚚 العمليات الخارجية (ضمن بنود المقايسة)</div>
+      ${externalHtml}
+    </div>
+
+    <div style="margin-bottom:1rem">
+      <div style="font-weight:800;color:#b45309;margin-bottom:.4rem">🚚 طلبات التشغيل الخارجي المستقلة</div>
+      ${extOpsHtml}
+    </div>
+
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button></div>`, 'modal-lg');
+}
 
 async function renderWorkshopVouchers() {
   const c = document.getElementById('pageContent');
