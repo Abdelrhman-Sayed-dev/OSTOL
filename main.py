@@ -2389,7 +2389,8 @@ async def login(request: Request, data: LoginReq):
                 locked_until_dt = datetime.fromisoformat(cand["locked_until"])
                 if locked_until_dt > now:
                     remaining_min = max(1, int((locked_until_dt - now).total_seconds() // 60) + 1)
-                    log_event("login_blocked_locked", username=data.username, ip=request.client.host)
+                    log_event("login_blocked_locked", username=data.username,
+                              ip=request.client.host if request.client else "")
                     raise HTTPException(
                         423,
                         f"الحساب مقفول مؤقتاً بسبب محاولات دخول فاشلة متكررة — "
@@ -2411,10 +2412,11 @@ async def login(request: Request, data: LoginReq):
                     c.execute("UPDATE users SET failed_attempts=?, locked_until=? WHERE id=?",
                               (new_count, lock_until, cand["id"]))
                     log_event("account_locked", user_id=cand["id"], username=cand["username"],
-                              ip=request.client.host)
+                              ip=request.client.host if request.client else "")
                 else:
                     c.execute("UPDATE users SET failed_attempts=? WHERE id=?", (new_count, cand["id"]))
-            log_event("login_failed", username=data.username, ip=request.client.host)
+            log_event("login_failed", username=data.username,
+                      ip=request.client.host if request.client else "")
             raise HTTPException(401, "اسم المستخدم أو كلمة المرور غير صحيحة")
 
         # ── تسجيل دخول ناجح: تصفير عداد المحاولات الفاشلة وفك القفل ──
