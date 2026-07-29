@@ -1749,7 +1749,7 @@ class PermResp(BaseModel):
 class TripStart(BaseModel):
     driver_id: int; car_id: int; start_odometer: float
     start_location: str = ""
-    start_odometer_photo: Optional[str] = ""   # base64 — إلزامية قبل بدء الوردية
+    start_odometer_photo: Optional[str] = ""   # base64 — اختيارية (لم تعد إلزامية لكل رحلة)
 
 class TripEnd(BaseModel):
     trip_id: int; end_odometer: float
@@ -3199,8 +3199,8 @@ async def get_trips(cu: dict = Depends(get_user), branch: Optional[str] = None):
 async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
     if trip.start_odometer < 0:
         raise HTTPException(400, "العداد يجب أن يكون موجباً")
-    if not (trip.start_odometer_photo or "").strip():
-        raise HTTPException(400, "رفع صورة العداد إلزامي قبل بدء الوردية")
+    # ملحوظة: صورة العداد لم تعد إلزامية لكل رحلة — الإلزام بالصورة أصبح مقصوراً
+    # على ورديات مشغلي المعدات (operators/shifts/start)، مرة واحدة لكل وردية فقط.
     with get_db() as conn:
         c = conn.cursor()
         if cu["role"] not in ("admin", "superuser"):
@@ -3215,8 +3215,10 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         if c.fetchone():
             raise HTTPException(400, "لديك رحلة نشطة — أنهها أولاً")
 
-        # ── حفظ صورة العداد (إلزامية) كملف بدلاً من base64 بالقاعدة ──
+        # ── حفظ صورة العداد (اختيارية الآن) كملف بدلاً من base64 بالقاعدة ──
         def _save_start_odo_photo(b64_data: str) -> str:
+            if not (b64_data or "").strip():
+                return ""
             import re as _re_trip
             try:
                 _m = _re_trip.match(r"data:image/(\w+);base64,(.+)", b64_data, _re_trip.DOTALL)
