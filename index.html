@@ -7877,20 +7877,6 @@ async function renderDriverTrip() {
           <div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">🔒 يُحدَّد تلقائياً من آخر رحلة</div>
         </div>
 
-        <div class="form-group">
-          <label style="font-weight:700;color:#1e3a5f">📷 صورة العداد <span class="req">*</span></label>
-          <div style="font-size:.72rem;color:#64748b;margin-bottom:.4rem">صورة إلزامية للعداد قبل بدء الرحلة.</div>
-          <div id="startOdoPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
-            <img id="startOdoPhotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1.5px solid #e2e8f0">
-          </div>
-          <label for="startOdoPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
-            border:1.5px dashed #cbd5e1;border-radius:10px;padding:.7rem;cursor:pointer;
-            color:#475569;font-size:.82rem;font-weight:700;background:#f8fafc">
-            <span id="startOdoPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
-          </label>
-          <input type="file" id="startOdoPhotoInput" accept="image/*" capture="environment" style="display:none">
-        </div>
-
         <button class="btn btn-primary" id="startTripBtn"
                 style="width:100%;font-size:1.15rem;padding:1rem;border-radius:14px"
                 ${activeTrip?'disabled':''}>
@@ -8003,26 +7989,6 @@ async function renderDriverTrip() {
     }
   };
 
-  // ── صورة العداد عند بدء الرحلة ──
-  window._startOdoPhotoData = '';
-  const _startOdoPhotoInput = document.getElementById('startOdoPhotoInput');
-  if (_startOdoPhotoInput) {
-    _startOdoPhotoInput.onchange = (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        window._startOdoPhotoData = reader.result;
-        const preview = document.getElementById('startOdoPhotoPreview');
-        const wrap    = document.getElementById('startOdoPhotoPreviewWrap');
-        if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
-        const lbl = document.getElementById('startOdoPhotoBtnLabel');
-        if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
-      };
-      reader.readAsDataURL(file);
-    };
-  }
-
   // ── START TRIP handler ──
   document.getElementById('startTripBtn')?.addEventListener('click', async () => {
     const car_id    = parseInt(document.getElementById('startCarId').value);
@@ -8030,14 +7996,12 @@ async function renderDriverTrip() {
     const btn = document.getElementById('startTripBtn');
     if(!car_id)          return showNotification('اختر المركبة','error');
     if(isNaN(start_odo)) return showNotification('لم يتم تحديد عداد البداية — اختر المركبة أولاً','error');
-    if(!window._startOdoPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل البدء','error');
     if(!window._checklistSubmittedToday) return showNotification('📋 يجب تعبئة Check List اليومية أولاً قبل بدء الرحلة','error');
     btn.disabled=true; btn.textContent='🚀 جاري...';
     const location = await silentGetLocation();
     try{
-      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id,start_odometer:start_odo,start_location:location,start_odometer_photo:window._startOdoPhotoData||''});
+      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id,start_odometer:start_odo,start_location:location});
       showNotification('✅ بدأت الرحلة!','success');
-      window._startOdoPhotoData = '';
       await renderDriverTrip();
     }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='🚀 بدء الرحلة'; }
   });
@@ -8184,52 +8148,20 @@ async function openStartTripModal() {
     <div class="form-group"><label>المركبة <span class="req">*</span></label>
       <select id="stCarId">${allowedCars.length?'<option value="">-- اختر --</option>'+allowedCars.map(c=>`<option value="${c.id}">${c.plate} - ${c.model}</option>`).join(''):'<option value="">⚠️ لا توجد مركبات مسموح بها</option>'}</select></div>
     <div class="form-group"><label>عداد البداية (كم) <span class="req">*</span></label><input type="number" id="stOdo" placeholder="قراءة العداد الحالية" min="0"></div>
-    <div class="form-group">
-      <label>📷 صورة العداد <span class="req">*</span></label>
-      <div style="font-size:.72rem;color:var(--text-3);margin-bottom:.4rem">صورة إلزامية للعداد قبل بدء الرحلة.</div>
-      <div id="stOdoPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
-        <img id="stOdoPhotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)">
-      </div>
-      <label for="stOdoPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
-        border:1.5px dashed var(--border);border-radius:10px;padding:.7rem;cursor:pointer;
-        color:var(--text-2);font-size:.82rem;font-weight:600;background:var(--surface-2)">
-        <span id="stOdoPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
-      </label>
-      <input type="file" id="stOdoPhotoInput" accept="image/*" capture="environment" style="display:none">
-    </div>
     ${gpsPickerHTML('stLoc','موقع البداية')}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
       <button class="btn btn-primary" id="stBtn">🚀 بدء الرحلة</button>
     </div>`);
-  window._stOdoPhotoData = '';
-  const _stOdoPhotoInput = document.getElementById('stOdoPhotoInput');
-  if (_stOdoPhotoInput) {
-    _stOdoPhotoInput.onchange = (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        window._stOdoPhotoData = reader.result;
-        const preview = document.getElementById('stOdoPhotoPreview');
-        const wrap    = document.getElementById('stOdoPhotoPreviewWrap');
-        if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
-        const lbl = document.getElementById('stOdoPhotoBtnLabel');
-        if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
-      };
-      reader.readAsDataURL(file);
-    };
-  }
   document.getElementById('stBtn').onclick=async()=>{
     const car_id=document.getElementById('stCarId').value;
     const start_odometer=parseFloat(document.getElementById('stOdo').value);
     const start_location=document.getElementById('stLoc').value.trim();
     if(!car_id) return showNotification('اختر المركبة','error');
     if(isNaN(start_odometer)||start_odometer<0) return showNotification('عداد البداية غير صحيح','error');
-    if(!window._stOdoPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل البدء','error');
     const btn=document.getElementById('stBtn'); btn.disabled=true; btn.textContent='جاري...';
     try{
-      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:+car_id,start_odometer,start_location,start_odometer_photo:window._stOdoPhotoData||''});
+      await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:+car_id,start_odometer,start_location});
       showNotification('✅ بدأت الرحلة! لا تنسَ تسجيل موقع الجراج 🅿️ في نهاية اليوم','success'); closeModal(); await renderDriverTrip();
     }catch(e){showNotification(e.message,'error');btn.disabled=false;btn.textContent='🚀 بدء الرحلة';}
   };
@@ -10331,52 +10263,19 @@ async function renderDriverSinglePage() {
                onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#e2e8f0'">
         `}
       </div>
-      <div class="form-group">
-        <label style="font-weight:800;color:#1e3a5f">📷 صورة العداد <span class="req">*</span></label>
-        <div style="font-size:.72rem;color:#64748b;margin-bottom:.4rem">صورة إلزامية للعداد عند بدء كل وردية — لا يمكن بدء الرحلة بدونها.</div>
-        <div id="dpTripStartPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
-          <img id="dpTripStartPhotoPreview" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px;border:1.5px solid #e2e8f0">
-        </div>
-        <label for="dpTripStartPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
-          border:1.5px dashed #cbd5e1;border-radius:10px;padding:.75rem;cursor:pointer;
-          color:#475569;font-size:.85rem;font-weight:700;background:#f8fafc">
-          <span id="dpTripStartPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
-        </label>
-        <input type="file" id="dpTripStartPhotoInput" accept="image/*" capture="environment" style="display:none">
-      </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
         <button class="btn btn-primary" id="dpStartOk" style="font-size:1rem;padding:.75rem 1.5rem">تأكيد وبدء ▶</button>
       </div>`);
-    window._dpTripStartPhotoData = '';
-    const _dpTripStartPhotoInput = document.getElementById('dpTripStartPhotoInput');
-    if (_dpTripStartPhotoInput) {
-      _dpTripStartPhotoInput.onchange = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-          window._dpTripStartPhotoData = reader.result;
-          const preview = document.getElementById('dpTripStartPhotoPreview');
-          const wrap    = document.getElementById('dpTripStartPhotoPreviewWrap');
-          if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
-          const lbl = document.getElementById('dpTripStartPhotoBtnLabel');
-          if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
-        };
-        reader.readAsDataURL(file);
-      };
-    }
     document.getElementById('dpStartOk').onclick=async()=>{
       const odo=parseFloat(document.getElementById('dpStartOdo').value);
       if(isNaN(odo)||odo<=0) return showNotification('أدخل قراءة العداد','error');
-      if(!window._dpTripStartPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل البدء','error');
       const btn=document.getElementById('dpStartOk');
       btn.disabled=true; btn.textContent='جاري...';
       const loc=await silentGetLocation();
       try{
-        await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc,start_odometer_photo:window._dpTripStartPhotoData||''});
+        await apiCall('/trips/start','POST',{driver_id:currentUser.driver_id,car_id:primaryCar.id,start_odometer:odo,start_location:loc});
         showNotification('✅ بدأت الرحلة!','success');
-        window._dpTripStartPhotoData = '';
         closeModal(); await renderDriverSinglePage();
       }catch(e){ showNotification(e.message,'error'); btn.disabled=false; btn.textContent='تأكيد وبدء ▶'; }
     };
