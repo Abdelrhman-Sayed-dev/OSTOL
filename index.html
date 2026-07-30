@@ -8214,7 +8214,12 @@ async function openDailyChecklistModal(driverId, operatorId, onDone) {
   document.getElementById('cklSaveBtn').onclick = async () => {
     const total = items.length;
     const answered = Object.keys(window._cklAnswers).length;
-    if (answered < total) return showNotification('يجب تحديد حالة كل البنود', 'error');
+    if (answered === 0) return showNotification('افحص بندًا واحدًا على الأقل قبل الحفظ', 'error');
+    if (answered < total) {
+      const skipped = items.filter(it => !window._cklAnswers[it.key]).map(it => it.label).join('، ');
+      const proceed = confirm(`لسه معندكش حالة لبعض البنود (${skipped}) — دول هيتسجّلوا "مش مفحوصة" وهيقللوا من درجة الفحص. تحب تكمل الحفظ كده؟`);
+      if (!proceed) return;
+    }
     const btn = document.getElementById('cklSaveBtn');
     btn.disabled = true; btn.textContent = '⏳ جاري الحفظ...';
     try {
@@ -14111,6 +14116,7 @@ async function _reloadChecklistReport() {
   }
 
   const notEfficientCount = r => Object.values(r.items||{}).filter(v => v === 'not_efficient').length;
+  const notCheckedCount = r => Object.values(r.items||{}).filter(v => v !== 'efficient' && v !== 'not_efficient').length;
   const scoreColor = s => s >= 90 ? '#16a34a' : (s >= 70 ? '#f59e0b' : '#dc2626');
 
   const rowsHtml = rows.map(r => `
@@ -14119,7 +14125,11 @@ async function _reloadChecklistReport() {
       <td>${r.person_name || '—'} ${r.branch ? `<span style="color:var(--text-3);font-size:.78rem">(${r.branch})</span>` : ''}</td>
       <td>${r.car_plate || '—'}</td>
       <td><strong style="color:${scoreColor(r.score)}">${r.score}%</strong></td>
-      <td>${notEfficientCount(r) > 0 ? `<span style="color:#dc2626;font-weight:700">⚠️ ${notEfficientCount(r)} بند</span>` : '<span style="color:#16a34a">✅ الكل تمام</span>'}</td>
+      <td>
+        ${notEfficientCount(r) > 0 ? `<span style="color:#dc2626;font-weight:700">⚠️ ${notEfficientCount(r)} بند عطلان (مُبلَّغ)</span><br>` : ''}
+        ${notCheckedCount(r) > 0 ? `<span style="color:#f59e0b;font-weight:700">◻️ ${notCheckedCount(r)} بند مش مفحوص</span>` : ''}
+        ${notEfficientCount(r) === 0 && notCheckedCount(r) === 0 ? '<span style="color:#16a34a">✅ الكل تمام ومفحوص</span>' : ''}
+      </td>
       <td style="font-size:.78rem;color:var(--text-3)">${r.notes || '—'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick='_showChecklistDetail(${JSON.stringify(r).replace(/'/g,"&#39;")})'>👁️ التفاصيل</button></td>
     </tr>`).join('');
@@ -14127,7 +14137,7 @@ async function _reloadChecklistReport() {
   wrap.innerHTML = `
     <div class="card" style="overflow-x:auto">
       <table style="width:100%"><thead><tr>
-        <th>التاريخ</th><th>الاسم</th><th>المركبة</th><th>الدرجة</th><th>البنود غير الفعّالة</th><th>ملاحظات</th><th></th>
+        <th>التاريخ</th><th>الاسم</th><th>المركبة</th><th>الدرجة</th><th>حالة البنود</th><th>ملاحظات</th><th></th>
       </tr></thead><tbody>${rowsHtml}</tbody></table>
     </div>`;
 }
@@ -14138,10 +14148,15 @@ function _showChecklistDetail(r) {
     brake_oil:'زيت الفرامل', battery:'البطارية', gauges_lights:'العدادات ولمبات التنبيه',
     tires:'الكاوتش', lighting:'الإضاءة', wipers:'مساحات الزجاج',
   };
+  const statusHtml = v => {
+    if (v === 'efficient') return '<span style="color:#16a34a;font-weight:700">✅ تعمل بكفاءة</span>';
+    if (v === 'not_efficient') return '<span style="color:#dc2626;font-weight:700">⚠️ لا تعمل بكفاءة (مُبلَّغ عنه)</span>';
+    return '<span style="color:#f59e0b;font-weight:700">◻️ مش مفحوص</span>';
+  };
   const rows = Object.entries(r.items||{}).map(([k,v]) => `
     <tr>
       <td>${labels[k]||k}</td>
-      <td>${v==='efficient' ? '<span style="color:#16a34a;font-weight:700">✅ تعمل بكفاءة</span>' : '<span style="color:#dc2626;font-weight:700">⚠️ لا تعمل بكفاءة</span>'}</td>
+      <td>${statusHtml(v)}</td>
     </tr>`).join('');
   openModal(`
     <div class="modal-header"><div class="modal-title">📋 تفاصيل Check List — ${r.person_name||''}</div><button class="modal-close" onclick="closeModal()">✕</button></div>

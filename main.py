@@ -3385,12 +3385,15 @@ class DailyChecklistCreate(BaseModel):
     notes: Optional[str] = ""
 
 def _calc_checklist_score(items: Dict[str, str]) -> float:
-    """نسبة البنود اللي شغالة بكفاءة من إجمالي بنود الـ Check List."""
+    """نسبة البنود اللي السائق فحصها فعليًا (سواء طلعت 'تعمل بكفاءة' أو 'لا تعمل بكفاءة')
+    من إجمالي بنود الـ Check List.
+    الدرجة بتتأثر فقط بعدم فحص البند (تخطّيه بالكامل)، مش بحالته —
+    فالإبلاغ الصادق عن عطل موجود ومُبلَّغ عنه لا يخصم من الدرجة، أما تخطّي فحص بند فيخصم."""
     total = len(CHECKLIST_ITEMS)
     if total == 0:
         return 0.0
-    efficient = sum(1 for k in CHECKLIST_ITEMS if items.get(k) == "efficient")
-    return round((efficient / total) * 100, 1)
+    checked = sum(1 for k in CHECKLIST_ITEMS if items.get(k) in CHECKLIST_VALID_STATUSES)
+    return round((checked / total) * 100, 1)
 
 @app.get("/checklists/items")
 async def get_checklist_items(cu: dict = Depends(get_user)):
@@ -3439,9 +3442,8 @@ async def create_daily_checklist(body: DailyChecklistCreate, cu: dict = Depends(
         if body.operator_id and body.operator_id != cu.get("operator_id"):
             raise HTTPException(403, "لا يمكنك تسجيل Check List لمشغل آخر")
 
-    missing = [k for k in CHECKLIST_ITEMS if k not in body.items]
-    if missing:
-        raise HTTPException(400, f"يجب تحديد حالة كل البنود — ناقص: {', '.join(CHECKLIST_ITEMS[m] for m in missing)}")
+    # ملحوظة: مش شرط تعبئة كل البنود عشان يتسجل الـ Check List — البند اللي متتفحصش
+    # ببساطة هيتسجل "مش مفحوص" وده اللي بيخصم من الدرجة (مش الإبلاغ عن عطل).
     invalid = {k: v for k, v in body.items.items() if k in CHECKLIST_ITEMS and v not in CHECKLIST_VALID_STATUSES}
     if invalid:
         raise HTTPException(400, "قيمة غير صحيحة لأحد البنود — استخدم 'تعمل بكفاءة' أو 'لا تعمل بكفاءة'")
@@ -3461,7 +3463,7 @@ async def create_daily_checklist(body: DailyChecklistCreate, cu: dict = Depends(
         if existing:
             raise HTTPException(400, "تم تسجيل الـ Check List لهذا اليوم بالفعل — مرة واحدة فقط يوميًا")
 
-        clean_items = {k: body.items[k] for k in CHECKLIST_ITEMS}
+        clean_items = {k: body.items.get(k, "not_checked") for k in CHECKLIST_ITEMS}
         score = _calc_checklist_score(clean_items)
         now = datetime.utcnow().isoformat() + "Z"
         cur = conn.execute(
