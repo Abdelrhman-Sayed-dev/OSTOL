@@ -600,6 +600,39 @@ input:focus,select:focus,textarea:focus{
 input[disabled]{background:#f1f5f9;color:var(--muted);cursor:not-allowed;opacity:.7}
 textarea{resize:vertical;min-height:70px}
 
+/* ── SEARCHABLE SELECT (بحث موحّد داخل كل قوائم الاختيار الطويلة: سيارات/معدات/سائقين...) ── */
+.ssel-wrap{position:relative;width:100%;flex:1 1 130px;min-width:0}
+.ssel-input{
+  width:100%;padding:.68rem 2.2rem .68rem 1rem;
+  border:1.5px solid var(--border);border-radius:10px;font-size:.88rem;
+  background:var(--surface-2);color:var(--text);font-family:inherit;
+  cursor:pointer;transition:.2s;
+}
+.ssel-input:focus{outline:none;border-color:var(--primary);background:white;box-shadow:0 0 0 3px var(--primary-glow)}
+.ssel-input[disabled]{background:#f1f5f9;color:var(--muted);cursor:not-allowed;opacity:.7}
+.ssel-input.ssel-placeholder{color:var(--muted)}
+.ssel-caret{position:absolute;top:50%;left:.85rem;transform:translateY(-50%);pointer-events:none;color:var(--muted);font-size:.65rem;transition:.2s}
+.ssel-wrap.open .ssel-caret{transform:translateY(-50%) rotate(180deg);color:var(--primary)}
+.ssel-panel{
+  display:none;position:absolute;top:calc(100% + 4px);right:0;left:0;z-index:400;
+  background:var(--surface);border:1.5px solid var(--border-2,#cbd5e1);border-radius:10px;
+  box-shadow:var(--shadow-lg);max-height:270px;overflow-y:auto;padding:.3rem;
+}
+.ssel-wrap.open .ssel-panel{display:block}
+.ssel-opt{
+  padding:.55rem .8rem;border-radius:7px;font-size:.85rem;cursor:pointer;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;justify-content:space-between;gap:.5rem;
+}
+.ssel-opt:hover,.ssel-opt.ssel-active{background:var(--gold-pale,#eef2ff);color:var(--primary)}
+.ssel-opt.ssel-selected{font-weight:700}
+.ssel-opt.ssel-selected::after{content:'✓';color:var(--primary);flex-shrink:0}
+.ssel-empty{padding:.7rem .8rem;color:var(--muted);font-size:.82rem;text-align:center}
+select.ssel-native{
+  position:absolute!important;opacity:0!important;pointer-events:none!important;
+  width:1px!important;height:1px!important;padding:0!important;border:0!important;
+  margin:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;
+}
+
 /* ── BUTTONS ── */
 .btn{
   display:inline-flex;align-items:center;gap:.4rem;
@@ -2744,6 +2777,7 @@ const NAV_ITEM_MODULE = {
   'inv-overview':'inventory', 'inv-products':'inventory', 'inv-categories':'inventory', 'inv-suppliers':'inventory',
   'inv-movements':'inventory', 'inv-alerts':'inventory', 'inv-platforms':'inventory',
   'monthly-report':'reports', 'driver-kpi':'reports', 'equipment-operator-kpi':'reports', 'daily-checklist-report':'reports',
+  'maintenance-reports':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
   'super-admins':'admin', 'super-reporters':'admin', 'super-workshop-admins':'admin', 'super-reassign':'admin',
@@ -2759,6 +2793,7 @@ function buildSupervisorNav() {
     {id:'workshops-stats', icon:'📊', label:'إحصائية الورش'},
     {id:'workshops',   icon:'🛠️', label:'سجلات الورش'},
     {id:'maintenance', icon:'🔧', label:'الصيانة الدورية'},
+    {id:'maintenance-reports', icon:'📈', label:'تقارير الصيانة'},
     {id:'cars',        icon:'🚙', label:'المركبات'},
   ];
   // مشرف الميدان: يشوف الرحلات + الخريطة + الطوارئ
@@ -2778,6 +2813,7 @@ function buildWorkshopAdminNav() {
     {id:'workshops-stats',       icon:'📊', label:'إحصائية الورش'},
     {id:'workshops',             icon:'🛠️', label:'سجلات الورش'},
     {id:'maintenance',           icon:'🔧', label:'الصيانة الدورية'},
+    {id:'maintenance-reports',   icon:'📈', label:'تقارير الصيانة'},
     {id:'forecast',              icon:'🗓️', label:'خطط الصيانة والإصلاح'},
     {id:'cars',                  icon:'🚙', label:'المركبات'},
     {id:'ws-attachments',        icon:'📎', label:'تتبع المرفقات'},
@@ -2818,6 +2854,7 @@ function buildAdminNav() {
     {id:'driver-kpi',    icon:'🏆', label:'KPI السائقين'},
     {id:'equipment-operator-kpi', icon:'🏆', label:'KPI مشغلي المعدات'},
     {id:'daily-checklist-report', icon:'📋', label:'Check List اليومية'},
+    {id:'maintenance-reports', icon:'📈', label:'تقارير الصيانة'},
     {id:'equipment-mgmt', icon:'🏗️', label:'إدارة المعدات', separator:true},
     {id:'equipment-list',        icon:'⚙️',  label:'قائمة المعدات'},
     {id:'equipment-operators',   icon:'👷',  label:'مشغلو المعدات'},
@@ -3000,6 +3037,7 @@ async function renderSection(id) {
     case 'op-card':        await renderOperationalCard(); break;
     case 'permissions':    await renderPermissionsSection(); break;
     case 'maintenance':     await renderMaintenanceSection(); break;
+    case 'maintenance-reports': await renderMaintenanceReportsSection(); break;
     case 'forecast':        await renderForecastSection(); break;
     case 'monthly-report':   await renderMonthlyReport(); break;
     case 'super-supervisors':await renderSuperSupervisors(); break;
@@ -9562,7 +9600,7 @@ function initUI() {
   }
   if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','equipment-operator-kpi','_sep_fleet','_sep_ops','_sep_reports','daily-checklist-report','ws-work-orders'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','maintenance-reports','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','equipment-operator-kpi','_sep_fleet','_sep_ops','_sep_reports','daily-checklist-report','ws-work-orders'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops-stats' : 'overview');
   renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
@@ -13562,6 +13600,360 @@ async function renderMaintenanceSection() {
     </div>
   `;
 }
+
+// ══════════════════════════════════════════════════════
+// تقارير الصيانة — نسبة تجاوز الصيانة + السجل التاريخي للمركبة/المعدة
+// ══════════════════════════════════════════════════════
+
+const MAINT_REPORT_BUCKET_COLORS = {
+  '0-5':   '#eab308',
+  '5-10':  '#f97316',
+  '10-20': '#f97316',
+  '20-30': '#ef4444',
+  '30+':   '#b91c1c',
+};
+
+window._maintReportTab = window._maintReportTab || 'overdue';
+
+async function renderMaintenanceReportsSection() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = `
+    <div class="page-header">
+      <div class="page-title">📈 تقارير الصيانة</div>
+    </div>
+    <div class="card" style="margin-bottom:1rem;border-radius:12px;padding:.5rem">
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button id="maintRepTabOverdue" class="btn btn-sm" onclick="_switchMaintReportTab('overdue')"
+          style="border-radius:9px">📊 نسبة تجاوز الصيانة</button>
+        <button id="maintRepTabHistory" class="btn btn-sm" onclick="_switchMaintReportTab('history')"
+          style="border-radius:9px">🗂️ السجل التاريخي للمركبة/المعدة</button>
+      </div>
+    </div>
+    <div id="maintReportBody"></div>
+  `;
+  await _switchMaintReportTab(window._maintReportTab || 'overdue');
+}
+
+function _updateMaintReportTabButtons(tab) {
+  const ov = document.getElementById('maintRepTabOverdue');
+  const hi = document.getElementById('maintRepTabHistory');
+  if(ov) { ov.className = tab==='overdue' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'; ov.style.borderRadius='9px'; }
+  if(hi) { hi.className = tab==='history' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'; hi.style.borderRadius='9px'; }
+}
+
+async function _switchMaintReportTab(tab) {
+  window._maintReportTab = tab;
+  _updateMaintReportTabButtons(tab);
+  if(tab === 'overdue') await _renderMaintOverdueReport();
+  else await _renderMaintHistoryReport();
+}
+
+/* ── تقرير 1: نسبة تجاوز الصيانة ── */
+async function _renderMaintOverdueReport() {
+  const body = document.getElementById('maintReportBody');
+  body.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تحميل التقرير...</p></div>';
+
+  let data;
+  try {
+    data = await apiCall('/reports/maintenance-overdue');
+  } catch(e) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>تعذر تحميل التقرير: ${e.message}</p></div>`;
+    return;
+  }
+
+  window._maintOverdueData = data;
+
+  const kindOpts = `<option value="">الكل (سيارات ومعدات)</option><option value="vehicle">🚗 سيارات فقط</option><option value="equipment">🏗️ معدات فقط</option>`;
+  const allBranches = [...new Set(data.buckets.flatMap(b=>b.items.map(it=>it.branch)).filter(Boolean))].sort();
+  const branchOpts = allBranches.map(b=>`<option value="${b}">${b}</option>`).join('');
+
+  body.innerHTML = `
+    <div class="stats-row" style="margin-bottom:1rem">
+      <div class="stat-card"><div class="stat-icon" style="color:#ef4444">🔴</div><div class="stat-value" style="color:#ef4444">${data.summary.total_overdue}</div><div class="stat-label">إجمالي المتأخرة عن الموعد</div></div>
+      <div class="stat-card"><div class="stat-icon">🔧</div><div class="stat-value">${data.summary.total_tracked}</div><div class="stat-label">إجمالي جداول الصيانة المتابَعة</div></div>
+      ${data.buckets.map(b=>`<div class="stat-card"><div class="stat-icon" style="color:${MAINT_REPORT_BUCKET_COLORS[b.key]}">📌</div><div class="stat-value" style="color:${MAINT_REPORT_BUCKET_COLORS[b.key]}">${b.count}</div><div class="stat-label">${b.label}</div></div>`).join('')}
+    </div>
+
+    <div class="card" style="margin-bottom:1rem;border-radius:12px">
+      <div class="card-header" style="border-bottom:none;padding:.75rem 1rem">
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;width:100%">
+          <input id="movSearch" type="text" placeholder="🔍 اسم أو لوحة أو موديل..."
+            oninput="window._applyMaintOverdueFilter()"
+            style="padding:.45rem .8rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:200px;flex:1">
+          <select id="movKindFilter" onchange="window._applyMaintOverdueFilter()"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:170px">
+            ${kindOpts}
+          </select>
+          <select id="movBranchFilter" onchange="window._applyMaintOverdueFilter()"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:150px">
+            <option value="">كل الفروع 🏢</option>
+            ${branchOpts}
+          </select>
+          <select id="movSort" onchange="window._applyMaintOverdueFilter()"
+            style="padding:.45rem .7rem;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;font-size:.85rem;min-width:170px">
+            <option value="pct_desc">الترتيب: الأعلى نسبة تجاوز</option>
+            <option value="pct_asc">الترتيب: الأقل نسبة تجاوز</option>
+            <option value="name">الترتيب: الاسم</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="
+            document.getElementById('movSearch').value='';
+            document.getElementById('movKindFilter').value='';
+            document.getElementById('movBranchFilter').value='';
+            document.getElementById('movSort').value='pct_desc';
+            window._applyMaintOverdueFilter()
+          ">✕ مسح</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="maintOverdueGroups"></div>
+  `;
+
+  window._applyMaintOverdueFilter();
+}
+
+function _buildMaintOverdueRow(it) {
+  const color = MAINT_REPORT_BUCKET_COLORS[it.bucket] || '#ef4444';
+  const kindBadge = it.kind === 'equipment'
+    ? '<span class="badge badge-navy" style="font-size:.68rem">🏗️ معدة</span>'
+    : '<span class="badge badge-blue" style="font-size:.68rem">🚗 سيارة</span>';
+  return `<tr>
+    <td><strong>${it.name || '—'}</strong>${it.plate?`<br><small dir="ltr" style="color:var(--muted)">${it.plate}</small>`:''}</td>
+    <td>${kindBadge}</td>
+    <td style="font-size:.82rem">${it.model||'—'}</td>
+    <td>${it.branch ? `<span class="badge badge-blue" style="font-size:.72rem">${it.branch}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+    <td>${it.maintenance_type}</td>
+    <td>${it.due_km!=null ? Math.round(it.due_km).toLocaleString('ar-EG')+' كم' : (it.due_date||'—')}</td>
+    <td>${it.actual_km!=null ? Math.round(it.actual_km).toLocaleString('ar-EG')+' كم' : '—'}</td>
+    <td><strong style="color:${color}">${it.overdue_pct}%</strong>${it.overdue_km!=null?`<br><small style="color:var(--muted)">${Math.round(it.overdue_km).toLocaleString('ar-EG')} كم تجاوز</small>`:(it.overdue_days!=null?`<br><small style="color:var(--muted)">${it.overdue_days} يوم تجاوز</small>`:'')}</td>
+    <td>
+      <button class="btn btn-outline btn-sm" onclick="_switchMaintReportTab('history');setTimeout(()=>_maintHistorySelectCar(${it.car_id}),50)">🗂️ السجل الكامل</button>
+    </td>
+  </tr>`;
+}
+
+function _applyMaintOverdueFilter() {
+  const data = window._maintOverdueData;
+  if(!data) return;
+  const q      = (document.getElementById('movSearch')?.value||'').trim().toLowerCase();
+  const fKind  = document.getElementById('movKindFilter')?.value||'';
+  const fBranch= document.getElementById('movBranchFilter')?.value||'';
+  const sort   = document.getElementById('movSort')?.value||'pct_desc';
+
+  const wrap = document.getElementById('maintOverdueGroups');
+  if(!wrap) return;
+
+  let html = '';
+  let totalShown = 0;
+  data.buckets.forEach(b=>{
+    let items = b.items.filter(it =>
+      (!q || (it.name||'').toLowerCase().includes(q) || (it.plate||'').toLowerCase().includes(q) || (it.model||'').toLowerCase().includes(q)) &&
+      (!fKind || it.kind === fKind) &&
+      (!fBranch || it.branch === fBranch)
+    );
+    if(sort === 'pct_asc') items = [...items].sort((a,c)=>a.overdue_pct-c.overdue_pct);
+    else if(sort === 'name') items = [...items].sort((a,c)=>(a.name||'').localeCompare(c.name||'','ar'));
+    else items = [...items].sort((a,c)=>c.overdue_pct-a.overdue_pct);
+
+    totalShown += items.length;
+    if(!items.length) return;
+    const color = MAINT_REPORT_BUCKET_COLORS[b.key];
+    html += `<div class="card" style="border:1.5px solid ${color};margin-bottom:1rem">
+      <div class="card-header" style="background:${color}12">
+        <div class="card-title" style="color:${color}">${b.label} (${items.length})</div>
+      </div>
+      <div class="table-wrap">
+        <table><thead><tr>
+          <th>الاسم</th><th>النوع</th><th>الموديل</th><th>الفرع</th>
+          <th>نوع الصيانة</th><th>الكيلومتر المستحق</th><th>الكيلومتر الفعلي الحالي</th>
+          <th>نسبة التجاوز</th><th>إجراء</th>
+        </tr></thead><tbody>
+          ${items.map(_buildMaintOverdueRow).join('')}
+        </tbody></table>
+      </div>
+    </div>`;
+  });
+
+  wrap.innerHTML = html || '<div class="empty-state"><div class="empty-icon">✅</div><p>لا توجد نتائج مطابقة — أو لا توجد صيانات متأخرة حالياً 🎉</p></div>';
+}
+window._applyMaintOverdueFilter = _applyMaintOverdueFilter;
+
+/* ── تقرير 2: السجل التاريخي للمركبة/المعدة ── */
+let _maintHistCarList = [];
+
+async function _renderMaintHistoryReport() {
+  const body = document.getElementById('maintReportBody');
+  if(!window._carsCache || !window._carsCache.length) window._carsCache = await loadCars();
+  _maintHistCarList = window._carsCache || [];
+
+  body.innerHTML = `
+    <div class="card" style="margin-bottom:1rem;border-radius:14px;overflow:visible">
+      <div style="padding:.85rem 1.1rem">
+        <div style="position:relative;max-width:480px">
+          <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">🔍 اختر سيارة أو معدة</label>
+          <input type="text" id="maintHistSearch" placeholder="اكتب الاسم أو رقم اللوحة أو الموديل..." autocomplete="off"
+            oninput="_maintHistOnSearchInput(this.value)" onfocus="_maintHistOnSearchInput(this.value)"
+            style="padding:.5rem .8rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.88rem;width:100%;box-sizing:border-box">
+          <div id="maintHistDropdown" style="display:none;position:absolute;top:100%;right:0;left:0;z-index:50;
+              background:#fff;border:1.5px solid var(--border);border-radius:9px;margin-top:.3rem;
+              max-height:280px;overflow-y:auto;box-shadow:0 8px 20px rgba(0,0,0,.1)"></div>
+        </div>
+      </div>
+    </div>
+    <div id="maintHistWrap"></div>
+  `;
+}
+
+function _maintHistOnSearchInput(q) {
+  const dd = document.getElementById('maintHistDropdown');
+  if(!dd) return;
+  const query = (q||'').trim().toLowerCase();
+  const matches = query
+    ? _maintHistCarList.filter(c => (c.car_name||'').toLowerCase().includes(query) || (c.plate||'').toLowerCase().includes(query) || (c.model||'').toLowerCase().includes(query))
+    : _maintHistCarList;
+  if(!matches.length) {
+    dd.style.display = 'block';
+    dd.innerHTML = `<div style="padding:.7rem 1rem;color:#94a3b8;font-size:.85rem">لا توجد نتائج مطابقة</div>`;
+    return;
+  }
+  dd.style.display = 'block';
+  dd.innerHTML = matches.slice(0,30).map(c => `
+    <div onclick="_maintHistorySelectCar(${c.id})" style="padding:.6rem 1rem;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f1f5f9"
+      onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+      <span style="font-weight:700">${c.car_name || c.plate}</span>
+      <span style="font-size:.76rem;color:#94a3b8" dir="ltr">${c.plate} — ${c.model||''}${c.equipment_type?' 🏗️':''}</span>
+    </div>`).join('');
+}
+
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('maintHistDropdown');
+  const search = document.getElementById('maintHistSearch');
+  if(dd && search && !search.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+});
+
+async function _maintHistorySelectCar(carId) {
+  // تأكد إننا في تبويب السجل التاريخي
+  if(window._maintReportTab !== 'history') { window._maintReportTab='history'; await renderMaintenanceReportsSection(); }
+  const dd = document.getElementById('maintHistDropdown');
+  if(dd) dd.style.display = 'none';
+
+  const wrap = document.getElementById('maintHistWrap');
+  if(!wrap) return;
+  wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري تحميل السجل...</p></div>';
+  wrap.scrollIntoView({behavior:'smooth', block:'start'});
+
+  let data;
+  try {
+    data = await apiCall(`/reports/maintenance-history/${carId}`);
+  } catch(e) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>تعذر تحميل السجل: ${e.message}</p></div>`;
+    return;
+  }
+
+  const searchInput = document.getElementById('maintHistSearch');
+  if(searchInput) searchInput.value = data.car.name;
+
+  const kindLabel = data.car.kind === 'equipment' ? '🏗️ معدة' : '🚗 سيارة';
+  const scheduleRows = (data.schedule||[]).map(s => {
+    const ac = ALERT_COLORS[s.alert_status] || ALERT_COLORS.ok;
+    return `<tr>
+      <td>${s.maintenance_type}</td>
+      <td>${s.interval_km ? Math.round(s.interval_km).toLocaleString('ar-EG')+' كم' : '—'}${s.interval_days?' / '+s.interval_days+' يوم':''}</td>
+      <td>${s.last_done_km ? Math.round(s.last_done_km).toLocaleString('ar-EG')+' كم' : '—'}</td>
+      <td>${s.last_done_date || '—'}</td>
+      <td>${s.next_due_km ? Math.round(s.next_due_km).toLocaleString('ar-EG')+' كم' : (s.next_due_date||'—')}</td>
+      <td><span style="display:inline-flex;align-items:center;gap:.28rem;background:${ac.badge};color:white;border-radius:8px;font-size:.7rem;padding:.22rem .6rem;font-weight:700;white-space:nowrap">${ac.label}</span></td>
+    </tr>`;
+  }).join('');
+
+  const historyRows = (data.history||[]).map(h => `
+    <tr>
+      <td style="white-space:nowrap">${fmtDate(h.date)}</td>
+      <td>${h.maintenance_type||'—'}</td>
+      <td style="font-size:.82rem">${h.description || h.notes || '—'}</td>
+      <td>${h.odometer_reading!=null ? Math.round(h.odometer_reading).toLocaleString('ar-EG')+' كم' : '—'}</td>
+      <td>${h.part_name ? `${h.part_name}${h.part_quantity?` (${h.part_quantity} ${h.part_unit||''})`:''}` : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${h.price ? fmtNum(h.price)+' جنيه' : '—'}</td>
+      <td style="font-size:.82rem">${h.driver_or_operator || '—'}</td>
+    </tr>`).join('');
+
+  wrap.innerHTML = `
+    <style>@media print { .no-print { display:none !important; } }</style>
+    <div class="card no-print" style="margin-bottom:1rem;padding:.8rem 1.2rem;display:flex;justify-content:flex-end">
+      <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ طباعة السجل</button>
+    </div>
+    <div class="card" style="padding:1.2rem">
+      <div id="maintHistPrintArea">
+        <style>
+          @media print {
+            .no-print, .sidebar, .topbar { display:none !important; }
+            @page { size: A4 landscape; margin: 10mm 14mm; }
+            body, html { background:#fff !important; }
+            #maintHistPrintArea { font-size: 9.5pt; color:#000; }
+          }
+          #maintHistPrintArea table { width:100%; border-collapse:collapse; font-size:.8rem; }
+          #maintHistPrintArea th, #maintHistPrintArea td { border:1px solid #cbd5e1; padding:.4rem .55rem; text-align:center; }
+          #maintHistPrintArea th { background:#1e3a5f; color:#fff; font-size:.74rem; }
+        </style>
+
+        <div style="text-align:center;margin-bottom:1rem;border-bottom:2px solid #1e3a5f;padding-bottom:.7rem">
+          <div style="font-size:1.2rem;font-weight:900;color:#1e3a5f">السجل التاريخي للصيانة</div>
+          <div style="font-size:.8rem;color:#64748b;margin-top:.2rem">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1rem;font-size:.86rem">
+          <div><strong>الاسم:</strong> ${data.car.name||'—'}</div>
+          <div><strong>النوع:</strong> ${kindLabel}</div>
+          <div><strong>اللوحة:</strong> <span dir="ltr">${data.car.plate||'—'}</span></div>
+          <div><strong>الموديل:</strong> ${data.car.model||'—'}</div>
+          <div><strong>الفرع:</strong> ${data.car.branch||'—'}</div>
+          <div><strong>أول صيانة:</strong> ${data.summary.first_maintenance_date ? fmtDate(data.summary.first_maintenance_date) : '—'}</div>
+          <div><strong>آخر صيانة:</strong> ${data.summary.last_maintenance_date ? fmtDate(data.summary.last_maintenance_date) : '—'}</div>
+          <div><strong>إجمالي الصيانات:</strong> ${data.summary.total_records}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1.2rem">
+          <div style="background:#eef2ff;border-radius:10px;padding:.7rem;text-align:center">
+            <div style="font-size:.72rem;color:#3730a3;font-weight:700">إجمالي عمليات الصيانة</div>
+            <div style="font-size:1.3rem;font-weight:900;color:#3730a3">${data.summary.total_records}</div>
+          </div>
+          <div style="background:#f0fdf4;border-radius:10px;padding:.7rem;text-align:center">
+            <div style="font-size:.72rem;color:#166534;font-weight:700">عدد قطع الغيار المصروفة</div>
+            <div style="font-size:1.3rem;font-weight:900;color:#166534">${data.summary.total_parts_used}</div>
+          </div>
+          <div style="background:#fff7ed;border-radius:10px;padding:.7rem;text-align:center">
+            <div style="font-size:.72rem;color:#9a3412;font-weight:700">إجمالي التكلفة</div>
+            <div style="font-size:1.3rem;font-weight:900;color:#9a3412">${fmtNum(data.summary.total_cost)} جنيه</div>
+          </div>
+          <div style="background:#eff6ff;border-radius:10px;padding:.7rem;text-align:center">
+            <div style="font-size:.72rem;color:#1d4ed8;font-weight:700">جداول صيانة مفعّلة</div>
+            <div style="font-size:1.3rem;font-weight:900;color:#1d4ed8">${(data.schedule||[]).length}</div>
+          </div>
+        </div>
+
+        ${scheduleRows ? `
+        <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">🗓️ جدول الصيانة الدورية الحالي</div>
+        <table style="margin-bottom:1.2rem">
+          <thead><tr>
+            <th>نوع الصيانة</th><th>الفاصل الزمني</th><th>آخر صيانة (كم)</th><th>تاريخ آخر صيانة</th><th>الموعد القادم</th><th>الحالة</th>
+          </tr></thead>
+          <tbody>${scheduleRows}</tbody>
+        </table>` : '<div class="empty-state" style="margin-bottom:1rem"><div class="empty-icon">🗓️</div><p>لا يوجد جدول صيانة دورية مُعرّف لهذه المركبة/المعدة</p></div>'}
+
+        <div style="margin-bottom:.5rem;font-weight:800;color:#1e3a5f">🗂️ السجل الكامل (من أول صيانة وحتى الآن)</div>
+        ${historyRows ? `
+        <table>
+          <thead><tr>
+            <th>التاريخ</th><th>نوع الصيانة</th><th>الوصف / الإصلاحات</th><th>العداد وقت الصيانة</th>
+            <th>قطعة الغيار</th><th>التكلفة</th><th>بواسطة</th>
+          </tr></thead>
+          <tbody>${historyRows}</tbody>
+        </table>` : '<div class="empty-state"><div class="empty-icon">📭</div><p>لا يوجد سجل صيانة سابق لهذه المركبة/المعدة بعد</p></div>'}
+      </div>
+    </div>
+  `;
+}
+window._maintHistorySelectCar = _maintHistorySelectCar;
 
 async function openAddMaintenanceModal() {
   // جيب العربيات لو مش محملة
@@ -23381,6 +23773,205 @@ async function reviewOpsRecord(id, action) {
     renderOpsReview();
   } catch(e) { showNotification(e.message, 'error'); }
 }
+</script>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   Searchable Select — تعميم خاصية البحث داخل كل الـDropdown
+   الطويلة (سيارات/معدات/سائقين/فروع...) في كل شاشات النظام.
+   يعمل تلقائياً على أي <select> بعدد خيارات كبير، بدون الحاجة
+   لتعديل أي كود موجود: يحافظ على نفس الـid والـvalue والـonchange.
+   ══════════════════════════════════════════════════════ */
+(function(){
+  const SSEL_MIN_OPTIONS = 7; // الحد الأدنى لعدد الخيارات لاعتبار القائمة "طويلة"
+  const enhanced = new WeakSet();
+  let scanTimer = null;
+
+  function realOptionsCount(sel){
+    let n = 0;
+    for(const o of sel.options){ if((o.value||'').trim() !== '' || (o.textContent||'').trim() !== '') n++; }
+    return n;
+  }
+
+  function isCandidate(sel){
+    if(!sel || sel.tagName !== 'SELECT') return false;
+    if(sel.multiple) return false;
+    if(enhanced.has(sel)) return false;
+    if(sel.closest('.ssel-wrap')) return false;
+    if(sel.dataset && sel.dataset.sselSkip === '1') return false;
+    return realOptionsCount(sel) >= SSEL_MIN_OPTIONS;
+  }
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function labelFor(opt){ return (opt.textContent||'').trim(); }
+
+  function buildPanelHTML(sel, query){
+    const q = (query||'').trim().toLowerCase();
+    const opts = Array.from(sel.options);
+    const rows = q ? opts.filter(o => labelFor(o).toLowerCase().includes(q)) : opts;
+    if(!rows.length) return '<div class="ssel-empty">لا توجد نتائج مطابقة</div>';
+    return rows.map(o=>{
+      const isSel = o.value === sel.value && (sel.selectedIndex === opts.indexOf(o));
+      return `<div class="ssel-opt${isSel?' ssel-selected':''}" data-idx="${opts.indexOf(o)}">${esc(labelFor(o)) || '&nbsp;'}</div>`;
+    }).join('');
+  }
+
+  function enhance(sel){
+    if(enhanced.has(sel)) return;
+    enhanced.add(sel);
+
+    const origStyle = sel.getAttribute('style');
+    const origClass = sel.getAttribute('class');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'ssel-wrap' + (origClass ? ' ' + origClass : '');
+    if(origStyle) wrap.setAttribute('style', origStyle);
+
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    sel.classList.add('ssel-native');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'ssel-input';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    if(sel.disabled) input.disabled = true;
+    wrap.appendChild(input);
+
+    const caret = document.createElement('span');
+    caret.className = 'ssel-caret';
+    caret.textContent = '▾';
+    wrap.appendChild(caret);
+
+    const panel = document.createElement('div');
+    panel.className = 'ssel-panel';
+    wrap.appendChild(panel);
+
+    function currentLabel(){
+      const o = sel.options[sel.selectedIndex];
+      return o ? labelFor(o) : '';
+    }
+    function syncDisplay(){
+      input.value = currentLabel();
+      input.classList.toggle('ssel-placeholder', !sel.value);
+      input.disabled = sel.disabled;
+    }
+    function bindOptClicks(){
+      panel.querySelectorAll('.ssel-opt').forEach(row=>{
+        row.addEventListener('mousedown', (e)=>{
+          e.preventDefault();
+          sel.selectedIndex = Number(row.getAttribute('data-idx'));
+          syncDisplay();
+          closePanel();
+          sel.dispatchEvent(new Event('input', {bubbles:true}));
+          sel.dispatchEvent(new Event('change', {bubbles:true}));
+        });
+      });
+    }
+    function openPanel(){
+      if(sel.disabled) return;
+      wrap.classList.add('open');
+      panel.innerHTML = buildPanelHTML(sel, '');
+      bindOptClicks();
+      const selRow = panel.querySelector('.ssel-selected');
+      if(selRow) selRow.scrollIntoView({block:'nearest'});
+    }
+    function closePanel(){
+      wrap.classList.remove('open');
+      syncDisplay();
+    }
+
+    input.addEventListener('focus', openPanel);
+    input.addEventListener('click', openPanel);
+    input.addEventListener('input', ()=>{
+      wrap.classList.add('open');
+      panel.innerHTML = buildPanelHTML(sel, input.value);
+      bindOptClicks();
+    });
+    input.addEventListener('keydown', (e)=>{
+      if(e.key === 'Escape'){ closePanel(); input.blur(); }
+      else if(e.key === 'Enter'){
+        e.preventDefault();
+        const active = panel.querySelector('.ssel-active') || panel.querySelector('.ssel-opt');
+        if(active) active.dispatchEvent(new Event('mousedown', {cancelable:true}));
+      } else if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+        e.preventDefault();
+        if(!wrap.classList.contains('open')){ openPanel(); return; }
+        const rows = Array.from(panel.querySelectorAll('.ssel-opt'));
+        if(!rows.length) return;
+        let idx = rows.findIndex(r=>r.classList.contains('ssel-active'));
+        rows.forEach(r=>r.classList.remove('ssel-active'));
+        idx = e.key === 'ArrowDown' ? (idx<rows.length-1?idx+1:0) : (idx>0?idx-1:rows.length-1);
+        rows[idx].classList.add('ssel-active');
+        rows[idx].scrollIntoView({block:'nearest'});
+      }
+    });
+    document.addEventListener('mousedown', (e)=>{
+      if(!wrap.contains(e.target)) closePanel();
+    });
+
+    // مزامنة الشكل الظاهر مع أي تغيير برمجي على select.value / selectedIndex في باقي الكود
+    try{
+      const proto = Object.getPrototypeOf(sel);
+      const valueDesc = Object.getOwnPropertyDescriptor(proto, 'value') || Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+      const idxDesc   = Object.getOwnPropertyDescriptor(proto, 'selectedIndex') || Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+      if(valueDesc && valueDesc.configurable){
+        Object.defineProperty(sel, 'value', {
+          get(){ return valueDesc.get.call(this); },
+          set(v){ valueDesc.set.call(this, v); syncDisplay(); },
+          configurable:true
+        });
+      }
+      if(idxDesc && idxDesc.configurable){
+        Object.defineProperty(sel, 'selectedIndex', {
+          get(){ return idxDesc.get.call(this); },
+          set(v){ idxDesc.set.call(this, v); syncDisplay(); },
+          configurable:true
+        });
+      }
+    }catch(err){ /* تجاهل — هيتم التزامن عند فتح القائمة برضو */ }
+
+    // إعادة الرسم لو حد أعاد تعبئة الخيارات (innerHTML/appendChild) بعد تحميل بيانات جديدة
+    new MutationObserver(()=>{
+      syncDisplay();
+      if(wrap.classList.contains('open')){
+        panel.innerHTML = buildPanelHTML(sel, input.value);
+        bindOptClicks();
+      }
+    }).observe(sel, {childList:true, subtree:true, attributes:true, attributeFilter:['disabled']});
+
+    syncDisplay();
+  }
+
+  function scan(root){
+    (root || document).querySelectorAll('select').forEach(sel=>{
+      if(isCandidate(sel)) enhance(sel);
+    });
+  }
+
+  function queueScan(){
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(()=>scan(document), 60);
+  }
+
+  function start(){
+    scan(document);
+    new MutationObserver((mutations)=>{
+      for(const m of mutations){
+        const t = m.target;
+        if(t && t.nodeType === 1 && (t.closest('.ssel-wrap'))) continue;
+        queueScan();
+        break;
+      }
+    }).observe(document.body, {childList:true, subtree:true});
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
 </script>
 
 <script>

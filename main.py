@@ -6983,6 +6983,256 @@ async def delete_maintenance(mid: int, cu: dict = Depends(require_workshop_admin
 
 
 # ══════════════════════════════════════════════════════
+# تقارير الصيانة — نسبة تجاوز الصيانة + السجل التاريخي للمركبة/المعدة
+# ══════════════════════════════════════════════════════
+
+MAINTENANCE_OVERDUE_BUCKETS = [
+    ("0-5",   "0% إلى 5%",           0,  5),
+    ("5-10",  "أكبر من 5% إلى 10%",  5,  10),
+    ("10-20", "أكبر من 10% إلى 20%", 10, 20),
+    ("20-30", "أكبر من 20% إلى 30%", 20, 30),
+    ("30+",   "أكبر من 30%",         30, None),
+]
+
+
+def _bucket_for_pct(pct: float) -> str:
+    if pct <= 5:
+        return "0-5"
+    if pct <= 10:
+        return "5-10"
+    if pct <= 20:
+        return "10-20"
+    if pct <= 30:
+        return "20-30"
+    return "30+"
+
+
+def _compute_overdue_info(row: dict):
+    """
+    يحسب نسبة تجاوز الصيانة عن موعدها لسجل مُثرى (ناتج _maintenance_row).
+    يعتمد أولاً على الكيلومترات (interval_km) ولو غير متاحة يعتمد على الأيام (interval_days).
+    يرجع None لو السجل مش متأخر (overdue) أو مفيش بيانات كافية لحساب نسبة.
+    """
+    if row.get("alert_status") != "overdue":
+        return None
+
+    pct = None
+    overdue_km = None
+    overdue_days = None
+
+    interval_km = row.get("interval_km")
+    next_due_km = row.get("next_due_km")
+    current_km  = row.get("current_km")
+    if interval_km and next_due_km is not None and current_km is not None:
+        overdue_km = round(float(current_km) - float(next_due_km), 1)
+        if overdue_km > 0:
+            pct = (overdue_km / float(interval_km)) * 100
+
+    if pct is None:
+        interval_days = row.get("interval_days")
+        next_due_date = row.get("next_due_date")
+        if interval_days and next_due_date:
+            try:
+                nd = datetime.fromisoformat(next_due_date)
+                overdue_days = (datetime.utcnow() - nd).days
+                if overdue_days > 0:
+                    pct = (overdue_days / float(interval_days)) * 100
+            except Exception:
+                pass
+
+    if pct is None:
+        return None
+
+    return {"overdue_pct": round(pct, 1), "overdue_km": overdue_km, "overdue_days": overdue_days}
+
+
+@app.get("/reports/maintenance-overdue")
+async def maintenance_overdue_report(
+    branch: Optional[str] = Query(None),
+    cu: dict = Depends(require_admin_or_reporter),
+):
+    """
+    تقرير نسبة تجاوز الصيانة: يبوّب كل السيارات/المعدات المتأخرة عن موعد صيانتها
+    في فئات حسب نسبة التجاوز (0-5% / 5-10% / 10-20% / 20-30% / أكبر من 30%).
+    """
+    eff_branch = _branch_filter(cu) or branch
+
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("""SELECT t.car_id, t.end_odometer as max_odo
+                     FROM trips t
+                     INNER JOIN (
+                         SELECT car_id, MAX(end_time) as latest
+                         FROM trips
+                         WHERE end_odometer IS NOT NULL AND end_time IS NOT NULL
+                         GROUP BY car_id
+                     ) lx ON t.car_id = lx.car_id AND t.end_time = lx.latest
+                     WHERE t.end_odometer IS NOT NULL""")
+        odo_map = {r["car_id"]: r["max_odo"] for r in c.fetchall()}
+
+        if eff_branch:
+            c.execute("SELECT id,plate,model,branch,car_name,equipment_type FROM cars WHERE branch=?", (eff_branch,))
+        else:
+            c.execute("SELECT id,plate,model,branch,car_name,equipment_type FROM cars")
+        cars_map = {r["id"]: dict(r) for r in c.fetchall()}
+
+        generated_at = datetime.utcnow().isoformat() + "Z"
+        if not cars_map:
+            return {"buckets": [{"key": k, "label": l, "count": 0, "items": []} for k, l, _, _ in MAINTENANCE_OVERDUE_BUCKETS],
+                    "summary": {"total_overdue": 0, "total_tracked": 0},
+                    "generated_at": generated_at}
+
+        car_ids = list(cars_map.keys())
+        placeholders = ",".join("?" * len(car_ids))
+        c.execute(f"""SELECT * FROM maintenance_schedule
+                      WHERE car_id IN ({placeholders})
+                      ORDER BY car_id, maintenance_type""", car_ids)
+        schedule_rows = c.fetchall()
+
+    items = []
+    for r in schedule_rows:
+        d = dict(r)
+        d["_current_km"] = odo_map.get(d["car_id"])
+        enriched = _maintenance_row(d, cars_map)
+        info = _compute_overdue_info(enriched)
+        if not info:
+            continue
+        car = cars_map.get(enriched["car_id"], {})
+        pct = info["overdue_pct"]
+        items.append({
+            "schedule_id":      enriched["id"],
+            "car_id":           enriched["car_id"],
+            "name":             car.get("car_name") or enriched.get("car_plate") or "",
+            "plate":            enriched.get("car_plate"),
+            "model":            enriched.get("car_model"),
+            "equipment_type":   car.get("equipment_type") or "",
+            "kind":             "equipment" if (car.get("equipment_type") or "").strip() else "vehicle",
+            "branch":           enriched.get("car_branch") or "",
+            "maintenance_type": enriched.get("maintenance_type"),
+            "due_km":           enriched.get("next_due_km"),
+            "actual_km":        enriched.get("current_km"),
+            "overdue_km":       info["overdue_km"],
+            "overdue_days":     info["overdue_days"],
+            "overdue_pct":      pct,
+            "due_date":         enriched.get("next_due_date"),
+            "last_done_km":     enriched.get("last_done_km"),
+            "last_done_date":   enriched.get("last_done_date"),
+            "bucket":           _bucket_for_pct(pct),
+        })
+
+    buckets = []
+    for key, label, _lo, _hi in MAINTENANCE_OVERDUE_BUCKETS:
+        bucket_items = sorted([it for it in items if it["bucket"] == key],
+                               key=lambda x: x["overdue_pct"], reverse=True)
+        buckets.append({"key": key, "label": label, "count": len(bucket_items), "items": bucket_items})
+
+    return {
+        "buckets": buckets,
+        "summary": {
+            "total_overdue": len(items),
+            "total_tracked": len(schedule_rows),
+        },
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.get("/reports/maintenance-history/{car_id}")
+async def maintenance_history_report(car_id: int, cu: dict = Depends(require_admin_or_reporter)):
+    """
+    السجل التاريخي الكامل لمركبة/معدة: كل الصيانات والإصلاحات وقطع الغيار المصروفة
+    من أول صيانة وحتى الآن، بالاعتماد الكامل على البيانات الموجودة فعلاً
+    (workshop_records + inventory_products + maintenance_schedule).
+    """
+    eff_branch = _branch_filter(cu)
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id,plate,model,car_name,equipment_type,branch,status FROM cars WHERE id=?", (car_id,))
+        car_row = c.fetchone()
+        if not car_row:
+            raise HTTPException(404, "المركبة/المعدة غير موجودة")
+        car = dict(car_row)
+        if eff_branch and (car.get("branch") or "") != eff_branch:
+            raise HTTPException(403, "لا تملك صلاحية على هذه المركبة/المعدة")
+
+        # جدول الصيانة الدورية (المواعيد المستحقة) لهذه المركبة/المعدة
+        c.execute("SELECT * FROM maintenance_schedule WHERE car_id=? ORDER BY maintenance_type", (car_id,))
+        schedule = [dict(r) for r in c.fetchall()]
+
+        c.execute("SELECT MAX(end_odometer) as m FROM trips WHERE car_id=? AND end_odometer IS NOT NULL", (car_id,))
+        _row = c.fetchone()
+        current_km = _row["m"] if _row and _row["m"] is not None else None
+        cars_map = {car_id: {"plate": car.get("plate", ""), "model": car.get("model", ""), "branch": car.get("branch", "")}}
+        schedule_enriched = []
+        for s in schedule:
+            s["_current_km"] = current_km
+            schedule_enriched.append(_maintenance_row(s, cars_map))
+
+        # السجل الكامل: كل عمليات الورشة (صيانة/قطع غيار/إصلاحات) الخاصة بهذه المركبة، الأقدم أولاً
+        c.execute("""SELECT w.*,
+                            COALESCE(d.name, op.name) as driver_name,
+                            ip.name as part_name, ip.unit as part_unit
+                     FROM workshop_records w
+                     LEFT JOIN drivers d ON w.driver_id=d.id AND (w.is_operator IS NULL OR w.is_operator=0)
+                     LEFT JOIN equipment_operators op ON w.operator_id=op.id
+                     LEFT JOIN inventory_products ip ON w.inventory_product_id=ip.id
+                     WHERE w.vehicle_id=?
+                     ORDER BY w.created_at ASC, w.id ASC""", (car_id,))
+        history_rows = [dict(r) for r in c.fetchall()]
+
+    history = []
+    total_cost = 0.0
+    parts_used = 0
+    for r in history_rows:
+        part_name = r.get("part_name") or r.get("item_name") or ""
+        if part_name:
+            parts_used += 1
+        price = r.get("price") or 0
+        total_cost += price
+        history.append({
+            "id":                 r["id"],
+            "date":               r.get("created_at"),
+            "maintenance_type":   r.get("type"),
+            "operation_type":     r.get("operation_type") or "",
+            "description":        r.get("description") or "",
+            "odometer_reading":   r.get("odometer_reading"),
+            "part_name":          part_name,
+            "part_quantity":      r.get("quantity"),
+            "part_unit":          r.get("part_unit") or "",
+            "price":              price,
+            "driver_or_operator": r.get("driver_name") or "",
+            "notes":              r.get("notes") or "",
+            "location":           r.get("location") or "",
+        })
+
+    first_record = history[0] if history else None
+    last_record  = history[-1] if history else None
+
+    summary = {
+        "total_records":          len(history),
+        "first_maintenance_date": first_record["date"] if first_record else None,
+        "last_maintenance_date":  last_record["date"]  if last_record  else None,
+        "total_parts_used":       parts_used,
+        "total_cost":             round(total_cost, 2),
+    }
+
+    return {
+        "car": {
+            "id":             car["id"],
+            "name":           car.get("car_name") or car.get("plate") or "",
+            "plate":          car.get("plate"),
+            "model":          car.get("model"),
+            "equipment_type": car.get("equipment_type") or "",
+            "kind":           "equipment" if (car.get("equipment_type") or "").strip() else "vehicle",
+            "branch":         car.get("branch") or "",
+            "status":         car.get("status") or "",
+        },
+        "schedule": schedule_enriched,
+        "history":  history,
+        "summary":  summary,
+    }
+
+
+# ══════════════════════════════════════════════════════
 # 42. FUEL EFFICIENCY REPORT (تقرير كفاءة الوقود)
 #     — للسوبر يوزر فقط —
 #     يستخدم منهجية Fill-to-Fill الصحيحة:
