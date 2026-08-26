@@ -8602,6 +8602,10 @@ async function renderDriverWorkshop() {
   ]);
   window._typePrices    = pricesData || {};
   window._wsAllowedCars = allowedCars;
+  // ── Virtual Inventory: تحميل قائمة المنتجات (لصرف الفلاتر من المخزن تلقائياً) ──
+  if (!window._invProducts) {
+    try { window._invProducts = await apiCall('/inventory/products'); } catch(e) { window._invProducts = []; }
+  }
   // Auto-fill: العربية النشطة حالياً للسائق
   const activeTrip = allTrips.find(t=>t.driver_id===currentUser.driver_id&&!t.end_time);
   window._wsActiveCarId = activeTrip?.car_id || null;
@@ -8736,7 +8740,10 @@ function openWsModal(type) {
         <option value="repair">🔧 تصليح</option>
         <option value="replacement">🔄 استبدال</option>
       </select></div>`;
-  else if(type==='filter') specific=`
+  else if(type==='filter') {
+    const filterProductOpts = '<option value="">-- اختر الصنف --</option>' +
+      (window._invProducts||[]).map(p => `<option value="${p.id}">${p.name} (متاح: ${p.quantity} ${p.unit||''})</option>`).join('');
+    specific=`
     <div class="form-group"><label>نوع الفلتر <span class="req">*</span></label>
       <select id="wFilterSubType">
         <option value="">-- اختر نوع الفلتر --</option>
@@ -8750,7 +8757,15 @@ function openWsModal(type) {
         <option value="filter_breather">🌬️ فلتر منفس</option>
         <option value="filter_hydraulic">🔧 فلتر هيدروليك</option>
       </select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+      <div class="form-group"><label>الكمية <span class="req">*</span></label>
+        <input type="number" id="wQty" value="1" min="1" step="1"></div>
+      <div class="form-group"><label>الصنف من المخزن <span class="req">*</span></label>
+        <select id="wFilterProduct">${filterProductOpts}</select></div>
+    </div>
+    <div style="padding:.5rem .7rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:.5rem;font-size:.78rem;color:#1e40af">📦 هيتم صرف الفلتر تلقائياً من المخزن</div>
     <input type="hidden" id="wOpType" value="replacement">`;
+  }
   else if(['battery','belt'].includes(type)) specific=`
     <div class="form-group"><label>نوع العملية <span class="req">*</span></label>
       <select id="wOpType">
@@ -8894,8 +8909,15 @@ function openWsModal(type) {
     if(selWsType==='filter'){
       const filterSub=document.getElementById('wFilterSubType')?.value;
       if(!filterSub) return showNotification('اختر نوع الفلتر','error');
+      const filterProd=parseInt(document.getElementById('wFilterProduct')?.value)||null;
+      if(!filterProd) return showNotification('اختر الصنف من المخزن','error');
+      const filterQty=parseFloat(document.getElementById('wQty')?.value)||1;
+      if(filterQty<=0) return showNotification('أدخل كمية صحيحة','error');
       payload.type=filterSub;
       payload.operation_type='replacement';
+      payload.quantity=filterQty;
+      payload.parts_source='Inventory';
+      payload.inventory_product_id=filterProd;
     }
     if(['battery','belt'].includes(selWsType)){
       const op=document.getElementById('wOpType')?.value;
@@ -11368,6 +11390,7 @@ function openWsAttachmentModal(id) {
 
 function openDpMaintenanceGroup() {
   const MAINT = [
+    {key:'oil_filters_batch', icon:'🧴', label:'زيت وفلاتر (دفعة واحدة)', special:true},
     {key:'filter',  icon:'🔧', label:'فلتر'},
     {key:'tire',    icon:'⚫', label:'كوتش'},
     {key:'battery', icon:'🔋', label:'بطارية'},
@@ -11386,10 +11409,10 @@ function openDpMaintenanceGroup() {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:.5rem 0">
       ${MAINT.map(t=>`
-        <div onclick="closeModal();setTimeout(()=>dpWsModal('${t.key}'),180)"
-          style="background:var(--surface-2);border:1.5px solid var(--border);border-radius:12px;padding:1.2rem;text-align:center;cursor:pointer;transition:.15s"
+        <div onclick="closeModal();setTimeout(()=>${t.special ? 'openMaintenanceBatchModal()' : `dpWsModal('${t.key}')`},180)"
+          style="background:${t.special?'rgba(184,134,11,.08)':'var(--surface-2)'};border:1.5px solid ${t.special?'var(--gold)':'var(--border)'};border-radius:12px;padding:1.2rem;text-align:center;cursor:pointer;transition:.15s;${t.special?'grid-column:1 / -1':''}"
           onmouseover="this.style.borderColor='var(--gold)';this.style.background='rgba(184,134,11,.06)'"
-          onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--surface-2)'">
+          onmouseout="this.style.borderColor='${t.special?'var(--gold)':'var(--border)'}';this.style.background='${t.special?'rgba(184,134,11,.08)':'var(--surface-2)'}'">
           <div style="font-size:2rem;margin-bottom:.4rem">${t.icon}</div>
           <div style="font-size:.88rem;font-weight:700;color:var(--text-2)">${t.label}</div>
         </div>`).join('')}
@@ -11592,6 +11615,8 @@ async function dpWsModal(type) {
       '<div class="form-group"><label>اسم المتسلم</label><input type="text" id="wRecvName" placeholder="اسم المستلم"></div>' +
       '</div>';
   } else if (type === 'filter') {
+    const filterProductOpts2 = '<option value="">-- اختر الصنف --</option>' +
+      (window._invProducts || []).map(p => '<option value="' + p.id + '">' + p.name + ' (متاح: ' + p.quantity + ' ' + (p.unit||'') + ')</option>').join('');
     specific =
       '<div class="form-group"><label>نوع الفلتر <span class="req">*</span></label>' +
       '<select id="wFilterSubType">' +
@@ -11606,6 +11631,11 @@ async function dpWsModal(type) {
       '<option value="filter_breather">🌬️ فلتر منفس</option>' +
       '<option value="filter_hydraulic">🔧 فلتر هيدروليك</option>' +
       '</select></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">' +
+      '<div class="form-group"><label>الكمية <span class="req">*</span></label><input type="number" id="wQty" value="1" min="1" step="1"></div>' +
+      '<div class="form-group"><label>الصنف من المخزن <span class="req">*</span></label><select id="wFilterProduct">' + filterProductOpts2 + '</select></div>' +
+      '</div>' +
+      '<div style="padding:.5rem .7rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:.5rem;font-size:.78rem;color:#1e40af">📦 هيتم صرف الفلتر تلقائياً من المخزن</div>' +
       '<input type="hidden" id="wOpType" value="replacement">';
   } else if (type === 'belt') {
     specific =
@@ -11636,9 +11666,9 @@ async function dpWsModal(type) {
       '<input type="file" id="wInvoicePhotoInput" accept="image/*" capture="environment" style="display:none"></div></div>';
   }
 
-  // ── Virtual Inventory: مصدر القطعة (لكل أنواع الصيانة، إلا "أخرى") ──
+  // ── Virtual Inventory: مصدر القطعة (لكل أنواع الصيانة، إلا "أخرى" و"فلتر" — الفلتر بيتصرف من المخزن تلقائياً) ──
   let partsSourceBlock = '';
-  if (!isFuelType && type !== 'other') {
+  if (!isFuelType && type !== 'other' && type !== 'filter') {
     const invCategoriesOpts = (window._invCategories || []).map(c =>
       '<option value="' + c.id + '">' + c.name + '</option>').join('');
     const platformOpts2 = (window._supplyPlatforms || []).filter(p=>p.status==='active').map(p =>
@@ -11744,9 +11774,9 @@ async function dpWsModal(type) {
       }
     }
 
-    // ── Virtual Inventory: مصدر القطعة (إلزامي للصيانة، إلا "أخرى") ──
+    // ── Virtual Inventory: مصدر القطعة (إلزامي للصيانة، إلا "أخرى" و"فلتر" — الفلتر له منطق مستقل بالأسفل) ──
     let partsSource = '', invProductId = null, directSupplier = '', directCost = null, partsPlatformId = null;
-    if (!isFuelSubmit && type !== 'other') {
+    if (!isFuelSubmit && type !== 'other' && type !== 'filter') {
       partsSource = document.getElementById('wPartsSource')?.value || '';
       if (!partsSource) return showNotification('اختر مصدر القطعة', 'error');
       if (partsSource === 'Inventory') {
@@ -11860,12 +11890,19 @@ async function dpWsModal(type) {
       if (recv)  payload.receiver_name = recv;
     }
 
-    // ── Filter ──
+    // ── Filter: بيتصرف من المخزن تلقائياً (مصدر ثابت = Inventory) ──
     if (selWsType === 'filter') {
       const filterSub = document.getElementById('wFilterSubType')?.value;
       if (!filterSub) return showNotification('اختر نوع الفلتر', 'error');
+      const filterProd = parseInt(document.getElementById('wFilterProduct')?.value) || null;
+      if (!filterProd) return showNotification('اختر الصنف من المخزن', 'error');
+      const filterQty = parseFloat(document.getElementById('wQty')?.value) || 1;
+      if (filterQty <= 0) return showNotification('أدخل كمية صحيحة', 'error');
       payload.type = filterSub;
       payload.operation_type = 'replacement';
+      payload.quantity = filterQty;
+      payload.parts_source = 'Inventory';
+      payload.inventory_product_id = filterProd;
     }
     // ── Belt ──
     if (selWsType === 'belt') {
@@ -11890,6 +11927,191 @@ async function dpWsModal(type) {
     } catch(e) {
       showNotification(e.message, 'error');
       btn.disabled = false; btn.textContent = '💾 حفظ';
+    }
+  };
+}
+
+
+
+
+/* ══════════════════════════════════════════════════════
+   MAINTENANCE BATCH MODAL — زيت + أكتر من فلتر فى عملية صيانة واحدة
+   بدل ما كل صنف يتسجل لوحده، السائق بيختار كل الأصناف اللي اتغيرت
+   فعلياً (زيت المحرك، فلتر زيت، فلتر سولار، فلتر هواء...إلخ) مرة واحدة،
+   وكل صنف بيتصرف من المخزون تلقائياً مع تسجيل حركة الصرف المرتبطة
+   بنفس عملية الصيانة (maintenance_batch_id مشترك).
+   ══════════════════════════════════════════════════════ */
+const MAINT_BATCH_ITEMS = [
+  {key:'oil_motor',        icon:'🔴', label:'زيت المحرك',    unit:'لتر'},
+  {key:'oil_gear',         icon:'🟠', label:'زيت التروس',    unit:'لتر'},
+  {key:'oil_brake',        icon:'🟡', label:'زيت الفرامل',   unit:'لتر'},
+  {key:'oil_hydro',        icon:'🔵', label:'زيت الهيدروليك',unit:'لتر'},
+  {key:'oil_grease',       icon:'⚫', label:'شحم',            unit:'كجم'},
+  {key:'filter_oil',       icon:'🔴', label:'فلتر زيت',      unit:'قطعة'},
+  {key:'filter_solar',     icon:'🟤', label:'فلتر سولار',    unit:'قطعة'},
+  {key:'filter_petrol',    icon:'🟡', label:'فلتر بنزين',    unit:'قطعة'},
+  {key:'filter_air',       icon:'🔵', label:'فلتر هواء',     unit:'قطعة'},
+  {key:'filter_separator', icon:'⚪', label:'فلتر فاصل',     unit:'قطعة'},
+  {key:'filter_ac',        icon:'❄️', label:'فلتر تكيف',     unit:'قطعة'},
+  {key:'filter_dryer',     icon:'🟠', label:'فلتر مجفف',     unit:'قطعة'},
+  {key:'filter_breather',  icon:'🌬️', label:'فلتر منفس',     unit:'قطعة'},
+  {key:'filter_hydraulic', icon:'🔧', label:'فلتر هيدروليك', unit:'قطعة'},
+];
+
+function toggleMaintBatchItem(key) {
+  const chk = document.getElementById('mb_chk_' + key);
+  const fields = document.getElementById('mb_fields_' + key);
+  if (!chk || !fields) return;
+  fields.style.display = chk.checked ? 'block' : 'none';
+}
+
+async function openMaintenanceBatchModal() {
+  const _isOp = currentUser?.role === 'operator';
+
+  if (!window._invProducts) {
+    try { window._invProducts = await apiCall('/inventory/products'); } catch(e) { window._invProducts = []; }
+    try { window._invCategories = await apiCall('/inventory/categories'); } catch(e) { window._invCategories = []; }
+  }
+
+  const _opEquipName = window._opData?.current_equipment_name || '';
+  const _opEquipId   = window._opData?.current_equipment_id   || '';
+  const _opId        = window._opData?.id || currentUser?.operator_id || null;
+  const car = _isOp ? null : window._driverCar;
+
+  let assetBlock = '';
+  if (_isOp) {
+    assetBlock = _opEquipName
+      ? '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:.65rem 1rem;margin-bottom:.75rem;display:flex;align-items:center;gap:.6rem"><span style="font-size:1.2rem">⚙️</span><div><div style="font-weight:700;color:#15803d;font-size:.88rem">' + _opEquipName + '</div>' + (_opEquipId ? '<div style="font-size:.73rem;color:#4ade80;font-family:monospace">' + _opEquipId + '</div>' : '') + '</div></div>'
+      : '<div style="background:#fff7ed;border:1.5px solid #fbbf24;border-radius:12px;padding:.65rem 1rem;margin-bottom:.75rem;font-size:.83rem;color:#92400e">⚠️ لا توجد معدة مخصصة حالياً — يمكنك التسجيل بدون ربط معدة</div>';
+  }
+
+  const odoLabel       = _isOp ? 'ساعات التشغيل' : 'قراءة العداد (كم)';
+  const odoPlaceholder = _isOp ? 'مثال: 1250.5' : 'مثال: 54000';
+  const odoStep        = _isOp ? '0.1' : '1';
+
+  const productOptsAll = (products) => '<option value="">-- اختر الصنف --</option>' +
+    products.map(p => '<option value="' + p.id + '">' + p.name + ' (متاح: ' + p.quantity + ' ' + (p.unit||'') + ')</option>').join('');
+
+  const itemsHtml = MAINT_BATCH_ITEMS.map(it => `
+    <div class="card" style="margin-bottom:.6rem" id="mb_card_${it.key}">
+      <div style="padding:.7rem .9rem;display:flex;align-items:center;gap:.6rem">
+        <input type="checkbox" id="mb_chk_${it.key}" style="width:20px;height:20px;flex-shrink:0" onchange="toggleMaintBatchItem('${it.key}')">
+        <label for="mb_chk_${it.key}" style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;margin:0;text-transform:none;letter-spacing:0">
+          <span style="font-size:1.15rem">${it.icon}</span>
+          <span style="font-weight:700;color:var(--text);font-size:.88rem">${it.label}</span>
+        </label>
+      </div>
+      <div id="mb_fields_${it.key}" style="display:none;padding:0 .9rem .8rem .9rem;border-top:1px dashed var(--border)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-top:.6rem">
+          <div class="form-group" style="margin:0"><label style="font-size:.76rem">الكمية (${it.unit})</label>
+            <input type="number" id="mb_qty_${it.key}" value="1" min="0.1" step="0.1"></div>
+          <div class="form-group" style="margin:0"><label style="font-size:.76rem">الصنف من المخزون <span class="req">*</span></label>
+            <select id="mb_prod_${it.key}">${productOptsAll(window._invProducts||[])}</select></div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">🧴 زيت وفلاتر — عملية صيانة واحدة</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="font-size:.78rem;color:var(--text-3);margin-bottom:.7rem">
+      اختر كل الأصناف اللي اتغيرت فعلياً — هيتسجلوا كلهم فى نفس عملية الصيانة، وكل صنف بيتصرف من المخزون تلقائياً.
+    </div>
+    ${assetBlock}
+    ${itemsHtml}
+    <div class="form-group">
+      <label>${odoLabel} <span class="req">*</span></label>
+      <input type="number" id="mbOdo" placeholder="${odoPlaceholder}" min="0" step="${odoStep}">
+    </div>
+    <div class="form-group">
+      <label>📷 صورة العداد <span class="req">*</span></label>
+      <div id="mbOdoPhotoPreviewWrap" style="display:none;margin-bottom:.5rem">
+        <img id="mbOdoPhotoPreview" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)">
+      </div>
+      <label for="mbOdoPhotoInput" style="display:flex;align-items:center;justify-content:center;gap:.5rem;
+        border:1.5px dashed var(--border);border-radius:10px;padding:.7rem;cursor:pointer;
+        color:var(--text-2);font-size:.82rem;font-weight:600;background:var(--surface-2)">
+        <span id="mbOdoPhotoBtnLabel">📷 فتح الكاميرا / اختيار صورة</span>
+      </label>
+      <input type="file" id="mbOdoPhotoInput" accept="image/*" capture="environment" style="display:none">
+    </div>
+    <div class="form-group"><label>ملاحظات</label><textarea id="mbNotes" placeholder="تفاصيل إضافية..."></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="mbSubmitBtn">💾 حفظ عملية الصيانة</button>
+    </div>`);
+
+  window._mbOdoPhotoData = '';
+  const photoInput = document.getElementById('mbOdoPhotoInput');
+  if (photoInput) {
+    photoInput.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        window._mbOdoPhotoData = reader.result;
+        const preview = document.getElementById('mbOdoPhotoPreview');
+        const wrap    = document.getElementById('mbOdoPhotoPreviewWrap');
+        if (preview && wrap) { preview.src = reader.result; wrap.style.display = 'block'; }
+        const lbl = document.getElementById('mbOdoPhotoBtnLabel');
+        if (lbl) lbl.textContent = '✅ تم اختيار الصورة — اضغط لتغييرها';
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
+  document.getElementById('mbSubmitBtn').onclick = async () => {
+    const odo   = parseFloat(document.getElementById('mbOdo')?.value) || null;
+    const notes = document.getElementById('mbNotes')?.value?.trim() || '';
+    const btn   = document.getElementById('mbSubmitBtn');
+
+    if (!odo || odo <= 0) return showNotification(_isOp ? 'أدخل ساعات التشغيل' : 'أدخل قراءة العداد', 'error');
+    if (!window._mbOdoPhotoData) return showNotification('📷 صورة العداد مطلوبة — ارفع صورة قبل الحفظ', 'error');
+
+    const items = [];
+    for (const it of MAINT_BATCH_ITEMS) {
+      const chk = document.getElementById('mb_chk_' + it.key);
+      if (!chk || !chk.checked) continue;
+      const qty  = parseFloat(document.getElementById('mb_qty_' + it.key)?.value) || 1;
+      const prod = parseInt(document.getElementById('mb_prod_' + it.key)?.value) || null;
+      if (!prod) return showNotification('اختر الصنف من المخزون لـ «' + it.label + '»', 'error');
+      if (qty <= 0) return showNotification('كمية «' + it.label + '» يجب أن تكون أكبر من صفر', 'error');
+      items.push({ type: it.key, quantity: qty, parts_source: 'Inventory', inventory_product_id: prod });
+    }
+    if (!items.length) return showNotification('اختر صنف واحد على الأقل (زيت أو فلتر)', 'error');
+
+    let _drvId, _vidFinal;
+    if (_isOp) {
+      _drvId = _opId;
+      _vidFinal = null;
+      if (!_drvId) return showNotification('❌ بيانات المشغل غير متاحة — أعد تحميل الصفحة', 'error');
+    } else {
+      _drvId = currentUser.driver_id;
+      _vidFinal = car?.id || null;
+      if (!_vidFinal) return showNotification('لا توجد مركبة مخصصة', 'error');
+    }
+
+    btn.disabled = true; btn.textContent = 'جاري الحفظ...';
+    const _mbLocation = await silentGetLocation();
+    try {
+      const res = await apiCall('/workshops/maintenance-batch', 'POST', {
+        driver_id: _drvId,
+        vehicle_id: _vidFinal,
+        odometer_reading: odo,
+        odometer_photo: window._mbOdoPhotoData || '',
+        notes,
+        location: _mbLocation,
+        operation_type: 'صيانة دورية',
+        items
+      });
+      showNotification('✅ تم تسجيل عملية الصيانة (' + (res.count || items.length) + ' صنف)', 'success');
+      closeModal();
+      if (typeof renderDriverSinglePage === 'function') await renderDriverSinglePage();
+    } catch(e) {
+      showNotification(e.message, 'error');
+      btn.disabled = false; btn.textContent = '💾 حفظ عملية الصيانة';
     }
   };
 }
@@ -12725,28 +12947,50 @@ async function loadSuperNotes() {
     }
     list.innerHTML = notes.map(n => {
       const isMine = currentUser && currentUser.username === n.author_username;
+      const isDone = !!(n.is_done && Number(n.is_done) === 1);
       const time = n.updated_at ? n.updated_at : n.created_at;
       const editedTag = n.updated_at ? ' <span style="color:#94a3b8;font-size:.7rem">(معدّلة)</span>' : '';
+      const doneTag = isDone
+        ? `<div style="margin-top:.5rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.5rem .75rem;font-size:.76rem;color:#15803d;font-weight:700">
+             ✅ تم الحل بواسطة ${n.done_by || ''} — ${(n.done_at||'').slice(0,16).replace('T',' ')}
+           </div>`
+        : '';
       return `
-        <div class="card" style="margin-bottom:.75rem" id="suNote_${n.id}">
+        <div class="card" style="margin-bottom:.75rem;${isDone ? 'opacity:.7;background:#fafafa' : ''}" id="suNote_${n.id}">
           <div style="padding:.9rem 1.1rem">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem;flex-wrap:wrap;gap:.4rem">
               <div style="display:flex;align-items:center;gap:.5rem">
                 <span style="font-weight:800;color:#1e3a5f;font-size:.88rem">👤 ${n.author_username}</span>
                 <span style="font-size:.72rem;color:#94a3b8;font-family:monospace">${(time||'').slice(0,16).replace('T',' ')}</span>${editedTag}
+                ${isDone ? '<span style="font-size:.7rem;background:#dcfce7;color:#15803d;border-radius:20px;padding:.15rem .6rem;font-weight:800">تم الحل</span>' : ''}
               </div>
-              ${isMine ? `
-                <div style="display:flex;gap:.4rem">
+              <div style="display:flex;gap:.4rem">
+                <button class="btn ${isDone ? 'btn-ghost' : 'btn-primary'} btn-sm" onclick="toggleSuperNoteDone(${n.id}, ${isDone ? 'false' : 'true'})" title="${isDone ? 'إرجاع لغير محلولة' : 'تعليم كـ تم الحل'}">
+                  ${isDone ? '↩️ إرجاع' : '✅ تم الحل'}
+                </button>
+                ${isMine ? `
                   <button class="btn btn-ghost btn-sm" onclick="editSuperNote(${n.id})" title="تعديل">✏️</button>
                   <button class="btn btn-ghost btn-sm" onclick="deleteSuperNote(${n.id})" title="حذف">🗑️</button>
-                </div>` : ''}
+                ` : ''}
+              </div>
             </div>
-            <div id="suNoteContent_${n.id}" style="font-size:.88rem;color:#0f172a;white-space:pre-wrap;line-height:1.6">${(n.content||'').replace(/</g,'&lt;')}</div>
+            <div id="suNoteContent_${n.id}" style="font-size:.88rem;color:#0f172a;white-space:pre-wrap;line-height:1.6;${isDone ? 'text-decoration:line-through;text-decoration-color:#cbd5e1' : ''}">${(n.content||'').replace(/</g,'&lt;')}</div>
+            ${doneTag}
           </div>
         </div>`;
     }).join('');
   } catch (e) {
     list.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+async function toggleSuperNoteDone(id, makeDone) {
+  try {
+    await apiCall(`/superuser-notes/${id}/done`, 'PUT', { is_done: makeDone });
+    showNotification(makeDone ? '✅ تم تعليم الملاحظة كمحلولة' : '↩️ تم إرجاعها لغير محلولة', 'success');
+    await loadSuperNotes();
+  } catch (e) {
+    showNotification(e.message, 'error');
   }
 }
 

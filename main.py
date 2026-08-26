@@ -1802,6 +1802,8 @@ class WorkshopCreate(BaseModel):
     direct_purchase_cost: Optional[float] = None  # تكلفة الشراء المباشر
     # ── منصات الإمداد: المخزن المتحرك اللي تم السحب منه (وقود أو قطعة) ──
     platform_id: Optional[int] = None
+    # ── عملية صيانة مجمعة: أكتر من فلتر/زيت فى نفس العملية (اختياري) ──
+    maintenance_batch_id: Optional[str] = ""
 
 
 class EmergencyCreate(BaseModel):
@@ -3697,6 +3699,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
             ("quantity_edited_by", "TEXT DEFAULT ''"),
             ("quantity_edited_at", "TEXT DEFAULT ''"),
             ("platform_id", "INTEGER"),
+            ("maintenance_batch_id", "TEXT DEFAULT ''"),
         ]
         _ws_existing = {r["name"] for r in c.execute("PRAGMA table_info(workshop_records)").fetchall()}
         for _wc, _wd in _ws_extra_cols:
@@ -3739,8 +3742,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                               doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo,
                               fuel_source,station_name,pump_number,invoice_photo,
                               parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status,
-                              platform_id)
-                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)""",
+                              platform_id,maintenance_batch_id)
+                             VALUES(NULL,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)""",
                           (op_id_ws, rec.type, rec.quantity, final_price, rec.notes or "", now,
                            rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                            rec.description or "", rec.tire_action or "", rec.location or "",
@@ -3749,7 +3752,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                            odometer_photo_url,
                            rec.fuel_source or "", rec.station_name or "", rec.pump_number or "", invoice_photo_url,
                            rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost,
-                           rec.platform_id))
+                           rec.platform_id, rec.maintenance_batch_id or ""))
             else:
                 c.execute("""INSERT INTO workshop_records
                              (driver_id,is_operator,type,quantity,price,notes,created_at,
@@ -3757,8 +3760,8 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                               doc_number,engine_hours,supply_source,item_name,item_spec,receiver_name,odometer_photo,
                               fuel_source,station_name,pump_number,invoice_photo,
                               parts_source,inventory_product_id,direct_purchase_supplier,direct_purchase_cost,approval_status,
-                              platform_id)
-                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)""",
+                              platform_id,maintenance_batch_id)
+                             VALUES(?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)""",
                       (rec.driver_id, rec.type, rec.quantity, final_price, rec.notes or "", now,
                        rec.operation_type or "", rec.vehicle_id, rec.odometer_reading,
                        rec.description or "", rec.tire_action or "", rec.location or "",
@@ -3767,7 +3770,7 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                        odometer_photo_url,
                        rec.fuel_source or "", rec.station_name or "", rec.pump_number or "", invoice_photo_url,
                        rec.parts_source or "", rec.inventory_product_id, rec.direct_purchase_supplier or "", rec.direct_purchase_cost,
-                       rec.platform_id))
+                       rec.platform_id, rec.maintenance_batch_id or ""))
             rid = c.lastrowid
         except Exception as _ws_err:
             log.error(f"[WORKSHOP] INSERT failed: {_ws_err}")
@@ -3854,7 +3857,135 @@ async def create_workshop(rec: WorkshopCreate, cu: dict = Depends(get_user)):
                 "odometer_photo":odometer_photo_url,
                 "fuel_source":rec.fuel_source or "","station_name":rec.station_name or "",
                 "invoice_photo":invoice_photo_url,"parts_source":rec.parts_source or "",
+                "maintenance_batch_id":rec.maintenance_batch_id or "",
                 "approval_status":"pending"}
+
+
+class MaintenanceBatchItem(BaseModel):
+    """عنصر واحد ضمن عملية صيانة مجمعة (فلتر/زيت واحد وكميته)."""
+    type: str
+    quantity: Optional[float] = 1.0
+    parts_source: Optional[str] = "Inventory"   # Inventory | DirectPurchase | SupplyPlatform
+    inventory_product_id: Optional[int] = None
+    direct_purchase_supplier: Optional[str] = ""
+    direct_purchase_cost: Optional[float] = None
+    platform_id: Optional[int] = None
+    price: Optional[float] = 0
+
+
+class MaintenanceBatchCreate(BaseModel):
+    """عملية صيانة واحدة تشمل أكتر من فلتر/زيت (زيت + فلتر زيت + فلتر جاز + فلتر هواء... إلخ) مرة واحدة."""
+    driver_id: int
+    vehicle_id: Optional[int] = None   # None للمشغل (لا يستخدم جدول cars)
+    odometer_reading: Optional[float] = None
+    odometer_photo: Optional[str] = ""    # base64 — صورة العداد (مشتركة لكل عناصر العملية)
+    invoice_photo: Optional[str] = ""     # base64 — صورة الفاتورة (اختياري، مشتركة)
+    notes: Optional[str] = ""
+    location: Optional[str] = ""
+    operation_type: Optional[str] = "صيانة دورية"
+    items: List[MaintenanceBatchItem]
+
+
+# الأنواع المسموح بيها فى عملية الصيانة المجمعة: الزيوت والفلاتر فقط
+MAINTENANCE_BATCH_ALLOWED_TYPES = {
+    "oil", "oil_motor", "oil_gear", "oil_brake", "oil_hydro", "oil_grease",
+    "filter", "filter_oil", "filter_solar", "filter_petrol", "filter_air",
+    "filter_separator", "filter_ac", "filter_dryer", "filter_breather", "filter_hydraulic",
+}
+
+
+@app.post("/workshops/maintenance-batch")
+async def create_maintenance_batch(body: MaintenanceBatchCreate, cu: dict = Depends(get_user)):
+    """
+    تسجيل عملية صيانة واحدة تشمل أكتر من فلتر/زيت فى نفس الوقت
+    (مثال: زيت + فلتر زيت + فلتر جاز + فلتر هواء) بدل ما كل واحد يتسجل لوحده.
+    كل عنصر بيتسحب من المخزون بشكل مستقل (خصم فعلي + حركة صرف مرتبطة بالعملية)،
+    وكل السجلات الناتجة بترتبط ببعضها عن طريق maintenance_batch_id واحد.
+    """
+    if cu["role"] not in ("operator", "admin", "superuser"):
+        if body.driver_id != cu.get("driver_id"):
+            raise HTTPException(403, "غير مصرح")
+
+    if not body.items:
+        raise HTTPException(400, "اختر فلتر أو زيت واحد على الأقل")
+    if len(body.items) > 20:
+        raise HTTPException(400, "عدد العناصر كبير جداً فى عملية واحدة")
+
+    seen_types = set()
+    for it in body.items:
+        if it.type not in MAINTENANCE_BATCH_ALLOWED_TYPES:
+            raise HTTPException(400, f"نوع غير مسموح به فى عملية الصيانة المجمعة: {it.type}")
+        if it.type in seen_types:
+            raise HTTPException(400, f"النوع «{it.type}» تكرر فى نفس العملية")
+        seen_types.add(it.type)
+        if it.quantity is not None and it.quantity <= 0:
+            raise HTTPException(400, "الكمية يجب أن تكون أكبر من صفر")
+
+    # ── تحقق مسبق من توافر كل الكميات المطلوبة فى المخزون قبل أي صرف فعلي ──
+    # (عشان لو صنف مش متوفر، العملية كلها ترفض من غير ما يتصرف جزء منها)
+    with get_db() as conn:
+        for it in body.items:
+            src = it.parts_source or "Inventory"
+            need = it.quantity if (it.quantity and it.quantity > 0) else 1.0
+            if src == "Inventory":
+                if not it.inventory_product_id:
+                    raise HTTPException(400, f"اختر الصنف من المخزون لـ «{it.type}»")
+                prow = conn.execute("SELECT quantity, name FROM inventory_products WHERE id=?",
+                                     (it.inventory_product_id,)).fetchone()
+                if not prow:
+                    raise HTTPException(404, f"الصنف غير موجود فى المخزون ({it.type})")
+                if (prow["quantity"] or 0) < need:
+                    raise HTTPException(400, f"الكمية المتاحة من «{prow['name']}» غير كافية (متاح {prow['quantity']})")
+            elif src == "SupplyPlatform":
+                if not it.platform_id or not it.inventory_product_id:
+                    raise HTTPException(400, f"اختر منصة الإمداد والصنف لـ «{it.type}»")
+                pstock = conn.execute("""SELECT s.quantity, p.name FROM supply_platform_stock s
+                                          JOIN inventory_products p ON p.id = s.product_id
+                                          WHERE s.platform_id=? AND s.product_id=?""",
+                                       (it.platform_id, it.inventory_product_id)).fetchone()
+                if not pstock or (pstock["quantity"] or 0) < need:
+                    avail = pstock["quantity"] if pstock else 0
+                    pname = pstock["name"] if pstock else "الصنف"
+                    raise HTTPException(400, f"الكمية المتاحة من «{pname}» فى منصة الإمداد غير كافية (متاح {avail})")
+            elif src == "DirectPurchase":
+                if not (it.direct_purchase_supplier or "").strip():
+                    raise HTTPException(400, f"اسم المورد أو المحل مطلوب للشراء المباشر لـ «{it.type}»")
+
+    # ── الصرف الفعلي: نستخدم نفس منطق /workshops لكل عنصر (بدون تكرار الكود) وبنربطهم بنفس batch_id ──
+    batch_id = uuid.uuid4().hex
+    created = []
+    total_price = 0.0
+    for it in body.items:
+        item_rec = WorkshopCreate(
+            driver_id=body.driver_id,
+            type=it.type,
+            quantity=it.quantity if (it.quantity and it.quantity > 0) else 1.0,
+            price=it.price or 0,
+            notes=body.notes or "",
+            operation_type=body.operation_type or "صيانة دورية",
+            vehicle_id=body.vehicle_id,
+            odometer_reading=body.odometer_reading,
+            odometer_photo=body.odometer_photo or "",
+            invoice_photo=body.invoice_photo or "",
+            location=body.location or "",
+            parts_source=it.parts_source or "Inventory",
+            inventory_product_id=it.inventory_product_id,
+            direct_purchase_supplier=it.direct_purchase_supplier or "",
+            direct_purchase_cost=it.direct_purchase_cost,
+            platform_id=it.platform_id,
+            maintenance_batch_id=batch_id,
+        )
+        result = await create_workshop(rec=item_rec, cu=cu)
+        created.append(result)
+        total_price += result.get("price") or 0
+
+    return {
+        "batch_id": batch_id,
+        "message": f"تم تسجيل عملية الصيانة بـ {len(created)} عنصر بنجاح",
+        "count": len(created),
+        "total_price": total_price,
+        "items": created,
+    }
 
 
 @app.get("/workshops")
@@ -12160,10 +12291,19 @@ def _ensure_superuser_notes_table(conn):
         author_username TEXT NOT NULL,
         content         TEXT NOT NULL,
         created_at      TEXT DEFAULT (datetime('now')),
-        updated_at      TEXT DEFAULT ''
+        updated_at      TEXT DEFAULT '',
+        is_done         INTEGER DEFAULT 0,
+        done_by         TEXT DEFAULT '',
+        done_at         TEXT DEFAULT ''
     )""")
     try: conn.execute("CREATE INDEX IF NOT EXISTS idx_su_notes_created ON superuser_notes(created_at)")
     except Exception: pass
+    # ترقية الجداول القديمة اللي اتعملها قبل إضافة خاصية "تم الحل"
+    _existing_cols = {r["name"] for r in conn.execute("PRAGMA table_info(superuser_notes)").fetchall()}
+    for _col, _def in (("is_done", "INTEGER DEFAULT 0"), ("done_by", "TEXT DEFAULT ''"), ("done_at", "TEXT DEFAULT ''")):
+        if _col not in _existing_cols:
+            try: conn.execute(f"ALTER TABLE superuser_notes ADD COLUMN {_col} {_def}")
+            except Exception: pass
 
 
 @app.on_event("startup")
@@ -12176,13 +12316,17 @@ class SuperNoteCreate(BaseModel):
     content: str
 
 
+class SuperNoteDoneUpdate(BaseModel):
+    is_done: bool
+
+
 @app.get("/superuser-notes")
 async def list_superuser_notes(cu: dict = Depends(require_superuser)):
     """كل الملاحظات المشتركة بين السوبر يوزرز — ترتيب من الأحدث للأقدم"""
     with get_db() as conn:
         _ensure_superuser_notes_table(conn)
         rows = [dict(r) for r in conn.execute(
-            "SELECT * FROM superuser_notes ORDER BY id DESC"
+            "SELECT * FROM superuser_notes ORDER BY is_done ASC, id DESC"
         ).fetchall()]
     return {"notes": rows}
 
@@ -12221,6 +12365,27 @@ async def update_superuser_note(note_id: int, body: SuperNoteCreate, cu: dict = 
             (content, datetime.utcnow().isoformat(), note_id)
         )
     return {"message": "تم تعديل الملاحظة"}
+
+
+@app.put("/superuser-notes/{note_id}/done")
+async def set_superuser_note_done(note_id: int, body: SuperNoteDoneUpdate, cu: dict = Depends(require_superuser)):
+    """تعليم الملاحظة كـ (تم الحل) أو الرجوع لغير محلولة — متاح لأي سوبر يوزر مش بس صاحب الملاحظة."""
+    with get_db() as conn:
+        _ensure_superuser_notes_table(conn)
+        row = conn.execute("SELECT * FROM superuser_notes WHERE id=?", (note_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "الملاحظة غير موجودة")
+        if body.is_done:
+            conn.execute(
+                "UPDATE superuser_notes SET is_done=1, done_by=?, done_at=? WHERE id=?",
+                (cu["username"], datetime.utcnow().isoformat(), note_id)
+            )
+        else:
+            conn.execute(
+                "UPDATE superuser_notes SET is_done=0, done_by='', done_at='' WHERE id=?",
+                (note_id,)
+            )
+    return {"message": "تم الحل" if body.is_done else "تم إرجاعها لغير محلولة"}
 
 
 @app.delete("/superuser-notes/{note_id}")
