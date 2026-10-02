@@ -30,7 +30,7 @@ def create_database():
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             username   TEXT    NOT NULL,
             password   TEXT    NOT NULL,
-            role       TEXT    NOT NULL CHECK(role IN ('superuser', 'admin', 'driver', 'reporter', 'supervisor_workshop', 'supervisor_field', 'operator', 'workshop_admin')),
+            role       TEXT    NOT NULL CHECK(role IN ('superuser', 'admin', 'driver', 'reporter', 'supervisor_workshop', 'supervisor_field', 'operator', 'workshop_admin', 'committee_member')),
             branch     TEXT    DEFAULT '',
             created_at TEXT    DEFAULT(datetime('now')),
             last_login TEXT,

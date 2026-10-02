@@ -172,7 +172,7 @@ def migrate_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
+            role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin','committee_member')),
             created_at TEXT DEFAULT(datetime('now')),
             last_login TEXT,
             refresh_token TEXT,
@@ -404,6 +404,27 @@ def migrate_db():
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_driver_date ON daily_checklists(driver_id, checklist_date)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_operator_date ON daily_checklists(operator_id, checklist_date)")
+        # ── بنود Check List اللي بيضيفها السوبر يوزر (لمشغلي المعدات) ──
+        c.execute("""CREATE TABLE IF NOT EXISTS checklist_items(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target TEXT NOT NULL DEFAULT 'operator',
+            label TEXT NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_by TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        )""")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_checklist_items_target ON checklist_items(target, is_active)")
+        # لقطة بأسماء البنود وقت التعبئة — عشان التقارير القديمة تفضل مقروءة حتى لو البند اتعدّل/اتحذف
+        try: c.execute("ALTER TABLE daily_checklists ADD COLUMN item_labels TEXT DEFAULT '{}'")
+        except Exception: pass
+        # منع تكرار Check List لنفس المشغل في نفس اليوم على مستوى قاعدة البيانات
+        try:
+            c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_checklist_operator_unique
+                         ON daily_checklists(operator_id, checklist_date)
+                         WHERE operator_id IS NOT NULL""")
+        except Exception as _e:
+            log.warning(f"idx_checklist_operator_unique skipped: {_e}")
         # WORKSHOPS
         c.execute("""CREATE TABLE IF NOT EXISTS workshop_records(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -531,7 +552,7 @@ def _safe_add_columns(c):
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
+                role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin','committee_member')),
                 branch TEXT DEFAULT '',
                 created_at TEXT DEFAULT(datetime('now')),
                 last_login TEXT,
@@ -1170,7 +1191,7 @@ def _safe_add_columns(c):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
+                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin','committee_member')),
                     branch TEXT DEFAULT '',
                     created_at TEXT DEFAULT(datetime('now')),
                     last_login TEXT,
@@ -1200,7 +1221,7 @@ def _safe_add_columns(c):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
                     password TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin')),
+                    role TEXT NOT NULL CHECK(role IN('superuser','super_admin','admin','driver','reporter','supervisor_workshop','supervisor_field','operator','workshop_admin','committee_member')),
                     branch TEXT DEFAULT '',
                     created_at TEXT DEFAULT(datetime('now')),
                     last_login TEXT,
@@ -1465,7 +1486,11 @@ def verify_access_token(token: str) -> dict:
 
 security = HTTPBearer(auto_error=False)
 
+# حساب عضو اللجنة مقصور على مسارات اللجنة فقط (يمنع وصوله لباقي بيانات النظام)
+COMMITTEE_ALLOWED_PREFIXES = ("/committee", "/logout", "/user/avatar")
+
 async def get_user(
+    request: Request,
     cred: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> Dict[str, Any]:
     if not cred:
@@ -1473,6 +1498,8 @@ async def get_user(
     payload = verify_access_token(cred.credentials)
     if "user_id" not in payload or "role" not in payload:
         raise HTTPException(401, "بيانات التوكن غير مكتملة")
+    if payload["role"] == "committee_member" and not request.url.path.startswith(COMMITTEE_ALLOWED_PREFIXES):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "حساب عضو اللجنة مخصص لأعمال اللجنة فقط")
     result = {
         "user_id":  payload["user_id"],
         "role":     payload["role"],
@@ -1908,9 +1935,110 @@ app = FastAPI(
     redoc_url=None,
 )
 
+def _migrate_committees():
+    """جداول اللجان + دور committee_member + أعمدة قرار الصلاحية (آمن للتشغيل أكثر من مرة)."""
+    # (أ) إضافة الدور الجديد لـ CHECK constraint جدول المستخدمين — بإعادة بناء الجدول بأمان
+    #     على اتصال مستقل autocommit عشان PRAGMA foreign_keys=OFF يشتغل فعلاً
+    #     (وإلا حذف الجدول القديم هيمسح user_id من جدول السائقين بسبب ON DELETE SET NULL).
+    import re
+    raw = sqlite3.connect(DATABASE_PATH, isolation_level=None, check_same_thread=False)
+    try:
+        row = raw.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+        old_sql = (row[0] if row else "") or ""
+        if old_sql and "'committee_member'" not in old_sql:
+            log.info("🔄 Adding committee_member role to users table...")
+            m = re.search(r"role\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(\s*role\s+IN\s*\(([^)]*)\)", old_sql, re.I)
+            if not m:
+                raise RuntimeError("لم يتم العثور على CHECK constraint الخاص بالدور في جدول users")
+            new_sql = old_sql[:m.end(1)] + ",'committee_member'" + old_sql[m.end(1):]
+            new_sql = re.sub(r'CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["`]?users["`]?', "CREATE TABLE _users_cm_fix", new_sql, count=1, flags=re.I)
+            cols = [r[1] for r in raw.execute("PRAGMA table_info(users)").fetchall()]
+            col_list = ",".join(f'"{c}"' for c in cols)
+            idx_sqls = [r[0] for r in raw.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='users' AND sql IS NOT NULL").fetchall()]
+            raw.execute("PRAGMA foreign_keys=OFF")
+            raw.execute("BEGIN IMMEDIATE")
+            try:
+                raw.execute("DROP TABLE IF EXISTS _users_cm_fix")
+                raw.execute(new_sql)
+                raw.execute(f"INSERT INTO _users_cm_fix({col_list}) SELECT {col_list} FROM users")
+                raw.execute("DROP TABLE users")
+                raw.execute("ALTER TABLE _users_cm_fix RENAME TO users")
+                for s in idx_sqls:
+                    raw.execute(s)
+                raw.execute("COMMIT")
+            except Exception:
+                raw.execute("ROLLBACK")
+                raise
+            finally:
+                raw.execute("PRAGMA foreign_keys=ON")
+            log.info("✅ committee_member role added to users table")
+    except Exception as _e:
+        log.error(f"committee_member role migration FAILED: {_e}")
+    finally:
+        raw.close()
+
+    # (ب) جداول اللجان وقراراتها + أعمدة الصلاحية على المركبات والمعدات
+    with get_db() as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS committees(
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            name           TEXT NOT NULL,
+            type           TEXT NOT NULL DEFAULT 'main' CHECK(type IN ('main','sub')),
+            parent_id      INTEGER DEFAULT NULL,
+            branch         TEXT DEFAULT '',
+            equipment_type TEXT DEFAULT '',
+            description    TEXT DEFAULT '',
+            is_active      INTEGER DEFAULT 1,
+            created_by     TEXT DEFAULT '',
+            created_at     TEXT DEFAULT ''
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS committee_members(
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            committee_id INTEGER NOT NULL,
+            user_id      INTEGER NOT NULL,
+            full_name    TEXT DEFAULT '',
+            position     TEXT DEFAULT 'عضو',
+            created_at   TEXT DEFAULT '',
+            UNIQUE(committee_id, user_id),
+            FOREIGN KEY(committee_id) REFERENCES committees(id) ON DELETE CASCADE,
+            FOREIGN KEY(user_id)      REFERENCES users(id)      ON DELETE CASCADE
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS committee_decisions(
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            committee_id   INTEGER,
+            committee_name TEXT DEFAULT '',
+            member_user_id INTEGER,
+            member_name    TEXT DEFAULT '',
+            asset_kind     TEXT NOT NULL CHECK(asset_kind IN ('car','equipment')),
+            asset_id       INTEGER NOT NULL,
+            asset_label    TEXT DEFAULT '',
+            decision       TEXT NOT NULL CHECK(decision IN ('fit','unfit')),
+            reason         TEXT DEFAULT '',
+            report         TEXT DEFAULT '',
+            status         TEXT DEFAULT 'active' CHECK(status IN ('active','superseded','revoked')),
+            created_at     TEXT NOT NULL,
+            revoked_by     TEXT DEFAULT '',
+            revoked_at     TEXT DEFAULT '',
+            revoke_note    TEXT DEFAULT ''
+        )""")
+        for s in (
+            "CREATE INDEX IF NOT EXISTS idx_cm_members_user ON committee_members(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_cm_dec_asset ON committee_decisions(asset_kind, asset_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_cm_dec_committee ON committee_decisions(committee_id)",
+        ):
+            conn.execute(s)
+        for tbl in ("cars", "equipment"):
+            for col in ("fitness_status", "fitness_reason", "fitness_decided_by", "fitness_decided_at"):
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT DEFAULT ''")
+                except Exception:
+                    pass
+
+
 @app.on_event("startup")
 async def startup():
     migrate_db()
+    _migrate_committees()
     with get_db() as conn:
         c = conn.cursor()
         if ADMINS is not None:
@@ -3216,6 +3344,8 @@ async def start_trip(trip: TripStart, cu: dict = Depends(get_user)):
         c.execute("SELECT id FROM trips WHERE driver_id=? AND end_time IS NULL", (trip.driver_id,))
         if c.fetchone():
             raise HTTPException(400, "لديك رحلة نشطة — أنهها أولاً")
+        # قرار اللجنة: مركبة غير صالحة للاستخدام لا يمكن بدء رحلة بها
+        _assert_asset_fit(conn, "car", aid=trip.car_id)
 
         # ── حفظ صورة العداد (اختيارية الآن) كملف بدلاً من base64 بالقاعدة ──
         def _save_start_odo_photo(b64_data: str) -> str:
@@ -3386,20 +3516,42 @@ class DailyChecklistCreate(BaseModel):
     items: Dict[str, str]     # key من CHECKLIST_ITEMS -> 'efficient' | 'not_efficient'
     notes: Optional[str] = ""
 
-def _calc_checklist_score(items: Dict[str, str]) -> float:
-    """نسبة البنود اللي السائق فحصها فعليًا (سواء طلعت 'تعمل بكفاءة' أو 'لا تعمل بكفاءة')
+def _calc_checklist_score(items: Dict[str, str], keys=None) -> float:
+    """نسبة البنود اللي السائق/المشغل فحصها فعليًا (سواء طلعت 'تعمل بكفاءة' أو 'لا تعمل بكفاءة')
     من إجمالي بنود الـ Check List.
     الدرجة بتتأثر فقط بعدم فحص البند (تخطّيه بالكامل)، مش بحالته —
-    فالإبلاغ الصادق عن عطل موجود ومُبلَّغ عنه لا يخصم من الدرجة، أما تخطّي فحص بند فيخصم."""
-    total = len(CHECKLIST_ITEMS)
+    فالإبلاغ الصادق عن عطل موجود ومُبلَّغ عنه لا يخصم من الدرجة، أما تخطّي فحص بند فيخصم.
+    keys: قائمة البنود المطلوبة (لمشغلي المعدات بتيجي من الجدول)، وافتراضيًا بنود المركبات الثابتة."""
+    keys = list(keys) if keys is not None else list(CHECKLIST_ITEMS)
+    total = len(keys)
     if total == 0:
         return 0.0
-    checked = sum(1 for k in CHECKLIST_ITEMS if items.get(k) in CHECKLIST_VALID_STATUSES)
+    checked = sum(1 for k in keys if items.get(k) in CHECKLIST_VALID_STATUSES)
     return round((checked / total) * 100, 1)
 
+# ── بنود مشغلي المعدات (بيديرها السوبر يوزر) ──
+def _operator_checklist_items(conn, only_active: bool = True) -> list:
+    q = "SELECT id, label, sort_order, is_active FROM checklist_items WHERE target='operator'"
+    if only_active:
+        q += " AND is_active=1"
+    q += " ORDER BY sort_order ASC, id ASC"
+    return [dict(r) for r in conn.execute(q).fetchall()]
+
+def _operator_checklist_done_today(conn, operator_id: int) -> bool:
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    return conn.execute(
+        "SELECT 1 FROM daily_checklists WHERE operator_id=? AND checklist_date=?",
+        (operator_id, today)
+    ).fetchone() is not None
+
 @app.get("/checklists/items")
-async def get_checklist_items(cu: dict = Depends(get_user)):
-    """قائمة بنود الـ Check List (الكود والاسم بالعربي) لعرضها في نموذج التعبئة."""
+async def get_checklist_items(target: str = Query("driver"), cu: dict = Depends(get_user)):
+    """قائمة بنود الـ Check List لعرضها في نموذج التعبئة.
+    target=driver  → بنود المركبات الثابتة (زي ما كانت).
+    target=operator → بنود مشغلي المعدات اللي ضافها السوبر يوزر."""
+    if target == "operator":
+        with get_db() as conn:
+            return [{"key": f"op_{r['id']}", "label": r["label"]} for r in _operator_checklist_items(conn)]
     return [{"key": k, "label": v} for k, v in CHECKLIST_ITEMS.items()]
 
 @app.get("/checklists/today")
@@ -3407,7 +3559,8 @@ async def get_today_checklist(
     driver_id: int = Query(None), operator_id: int = Query(None),
     cu: dict = Depends(get_user),
 ):
-    """هل السائق/المشغل عبّأ الـ Check List اليوم بالفعل؟ (تعبئة مرة واحدة فقط يوميًا)"""
+    """هل السائق/المشغل عبّأ الـ Check List اليوم بالفعل؟ (تعبئة مرة واحدة فقط يوميًا)
+    required=False معناها مفيش بنود معرّفة لمشغلي المعدات لسه، فمفيش إلزام."""
     if not driver_id and not operator_id:
         raise HTTPException(400, "driver_id أو operator_id مطلوب")
     if cu["role"] not in ("admin", "superuser"):
@@ -3417,6 +3570,7 @@ async def get_today_checklist(
             raise HTTPException(403, "غير مصرح")
     today = datetime.utcnow().strftime("%Y-%m-%d")
     with get_db() as conn:
+        required = True
         if driver_id:
             row = conn.execute(
                 "SELECT * FROM daily_checklists WHERE driver_id=? AND checklist_date=?",
@@ -3427,11 +3581,12 @@ async def get_today_checklist(
                 "SELECT * FROM daily_checklists WHERE operator_id=? AND checklist_date=?",
                 (operator_id, today)
             ).fetchone()
+            required = len(_operator_checklist_items(conn)) > 0
         if not row:
-            return {"submitted": False, "checklist": None}
+            return {"submitted": False, "checklist": None, "required": required}
         d = dict(row)
         d["items"] = json.loads(d["items"] or "{}")
-        return {"submitted": True, "checklist": d}
+        return {"submitted": True, "checklist": d, "required": required}
 
 @app.post("/checklists")
 async def create_daily_checklist(body: DailyChecklistCreate, cu: dict = Depends(get_user)):
@@ -3444,14 +3599,24 @@ async def create_daily_checklist(body: DailyChecklistCreate, cu: dict = Depends(
         if body.operator_id and body.operator_id != cu.get("operator_id"):
             raise HTTPException(403, "لا يمكنك تسجيل Check List لمشغل آخر")
 
-    # ملحوظة: مش شرط تعبئة كل البنود عشان يتسجل الـ Check List — البند اللي متتفحصش
-    # ببساطة هيتسجل "مش مفحوص" وده اللي بيخصم من الدرجة (مش الإبلاغ عن عطل).
-    invalid = {k: v for k, v in body.items.items() if k in CHECKLIST_ITEMS and v not in CHECKLIST_VALID_STATUSES}
-    if invalid:
-        raise HTTPException(400, "قيمة غير صحيحة لأحد البنود — استخدم 'تعمل بكفاءة' أو 'لا تعمل بكفاءة'")
-
+    is_operator = bool(body.operator_id) and not body.driver_id
     today = datetime.utcnow().strftime("%Y-%m-%d")
     with get_db() as conn:
+        # البنود المطلوبة: مشغل المعدات ← من جدول checklist_items، السائق ← البنود الثابتة
+        if is_operator:
+            op_items = _operator_checklist_items(conn)
+            if not op_items:
+                raise HTTPException(400, "لم يتم تعريف بنود Check List لمشغلي المعدات بعد — تواصل مع السوبر يوزر")
+            required_labels = {f"op_{r['id']}": r["label"] for r in op_items}
+        else:
+            required_labels = dict(CHECKLIST_ITEMS)
+
+        # ملحوظة: مش شرط تعبئة كل البنود عشان يتسجل الـ Check List — البند اللي متتفحصش
+        # ببساطة هيتسجل "مش مفحوص" وده اللي بيخصم من الدرجة (مش الإبلاغ عن عطل).
+        invalid = {k: v for k, v in body.items.items() if k in required_labels and v not in CHECKLIST_VALID_STATUSES}
+        if invalid:
+            raise HTTPException(400, "قيمة غير صحيحة لأحد البنود — استخدم 'تعمل بكفاءة' أو 'لا تعمل بكفاءة'")
+
         if body.driver_id:
             existing = conn.execute(
                 "SELECT id FROM daily_checklists WHERE driver_id=? AND checklist_date=?",
@@ -3465,15 +3630,20 @@ async def create_daily_checklist(body: DailyChecklistCreate, cu: dict = Depends(
         if existing:
             raise HTTPException(400, "تم تسجيل الـ Check List لهذا اليوم بالفعل — مرة واحدة فقط يوميًا")
 
-        clean_items = {k: body.items.get(k, "not_checked") for k in CHECKLIST_ITEMS}
-        score = _calc_checklist_score(clean_items)
+        clean_items = {k: body.items.get(k, "not_checked") for k in required_labels}
+        score = _calc_checklist_score(clean_items, keys=required_labels.keys())
         now = datetime.utcnow().isoformat() + "Z"
-        cur = conn.execute(
-            """INSERT INTO daily_checklists(driver_id,operator_id,car_id,checklist_date,items,score,notes,created_at)
-               VALUES(?,?,?,?,?,?,?,?)""",
-            (body.driver_id, body.operator_id, body.car_id, today,
-             json.dumps(clean_items, ensure_ascii=False), score, body.notes or "", now)
-        )
+        try:
+            cur = conn.execute(
+                """INSERT INTO daily_checklists(driver_id,operator_id,car_id,checklist_date,items,item_labels,score,notes,created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                (body.driver_id, body.operator_id, body.car_id, today,
+                 json.dumps(clean_items, ensure_ascii=False),
+                 json.dumps(required_labels, ensure_ascii=False),
+                 score, (body.notes or "").strip()[:1000], now)
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(400, "تم تسجيل الـ Check List لهذا اليوم بالفعل — مرة واحدة فقط يوميًا")
         log_event("daily_checklist_submitted", driver_id=body.driver_id, operator_id=body.operator_id,
                   score=score, date=today)
         return {"ok": True, "id": cur.lastrowid, "score": score, "checklist_date": today}
@@ -3484,12 +3654,17 @@ async def list_daily_checklists(
     date_to:   str = Query(None, description="YYYY-MM-DD"),
     driver_id: int = Query(None),
     operator_id: int = Query(None),
+    person_type: str = Query(None, description="driver | operator"),
     cu: dict = Depends(require_admin_or_reporter),
 ):
     """عرض نتائج الـ Check List لكل السائقين/المشغلين — لصفحة Super User."""
     with get_db() as conn:
+        _ensure_operator_tables(conn)
         q = """SELECT ck.*, d.name driver_name, d.branch driver_branch, c.plate car_plate,
-                      o.name operator_name, o.branch operator_branch
+                      o.name operator_name, o.branch operator_branch,
+                      (SELECT s.equipment_name FROM operator_shifts s
+                        WHERE s.operator_id = ck.operator_id AND substr(s.start_time,1,10) = ck.checklist_date
+                        ORDER BY s.id DESC LIMIT 1) AS equipment_name
                FROM daily_checklists ck
                LEFT JOIN drivers d ON d.id = ck.driver_id
                LEFT JOIN cars c ON c.id = ck.car_id
@@ -3504,13 +3679,103 @@ async def list_daily_checklists(
             q += " AND ck.driver_id = ?"; params.append(driver_id)
         if operator_id:
             q += " AND ck.operator_id = ?"; params.append(operator_id)
+        if person_type == "operator":
+            q += " AND ck.operator_id IS NOT NULL AND ck.driver_id IS NULL"
+        elif person_type == "driver":
+            q += " AND ck.driver_id IS NOT NULL"
         q += " ORDER BY ck.checklist_date DESC, ck.id DESC"
         rows = [dict(r) for r in conn.execute(q, params).fetchall()]
         for r in rows:
             r["items"] = json.loads(r["items"] or "{}")
+            r["item_labels"] = json.loads(r.get("item_labels") or "{}")
+            r["person_type"] = "driver" if r["driver_id"] else "operator"
             r["person_name"] = r["driver_name"] or r["operator_name"] or "—"
             r["branch"] = r["driver_branch"] or r["operator_branch"] or ""
         return rows
+
+# ── إدارة بنود Check List مشغلي المعدات (سوبر يوزر فقط) ──
+class ChecklistItemCreate(BaseModel):
+    label: str
+
+class ChecklistItemUpdate(BaseModel):
+    label: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class ChecklistItemsReorder(BaseModel):
+    ids: List[int]
+
+def _clean_checklist_label(label: str) -> str:
+    label = " ".join((label or "").split())
+    if len(label) < 2:
+        raise HTTPException(400, "اسم البند قصير جدًا")
+    if len(label) > 120:
+        raise HTTPException(400, "اسم البند طويل جدًا (الحد الأقصى 120 حرف)")
+    return label
+
+@app.get("/checklists/manage/items")
+async def manage_list_checklist_items(cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        return _operator_checklist_items(conn, only_active=False)
+
+@app.post("/checklists/manage/items")
+async def manage_create_checklist_item(body: ChecklistItemCreate, cu: dict = Depends(require_superuser)):
+    label = _clean_checklist_label(body.label)
+    with get_db() as conn:
+        rows = _operator_checklist_items(conn, only_active=False)
+        if len(rows) >= 60:
+            raise HTTPException(400, "وصلت للحد الأقصى لعدد البنود (60)")
+        if any(r["label"].strip().lower() == label.lower() for r in rows):
+            raise HTTPException(400, "البند ده موجود بالفعل")
+        next_order = (max([r["sort_order"] or 0 for r in rows]) + 1) if rows else 1
+        cur = conn.execute(
+            "INSERT INTO checklist_items(target,label,sort_order,is_active,created_by) VALUES('operator',?,?,1,?)",
+            (label, next_order, cu.get("username") or "")
+        )
+        log_event("checklist_item_created", id=cur.lastrowid, label=label, by=cu.get("username"))
+        return {"ok": True, "id": cur.lastrowid, "label": label}
+
+@app.post("/checklists/manage/items/reorder")
+async def manage_reorder_checklist_items(body: ChecklistItemsReorder, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        existing = {r["id"] for r in _operator_checklist_items(conn, only_active=False)}
+        if set(body.ids) != existing:
+            raise HTTPException(400, "قائمة الترتيب غير مطابقة للبنود الحالية — حدّث الصفحة وجرب تاني")
+        for pos, item_id in enumerate(body.ids, start=1):
+            conn.execute("UPDATE checklist_items SET sort_order=? WHERE id=? AND target='operator'", (pos, item_id))
+        return {"ok": True}
+
+@app.put("/checklists/manage/items/{item_id}")
+async def manage_update_checklist_item(item_id: int, body: ChecklistItemUpdate, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM checklist_items WHERE id=? AND target='operator'", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "البند غير موجود")
+        label = row["label"]
+        is_active = row["is_active"]
+        if body.label is not None:
+            label = _clean_checklist_label(body.label)
+            dup = conn.execute(
+                "SELECT 1 FROM checklist_items WHERE target='operator' AND id!=? AND lower(label)=lower(?)",
+                (item_id, label)
+            ).fetchone()
+            if dup:
+                raise HTTPException(400, "البند ده موجود بالفعل")
+        if body.is_active is not None:
+            is_active = 1 if body.is_active else 0
+        conn.execute("UPDATE checklist_items SET label=?, is_active=? WHERE id=?", (label, is_active, item_id))
+        log_event("checklist_item_updated", id=item_id, label=label, active=is_active, by=cu.get("username"))
+        return {"ok": True}
+
+@app.delete("/checklists/manage/items/{item_id}")
+async def manage_delete_checklist_item(item_id: int, cu: dict = Depends(require_superuser)):
+    """حذف نهائي — التقارير القديمة مش بتتأثر لأن أسماء البنود محفوظة جوه كل تقرير."""
+    with get_db() as conn:
+        row = conn.execute("SELECT label FROM checklist_items WHERE id=? AND target='operator'", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "البند غير موجود")
+        conn.execute("DELETE FROM checklist_items WHERE id=?", (item_id,))
+        log_event("checklist_item_deleted", id=item_id, label=row["label"], by=cu.get("username"))
+        return {"ok": True}
 
 # ══════════════════════════════════════════════════════
 # 22. USERS
@@ -9786,12 +10051,19 @@ async def start_shift(body: ShiftStart, cu: dict = Depends(get_user)):
         raise HTTPException(403, "صلاحيات غير كافية")
     with get_db() as conn:
         _ensure_operator_tables(conn)
+        # ── Check List اليومية إلزامية قبل بدء الوردية (لو السوبر يوزر عرّف بنود) ──
+        if cu["role"] == "operator" and _operator_checklist_items(conn) \
+                and not _operator_checklist_done_today(conn, body.operator_id):
+            raise HTTPException(400, "📋 يجب تعبئة Check List اليومية أولاً قبل بدء الوردية")
         # تحقق من عدم وجود وردية نشطة
         active = conn.execute(
             "SELECT id FROM operator_shifts WHERE operator_id=? AND status='active'",
             (body.operator_id,)).fetchone()
         if active:
             raise HTTPException(400, "يوجد وردية جارية بالفعل — أنهِ الوردية الحالية أولاً")
+        # قرار اللجنة: معدة غير صالحة للاستخدام لا يمكن بدء وردية عليها
+        if (body.equipment_id or "").strip():
+            _assert_asset_fit(conn, "equipment", code=body.equipment_id.strip())
         if body.fuel_liters and body.fuel_liters > 400:
             raise HTTPException(400, "الحد الأقصى لكمية الوقود للمعدات هو 400 لتر")
         # ── صورة بدء الوردية: إلزامية دائماً ──
@@ -12399,6 +12671,660 @@ async def delete_superuser_note(note_id: int, cu: dict = Depends(require_superus
             raise HTTPException(403, "تقدر تحذف ملاحظاتك أنت فقط")
         conn.execute("DELETE FROM superuser_notes WHERE id=?", (note_id,))
     return {"message": "تم حذف الملاحظة"}
+
+
+# ══════════════════════════════════════════════════════
+# 53-ب. COMMITTEES — لجان فحص وتقرير صلاحية المعدات
+# ══════════════════════════════════════════════════════
+# السوبر يوزر يشكّل اللجان (رئيسية / فرعية) ويضيف الأعضاء (كل عضو له حساب دخول).
+# عضو اللجنة يشوف تقارير الـ Check List ومحاضر الفحص للمعدات داخل نطاق لجنته،
+# ويقرر: صالحة للاستخدام / غير صالحة (مع سبب وتقرير). القرار بيتسجّل ويتحفظ تاريخه،
+# وأي معدة قرارها "غير صالحة" بتتمنع من بدء رحلة/وردية لحد ما اللجنة تقرر العكس.
+
+COMMITTEE_TYPES = ("main", "sub")
+COMMITTEE_DECISIONS = ("fit", "unfit")
+COMMITTEE_ASSET_KINDS = ("car", "equipment")
+
+
+def require_committee_member(cu: dict = Depends(get_user)):
+    if cu["role"] != "committee_member":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "صلاحيات عضو اللجنة مطلوبة")
+    return cu
+
+
+class CommitteeCreate(BaseModel):
+    name: str
+    type: str = "main"                    # main = رئيسية | sub = فرعية
+    parent_id: Optional[int] = None       # للّجنة الفرعية: اللجنة الرئيسية التابعة لها
+    branch: Optional[str] = ""            # نطاق اللجنة (فارغ = كل الفروع)
+    equipment_type: Optional[str] = ""    # نطاق اللجنة (فارغ = كل أنواع المعدات)
+    description: Optional[str] = ""
+    is_active: Optional[bool] = True
+
+
+class CommitteeMemberCreate(BaseModel):
+    username: Optional[str] = ""
+    password: Optional[str] = ""
+    full_name: Optional[str] = ""
+    position: Optional[str] = "عضو"
+    branch: Optional[str] = ""
+    existing_user_id: Optional[int] = None   # ضم عضو لديه حساب بالفعل للجنة أخرى
+
+
+class CommitteeMemberUpdate(BaseModel):
+    full_name: Optional[str] = None
+    position: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+class CommitteeDecisionBody(BaseModel):
+    committee_id: int
+    asset_kind: str          # car | equipment
+    asset_id: int
+    decision: str            # fit | unfit
+    reason: Optional[str] = ""
+    report: Optional[str] = ""
+
+
+class CommitteeRevokeBody(BaseModel):
+    note: Optional[str] = ""
+
+
+def _cm_asset(conn, kind: str, aid: int):
+    """يرجّع بيانات المركبة/المعدة بشكل موحّد، أو None."""
+    if kind == "car":
+        r = conn.execute(
+            """SELECT id, plate, model, car_name, car_code, branch, equipment_type, sector, status,
+                      fitness_status, fitness_reason, fitness_decided_by, fitness_decided_at
+               FROM cars WHERE id=?""", (aid,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        d["kind"] = "car"
+        d["code"] = d["plate"] or d.get("car_code") or ""
+        d["label"] = " — ".join(x for x in [d["code"], d.get("car_name") or d.get("model") or ""] if x)
+        return d
+    r = conn.execute(
+        """SELECT id, car_code, equipment_name, model, brand, branch, equipment_type, sector, status,
+                  fitness_status, fitness_reason, fitness_decided_by, fitness_decided_at
+           FROM equipment WHERE id=?""", (aid,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    d["kind"] = "equipment"
+    d["code"] = d["car_code"] or ""
+    d["label"] = " — ".join(x for x in [d["code"], d.get("equipment_name") or d.get("model") or ""] if x)
+    return d
+
+
+def _cm_in_scope(committee, asset: dict) -> bool:
+    """هل المعدة داخل نطاق اللجنة (الفرع + نوع المعدة)؟ النطاق الفارغ = الكل."""
+    b = (committee["branch"] or "").strip()
+    t = (committee["equipment_type"] or "").strip()
+    if b and (asset.get("branch") or "").strip() != b:
+        return False
+    if t:
+        et = (asset.get("equipment_type") or "").strip()
+        if et != t and et.split("|", 1)[0].strip() != t:
+            return False
+    return True
+
+
+def _cm_my_committees(conn, user_id: int) -> list:
+    rows = conn.execute(
+        """SELECT c.id, c.name, c.type, c.parent_id, c.branch, c.equipment_type, c.description,
+                  m.position, m.full_name, p.name AS parent_name
+           FROM committee_members m
+           JOIN committees c ON c.id = m.committee_id
+           LEFT JOIN committees p ON p.id = c.parent_id
+           WHERE m.user_id=? AND c.is_active=1
+           ORDER BY c.type, c.name""", (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _cm_parse_checklist(row: dict) -> dict:
+    try:
+        items = json.loads(row.get("items") or "{}")
+    except Exception:
+        items = {}
+    try:
+        labels = json.loads(row.get("item_labels") or "{}")
+    except Exception:
+        labels = {}
+    out_items = []
+    for k, v in (items or {}).items():
+        out_items.append({"key": k, "label": labels.get(k) or CHECKLIST_ITEMS.get(k, k), "status": v})
+    bad = sum(1 for i in out_items if i["status"] == "not_efficient")
+    return {"items": out_items, "not_efficient_count": bad}
+
+
+def _cm_norm_inspection_items(raw) -> list:
+    """يوحّد صيغ items_json المختلفة (dict / list / نصوص قديمة) لقائمة {name,status,reason}."""
+    try:
+        data = json.loads(raw or "[]") if isinstance(raw, str) else raw
+    except Exception:
+        return []
+    out = []
+    if isinstance(data, dict):
+        for k, v in data.items():
+            if isinstance(v, dict):
+                out.append({"name": k, "status": v.get("status", ""), "reason": v.get("reason", "")})
+            else:
+                out.append({"name": k, "status": str(v), "reason": ""})
+    elif isinstance(data, list):
+        for v in data:
+            if isinstance(v, dict):
+                out.append({"name": v.get("name") or v.get("label") or v.get("item") or "",
+                            "status": v.get("status", ""), "reason": v.get("reason", "")})
+            else:
+                out.append({"name": str(v), "status": "", "reason": ""})
+    return out
+
+
+def _assert_asset_fit(conn, kind: str, aid: Optional[int] = None, code: Optional[str] = None):
+    """يمنع تشغيل مركبة/معدة قررت اللجنة إنها غير صالحة للاستخدام."""
+    try:
+        if kind == "car":
+            r = conn.execute("SELECT fitness_status, fitness_reason FROM cars WHERE id=?", (aid,)).fetchone()
+        else:
+            r = conn.execute("SELECT fitness_status, fitness_reason FROM equipment WHERE car_code=?", (code,)).fetchone()
+            if not r:   # ممكن تكون مركبة بنمرة لوحة
+                r = conn.execute("SELECT fitness_status, fitness_reason FROM cars WHERE plate=? OR car_code=?", (code, code)).fetchone()
+    except sqlite3.OperationalError:
+        return
+    if r and r["fitness_status"] == "unfit":
+        reason = (r["fitness_reason"] or "").strip() or "—"
+        raise HTTPException(400, f"🚫 غير مسموح بالتشغيل — اللجنة قررت أن هذه المعدة غير صالحة للاستخدام. السبب: {reason}")
+
+
+# ── ① للسوبر يوزر: تشكيل اللجان ──
+
+def _cm_committee_full(conn, cid: int) -> Optional[dict]:
+    c = conn.execute(
+        """SELECT c.*, p.name AS parent_name FROM committees c
+           LEFT JOIN committees p ON p.id = c.parent_id WHERE c.id=?""", (cid,)).fetchone()
+    if not c:
+        return None
+    d = dict(c)
+    d["members"] = [dict(r) for r in conn.execute(
+        """SELECT m.id, m.user_id, m.full_name, m.position, m.created_at,
+                  u.username, u.branch, u.last_login
+           FROM committee_members m JOIN users u ON u.id = m.user_id
+           WHERE m.committee_id=? ORDER BY m.id""", (cid,)).fetchall()]
+    d["decisions_count"] = conn.execute(
+        "SELECT COUNT(*) FROM committee_decisions WHERE committee_id=?", (cid,)).fetchone()[0]
+    d["unfit_count"] = conn.execute(
+        "SELECT COUNT(*) FROM committee_decisions WHERE committee_id=? AND decision='unfit' AND status='active'",
+        (cid,)).fetchone()[0]
+    return d
+
+
+def _cm_validate_committee(conn, body: "CommitteeCreate", self_id: Optional[int] = None):
+    name = (body.name or "").strip()
+    if len(name) < 2:
+        raise HTTPException(400, "اسم اللجنة قصير جداً")
+    if body.type not in COMMITTEE_TYPES:
+        raise HTTPException(400, "نوع اللجنة غير صالح (رئيسية أو فرعية)")
+    dup = conn.execute("SELECT id FROM committees WHERE lower(name)=lower(?) AND id!=?",
+                       (name, self_id or 0)).fetchone()
+    if dup:
+        raise HTTPException(400, "يوجد لجنة بنفس الاسم")
+    parent_id = None
+    if body.type == "sub" and body.parent_id:
+        if self_id and body.parent_id == self_id:
+            raise HTTPException(400, "لا يمكن أن تكون اللجنة تابعة لنفسها")
+        p = conn.execute("SELECT id, type FROM committees WHERE id=?", (body.parent_id,)).fetchone()
+        if not p:
+            raise HTTPException(404, "اللجنة الرئيسية غير موجودة")
+        if p["type"] != "main":
+            raise HTTPException(400, "اللجنة الفرعية لازم تتبع لجنة رئيسية")
+        parent_id = p["id"]
+    return name, parent_id
+
+
+@app.get("/superuser/committees")
+async def su_list_committees(cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM committees ORDER BY CASE type WHEN 'main' THEN 0 ELSE 1 END, name").fetchall()]
+        return [_cm_committee_full(conn, i) for i in ids]
+
+
+@app.post("/superuser/committees", status_code=201)
+async def su_create_committee(request: Request, body: CommitteeCreate, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        name, parent_id = _cm_validate_committee(conn, body)
+        cur = conn.execute(
+            """INSERT INTO committees(name,type,parent_id,branch,equipment_type,description,is_active,created_by,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?)""",
+            (name, body.type, parent_id, (body.branch or "").strip(), (body.equipment_type or "").strip(),
+             (body.description or "").strip(), 1 if body.is_active is not False else 0,
+             cu["username"], datetime.utcnow().isoformat() + "Z"))
+        cid = cur.lastrowid
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "create_committee",
+                        f"تشكيل لجنة {'رئيسية' if body.type == 'main' else 'فرعية'}: {name}",
+                        request.client.host if request.client else "", cursor=conn)
+        return _cm_committee_full(conn, cid)
+
+
+@app.put("/superuser/committees/{cid}")
+async def su_update_committee(request: Request, cid: int, body: CommitteeCreate, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM committees WHERE id=?", (cid,)).fetchone():
+            raise HTTPException(404, "اللجنة غير موجودة")
+        name, parent_id = _cm_validate_committee(conn, body, self_id=cid)
+        conn.execute(
+            """UPDATE committees SET name=?, type=?, parent_id=?, branch=?, equipment_type=?, description=?, is_active=?
+               WHERE id=?""",
+            (name, body.type, parent_id, (body.branch or "").strip(), (body.equipment_type or "").strip(),
+             (body.description or "").strip(), 1 if body.is_active is not False else 0, cid))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "update_committee",
+                        f"تعديل لجنة #{cid}: {name}", request.client.host if request.client else "", cursor=conn)
+        return _cm_committee_full(conn, cid)
+
+
+@app.delete("/superuser/committees/{cid}")
+async def su_delete_committee(request: Request, cid: int, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        com = conn.execute("SELECT id, name FROM committees WHERE id=?", (cid,)).fetchone()
+        if not com:
+            raise HTTPException(404, "اللجنة غير موجودة")
+        member_users = [r["user_id"] for r in conn.execute(
+            "SELECT user_id FROM committee_members WHERE committee_id=?", (cid,)).fetchall()]
+        conn.execute("UPDATE committees SET parent_id=NULL WHERE parent_id=?", (cid,))
+        conn.execute("DELETE FROM committee_members WHERE committee_id=?", (cid,))
+        conn.execute("DELETE FROM committees WHERE id=?", (cid,))
+        # حسابات الأعضاء اللي ملهاش أي لجنة تانية تتحذف (الحساب اتعمل للّجنة أصلاً)
+        removed_accounts = 0
+        for uid in member_users:
+            left = conn.execute("SELECT COUNT(*) FROM committee_members WHERE user_id=?", (uid,)).fetchone()[0]
+            if left == 0:
+                conn.execute("DELETE FROM users WHERE id=? AND role='committee_member'", (uid,))
+                removed_accounts += 1
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "delete_committee",
+                        f"حذف لجنة: {com['name']} (id={cid}) — حسابات أعضاء محذوفة: {removed_accounts}",
+                        request.client.host if request.client else "", cursor=conn)
+    return {"message": f"تم حذف اللجنة: {com['name']}"}
+
+
+@app.post("/superuser/committees/{cid}/members", status_code=201)
+async def su_add_committee_member(request: Request, cid: int, body: CommitteeMemberCreate,
+                                  cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        com = conn.execute("SELECT id, name, branch FROM committees WHERE id=?", (cid,)).fetchone()
+        if not com:
+            raise HTTPException(404, "اللجنة غير موجودة")
+        position = (body.position or "عضو").strip() or "عضو"
+        if body.existing_user_id:
+            u = conn.execute("SELECT id, username, role FROM users WHERE id=?", (body.existing_user_id,)).fetchone()
+            if not u or u["role"] != "committee_member":
+                raise HTTPException(404, "حساب عضو اللجنة غير موجود")
+            uid, username = u["id"], u["username"]
+            if conn.execute("SELECT 1 FROM committee_members WHERE committee_id=? AND user_id=?", (cid, uid)).fetchone():
+                raise HTTPException(400, "العضو موجود بالفعل في هذه اللجنة")
+            full_name = (body.full_name or "").strip() or username
+        else:
+            username = (body.username or "").strip()
+            if len(username) < 2:
+                raise HTTPException(400, "اسم المستخدم قصير جداً")
+            validate_password(body.password or "")
+            if conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone():
+                raise HTTPException(400, "اسم المستخدم موجود مسبقاً")
+            full_name = (body.full_name or "").strip() or username
+            branch = (body.branch or "").strip() or (com["branch"] or "")
+            cur = conn.execute("INSERT INTO users(username,password,role,branch) VALUES(?,?,?,?)",
+                               (username, _hash(body.password), "committee_member", branch))
+            uid = cur.lastrowid
+        cur = conn.execute(
+            "INSERT INTO committee_members(committee_id,user_id,full_name,position,created_at) VALUES(?,?,?,?,?)",
+            (cid, uid, full_name, position, datetime.utcnow().isoformat() + "Z"))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "add_committee_member",
+                        f"إضافة عضو '{full_name}' ({username}) للجنة {com['name']} بصفة {position}",
+                        request.client.host if request.client else "", cursor=conn)
+        return {"id": cur.lastrowid, "user_id": uid, "username": username, "full_name": full_name, "position": position}
+
+
+@app.put("/superuser/committee-members/{mid}")
+async def su_update_committee_member(request: Request, mid: int, body: CommitteeMemberUpdate,
+                                     cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        m = conn.execute("SELECT id, user_id, committee_id FROM committee_members WHERE id=?", (mid,)).fetchone()
+        if not m:
+            raise HTTPException(404, "العضو غير موجود")
+        if body.full_name is not None and body.full_name.strip():
+            conn.execute("UPDATE committee_members SET full_name=? WHERE id=?", (body.full_name.strip(), mid))
+        if body.position is not None and body.position.strip():
+            conn.execute("UPDATE committee_members SET position=? WHERE id=?", (body.position.strip(), mid))
+        if body.username is not None and body.username.strip():
+            nu = body.username.strip()
+            if len(nu) < 2:
+                raise HTTPException(400, "اسم المستخدم قصير جداً")
+            if conn.execute("SELECT id FROM users WHERE username=? AND id!=?", (nu, m["user_id"])).fetchone():
+                raise HTTPException(400, "اسم المستخدم مستخدم من قِبل شخص آخر")
+            conn.execute("UPDATE users SET username=? WHERE id=? AND role='committee_member'", (nu, m["user_id"]))
+        if body.password:
+            validate_password(body.password)
+            conn.execute("UPDATE users SET password=?, failed_attempts=0, locked_until=NULL WHERE id=? AND role='committee_member'",
+                         (_hash(body.password), m["user_id"]))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "update_committee_member",
+                        f"تعديل بيانات عضو لجنة #{mid}" + (" (مع تغيير كلمة المرور)" if body.password else ""),
+                        request.client.host if request.client else "", cursor=conn)
+    return {"message": "تم التحديث"}
+
+
+@app.delete("/superuser/committee-members/{mid}")
+async def su_remove_committee_member(request: Request, mid: int, cu: dict = Depends(require_superuser)):
+    with get_db() as conn:
+        m = conn.execute(
+            """SELECT m.id, m.user_id, m.full_name, c.name AS committee_name
+               FROM committee_members m JOIN committees c ON c.id=m.committee_id WHERE m.id=?""", (mid,)).fetchone()
+        if not m:
+            raise HTTPException(404, "العضو غير موجود")
+        conn.execute("DELETE FROM committee_members WHERE id=?", (mid,))
+        left = conn.execute("SELECT COUNT(*) FROM committee_members WHERE user_id=?", (m["user_id"],)).fetchone()[0]
+        account_removed = False
+        if left == 0:
+            conn.execute("DELETE FROM users WHERE id=? AND role='committee_member'", (m["user_id"],))
+            account_removed = True
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "remove_committee_member",
+                        f"إزالة العضو '{m['full_name']}' من لجنة {m['committee_name']}"
+                        + (" (وتم حذف حسابه)" if account_removed else ""),
+                        request.client.host if request.client else "", cursor=conn)
+    return {"message": "تم إزالة العضو", "account_removed": account_removed}
+
+
+@app.get("/superuser/committee-decisions")
+async def su_list_committee_decisions(
+    committee_id: Optional[int] = Query(None),
+    decision: Optional[str] = Query(None),
+    status_: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(300, ge=1, le=1000),
+    cu: dict = Depends(require_superuser),
+):
+    q = "SELECT * FROM committee_decisions WHERE 1=1"
+    params: list = []
+    if committee_id:
+        q += " AND committee_id=?"; params.append(committee_id)
+    if decision in COMMITTEE_DECISIONS:
+        q += " AND decision=?"; params.append(decision)
+    if status_ in ("active", "superseded", "revoked"):
+        q += " AND status=?"; params.append(status_)
+    q += " ORDER BY id DESC LIMIT ?"; params.append(limit)
+    with get_db() as conn:
+        return [dict(r) for r in conn.execute(q, params).fetchall()]
+
+
+@app.post("/superuser/committee-decisions/{did}/revoke")
+async def su_revoke_committee_decision(request: Request, did: int, body: CommitteeRevokeBody,
+                                       cu: dict = Depends(require_superuser)):
+    """السوبر يوزر يقدر يلغي قرار نشط (مثلاً لو المعدة اتصلحت أو في ظرف طارئ)."""
+    with get_db() as conn:
+        d = conn.execute("SELECT * FROM committee_decisions WHERE id=?", (did,)).fetchone()
+        if not d:
+            raise HTTPException(404, "القرار غير موجود")
+        if d["status"] != "active":
+            raise HTTPException(400, "هذا القرار ليس القرار الحالي للمعدة")
+        now = datetime.utcnow().isoformat() + "Z"
+        conn.execute("UPDATE committee_decisions SET status='revoked', revoked_by=?, revoked_at=?, revoke_note=? WHERE id=?",
+                     (cu["username"], now, (body.note or "").strip(), did))
+        tbl = "cars" if d["asset_kind"] == "car" else "equipment"
+        conn.execute(f"UPDATE {tbl} SET fitness_status='', fitness_reason='', fitness_decided_by='', fitness_decided_at='' WHERE id=?",
+                     (d["asset_id"],))
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "revoke_committee_decision",
+                        f"إلغاء قرار اللجنة #{did} على {d['asset_label']}" + (f" — {body.note}" if body.note else ""),
+                        request.client.host if request.client else "", cursor=conn)
+    return {"message": "تم إلغاء القرار — المعدة رجعت بدون قرار لجنة"}
+
+
+# ── ② لعضو اللجنة: مشاهدة التقارير واتخاذ القرار ──
+
+@app.get("/committee/my")
+async def cm_my(cu: dict = Depends(require_committee_member)):
+    with get_db() as conn:
+        return {"username": cu["username"], "committees": _cm_my_committees(conn, cu["user_id"])}
+
+
+@app.get("/committee/assets")
+async def cm_assets(
+    committee_id: Optional[int] = Query(None),
+    q: str = Query(""),
+    fitness: str = Query("", description="fit | unfit | pending | issues"),
+    kind: str = Query("", description="car | equipment"),
+    limit: int = Query(400, ge=1, le=2000),
+    cu: dict = Depends(require_committee_member),
+):
+    """المعدات والمركبات داخل نطاق لجان العضو + ملخص آخر Check List وآخر محضر فحص + القرار الحالي."""
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        coms = _cm_my_committees(conn, cu["user_id"])
+        if committee_id:
+            coms = [c for c in coms if c["id"] == committee_id]
+        if not coms:
+            return {"assets": [], "total": 0}
+
+        assets: list = []
+        if kind in ("", "car"):
+            for r in conn.execute(
+                """SELECT id, plate, model, car_name, car_code, branch, equipment_type, sector, status,
+                          fitness_status, fitness_reason, fitness_decided_by, fitness_decided_at FROM cars""").fetchall():
+                d = dict(r); d["kind"] = "car"; d["code"] = d["plate"] or d.get("car_code") or ""
+                d["label"] = " — ".join(x for x in [d["code"], d.get("car_name") or d.get("model") or ""] if x)
+                assets.append(d)
+        if kind in ("", "equipment"):
+            for r in conn.execute(
+                """SELECT id, car_code, equipment_name, model, brand, branch, equipment_type, sector, status,
+                          fitness_status, fitness_reason, fitness_decided_by, fitness_decided_at FROM equipment""").fetchall():
+                d = dict(r); d["kind"] = "equipment"; d["code"] = d["car_code"] or ""
+                d["label"] = " — ".join(x for x in [d["code"], d.get("equipment_name") or d.get("model") or ""] if x)
+                assets.append(d)
+
+        assets = [a for a in assets if any(_cm_in_scope(c, a) for c in coms)]
+        qn = (q or "").strip().lower()
+        if qn:
+            assets = [a for a in assets if qn in " ".join(str(a.get(k) or "") for k in
+                      ("code", "label", "model", "branch", "equipment_type", "car_name", "equipment_name", "brand")).lower()]
+
+        # آخر Check List خلال 30 يوم (مركبات: car_id — معدات: عن طريق ورديات المشغل بنفس اليوم)
+        last_ck: dict = {}
+        for r in conn.execute(
+            """SELECT car_id, checklist_date, score, items FROM daily_checklists
+               WHERE car_id IS NOT NULL AND checklist_date >= date('now','-30 day')
+               ORDER BY checklist_date DESC, id DESC""").fetchall():
+            last_ck.setdefault(("car", r["car_id"]), r)
+        eq_by_code = {a["code"]: a["id"] for a in assets if a["kind"] == "equipment"}
+        for r in conn.execute(
+            """SELECT s.equipment_id AS eid, ck.checklist_date, ck.score, ck.items
+               FROM daily_checklists ck
+               JOIN operator_shifts s ON s.operator_id = ck.operator_id
+                                     AND substr(s.start_time,1,10) = ck.checklist_date
+               WHERE ck.operator_id IS NOT NULL AND ck.checklist_date >= date('now','-30 day')
+               ORDER BY ck.checklist_date DESC, ck.id DESC""").fetchall():
+            if r["eid"] in eq_by_code:
+                last_ck.setdefault(("equipment", eq_by_code[r["eid"]]), r)
+
+        last_insp: dict = {}
+        for r in conn.execute(
+            """SELECT car_id, result FROM workshop_inspection_reports
+               WHERE id IN (SELECT MAX(id) FROM workshop_inspection_reports WHERE car_id IS NOT NULL GROUP BY car_id)""").fetchall():
+            last_insp[("car", r["car_id"])] = r["result"]
+        for r in conn.execute(
+            """SELECT equipment_id, result FROM workshop_inspection_reports
+               WHERE id IN (SELECT MAX(id) FROM workshop_inspection_reports
+                            WHERE equipment_id IS NOT NULL AND equipment_id != '' GROUP BY equipment_id)""").fetchall():
+            if r["equipment_id"] in eq_by_code:
+                last_insp[("equipment", eq_by_code[r["equipment_id"]])] = r["result"]
+
+        for a in assets:
+            ck = last_ck.get((a["kind"], a["id"]))
+            if ck:
+                parsed = _cm_parse_checklist({"items": ck["items"]})
+                a["last_checklist_date"] = ck["checklist_date"]
+                a["last_checklist_score"] = ck["score"]
+                a["last_not_efficient"] = parsed["not_efficient_count"]
+            else:
+                a["last_checklist_date"] = None
+                a["last_checklist_score"] = None
+                a["last_not_efficient"] = 0
+            a["last_inspection_result"] = last_insp.get((a["kind"], a["id"]), "")
+
+        if fitness == "fit":
+            assets = [a for a in assets if a["fitness_status"] == "fit"]
+        elif fitness == "unfit":
+            assets = [a for a in assets if a["fitness_status"] == "unfit"]
+        elif fitness == "pending":
+            assets = [a for a in assets if not a["fitness_status"]]
+        elif fitness == "issues":
+            assets = [a for a in assets if a["last_not_efficient"] > 0
+                      or a["last_inspection_result"] in ("fail", "needs_repair")]
+
+        # الأولوية: اللي عندها ملاحظات ولسه ملهاش قرار، بعدها غير الصالحة
+        def _prio(a):
+            has_issue = a["last_not_efficient"] > 0 or a["last_inspection_result"] in ("fail", "needs_repair")
+            return (0 if (has_issue and not a["fitness_status"]) else 1 if a["fitness_status"] == "unfit" else 2, a["label"])
+        assets.sort(key=_prio)
+        total = len(assets)
+        return {"assets": assets[:limit], "total": total}
+
+
+@app.get("/committee/assets/{kind}/{aid}/reports")
+async def cm_asset_reports(kind: str, aid: int, days: int = Query(90, ge=1, le=730),
+                           cu: dict = Depends(require_committee_member)):
+    """كل تقارير المعدة: Check List اليومية + محاضر الفحص/السلامة + بلاغات الطوارئ + تاريخ قرارات اللجان."""
+    if kind not in COMMITTEE_ASSET_KINDS:
+        raise HTTPException(400, "نوع غير صالح")
+    with get_db() as conn:
+        _ensure_operator_tables(conn)
+        asset = _cm_asset(conn, kind, aid)
+        if not asset:
+            raise HTTPException(404, "المعدة غير موجودة")
+        coms = _cm_my_committees(conn, cu["user_id"])
+        eligible = [c for c in coms if _cm_in_scope(c, asset)]
+        if not eligible:
+            raise HTTPException(403, "هذه المعدة خارج نطاق لجانك")
+
+        since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+        if kind == "car":
+            ck_rows = conn.execute(
+                """SELECT ck.*, d.name AS person_name FROM daily_checklists ck
+                   LEFT JOIN drivers d ON d.id = ck.driver_id
+                   WHERE ck.car_id=? AND ck.checklist_date >= ?
+                   ORDER BY ck.checklist_date DESC, ck.id DESC LIMIT 200""", (aid, since)).fetchall()
+            insp_rows = conn.execute(
+                "SELECT * FROM workshop_inspection_reports WHERE car_id=? ORDER BY id DESC LIMIT 50", (aid,)).fetchall()
+            emg_rows = conn.execute(
+                """SELECT id, type, notes, created_at, location, is_handled, action_taken
+                   FROM emergency_reports WHERE car_id=? ORDER BY id DESC LIMIT 30""", (aid,)).fetchall()
+        else:
+            ck_rows = conn.execute(
+                """SELECT ck.*, o.name AS person_name FROM daily_checklists ck
+                   LEFT JOIN equipment_operators o ON o.id = ck.operator_id
+                   WHERE ck.operator_id IS NOT NULL AND ck.checklist_date >= ?
+                     AND EXISTS (SELECT 1 FROM operator_shifts s
+                                 WHERE s.operator_id = ck.operator_id
+                                   AND substr(s.start_time,1,10) = ck.checklist_date
+                                   AND s.equipment_id = ?)
+                   ORDER BY ck.checklist_date DESC, ck.id DESC LIMIT 200""", (since, asset["code"])).fetchall()
+            insp_rows = conn.execute(
+                "SELECT * FROM workshop_inspection_reports WHERE equipment_id=? ORDER BY id DESC LIMIT 50",
+                (asset["code"],)).fetchall()
+            emg_rows = []
+
+        checklists = []
+        for r in ck_rows:
+            d = dict(r)
+            parsed = _cm_parse_checklist(d)
+            checklists.append({
+                "id": d["id"], "date": d["checklist_date"], "person_name": d.get("person_name") or "—",
+                "person_type": "driver" if d.get("driver_id") else "operator",
+                "score": d.get("score"), "notes": d.get("notes") or "",
+                "items": parsed["items"], "not_efficient_count": parsed["not_efficient_count"],
+            })
+        inspections = []
+        for r in insp_rows:
+            d = dict(r)
+            inspections.append({
+                "id": d["id"], "report_number": d.get("report_number") or "", "date": d.get("inspection_date") or "",
+                "inspector_name": d.get("inspector_name") or "", "result": d.get("result") or "pending",
+                "findings": d.get("findings") or "", "notes": d.get("notes") or "",
+                "odometer_reading": d.get("odometer_reading"),
+                "items": _cm_norm_inspection_items(d.get("items_json")),
+            })
+        decisions = [dict(r) for r in conn.execute(
+            """SELECT id, committee_name, member_name, decision, reason, report, status, created_at, revoked_by, revoked_at
+               FROM committee_decisions WHERE asset_kind=? AND asset_id=? ORDER BY id DESC LIMIT 30""",
+            (kind, aid)).fetchall()]
+        return {
+            "asset": asset,
+            "committees": [{"id": c["id"], "name": c["name"], "type": c["type"]} for c in eligible],
+            "checklists": checklists,
+            "inspections": inspections,
+            "emergencies": [dict(r) for r in emg_rows],
+            "decisions": decisions,
+        }
+
+
+@app.post("/committee/decisions", status_code=201)
+async def cm_make_decision(request: Request, body: CommitteeDecisionBody, cu: dict = Depends(require_committee_member)):
+    if body.asset_kind not in COMMITTEE_ASSET_KINDS:
+        raise HTTPException(400, "نوع المعدة غير صالح")
+    if body.decision not in COMMITTEE_DECISIONS:
+        raise HTTPException(400, "القرار لازم يكون: صالحة أو غير صالحة")
+    reason = (body.reason or "").strip()
+    report = (body.report or "").strip()
+    if body.decision == "unfit" and len(reason) < 5:
+        raise HTTPException(400, "لازم تكتب سبب عدم صلاحية المعدة للتشغيل")
+    with get_db() as conn:
+        member = conn.execute(
+            """SELECT m.full_name, m.position, c.id, c.name, c.branch, c.equipment_type, c.is_active
+               FROM committee_members m JOIN committees c ON c.id = m.committee_id
+               WHERE m.user_id=? AND c.id=?""", (cu["user_id"], body.committee_id)).fetchone()
+        if not member or not member["is_active"]:
+            raise HTTPException(403, "أنت لست عضواً في هذه اللجنة (أو اللجنة غير فعّالة)")
+        asset = _cm_asset(conn, body.asset_kind, body.asset_id)
+        if not asset:
+            raise HTTPException(404, "المعدة غير موجودة")
+        if not _cm_in_scope(member, asset):
+            raise HTTPException(403, "هذه المعدة خارج نطاق اللجنة المختارة")
+
+        now = datetime.utcnow().isoformat() + "Z"
+        member_name = member["full_name"] or cu["username"]
+        conn.execute("UPDATE committee_decisions SET status='superseded' WHERE asset_kind=? AND asset_id=? AND status='active'",
+                     (body.asset_kind, body.asset_id))
+        cur = conn.execute(
+            """INSERT INTO committee_decisions(committee_id,committee_name,member_user_id,member_name,asset_kind,asset_id,
+                                               asset_label,decision,reason,report,status,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,'active',?)""",
+            (member["id"], member["name"], cu["user_id"], member_name, body.asset_kind, body.asset_id,
+             asset["label"], body.decision, reason, report, now))
+        tbl = "cars" if body.asset_kind == "car" else "equipment"
+        conn.execute(
+            f"UPDATE {tbl} SET fitness_status=?, fitness_reason=?, fitness_decided_by=?, fitness_decided_at=? WHERE id=?",
+            (body.decision, reason, f"{member_name} — {member['name']}", now, body.asset_id))
+        label = "صالحة للاستخدام" if body.decision == "fit" else "غير صالحة للاستخدام"
+        write_audit_log(cu["user_id"], cu["username"], cu["role"], "committee_decision",
+                        f"قرار لجنة '{member['name']}': {asset['label']} ← {label}" + (f" — {reason}" if reason else ""),
+                        request.client.host if request.client else "", cursor=conn)
+        return {"id": cur.lastrowid, "decision": body.decision, "asset_label": asset["label"], "created_at": now}
+
+
+@app.get("/committee/decisions")
+async def cm_list_decisions(committee_id: Optional[int] = Query(None), limit: int = Query(200, ge=1, le=500),
+                            cu: dict = Depends(require_committee_member)):
+    with get_db() as conn:
+        ids = [c["id"] for c in _cm_my_committees(conn, cu["user_id"])]
+        if committee_id:
+            ids = [i for i in ids if i == committee_id]
+        if not ids:
+            return []
+        ph = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT * FROM committee_decisions WHERE committee_id IN ({ph}) ORDER BY id DESC LIMIT ?",
+            (*ids, limit)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r); d["mine"] = (d["member_user_id"] == cu["user_id"]); out.append(d)
+        return out
 
 
 # ══════════════════════════════════════════════════════

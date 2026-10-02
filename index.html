@@ -2550,6 +2550,7 @@ const isSupervisorField= () => currentUser?.role === 'supervisor_field';
 const isWorkshopAdmin  = () => currentUser?.role === 'workshop_admin';
 const isSupervisor     = () => isSupervisorWS() || isSupervisorField();
 const isOperator       = () => currentUser?.role === 'operator';
+const isCommitteeMember = () => currentUser?.role === 'committee_member';
 const isAdminOrSuper = () => ['admin','superuser'].includes(currentUser?.role);
 let notifPollInterval = null;
 let lastUnreadCount = 0;
@@ -2780,7 +2781,8 @@ const NAV_ITEM_MODULE = {
   'maintenance-reports':'reports',
   'super-fraud':'ai', 'super-decisions':'ai', 'super-voice':'ai',
   permissions:'admin', 'super-licenses':'admin', 'import-data':'admin',
-  'super-admins':'admin', 'super-reporters':'admin', 'super-workshop-admins':'admin', 'super-reassign':'admin',
+  'super-admins':'admin', 'super-reporters':'admin', 'super-workshop-admins':'admin', 'super-committees':'admin', 'super-reassign':'admin',
+  'cm-assets':'driverFlat', 'cm-decisions':'driverFlat',
   'super-logs':'admin', 'super-sarky':'admin', 'driver-photos':'admin', 'super-notes':'admin',
   'driver-trip':'driverFlat', 'driver-workshop':'driverFlat', 'driver-emergency':'driverFlat',
 };
@@ -2885,6 +2887,7 @@ function buildAdminNav() {
     base.push({id:'super-super-admins', icon:'🛡️', label:'السوبر أدمنز'});
     base.push({id:'super-reporters',   icon:'👁️', label:'إدارة المراقبين'});
     base.push({id:'super-workshop-admins', icon:'🛠️', label:'إدارة ادمن الورش'});
+    base.push({id:'super-committees', icon:'🏛️', label:'إدارة اللجان'});
     base.push({id:'super-reassign',    icon:'🔄', label:'إعادة تخصيص'});
     base.push({id:'super-logs',        icon:'📋', label:'سجل الدخول'});
     base.push({id:'su-change-password', icon:'🔑', label:'تغيير كلمة المرور'});
@@ -2906,6 +2909,19 @@ function buildAdminNav() {
     base.push({id:'super-licenses',     icon:'⚠️', label:'تنبيهات الرخص'});
   }
   return base;
+}
+function buildCommitteeNav() {
+  return [
+    {id:'cm-assets',    icon:'🔎', label:'المعدات والتقارير'},
+    {id:'cm-decisions', icon:'📜', label:'قرارات اللجنة'},
+  ];
+}
+function currentNavItems() {
+  return isCommitteeMember() ? buildCommitteeNav()
+       : isSupervisor()      ? buildSupervisorNav()
+       : isWorkshopAdmin()   ? buildWorkshopAdminNav()
+       : isAdminLike()       ? buildAdminNav()
+       : buildDriverNav();
 }
 function buildDriverNav() {
   return [
@@ -2986,10 +3002,7 @@ function renderNav(items) {
 function toggleNavModule(key) {
   // فتح قسم واحد فقط في كل مرة — إغلاق الأقسام الأخرى تلقائياً
   window._openNavModule = (window._openNavModule === key) ? null : key;
-  const items = isSupervisor() ? buildSupervisorNav()
-              : isWorkshopAdmin() ? buildWorkshopAdminNav()
-              : isAdminLike()  ? buildAdminNav()
-              : buildDriverNav();
+  const items = currentNavItems();
   renderNav(items);
 }
 
@@ -2999,10 +3012,7 @@ async function switchSection(id) {
   if (NAV_ITEM_MODULE[id] && NAV_MODULES.find(m=>m.key===NAV_ITEM_MODULE[id] && m.collapsible)) {
     window._openNavModule = NAV_ITEM_MODULE[id];
   }
-  const items = isSupervisor() ? buildSupervisorNav()
-              : isWorkshopAdmin() ? buildWorkshopAdminNav()
-              : isAdminLike()  ? buildAdminNav()
-              : buildDriverNav();
+  const items = currentNavItems();
   renderNav(items);
   const item = items.find(i=>i.id===id);
   document.getElementById('topbarTitle').textContent = item?.label||'';
@@ -3018,6 +3028,8 @@ async function renderSection(id) {
   // وقّف الـ live tracking لو كنا في الخريطة وبنروح section تاني
   if(id !== 'map') stopLiveTracking();
   const c = document.getElementById('pageContent');
+  // عضو اللجنة: مقصور على شاشات اللجنة فقط
+  if(isCommitteeMember() && !String(id).startsWith('cm-')) id = 'cm-assets';
   // إدارة المخزون: للسوبر يوزر فقط — امنع الوصول المباشر حتى لو عن طريق الرابط
   if((id === 'inventory-mgmt' || id.startsWith('inv-')) && !isSuperuser()) {
     c.innerHTML = '<div class="empty-state"><div class="empty-icon">🚫</div><p>غير مصرح لك بالوصول لهذا القسم</p></div>';
@@ -3050,6 +3062,9 @@ async function renderSection(id) {
     case 'sa-my-admins':         await renderSAMyAdmins(); break;
     case 'super-reporters': await renderSuperReporters(); break;
     case 'super-workshop-admins': await renderSuperWorkshopAdmins(); break;
+    case 'super-committees': await renderSuperCommittees('committees'); break;
+    case 'cm-assets':       await renderCmAssets(); break;
+    case 'cm-decisions':    await renderCmDecisions(); break;
     case 'super-reassign':  await renderSuperReassign(); break;
     case 'super-logs':           await renderSuperLogs(); break;
     case 'super-notes':          await renderSuperNotes(); break;
@@ -8206,20 +8221,28 @@ async function openStartTripModal() {
 }
 
 // ── Check List اليومية قبل بدء الوردية (سائق أو مشغل) ──
+function _cklEsc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
 async function openDailyChecklistModal(driverId, operatorId, onDone) {
   let items;
-  try { items = await apiCall('/checklists/items'); }
+  try { items = await apiCall('/checklists/items?target=' + (operatorId ? 'operator' : 'driver')); }
   catch(e) { showNotification(e.message, 'error'); return; }
+  if (!items.length) {
+    showNotification('لا توجد بنود Check List معرّفة حاليًا — تواصل مع المسؤول', 'warning');
+    return;
+  }
 
   const rowsHtml = items.map(it => `
     <div class="form-group" style="border-bottom:1px solid var(--border);padding-bottom:.7rem;margin-bottom:.7rem">
-      <label style="font-weight:700;font-size:.9rem">${it.label}</label>
+      <label style="font-weight:700;font-size:.9rem">${_cklEsc(it.label)}</label>
       <div style="display:flex;gap:.5rem;margin-top:.4rem">
-        <button type="button" class="ckl-opt" data-key="${it.key}" data-val="efficient"
+        <button type="button" class="ckl-opt" data-key="${_cklEsc(it.key)}" data-val="efficient"
           style="flex:1;padding:.6rem;border-radius:10px;border:1.5px solid #86efac;background:#f0fdf4;color:#166534;font-weight:700;font-size:.82rem;cursor:pointer">
           ✅ تعمل بكفاءة
         </button>
-        <button type="button" class="ckl-opt" data-key="${it.key}" data-val="not_efficient"
+        <button type="button" class="ckl-opt" data-key="${_cklEsc(it.key)}" data-val="not_efficient"
           style="flex:1;padding:.6rem;border-radius:10px;border:1.5px solid #fca5a5;background:#fef2f2;color:#991b1b;font-weight:700;font-size:.82rem;cursor:pointer">
           ⚠️ لا تعمل بكفاءة
         </button>
@@ -9581,10 +9604,7 @@ window.addEventListener('popstate', (e) => {
   const id = (e.state?.section) || location.hash.replace('#','') || 'overview';
   if(currentUser && id) {
     currentSection = id;
-    const items = isSupervisor() ? buildSupervisorNav()
-                : isWorkshopAdmin() ? buildWorkshopAdminNav()
-                : isAdminLike()  ? buildAdminNav()
-                : buildDriverNav();
+    const items = currentNavItems();
     renderNav(items);
     const item = items.find(i=>i.id===id);
     if(document.getElementById('topbarTitle'))
@@ -9609,7 +9629,7 @@ function initUI() {
     avatarEl.prepend(img);
   }
   document.getElementById('sidebarUsername').textContent=currentUser.username;
-  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':currentUser.role==='operator'?'⚙️ مشغل معدات':currentUser.role==='workshop_admin'?'🛠️ ادمن الورش':'🚗 سائق';
+  document.getElementById('sidebarRole').textContent=currentUser.role==='superuser'?'🛡️ سوبر يوزر':currentUser.role==='admin'?'👑 مدير النظام':currentUser.role==='reporter'?'👁️ مراقب':currentUser.role==='operator'?'⚙️ مشغل معدات':currentUser.role==='workshop_admin'?'🛠️ ادمن الورش':currentUser.role==='committee_member'?'🏛️ عضو لجنة':'🚗 سائق';
   // إظهار الفرع في الـ sidebar لو الأدمن/المراقب مقيّد بفرع
   const branchBadgeEl = document.getElementById('sidebarBranchBadge');
   if(branchBadgeEl) {
@@ -9620,9 +9640,17 @@ function initUI() {
       branchBadgeEl.style.display = 'none';
     }
   }
-  if(isAdminLike()){
+  if(isCommitteeMember()){
+    const _h = location.hash.replace('#','');
+    currentSection = ['cm-assets','cm-decisions'].includes(_h) ? _h : 'cm-assets';
+    renderNav(buildCommitteeNav());
+    const _it = buildCommitteeNav().find(i=>i.id===currentSection);
+    const _tt = document.getElementById('topbarTitle'); if(_tt) _tt.textContent = _it?.label || '';
+    renderSection(currentSection);
+    if(history.replaceState) history.replaceState({section:currentSection},'','#'+currentSection);
+  } else if(isAdminLike()){
     const _hashSection = location.hash.replace('#','');
-  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','maintenance-reports','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','equipment-operator-kpi','_sep_fleet','_sep_ops','_sep_reports','daily-checklist-report','ws-work-orders'];
+  const _validSections = ['overview','drivers','cars','trips','workshops','workshops-stats','map','emergencies','requests','op-card','permissions','maintenance','maintenance-reports','monthly-report','super-supervisors','super-decisions','super-fraud','super-voice','super-licenses','super-admins','super-reporters','super-workshop-admins','super-committees','super-reassign','super-logs','super-sarky','import-data','super-super-admins','sa-my-admins','driver-kpi','equipment-list','driver-photos','equipment-operators','equipment-mgmt','shifts-table','equipment-op-card','equipment-log','equipment-unused','super-notes','ws-attachments','ops-review','ws-repair-quotes','ws-inspection-reports','ws-external-ops','ws-vouchers','inventory-mgmt','inv-overview','inv-products','inv-categories','inv-suppliers','inv-platforms','inv-movements','inv-alerts','equipment-operator-kpi','_sep_fleet','_sep_ops','_sep_reports','daily-checklist-report','ws-work-orders'];
   currentSection = (_hashSection && _validSections.includes(_hashSection)) ? _hashSection : (isWorkshopAdmin() ? 'workshops-stats' : 'overview');
   renderNav(isSupervisor() ? buildSupervisorNav() : isWorkshopAdmin() ? buildWorkshopAdminNav() : buildAdminNav());
   renderSection(currentSection);
@@ -9770,6 +9798,7 @@ async function renderDriverSinglePage() {
   const _cklQ = _isOp ? `operator_id=${_opData.id}` : `driver_id=${currentUser.driver_id}`;
   const checklistTodaySP = await apiCall(`/checklists/today?${_cklQ}`).catch(()=>({submitted:false, checklist:null}));
   window._checklistSubmittedTodaySP = !!checklistTodaySP.submitted;
+  window._checklistRequiredSP = checklistTodaySP.required !== false;
   window._checklistScoreTodaySP = checklistTodaySP.checklist?.score ?? null;
   window._driverCar  = primaryCar;
 
@@ -9976,7 +10005,7 @@ async function renderDriverSinglePage() {
       <div style="margin:0 .85rem .75rem;padding:.85rem 1rem;border-radius:14px;
                   background:${window._checklistSubmittedTodaySP?'#f0fdf9':'#fff7ed'};
                   border:2px solid ${window._checklistSubmittedTodaySP?'#86efac':'#f59e0b'};
-                  display:flex;align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap">
+                  display:${window._checklistRequiredSP===false?'none':'flex'};align-items:center;justify-content:space-between;gap:.6rem;flex-wrap:wrap">
         <div style="display:flex;align-items:center;gap:.6rem">
           <span style="font-size:1.5rem">${window._checklistSubmittedTodaySP?'✅':'📋'}</span>
           <div>
@@ -10208,7 +10237,7 @@ async function renderDriverSinglePage() {
 
   // ── Start: رحلة للسائق / وردية للمشغل ──
   document.getElementById('dpStart')?.addEventListener('click', async () => {
-    if (!window._checklistSubmittedTodaySP) {
+    if (window._checklistRequiredSP !== false && !window._checklistSubmittedTodaySP) {
       showNotification('📋 يجب تعبئة Check List اليومية أولاً قبل بدء ' + (_isOp ? 'الوردية' : 'الرحلة'), 'error');
       openDailyChecklistModal(_isOp ? null : currentUser.driver_id, _isOp ? _opData.id : null, () => renderDriverSinglePage());
       return;
@@ -12448,6 +12477,541 @@ function sdFilter(f, btn) {
 const renderSuperAdmins      = () => renderSuperUserRole('admin');
 const renderSuperReporters   = () => renderSuperUserRole('reporter');
 const renderSuperWorkshopAdmins = () => renderSuperUserRole('workshop_admin');
+
+/* ══════════════════════════════════════════════════════════════════
+   🏛️ اللجان — تشكيل اللجان وأعضائها (سوبر يوزر) + شاشة عضو اللجنة
+   ══════════════════════════════════════════════════════════════════ */
+const CM_EQUIP_TYPES = ['معدات تحريك تربة','معدات رفع','معدات ثابتة','معدات نقل ثقيل','معدات نقل','وسائل انتقال','معدات إنتاجية','معدات مساعدة','معدات وآلات ورش','أخرى'];
+const CM_POSITIONS   = ['رئيس اللجنة','نائب الرئيس','مقرر اللجنة','عضو'];
+const cmEsc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const cmDate = d => { if(!d) return '—'; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : fmtDT(d); };
+const cmLoading = () => '<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>';
+const cmError = e => `<div class="empty-state"><div class="empty-icon">❌</div><p>${cmEsc(e.message || e)}</p></div>`;
+const CM_INSP = {
+  pass:         ['badge-green',  '✅ مطابق'],
+  fail:         ['badge-red',    '⛔ غير مطابق'],
+  needs_repair: ['badge-orange', '🔧 يحتاج إصلاح'],
+  pending:      ['badge-yellow', '⏳ قيد الفحص'],
+};
+const cmInspBadge = r => r ? `<span class="badge ${(CM_INSP[r]||CM_INSP.pending)[0]}">${(CM_INSP[r]||CM_INSP.pending)[1]}</span>` : '<span style="color:var(--muted);font-size:.8rem">—</span>';
+const cmFitBadge = st => st === 'fit' ? '<span class="badge badge-green">✅ صالحة للاستخدام</span>'
+                      : st === 'unfit' ? '<span class="badge badge-red">⛔ غير صالحة للاستخدام</span>'
+                      : '<span class="badge badge-yellow">⏳ بدون قرار</span>';
+const cmDecStatusBadge = s => s === 'active' ? '<span class="badge badge-blue">القرار الحالي</span>'
+                          : s === 'revoked' ? '<span class="badge badge-orange">ملغي</span>'
+                          : '<span class="badge badge-yellow">سابق</span>';
+const cmTypeLabel = t => t === 'main' ? 'لجنة رئيسية' : 'لجنة فرعية';
+const cmEquipLabel = t => cmEsc(String(t || '').replace('|', ' › '));
+
+/* ───────────── ① السوبر يوزر: إدارة اللجان ───────────── */
+window._cmSU = { tab: 'committees', committees: [], f: { committee_id: '', decision: '', status: '' } };
+
+async function renderSuperCommittees(tab) {
+  if (tab) window._cmSU.tab = tab;
+  const st = window._cmSU;
+  const c = document.getElementById('pageContent');
+  c.innerHTML = cmLoading();
+  try { st.committees = await apiCall('/superuser/committees'); }
+  catch (e) { c.innerHTML = cmError(e); return; }
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏛️ إدارة اللجان</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn ${st.tab==='committees'?'btn-primary':'btn-outline'} btn-sm" onclick="renderSuperCommittees('committees')">🏛️ اللجان (${st.committees.length})</button>
+          <button class="btn ${st.tab==='decisions'?'btn-primary':'btn-outline'} btn-sm" onclick="renderSuperCommittees('decisions')">📜 قرارات اللجان</button>
+          <button class="btn btn-primary btn-sm" onclick="openCommitteeModal()">➕ تشكيل لجنة</button>
+        </div>
+      </div>
+      <div style="font-size:.82rem;color:var(--muted);line-height:1.8">
+        اللجنة تشوف تقارير الـ Check List ومحاضر الفحص للمعدات داخل نطاقها (الفرع + نوع المعدة)، ويقرر أعضاؤها
+        هل المعدة <b>صالحة للاستخدام</b> أم <b>غير صالحة</b> مع كتابة السبب والتقرير. المعدة غير الصالحة لا يمكن تشغيلها حتى تُصدر اللجنة قراراً جديداً.
+      </div>
+    </div>
+    <div id="cmSUBody"></div>`;
+  if (st.tab === 'decisions') await cmSURenderDecisions(); else cmSURenderCommittees();
+}
+
+function cmSURenderCommittees() {
+  const list = window._cmSU.committees;
+  const body = document.getElementById('cmSUBody');
+  if (!list.length) {
+    body.innerHTML = `<div class="card"><div class="empty-state"><div class="empty-icon">🏛️</div>
+      <p>لا توجد لجان بعد — اضغط «تشكيل لجنة» للبدء</p></div></div>`;
+    return;
+  }
+  body.innerHTML = list.map(cm => {
+    const scope = [
+      cm.branch ? `<span class="badge badge-blue">📍 ${cmEsc(cm.branch)}</span>` : '<span class="badge badge-purple">كل الفروع</span>',
+      cm.equipment_type ? `<span class="badge badge-orange">⚙️ ${cmEquipLabel(cm.equipment_type)}</span>` : '<span class="badge badge-purple">كل أنواع المعدات</span>',
+    ].join(' ');
+    const members = cm.members.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>الاسم</th><th>الصفة</th><th>اسم الدخول</th><th>آخر دخول</th><th>الإجراءات</th></tr></thead>
+        <tbody>${cm.members.map(m => `
+          <tr>
+            <td><b>${cmEsc(m.full_name || m.username)}</b></td>
+            <td><span class="badge badge-blue">${cmEsc(m.position)}</span></td>
+            <td>${cmEsc(m.username)}</td>
+            <td>${m.last_login ? fmtDT(m.last_login) : 'لم يدخل بعد'}</td>
+            <td style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <button class="btn btn-outline btn-sm" onclick="openCommitteeMemberEditModal(${m.id})">✏️ تعديل</button>
+              <button class="btn btn-danger btn-sm" onclick="removeCommitteeMember(${m.id})">🗑️ إزالة</button>
+            </td>
+          </tr>`).join('')}</tbody>
+      </table></div>`
+      : '<div style="color:var(--muted);font-size:.85rem;padding:.6rem 0">لا يوجد أعضاء — أضف أعضاء ليتمكنوا من الدخول واتخاذ القرارات</div>';
+    return `
+    <div class="card" style="margin-top:1rem;${cm.is_active ? '' : 'opacity:.65'}">
+      <div class="card-header" style="flex-wrap:wrap;gap:.6rem">
+        <div>
+          <div class="card-title">${cm.type==='main'?'🏛️':'🧩'} ${cmEsc(cm.name)}
+            <span class="badge ${cm.type==='main'?'badge-purple':'badge-blue'}">${cmTypeLabel(cm.type)}</span>
+            ${cm.is_active ? '' : '<span class="badge badge-red">موقوفة</span>'}
+          </div>
+          ${cm.parent_name ? `<div style="font-size:.78rem;color:var(--muted);margin-top:.25rem">تتبع: ${cmEsc(cm.parent_name)}</div>` : ''}
+          ${cm.description ? `<div style="font-size:.8rem;color:var(--muted);margin-top:.25rem">${cmEsc(cm.description)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="openCommitteeMemberModal(${cm.id})">➕ إضافة عضو</button>
+          <button class="btn btn-outline btn-sm" onclick="openCommitteeModal(${cm.id})">✏️ تعديل اللجنة</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCommittee(${cm.id})">🗑️ حذف</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.8rem">${scope}
+        <span class="badge badge-green">👥 ${cm.members.length} عضو</span>
+        <span class="badge badge-yellow">📜 ${cm.decisions_count} قرار</span>
+        ${cm.unfit_count ? `<span class="badge badge-red">⛔ ${cm.unfit_count} معدة غير صالحة حالياً</span>` : ''}
+      </div>
+      ${members}
+    </div>`;
+  }).join('');
+}
+
+function openCommitteeModal(id) {
+  const cm = id ? window._cmSU.committees.find(x => x.id === id) : null;
+  const mains = window._cmSU.committees.filter(x => x.type === 'main' && (!cm || x.id !== cm.id));
+  const type = cm?.type || 'main';
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">${cm ? '✏️ تعديل لجنة' : '🏛️ تشكيل لجنة جديدة'}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-group"><label>اسم اللجنة <span class="req">*</span></label>
+      <input type="text" id="cmName" value="${cmEsc(cm?.name || '')}" placeholder="مثال: لجنة فحص معدات التربة"></div>
+    <div class="form-group"><label>نوع اللجنة <span class="req">*</span></label>
+      <select id="cmType" onchange="document.getElementById('cmParentWrap').style.display=this.value==='sub'?'block':'none'">
+        <option value="main" ${type==='main'?'selected':''}>🏛️ لجنة رئيسية</option>
+        <option value="sub" ${type==='sub'?'selected':''}>🧩 لجنة فرعية</option>
+      </select></div>
+    <div class="form-group" id="cmParentWrap" style="display:${type==='sub'?'block':'none'}">
+      <label>تتبع اللجنة الرئيسية <span style="font-size:.75rem;color:var(--muted)">(اختياري)</span></label>
+      <select id="cmParent"><option value="">— بدون —</option>
+        ${mains.map(m => `<option value="${m.id}" ${cm?.parent_id===m.id?'selected':''}>${cmEsc(m.name)}</option>`).join('')}
+      </select></div>
+    <div class="form-group"><label>نطاق اللجنة — الفرع <span style="font-size:.75rem;color:var(--muted)">(فارغ = كل الفروع)</span></label>
+      ${branchSearchField('cmBranch', cm?.branch || '')}</div>
+    <div class="form-group"><label>نطاق اللجنة — نوع المعدة <span style="font-size:.75rem;color:var(--muted)">(فارغ = كل الأنواع)</span></label>
+      <select id="cmEquip"><option value="">— كل أنواع المعدات —</option>
+        ${CM_EQUIP_TYPES.map(t => `<option value="${t}" ${cm?.equipment_type===t?'selected':''}>${t}</option>`).join('')}
+      </select></div>
+    <div class="form-group"><label>وصف / ملاحظات</label>
+      <textarea id="cmDesc" placeholder="اختياري">${cmEsc(cm?.description || '')}</textarea></div>
+    ${cm ? `<div class="form-group"><label style="display:flex;gap:.5rem;align-items:center;cursor:pointer">
+      <input type="checkbox" id="cmActive" ${cm.is_active?'checked':''} style="width:auto"> اللجنة فعّالة (إيقافها يمنع أعضاءها من رؤية المعدات واتخاذ قرارات)</label></div>` : ''}
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="cmSaveBtn">💾 ${cm ? 'حفظ' : 'تشكيل اللجنة'}</button>
+    </div>`);
+  document.getElementById('cmSaveBtn').onclick = async () => {
+    const name = document.getElementById('cmName').value.trim();
+    if (name.length < 2) return showNotification('اسم اللجنة مطلوب', 'error');
+    const type = document.getElementById('cmType').value;
+    const payload = {
+      name, type,
+      parent_id: type === 'sub' ? (parseInt(document.getElementById('cmParent').value) || null) : null,
+      branch: document.getElementById('cmBranch').value.trim(),
+      equipment_type: document.getElementById('cmEquip').value,
+      description: document.getElementById('cmDesc').value.trim(),
+      is_active: cm ? document.getElementById('cmActive').checked : true,
+    };
+    const btn = document.getElementById('cmSaveBtn'); btn.disabled = true; btn.textContent = 'جاري...';
+    try {
+      if (cm) await apiCall(`/superuser/committees/${cm.id}`, 'PUT', payload);
+      else await apiCall('/superuser/committees', 'POST', payload);
+      showNotification(cm ? '✅ تم تحديث اللجنة' : '✅ تم تشكيل اللجنة — أضف الأعضاء الآن', 'success');
+      closeModal(); renderSuperCommittees('committees');
+    } catch (e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ'; }
+  };
+}
+
+async function deleteCommittee(id) {
+  const cm = window._cmSU.committees.find(x => x.id === id); if (!cm) return;
+  if (!confirm(`⚠️ حذف اللجنة "${cm.name}"؟\nسيتم حذف حسابات الأعضاء التابعين لها فقط (اللي ليس لهم لجنة أخرى). سجل القرارات سيظل محفوظاً.`)) return;
+  try { await apiCall(`/superuser/committees/${id}`, 'DELETE'); showNotification('✅ تم حذف اللجنة', 'success'); renderSuperCommittees('committees'); }
+  catch (e) { showNotification(e.message, 'error'); }
+}
+
+function openCommitteeMemberModal(cid) {
+  const cm = window._cmSU.committees.find(x => x.id === cid); if (!cm) return;
+  const inThis = new Set(cm.members.map(m => m.user_id));
+  const others = {};
+  window._cmSU.committees.forEach(x => x.members.forEach(m => { if (!inThis.has(m.user_id)) others[m.user_id] = m; }));
+  const otherList = Object.values(others);
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">➕ إضافة عضو إلى: ${cmEsc(cm.name)}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="form-group"><label>الاسم الكامل <span class="req">*</span></label>
+      <input type="text" id="cmmName" placeholder="مثال: م. أحمد محمد"></div>
+    <div class="form-group"><label>الصفة في اللجنة</label>
+      <select id="cmmPos">${CM_POSITIONS.map(p => `<option ${p==='عضو'?'selected':''}>${p}</option>`).join('')}</select></div>
+    <div style="font-size:.8rem;color:var(--muted);margin:.4rem 0 .6rem">بيانات حساب الدخول للنظام:</div>
+    <div class="form-group"><label>اسم المستخدم <span class="req">*</span></label>
+      <input type="text" id="cmmUser" placeholder="اسم الدخول" autocomplete="off"></div>
+    <div class="form-group"><label>كلمة المرور <span class="req">*</span></label>
+      <input type="password" id="cmmPass" placeholder="كلمة مرور قوية" autocomplete="new-password"></div>
+    ${otherList.length ? `
+    <div style="border-top:1px dashed var(--border);margin:.8rem 0;padding-top:.8rem">
+      <div class="form-group"><label>أو ضم عضو له حساب بالفعل (من لجنة أخرى)</label>
+        <select id="cmmExisting"><option value="">— إنشاء حساب جديد —</option>
+          ${otherList.map(m => `<option value="${m.user_id}">${cmEsc(m.full_name || m.username)} (${cmEsc(m.username)})</option>`).join('')}
+        </select></div></div>` : ''}
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="cmmSaveBtn">💾 إضافة العضو</button>
+    </div>`);
+  document.getElementById('cmmSaveBtn').onclick = async () => {
+    const existing = parseInt(document.getElementById('cmmExisting')?.value) || null;
+    const full_name = document.getElementById('cmmName').value.trim();
+    const payload = { full_name, position: document.getElementById('cmmPos').value };
+    if (existing) payload.existing_user_id = existing;
+    else {
+      payload.username = document.getElementById('cmmUser').value.trim();
+      payload.password = document.getElementById('cmmPass').value;
+      if (!full_name || !payload.username || !payload.password) return showNotification('يرجى ملء الاسم واسم المستخدم وكلمة المرور', 'error');
+    }
+    const btn = document.getElementById('cmmSaveBtn'); btn.disabled = true; btn.textContent = 'جاري...';
+    try {
+      await apiCall(`/superuser/committees/${cid}/members`, 'POST', payload);
+      showNotification('✅ تم إضافة العضو' + (existing ? '' : ' — وتم إنشاء حساب دخول له'), 'success');
+      closeModal(); renderSuperCommittees('committees');
+    } catch (e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 إضافة العضو'; }
+  };
+}
+
+function cmFindMember(mid) {
+  for (const cm of window._cmSU.committees) { const m = cm.members.find(x => x.id === mid); if (m) return { cm, m }; }
+  return null;
+}
+
+function openCommitteeMemberEditModal(mid) {
+  const f = cmFindMember(mid); if (!f) return;
+  const { cm, m } = f;
+  openModal(`
+    <div class="modal-header">
+      <div class="modal-title">✏️ تعديل عضو: ${cmEsc(m.full_name || m.username)}</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="font-size:.8rem;color:var(--muted);margin-bottom:.8rem">اللجنة: ${cmEsc(cm.name)}</div>
+    <div class="form-group"><label>الاسم الكامل</label><input type="text" id="cmeName" value="${cmEsc(m.full_name)}"></div>
+    <div class="form-group"><label>الصفة</label>
+      <select id="cmePos">${[...new Set([...CM_POSITIONS, m.position])].map(p => `<option ${p===m.position?'selected':''}>${cmEsc(p)}</option>`).join('')}</select></div>
+    <div class="form-group"><label>اسم المستخدم</label><input type="text" id="cmeUser" value="${cmEsc(m.username)}"></div>
+    <div class="form-group"><label>كلمة مرور جديدة <span style="font-size:.75rem;color:var(--muted)">(فارغة = بدون تغيير)</span></label>
+      <input type="password" id="cmePass" autocomplete="new-password"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <button class="btn btn-primary" id="cmeSaveBtn">💾 حفظ التعديلات</button>
+    </div>`);
+  document.getElementById('cmeSaveBtn').onclick = async () => {
+    const payload = {
+      full_name: document.getElementById('cmeName').value.trim(),
+      position: document.getElementById('cmePos').value,
+      username: document.getElementById('cmeUser').value.trim(),
+    };
+    const pw = document.getElementById('cmePass').value; if (pw) payload.password = pw;
+    const btn = document.getElementById('cmeSaveBtn'); btn.disabled = true; btn.textContent = 'جاري...';
+    try { await apiCall(`/superuser/committee-members/${mid}`, 'PUT', payload);
+      showNotification('✅ تم تحديث بيانات العضو', 'success'); closeModal(); renderSuperCommittees('committees'); }
+    catch (e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 حفظ التعديلات'; }
+  };
+}
+
+async function removeCommitteeMember(mid) {
+  const f = cmFindMember(mid); if (!f) return;
+  if (!confirm(`إزالة "${f.m.full_name || f.m.username}" من لجنة "${f.cm.name}"؟\nلو ليس عضواً في لجنة أخرى سيتم حذف حسابه.`)) return;
+  try { const r = await apiCall(`/superuser/committee-members/${mid}`, 'DELETE');
+    showNotification('✅ تم إزالة العضو' + (r?.account_removed ? ' وحذف حسابه' : ''), 'success'); renderSuperCommittees('committees'); }
+  catch (e) { showNotification(e.message, 'error'); }
+}
+
+async function cmSURenderDecisions() {
+  const st = window._cmSU, body = document.getElementById('cmSUBody');
+  body.innerHTML = cmLoading();
+  const qs = new URLSearchParams();
+  Object.entries(st.f).forEach(([k, v]) => { if (v) qs.set(k, v); });
+  let rows = [];
+  try { rows = await apiCall('/superuser/committee-decisions' + (qs.toString() ? '?' + qs : '')); }
+  catch (e) { body.innerHTML = cmError(e); return; }
+  const sel = (id, key, opts) => `<select id="${id}" onchange="window._cmSU.f.${key}=this.value;cmSURenderDecisions()" style="max-width:200px">${opts.map(([v, l]) => `<option value="${v}" ${st.f[key]===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  body.innerHTML = `
+    <div class="card" style="margin-top:1rem">
+      <div class="card-header"><div class="card-title">📜 قرارات اللجان (${rows.length})</div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          ${sel('cmfC', 'committee_id', [['', 'كل اللجان'], ...st.committees.map(c => [String(c.id), c.name])])}
+          ${sel('cmfD', 'decision', [['', 'كل القرارات'], ['fit', '✅ صالحة'], ['unfit', '⛔ غير صالحة']])}
+          ${sel('cmfS', 'status', [['', 'كل الحالات'], ['active', 'القرار الحالي'], ['superseded', 'سابقة'], ['revoked', 'ملغاة']])}
+        </div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>التاريخ</th><th>اللجنة</th><th>العضو</th><th>المعدة</th><th>القرار</th><th>السبب</th><th>التقرير</th><th>الحالة</th><th></th></tr></thead>
+        <tbody>${rows.length ? rows.map(d => `
+          <tr>
+            <td style="white-space:nowrap">${fmtDT(d.created_at)}</td>
+            <td>${cmEsc(d.committee_name)}</td>
+            <td>${cmEsc(d.member_name)}</td>
+            <td><b>${cmEsc(d.asset_label)}</b><div style="font-size:.72rem;color:var(--muted)">${d.asset_kind==='car'?'مركبة':'معدة'}</div></td>
+            <td>${d.decision==='fit'?'<span class="badge badge-green">✅ صالحة</span>':'<span class="badge badge-red">⛔ غير صالحة</span>'}</td>
+            <td style="max-width:220px;white-space:pre-wrap">${cmEsc(d.reason) || '—'}</td>
+            <td style="max-width:260px;white-space:pre-wrap">${cmEsc(d.report) || '—'}</td>
+            <td>${cmDecStatusBadge(d.status)}${d.status==='revoked' ? `<div style="font-size:.7rem;color:var(--muted)">${cmEsc(d.revoked_by)}${d.revoke_note ? ' — ' + cmEsc(d.revoke_note) : ''}</div>` : ''}</td>
+            <td>${d.status==='active' ? `<button class="btn btn-outline btn-sm" onclick="revokeCommitteeDecision(${d.id})">↩️ إلغاء القرار</button>` : ''}</td>
+          </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--muted)">لا توجد قرارات</td></tr>'}</tbody>
+      </table></div></div>`;
+}
+
+async function revokeCommitteeDecision(id) {
+  const note = prompt('إلغاء قرار اللجنة — المعدة ستعود بدون قرار.\nسبب الإلغاء (اختياري):');
+  if (note === null) return;
+  try { await apiCall(`/superuser/committee-decisions/${id}/revoke`, 'POST', { note });
+    showNotification('✅ تم إلغاء القرار', 'success'); cmSURenderDecisions(); }
+  catch (e) { showNotification(e.message, 'error'); }
+}
+
+/* ───────────── ② عضو اللجنة ───────────── */
+window._cm = { committees: [], f: { committee_id: '', q: '', kind: '', fitness: '' }, timer: null };
+
+async function renderCmAssets() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = cmLoading();
+  try { window._cm.committees = (await apiCall('/committee/my')).committees; }
+  catch (e) { c.innerHTML = cmError(e); return; }
+  const st = window._cm;
+  if (!st.committees.length) {
+    c.innerHTML = `<div class="card"><div class="empty-state"><div class="empty-icon">🏛️</div>
+      <p>حسابك غير مرتبط بأي لجنة فعّالة حالياً — تواصل مع مسؤول النظام</p></div></div>`;
+    return;
+  }
+  const chips = st.committees.map(cm => `<span class="badge ${cm.type==='main'?'badge-purple':'badge-blue'}" title="${cmEsc(cm.description)}">
+      ${cm.type==='main'?'🏛️':'🧩'} ${cmEsc(cm.name)} · ${cmEsc(cm.position)}</span>`).join(' ');
+  const scopeTxt = cm => `${cm.branch ? '📍 ' + cmEsc(cm.branch) : 'كل الفروع'} • ${cm.equipment_type ? '⚙️ ' + cmEquipLabel(cm.equipment_type) : 'كل أنواع المعدات'}`;
+  const sel = (id, key, opts) => `<select id="${id}" onchange="window._cm.f.${key}=this.value;cmLoadAssets()">${opts.map(([v, l]) => `<option value="${v}" ${st.f[key]===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔎 المعدات والتقارير</div></div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem">${chips}</div>
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:.9rem">${st.committees.map(cm => `${cmEsc(cm.name)}: ${scopeTxt(cm)}`).join(' &nbsp;|&nbsp; ')}</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <input type="text" id="cmQ" placeholder="🔍 بحث بالكود / اللوحة / الاسم / الفرع" value="${cmEsc(st.f.q)}"
+               oninput="window._cm.f.q=this.value;clearTimeout(window._cm.timer);window._cm.timer=setTimeout(cmLoadAssets,350)" style="flex:1;min-width:220px">
+        ${st.committees.length > 1 ? sel('cmFC', 'committee_id', [['', 'كل لجاني'], ...st.committees.map(cm => [String(cm.id), cm.name])]) : ''}
+        ${sel('cmFK', 'kind', [['', 'مركبات ومعدات'], ['car', '🚗 مركبات'], ['equipment', '🏗️ معدات']])}
+        ${sel('cmFF', 'fitness', [['', 'كل الحالات'], ['issues', '⚠️ بها ملاحظات'], ['pending', '⏳ بدون قرار'], ['unfit', '⛔ غير صالحة'], ['fit', '✅ صالحة']])}
+      </div>
+    </div>
+    <div id="cmAssetsBody">${cmLoading()}</div>`;
+  await cmLoadAssets();
+}
+
+async function cmLoadAssets() {
+  const body = document.getElementById('cmAssetsBody'); if (!body) return;
+  const qs = new URLSearchParams(); Object.entries(window._cm.f).forEach(([k, v]) => { if (v) qs.set(k, v); });
+  let res;
+  try { res = await apiCall('/committee/assets' + (qs.toString() ? '?' + qs : '')); }
+  catch (e) { body.innerHTML = cmError(e); return; }
+  const rows = res.assets || [];
+  const withIssues = rows.filter(a => (a.last_not_efficient > 0 || ['fail','needs_repair'].includes(a.last_inspection_result)) && !a.fitness_status).length;
+  body.innerHTML = `
+    <div class="stats-row" style="margin-top:1rem">
+      <div class="stat-card"><div class="stat-icon">📋</div><div class="stat-value">${res.total}</div><div class="stat-label">إجمالي في نطاق لجانك</div></div>
+      <div class="stat-card"><div class="stat-icon">⚠️</div><div class="stat-value" style="color:#d97706">${withIssues}</div><div class="stat-label">بها ملاحظات وبدون قرار</div></div>
+      <div class="stat-card"><div class="stat-icon">⛔</div><div class="stat-value" style="color:#dc2626">${rows.filter(a => a.fitness_status==='unfit').length}</div><div class="stat-label">غير صالحة</div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-value" style="color:#16a34a">${rows.filter(a => a.fitness_status==='fit').length}</div><div class="stat-label">صالحة</div></div>
+    </div>
+    <div class="card" style="margin-top:1rem"><div class="table-wrap"><table>
+      <thead><tr><th>المعدة / المركبة</th><th>النوع</th><th>الفرع</th><th>آخر Check List</th><th>آخر محضر فحص</th><th>قرار اللجنة</th><th></th></tr></thead>
+      <tbody>${rows.length ? rows.map(a => `
+        <tr>
+          <td><b>${cmEsc(a.label)}</b><div style="font-size:.72rem;color:var(--muted)">${a.kind==='car'?'🚗 مركبة':'🏗️ معدة'}</div></td>
+          <td>${cmEquipLabel(a.equipment_type) || '—'}</td>
+          <td>${cmEsc(a.branch) || '—'}</td>
+          <td>${a.last_checklist_date
+                ? `${cmDate(a.last_checklist_date)} ${a.last_not_efficient > 0 ? `<span class="badge badge-red">⚠️ ${a.last_not_efficient} بند لا يعمل</span>` : '<span class="badge badge-green">سليم</span>'}`
+                : '<span style="color:var(--muted);font-size:.8rem">لا يوجد (30 يوم)</span>'}</td>
+          <td>${cmInspBadge(a.last_inspection_result)}</td>
+          <td>${cmFitBadge(a.fitness_status)}${a.fitness_decided_at ? `<div style="font-size:.7rem;color:var(--muted)">${cmEsc(a.fitness_decided_by)} • ${fmtDT(a.fitness_decided_at)}</div>` : ''}</td>
+          <td><button class="btn btn-primary btn-sm" onclick="cmOpenAsset('${a.kind}',${a.id})">📋 التقارير والقرار</button></td>
+        </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--muted)">لا توجد نتائج</td></tr>'}</tbody>
+    </table></div></div>`;
+}
+
+async function cmOpenAsset(kind, id, days = 90) {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = cmLoading();
+  let r;
+  try { r = await apiCall(`/committee/assets/${kind}/${id}/reports?days=${days}`); }
+  catch (e) { c.innerHTML = cmError(e) + '<div style="text-align:center"><button class="btn btn-ghost" onclick="renderCmAssets()">↩️ رجوع</button></div>'; return; }
+  const a = r.asset;
+  const curDec = r.decisions.find(d => d.status === 'active');
+  const checklists = r.checklists.map((ck, i) => `
+    <details style="border:1px solid var(--border);border-radius:10px;padding:.55rem .8rem;margin-bottom:.5rem" ${i===0 && ck.not_efficient_count ? 'open' : ''}>
+      <summary style="cursor:pointer;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+        <b>${cmDate(ck.date)}</b>
+        <span style="color:var(--muted);font-size:.82rem">${ck.person_type==='driver'?'🚗 السائق':'👷 المشغل'}: ${cmEsc(ck.person_name)}</span>
+        ${ck.not_efficient_count ? `<span class="badge badge-red">⚠️ ${ck.not_efficient_count} بند لا يعمل بكفاءة</span>` : '<span class="badge badge-green">كل البنود تعمل بكفاءة</span>'}
+        <span style="font-size:.78rem;color:var(--muted)">درجة الفحص ${ck.score ?? '—'}%</span>
+      </summary>
+      <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem">
+        ${ck.items.map(it => `<span class="badge ${it.status==='efficient'?'badge-green':it.status==='not_efficient'?'badge-red':'badge-yellow'}">
+          ${it.status==='efficient'?'🟢':it.status==='not_efficient'?'🔴':'⚪'} ${cmEsc(it.label)}</span>`).join('')}
+      </div>
+      ${ck.notes ? `<div style="margin-top:.5rem;font-size:.82rem;background:var(--surface-2);padding:.5rem .7rem;border-radius:8px">📝 ${cmEsc(ck.notes)}</div>` : ''}
+    </details>`).join('') || '<div style="color:var(--muted);font-size:.85rem">لا توجد Check List خلال الفترة المحددة</div>';
+
+  const inspections = r.inspections.map((ins, i) => `
+    <details style="border:1px solid var(--border);border-radius:10px;padding:.55rem .8rem;margin-bottom:.5rem" ${i===0 ? 'open' : ''}>
+      <summary style="cursor:pointer;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+        <b>${cmEsc(ins.report_number) || 'محضر #' + ins.id}</b>
+        <span style="color:var(--muted);font-size:.82rem">${cmDate(ins.date)}${ins.inspector_name ? ' • ' + cmEsc(ins.inspector_name) : ''}</span>
+        ${cmInspBadge(ins.result)}
+      </summary>
+      ${ins.findings ? `<div style="margin-top:.5rem;font-size:.85rem"><b>النتائج:</b> ${cmEsc(ins.findings)}</div>` : ''}
+      ${ins.items.length ? `<div style="margin-top:.5rem;display:grid;gap:.3rem">${ins.items.map(it => `
+        <div style="font-size:.82rem;display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+          <span class="badge ${it.status==='rejected'?'badge-red':it.status==='approved'?'badge-green':'badge-yellow'}">${it.status==='rejected'?'⛔ مرفوض':it.status==='approved'?'✅ مقبول':cmEsc(it.status) || '—'}</span>
+          <span>${cmEsc(it.name)}</span>${it.reason ? `<span style="color:#b91c1c">— ${cmEsc(it.reason)}</span>` : ''}
+        </div>`).join('')}</div>` : ''}
+      ${ins.notes ? `<div style="margin-top:.5rem;font-size:.82rem;color:var(--muted)">📝 ${cmEsc(ins.notes)}</div>` : ''}
+    </details>`).join('') || '<div style="color:var(--muted);font-size:.85rem">لا توجد محاضر فحص</div>';
+
+  const emergencies = r.emergencies.length ? `
+    <div class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">🚨 بلاغات الطوارئ والحوادث</div></div>
+      ${r.emergencies.map(e => `<div style="border-bottom:1px solid var(--border);padding:.5rem 0;font-size:.85rem">
+        <span class="badge ${e.type==='accident'?'badge-red':'badge-orange'}">${e.type==='accident'?'💥 حادث':'🚨 طوارئ'}</span>
+        ${fmtDT(e.created_at)} — ${cmEsc(e.notes) || 'بدون ملاحظات'} ${e.is_handled ? '<span class="badge badge-green">تم التعامل</span>' : ''}</div>`).join('')}
+    </div>` : '';
+
+  const history = r.decisions.length ? `
+    <div class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">📜 سجل قرارات اللجان على هذه المعدة</div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>التاريخ</th><th>اللجنة / العضو</th><th>القرار</th><th>السبب</th><th>التقرير</th><th>الحالة</th></tr></thead>
+        <tbody>${r.decisions.map(d => `<tr>
+          <td style="white-space:nowrap">${fmtDT(d.created_at)}</td>
+          <td>${cmEsc(d.committee_name)}<div style="font-size:.72rem;color:var(--muted)">${cmEsc(d.member_name)}</div></td>
+          <td>${d.decision==='fit'?'<span class="badge badge-green">✅ صالحة</span>':'<span class="badge badge-red">⛔ غير صالحة</span>'}</td>
+          <td style="white-space:pre-wrap;max-width:220px">${cmEsc(d.reason) || '—'}</td>
+          <td style="white-space:pre-wrap;max-width:260px">${cmEsc(d.report) || '—'}</td>
+          <td>${cmDecStatusBadge(d.status)}</td></tr>`).join('')}</tbody>
+      </table></div></div>` : '';
+
+  c.innerHTML = `
+    <div style="margin-bottom:.8rem"><button class="btn btn-ghost btn-sm" onclick="renderCmAssets()">↩️ رجوع لقائمة المعدات</button></div>
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:.6rem">
+        <div>
+          <div class="card-title">${kind==='car'?'🚗':'🏗️'} ${cmEsc(a.label)}</div>
+          <div style="font-size:.8rem;color:var(--muted);margin-top:.25rem">
+            ${cmEsc(a.branch) || 'بدون فرع'} • ${cmEquipLabel(a.equipment_type) || 'بدون نوع'}${a.sector ? ' • ' + cmEsc(a.sector) : ''}</div>
+        </div>
+        <div>${cmFitBadge(a.fitness_status)}</div>
+      </div>
+      ${curDec ? `<div style="background:${curDec.decision==='unfit'?'#fef2f2':'#f0fdf4'};border:1px solid ${curDec.decision==='unfit'?'#fecaca':'#bbf7d0'};border-radius:10px;padding:.7rem .9rem;font-size:.85rem">
+        <b>القرار الحالي:</b> ${curDec.decision==='unfit'?'غير صالحة للاستخدام':'صالحة للاستخدام'} — ${cmEsc(curDec.committee_name)} / ${cmEsc(curDec.member_name)} (${fmtDT(curDec.created_at)})
+        ${curDec.reason ? `<div style="margin-top:.3rem;white-space:pre-wrap"><b>السبب:</b> ${cmEsc(curDec.reason)}</div>` : ''}
+        ${curDec.report ? `<div style="margin-top:.3rem;white-space:pre-wrap"><b>التقرير:</b> ${cmEsc(curDec.report)}</div>` : ''}</div>` : ''}
+    </div>
+
+    <div class="card" style="margin-top:1rem;border:2px solid var(--primary)">
+      <div class="card-header"><div class="card-title">⚖️ اتخاذ قرار الصلاحية</div></div>
+      ${r.committees.length > 1 ? `<div class="form-group"><label>القرار باسم لجنة</label>
+        <select id="cmdCommittee">${r.committees.map(cm => `<option value="${cm.id}">${cmEsc(cm.name)}</option>`).join('')}</select></div>`
+        : `<input type="hidden" id="cmdCommittee" value="${r.committees[0].id}">`}
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem">
+        <label style="flex:1;min-width:200px;border:2px solid #86efac;background:#f0fdf4;border-radius:10px;padding:.7rem;cursor:pointer;display:flex;gap:.5rem;align-items:center">
+          <input type="radio" name="cmdDecision" value="fit" style="width:auto" onchange="cmDecChange()"> <b style="color:#166534">✅ صالحة للاستخدام</b></label>
+        <label style="flex:1;min-width:200px;border:2px solid #fca5a5;background:#fef2f2;border-radius:10px;padding:.7rem;cursor:pointer;display:flex;gap:.5rem;align-items:center">
+          <input type="radio" name="cmdDecision" value="unfit" style="width:auto" onchange="cmDecChange()"> <b style="color:#991b1b">⛔ غير صالحة للاستخدام</b></label>
+      </div>
+      <div class="form-group" id="cmdReasonWrap" style="display:none"><label>سبب عدم الصلاحية <span class="req">*</span></label>
+        <textarea id="cmdReason" placeholder="اذكر أسباب عدم قدرة المعدة على العمل (مطلوب)"></textarea></div>
+      <div class="form-group"><label>تقرير اللجنة <span style="font-size:.75rem;color:var(--muted)">(اختياري لكن يُفضّل)</span></label>
+        <textarea id="cmdReport" placeholder="ملاحظات اللجنة وتفاصيل الفحص والتوصيات..."></textarea></div>
+      <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" id="cmdSubmit" onclick="cmSubmitDecision('${kind}',${id})">💾 تسجيل القرار</button></div>
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <div class="card-header"><div class="card-title">📋 Check List اليومية (${r.checklists.length})</div>
+        <select onchange="cmOpenAsset('${kind}',${id},this.value)" style="max-width:150px">
+          ${[30, 90, 180, 365].map(d => `<option value="${d}" ${d===days?'selected':''}>آخر ${d} يوم</option>`).join('')}
+        </select></div>
+      ${checklists}
+    </div>
+
+    <div class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">🛡️ محاضر الفحص والسلامة (${r.inspections.length})</div></div>${inspections}</div>
+    ${emergencies}
+    ${history}`;
+}
+
+function cmDecChange() {
+  const v = document.querySelector('input[name="cmdDecision"]:checked')?.value;
+  const w = document.getElementById('cmdReasonWrap'); if (w) w.style.display = v === 'unfit' ? 'block' : 'none';
+}
+
+async function cmSubmitDecision(kind, id) {
+  const decision = document.querySelector('input[name="cmdDecision"]:checked')?.value;
+  if (!decision) return showNotification('اختر القرار: صالحة أو غير صالحة', 'error');
+  const reason = (document.getElementById('cmdReason')?.value || '').trim();
+  const report = (document.getElementById('cmdReport').value || '').trim();
+  if (decision === 'unfit' && reason.length < 5) return showNotification('اكتب سبب عدم الصلاحية', 'error');
+  const msg = decision === 'unfit'
+    ? '⛔ سيتم منع تشغيل هذه المعدة (بدء رحلة / وردية) حتى تُصدر اللجنة قراراً جديداً.\nهل تؤكد القرار؟'
+    : '✅ تأكيد قرار: المعدة صالحة للاستخدام؟';
+  if (!confirm(msg)) return;
+  const btn = document.getElementById('cmdSubmit'); btn.disabled = true; btn.textContent = 'جاري...';
+  try {
+    await apiCall('/committee/decisions', 'POST', {
+      committee_id: parseInt(document.getElementById('cmdCommittee').value),
+      asset_kind: kind, asset_id: id, decision, reason, report,
+    });
+    showNotification('✅ تم تسجيل القرار', 'success');
+    cmOpenAsset(kind, id);
+  } catch (e) { showNotification(e.message, 'error'); btn.disabled = false; btn.textContent = '💾 تسجيل القرار'; }
+}
+
+async function renderCmDecisions() {
+  const c = document.getElementById('pageContent');
+  c.innerHTML = cmLoading();
+  let rows;
+  try { rows = await apiCall('/committee/decisions'); } catch (e) { c.innerHTML = cmError(e); return; }
+  c.innerHTML = `
+    <div class="card">
+      <div class="card-header"><div class="card-title">📜 قرارات اللجنة (${rows.length})</div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>التاريخ</th><th>اللجنة</th><th>العضو</th><th>المعدة</th><th>القرار</th><th>السبب</th><th>التقرير</th><th>الحالة</th></tr></thead>
+        <tbody>${rows.length ? rows.map(d => `<tr>
+          <td style="white-space:nowrap">${fmtDT(d.created_at)}</td>
+          <td>${cmEsc(d.committee_name)}</td>
+          <td>${cmEsc(d.member_name)} ${d.mine ? '<span class="badge badge-blue">أنا</span>' : ''}</td>
+          <td><b>${cmEsc(d.asset_label)}</b></td>
+          <td>${d.decision==='fit'?'<span class="badge badge-green">✅ صالحة</span>':'<span class="badge badge-red">⛔ غير صالحة</span>'}</td>
+          <td style="white-space:pre-wrap;max-width:220px">${cmEsc(d.reason) || '—'}</td>
+          <td style="white-space:pre-wrap;max-width:260px">${cmEsc(d.report) || '—'}</td>
+          <td>${cmDecStatusBadge(d.status)}</td></tr>`).join('')
+          : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">لا توجد قرارات بعد</td></tr>'}</tbody>
+      </table></div></div>`;
+}
+
 const openAddAdminModal      = () => openAddRoleModal('admin');
 const openAddReporterModal   = () => openAddRoleModal('reporter');
 const openEditAdminModal     = (uid, u, b) => openEditRoleModal('admin',    uid, u, b);
@@ -14703,32 +15267,62 @@ async function doMaintenanceImportConfirm() {
 // ═══════════════════════════════════════════════════════
 // DRIVER KPI — مؤشرات أداء السائقين
 // ═══════════════════════════════════════════════════════
-// ── تقرير Check List اليومية (صفحة Super User) ──
+// ── Check List اليومية (صفحة Super User): التقارير + إدارة بنود مشغلي المعدات ──
+const _CKL_LEGACY_LABELS = {
+  engine_oil:'زيت المحرك', coolant:'مياه التبريد', brake_pedal:'دواسة الفرامل',
+  brake_oil:'زيت الفرامل', battery:'البطارية', gauges_lights:'العدادات ولمبات التنبيه',
+  tires:'الكاوتش', lighting:'الإضاءة', wipers:'مساحات الزجاج',
+};
+const _cklLabel = (r, k) => (r.item_labels && r.item_labels[k]) || _CKL_LEGACY_LABELS[k] || k;
+
 async function renderDailyChecklistReportSection() {
   const c = document.getElementById('pageContent');
-  const today = new Date().toISOString().slice(0,10);
-  const monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10);
-
+  const canManage = isSuperuser();
   c.innerHTML = `
     <div class="page-header">
-      <div class="page-title">📋 Check List اليومية — السائقين والمشغلين</div>
+      <div class="page-title">📋 Check List اليومية</div>
     </div>
+    ${canManage ? `
+    <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" id="cklTabReports" onclick="_cklSwitchTab('reports')">📊 التقارير</button>
+      <button class="btn btn-ghost btn-sm" id="cklTabItems" onclick="_cklSwitchTab('items')">⚙️ بنود مشغلي المعدات</button>
+    </div>` : ''}
+    <div id="cklTabBody"></div>`;
+  await _cklSwitchTab('reports');
+}
+
+async function _cklSwitchTab(tab) {
+  const r = document.getElementById('cklTabReports'), i = document.getElementById('cklTabItems');
+  if (r && i) {
+    r.className = 'btn btn-sm ' + (tab === 'reports' ? 'btn-primary' : 'btn-ghost');
+    i.className = 'btn btn-sm ' + (tab === 'items' ? 'btn-primary' : 'btn-ghost');
+  }
+  if (tab === 'items') await _cklRenderItemsTab(); else await _cklRenderReportsTab();
+}
+
+async function _cklRenderReportsTab() {
+  const body = document.getElementById('cklTabBody');
+  if (!body) return;
+  const today = new Date().toISOString().slice(0,10);
+  const monthAgo = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0,10);
+  const inp = 'padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem';
+  const lbl = 'font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem';
+  body.innerHTML = `
     <div class="card" style="margin-bottom:1rem;border-radius:14px">
       <div style="padding:.75rem 1.1rem;display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end">
-        <div>
-          <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">من تاريخ</label>
-          <input type="date" id="cklFrom" value="${monthAgo}" onchange="_reloadChecklistReport()"
-            style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
-        </div>
-        <div>
-          <label style="font-size:.78rem;font-weight:700;color:#475569;display:block;margin-bottom:.3rem">إلى تاريخ</label>
-          <input type="date" id="cklTo" value="${today}" onchange="_reloadChecklistReport()"
-            style="padding:.4rem .65rem;border:1.5px solid var(--border);border-radius:9px;font-family:inherit;font-size:.84rem">
-        </div>
+        <div><label style="${lbl}">من تاريخ</label>
+          <input type="date" id="cklFrom" value="${monthAgo}" onchange="_reloadChecklistReport()" style="${inp}"></div>
+        <div><label style="${lbl}">إلى تاريخ</label>
+          <input type="date" id="cklTo" value="${today}" onchange="_reloadChecklistReport()" style="${inp}"></div>
+        <div><label style="${lbl}">النوع</label>
+          <select id="cklType" onchange="_reloadChecklistReport()" style="${inp}">
+            <option value="">الكل</option>
+            <option value="operator">مشغلو المعدات</option>
+            <option value="driver">السائقون</option>
+          </select></div>
       </div>
     </div>
     <div id="cklReportWrap"></div>`;
-
   await _reloadChecklistReport();
 }
 
@@ -14738,52 +15332,68 @@ async function _reloadChecklistReport() {
   wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div><p>جاري التحميل...</p></div>`;
   const from = document.getElementById('cklFrom')?.value || '';
   const to   = document.getElementById('cklTo')?.value || '';
+  const type = document.getElementById('cklType')?.value || '';
   let rows;
   try {
     let url = '/checklists?';
     if (from) url += `date_from=${from}&`;
     if (to)   url += `date_to=${to}&`;
+    if (type) url += `person_type=${type}&`;
     rows = await apiCall(url);
-  } catch(e) { wrap.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; return; }
+  } catch(e) { wrap.innerHTML = `<div class="empty-state"><p>${_cklEsc(e.message)}</p></div>`; return; }
 
   if (!rows.length) {
     wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><p>لا توجد بيانات Check List في هذه الفترة</p></div>`;
     return;
   }
+  window._cklRows = rows;
 
-  const notEfficientCount = r => Object.values(r.items||{}).filter(v => v === 'not_efficient').length;
+  const badKeys = r => Object.entries(r.items||{}).filter(([,v]) => v === 'not_efficient').map(([k]) => k);
   const notCheckedCount = r => Object.values(r.items||{}).filter(v => v !== 'efficient' && v !== 'not_efficient').length;
-  const scoreColor = s => s >= 90 ? '#16a34a' : (s >= 70 ? '#f59e0b' : '#dc2626');
+  const scoreColor = sc => sc >= 90 ? '#16a34a' : (sc >= 70 ? '#f59e0b' : '#dc2626');
 
-  const rowsHtml = rows.map(r => `
-    <tr>
-      <td style="white-space:nowrap">${r.checklist_date}</td>
-      <td>${r.person_name || '—'} ${r.branch ? `<span style="color:var(--text-3);font-size:.78rem">(${r.branch})</span>` : ''}</td>
-      <td>${r.car_plate || '—'}</td>
+  const withFaults = rows.filter(r => badKeys(r).length > 0).length;
+  const avgScore = Math.round(rows.reduce((a, r) => a + (r.score || 0), 0) / rows.length);
+  const stat = (v, t, col) => `<div class="card" style="flex:1;min-width:140px;padding:.8rem 1rem;border-radius:14px;text-align:center">
+      <div style="font-size:1.4rem;font-weight:800;color:${col}">${v}</div>
+      <div style="font-size:.78rem;color:var(--text-3)">${t}</div></div>`;
+
+  const rowsHtml = rows.map((r, idx) => {
+    const bad = badKeys(r);
+    const target = r.person_type === 'operator' ? (r.equipment_name || '—') : (r.car_plate || '—');
+    return `
+    <tr style="${bad.length ? 'background:#fef2f2' : ''}">
+      <td style="white-space:nowrap">${_cklEsc(r.checklist_date)}</td>
+      <td>${_cklEsc(r.person_name || '—')} ${r.branch ? `<span style="color:var(--text-3);font-size:.78rem">(${_cklEsc(r.branch)})</span>` : ''}
+          <div style="font-size:.72rem;color:var(--text-3)">${r.person_type === 'operator' ? '👷 مشغل معدة' : '🚗 سائق'}</div></td>
+      <td>${_cklEsc(target)}</td>
       <td><strong style="color:${scoreColor(r.score)}">${r.score}%</strong></td>
       <td>
-        ${notEfficientCount(r) > 0 ? `<span style="color:#dc2626;font-weight:700">⚠️ ${notEfficientCount(r)} بند عطلان (مُبلَّغ)</span><br>` : ''}
+        ${bad.length ? `<span style="color:#dc2626;font-weight:700">⚠️ أعطال مُبلَّغ عنها:</span> <span style="font-size:.82rem">${bad.map(k => _cklEsc(_cklLabel(r, k))).join('، ')}</span><br>` : ''}
         ${notCheckedCount(r) > 0 ? `<span style="color:#f59e0b;font-weight:700">◻️ ${notCheckedCount(r)} بند مش مفحوص</span>` : ''}
-        ${notEfficientCount(r) === 0 && notCheckedCount(r) === 0 ? '<span style="color:#16a34a">✅ الكل تمام ومفحوص</span>' : ''}
+        ${bad.length === 0 && notCheckedCount(r) === 0 ? '<span style="color:#16a34a">✅ الكل تمام ومفحوص</span>' : ''}
       </td>
-      <td style="font-size:.78rem;color:var(--text-3)">${r.notes || '—'}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick='_showChecklistDetail(${JSON.stringify(r).replace(/'/g,"&#39;")})'>👁️ التفاصيل</button></td>
-    </tr>`).join('');
+      <td style="font-size:.78rem;color:var(--text-3)">${_cklEsc(r.notes) || '—'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="_showChecklistDetail(${idx})">👁️ التفاصيل</button></td>
+    </tr>`;
+  }).join('');
 
   wrap.innerHTML = `
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem">
+      ${stat(rows.length, 'إجمالي التقارير', '#0f172a')}
+      ${stat(withFaults, 'تقارير فيها أعطال', withFaults ? '#dc2626' : '#16a34a')}
+      ${stat(avgScore + '%', 'متوسط درجة الفحص', scoreColor(avgScore))}
+    </div>
     <div class="card" style="overflow-x:auto">
       <table style="width:100%"><thead><tr>
-        <th>التاريخ</th><th>الاسم</th><th>المركبة</th><th>الدرجة</th><th>حالة البنود</th><th>ملاحظات</th><th></th>
+        <th>التاريخ</th><th>الاسم</th><th>المركبة / المعدة</th><th>الدرجة</th><th>حالة البنود</th><th>ملاحظات</th><th></th>
       </tr></thead><tbody>${rowsHtml}</tbody></table>
     </div>`;
 }
 
-function _showChecklistDetail(r) {
-  const labels = {
-    engine_oil:'زيت المحرك', coolant:'مياه التبريد', brake_pedal:'دواسة الفرامل',
-    brake_oil:'زيت الفرامل', battery:'البطارية', gauges_lights:'العدادات ولمبات التنبيه',
-    tires:'الكاوتش', lighting:'الإضاءة', wipers:'مساحات الزجاج',
-  };
+function _showChecklistDetail(arg) {
+  const r = typeof arg === 'number' ? (window._cklRows || [])[arg] : arg;
+  if (!r) return;
   const statusHtml = v => {
     if (v === 'efficient') return '<span style="color:#16a34a;font-weight:700">✅ تعمل بكفاءة</span>';
     if (v === 'not_efficient') return '<span style="color:#dc2626;font-weight:700">⚠️ لا تعمل بكفاءة (مُبلَّغ عنه)</span>';
@@ -14791,15 +15401,124 @@ function _showChecklistDetail(r) {
   };
   const rows = Object.entries(r.items||{}).map(([k,v]) => `
     <tr>
-      <td>${labels[k]||k}</td>
+      <td>${_cklEsc(_cklLabel(r, k))}</td>
       <td>${statusHtml(v)}</td>
     </tr>`).join('');
   openModal(`
-    <div class="modal-header"><div class="modal-title">📋 تفاصيل Check List — ${r.person_name||''}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div style="font-size:.85rem;color:var(--text-3);margin-bottom:.7rem">${r.checklist_date} — الدرجة: ${r.score}%</div>
+    <div class="modal-header"><div class="modal-title">📋 تفاصيل Check List — ${_cklEsc(r.person_name||'')}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div style="font-size:.85rem;color:var(--text-3);margin-bottom:.7rem">${_cklEsc(r.checklist_date)} — الدرجة: ${r.score}%${r.equipment_name ? ' — ' + _cklEsc(r.equipment_name) : ''}</div>
     <table style="width:100%">${rows}</table>
-    ${r.notes ? `<div class="form-group" style="margin-top:1rem"><label>ملاحظات</label><div style="padding:.6rem;background:var(--bg-2);border-radius:8px;font-size:.85rem">${r.notes}</div></div>` : ''}
+    ${r.notes ? `<div class="form-group" style="margin-top:1rem"><label>ملاحظات</label><div style="padding:.6rem;background:var(--bg-2);border-radius:8px;font-size:.85rem">${_cklEsc(r.notes)}</div></div>` : ''}
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal()">إغلاق</button></div>`, 'modal-lg');
+}
+
+// ── إدارة بنود Check List مشغلي المعدات (سوبر يوزر) ──
+async function _cklRenderItemsTab() {
+  const body = document.getElementById('cklTabBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="card" style="padding:1rem 1.1rem;border-radius:14px">
+      <div style="font-size:.84rem;color:var(--text-3);margin-bottom:.9rem;line-height:1.7">
+        البنود دي بتظهر لكل مشغلي المعدات كل يوم قبل بدء الوردية، والمشغل مش هيقدر يبدأ وردية قبل ما يعبّيها.
+        أي تعديل بيسري من أول تعبئة جديدة، والتقارير القديمة بتفضل زي ما اتسجلت.
+        لو مفيش أي بند مفعّل، الـ Check List مش بتتطلب من المشغلين.
+      </div>
+      <div style="display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap">
+        <input id="cklNewLabel" maxlength="120" placeholder="مثال: مستوى زيت الهيدروليك"
+          onkeydown="if(event.key==='Enter'){_cklAddItem()}"
+          style="flex:1;min-width:200px;padding:.55rem .8rem;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:.9rem">
+        <button class="btn btn-primary" id="cklAddBtn" onclick="_cklAddItem()">➕ إضافة بند</button>
+      </div>
+      <div id="cklItemsList"><div class="empty-state"><p>جاري التحميل...</p></div></div>
+    </div>`;
+  await _cklLoadItems();
+}
+
+async function _cklLoadItems() {
+  try { window._cklItems = await apiCall('/checklists/manage/items'); }
+  catch(e) { showNotification(e.message, 'error'); window._cklItems = []; }
+  _cklPaintItems();
+}
+
+function _cklPaintItems() {
+  const box = document.getElementById('cklItemsList');
+  if (!box) return;
+  const items = window._cklItems || [];
+  if (!items.length) {
+    box.innerHTML = `<div class="empty-state"><div class="empty-icon">📝</div><p>لسه مفيش بنود — ضيف أول بند من فوق</p></div>`;
+    return;
+  }
+  const btn = 'padding:.3rem .55rem;min-width:34px';
+  box.innerHTML = items.map((it, i) => `
+    <div style="display:flex;align-items:center;gap:.5rem;padding:.6rem .2rem;border-bottom:1px solid var(--border);flex-wrap:wrap;${it.is_active ? '' : 'opacity:.55'}">
+      <span style="width:26px;text-align:center;color:var(--text-3);font-weight:700">${i+1}</span>
+      <span style="flex:1;min-width:160px;font-weight:600;font-size:.92rem">${_cklEsc(it.label)}
+        ${it.is_active ? '' : '<span style="font-size:.72rem;color:#92400e;background:#fef3c7;border-radius:6px;padding:.1rem .4rem;margin-inline-start:.3rem">معطّل</span>'}</span>
+      <button class="btn btn-ghost btn-sm" style="${btn}" ${i===0?'disabled':''} onclick="_cklMoveItem(${it.id},-1)" title="لأعلى">▲</button>
+      <button class="btn btn-ghost btn-sm" style="${btn}" ${i===items.length-1?'disabled':''} onclick="_cklMoveItem(${it.id},1)" title="لأسفل">▼</button>
+      <button class="btn btn-ghost btn-sm" style="${btn}" onclick="_cklRenameItem(${it.id})" title="تعديل الاسم">✏️</button>
+      <button class="btn btn-ghost btn-sm" style="${btn}" onclick="_cklToggleItem(${it.id})" title="${it.is_active ? 'تعطيل' : 'تفعيل'}">${it.is_active ? '⏸️' : '▶️'}</button>
+      <button class="btn btn-danger btn-sm" style="${btn}" onclick="_cklDeleteItem(${it.id})" title="حذف">🗑️</button>
+    </div>`).join('');
+}
+
+async function _cklAddItem() {
+  const inp = document.getElementById('cklNewLabel');
+  const label = (inp?.value || '').trim();
+  if (label.length < 2) return showNotification('اكتب اسم البند', 'error');
+  const btn = document.getElementById('cklAddBtn');
+  if (btn) btn.disabled = true;
+  try {
+    await apiCall('/checklists/manage/items', 'POST', { label });
+    inp.value = '';
+    showNotification('✅ تمت إضافة البند', 'success');
+    await _cklLoadItems();
+    inp.focus();
+  } catch(e) { showNotification(e.message, 'error'); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function _cklRenameItem(id) {
+  const it = (window._cklItems || []).find(x => x.id === id);
+  if (!it) return;
+  const label = prompt('تعديل اسم البند', it.label);
+  if (label === null || label.trim() === it.label) return;
+  try {
+    await apiCall(`/checklists/manage/items/${id}`, 'PUT', { label });
+    showNotification('✅ تم تعديل البند', 'success');
+    await _cklLoadItems();
+  } catch(e) { showNotification(e.message, 'error'); }
+}
+
+async function _cklToggleItem(id) {
+  const it = (window._cklItems || []).find(x => x.id === id);
+  if (!it) return;
+  try {
+    await apiCall(`/checklists/manage/items/${id}`, 'PUT', { is_active: !it.is_active });
+    await _cklLoadItems();
+  } catch(e) { showNotification(e.message, 'error'); }
+}
+
+async function _cklMoveItem(id, dir) {
+  const items = [...(window._cklItems || [])];
+  const i = items.findIndex(x => x.id === id), j = i + dir;
+  if (i < 0 || j < 0 || j >= items.length) return;
+  [items[i], items[j]] = [items[j], items[i]];
+  try {
+    await apiCall('/checklists/manage/items/reorder', 'POST', { ids: items.map(x => x.id) });
+    await _cklLoadItems();
+  } catch(e) { showNotification(e.message, 'error'); await _cklLoadItems(); }
+}
+
+async function _cklDeleteItem(id) {
+  const it = (window._cklItems || []).find(x => x.id === id);
+  if (!it) return;
+  if (!confirm(`حذف البند "${it.label}" نهائيًا؟\nالتقارير القديمة مش هتتأثر. ولو عايز توقفه مؤقتًا استخدم زر التعطيل.`)) return;
+  try {
+    await apiCall(`/checklists/manage/items/${id}`, 'DELETE');
+    showNotification('🗑️ تم حذف البند', 'success');
+    await _cklLoadItems();
+  } catch(e) { showNotification(e.message, 'error'); }
 }
 
 async function renderDriverKpiSection() {
