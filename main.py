@@ -12822,6 +12822,78 @@ def _cm_norm_inspection_items(raw) -> list:
     return out
 
 
+def _cm_link_checklists(conn, since: str) -> dict:
+    """
+    يربط كل Check List بالمركبة/المعدة. الـ Check List بتتسجل باسم السائق/المشغل فقط
+    (من غير مركبة)، فالربط بيتم بالترتيب ده:
+      1) car_id مسجّل على الـ Check List نفسها            → link = direct
+      2) المركبة/المعدة اللي اشتغل عليها الشخص في نفس اليوم (رحلة / وردية) → link = used
+      3) لو ماشتغلش على حاجة في اليوم ده: المركبات/المعدات المصرّح له بيها → link = permission
+    ترجع dict: {(kind, asset_id): [checklist, ...]} مرتبة من الأحدث.
+    """
+    car_by_plate, car_by_code, eq_by_code = {}, {}, {}
+    for r in conn.execute("SELECT id, plate, car_code FROM cars").fetchall():
+        if r["plate"]: car_by_plate[r["plate"]] = r["id"]
+        if r["car_code"]: car_by_code[r["car_code"]] = r["id"]
+    for r in conn.execute("SELECT id, car_code FROM equipment").fetchall():
+        if r["car_code"]: eq_by_code[r["car_code"]] = r["id"]
+
+    def _code_to_asset(code):
+        if code in eq_by_code: return ("equipment", eq_by_code[code])
+        if code in car_by_plate: return ("car", car_by_plate[code])
+        if code in car_by_code: return ("car", car_by_code[code])
+        return None
+
+    trips_by = {}
+    for r in conn.execute(
+        "SELECT driver_id, car_id, substr(start_time,1,10) AS d FROM trips WHERE substr(start_time,1,10) >= ?",
+        (since,)).fetchall():
+        trips_by.setdefault((r["driver_id"], r["d"]), set()).add(r["car_id"])
+    shifts_by = {}
+    for r in conn.execute(
+        "SELECT operator_id, equipment_id, substr(start_time,1,10) AS d FROM operator_shifts WHERE substr(start_time,1,10) >= ?",
+        (since,)).fetchall():
+        shifts_by.setdefault((r["operator_id"], r["d"]), set()).add(r["equipment_id"])
+    dperm, operm = {}, {}
+    for r in conn.execute("SELECT driver_id, car_id FROM driver_car_permissions").fetchall():
+        dperm.setdefault(r["driver_id"], set()).add(r["car_id"])
+    for r in conn.execute("SELECT operator_id, equipment_id FROM operator_equipment_permissions").fetchall():
+        operm.setdefault(r["operator_id"], set()).add(r["equipment_id"])
+
+    out: dict = {}
+    rows = conn.execute(
+        """SELECT ck.*, d.name AS driver_name, o.name AS operator_name
+           FROM daily_checklists ck
+           LEFT JOIN drivers d ON d.id = ck.driver_id
+           LEFT JOIN equipment_operators o ON o.id = ck.operator_id
+           WHERE ck.checklist_date >= ?
+           ORDER BY ck.checklist_date DESC, ck.id DESC""", (since,)).fetchall()
+    for r in rows:
+        ck = dict(r)
+        ck["person_name"] = ck.get("driver_name") or ck.get("operator_name") or "—"
+        targets = {}
+        if ck.get("car_id"):
+            targets[("car", ck["car_id"])] = "direct"
+        if ck.get("driver_id"):
+            for cid in trips_by.get((ck["driver_id"], ck["checklist_date"]), ()):
+                targets.setdefault(("car", cid), "used")
+            if not targets:
+                for cid in dperm.get(ck["driver_id"], ()):
+                    targets.setdefault(("car", cid), "permission")
+        elif ck.get("operator_id"):
+            for code in shifts_by.get((ck["operator_id"], ck["checklist_date"]), ()):
+                t = _code_to_asset(code)
+                if t: targets.setdefault(t, "used")
+            if not targets:
+                for code in operm.get(ck["operator_id"], ()):
+                    t = _code_to_asset(code)
+                    if t: targets.setdefault(t, "permission")
+        for key, link in targets.items():
+            item = dict(ck); item["link"] = link
+            out.setdefault(key, []).append(item)
+    return out
+
+
 def _assert_asset_fit(conn, kind: str, aid: Optional[int] = None, code: Optional[str] = None):
     """يمنع تشغيل مركبة/معدة قررت اللجنة إنها غير صالحة للاستخدام."""
     try:
@@ -13125,23 +13197,11 @@ async def cm_assets(
             assets = [a for a in assets if qn in " ".join(str(a.get(k) or "") for k in
                       ("code", "label", "model", "branch", "equipment_type", "car_name", "equipment_name", "brand")).lower()]
 
-        # آخر Check List خلال 30 يوم (مركبات: car_id — معدات: عن طريق ورديات المشغل بنفس اليوم)
-        last_ck: dict = {}
-        for r in conn.execute(
-            """SELECT car_id, checklist_date, score, items FROM daily_checklists
-               WHERE car_id IS NOT NULL AND checklist_date >= date('now','-30 day')
-               ORDER BY checklist_date DESC, id DESC""").fetchall():
-            last_ck.setdefault(("car", r["car_id"]), r)
+        # آخر Check List خلال 30 يوم (مربوطة بالمركبة/المعدة عن طريق الاستخدام أو التصريح)
+        since30 = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+        linked = _cm_link_checklists(conn, since30)
+        last_ck: dict = {k: v[0] for k, v in linked.items()}
         eq_by_code = {a["code"]: a["id"] for a in assets if a["kind"] == "equipment"}
-        for r in conn.execute(
-            """SELECT s.equipment_id AS eid, ck.checklist_date, ck.score, ck.items
-               FROM daily_checklists ck
-               JOIN operator_shifts s ON s.operator_id = ck.operator_id
-                                     AND substr(s.start_time,1,10) = ck.checklist_date
-               WHERE ck.operator_id IS NOT NULL AND ck.checklist_date >= date('now','-30 day')
-               ORDER BY ck.checklist_date DESC, ck.id DESC""").fetchall():
-            if r["eid"] in eq_by_code:
-                last_ck.setdefault(("equipment", eq_by_code[r["eid"]]), r)
 
         last_insp: dict = {}
         for r in conn.execute(
@@ -13205,38 +13265,24 @@ async def cm_asset_reports(kind: str, aid: int, days: int = Query(90, ge=1, le=7
 
         since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
         if kind == "car":
-            ck_rows = conn.execute(
-                """SELECT ck.*, d.name AS person_name FROM daily_checklists ck
-                   LEFT JOIN drivers d ON d.id = ck.driver_id
-                   WHERE ck.car_id=? AND ck.checklist_date >= ?
-                   ORDER BY ck.checklist_date DESC, ck.id DESC LIMIT 200""", (aid, since)).fetchall()
             insp_rows = conn.execute(
                 "SELECT * FROM workshop_inspection_reports WHERE car_id=? ORDER BY id DESC LIMIT 50", (aid,)).fetchall()
             emg_rows = conn.execute(
                 """SELECT id, type, notes, created_at, location, is_handled, action_taken
                    FROM emergency_reports WHERE car_id=? ORDER BY id DESC LIMIT 30""", (aid,)).fetchall()
         else:
-            ck_rows = conn.execute(
-                """SELECT ck.*, o.name AS person_name FROM daily_checklists ck
-                   LEFT JOIN equipment_operators o ON o.id = ck.operator_id
-                   WHERE ck.operator_id IS NOT NULL AND ck.checklist_date >= ?
-                     AND EXISTS (SELECT 1 FROM operator_shifts s
-                                 WHERE s.operator_id = ck.operator_id
-                                   AND substr(s.start_time,1,10) = ck.checklist_date
-                                   AND s.equipment_id = ?)
-                   ORDER BY ck.checklist_date DESC, ck.id DESC LIMIT 200""", (since, asset["code"])).fetchall()
             insp_rows = conn.execute(
                 "SELECT * FROM workshop_inspection_reports WHERE equipment_id=? ORDER BY id DESC LIMIT 50",
                 (asset["code"],)).fetchall()
             emg_rows = []
 
         checklists = []
-        for r in ck_rows:
-            d = dict(r)
+        for d in _cm_link_checklists(conn, since).get((kind, aid), [])[:200]:
             parsed = _cm_parse_checklist(d)
             checklists.append({
                 "id": d["id"], "date": d["checklist_date"], "person_name": d.get("person_name") or "—",
                 "person_type": "driver" if d.get("driver_id") else "operator",
+                "link": d.get("link", ""),
                 "score": d.get("score"), "notes": d.get("notes") or "",
                 "items": parsed["items"], "not_efficient_count": parsed["not_efficient_count"],
             })

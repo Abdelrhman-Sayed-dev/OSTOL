@@ -12871,6 +12871,7 @@ async function cmOpenAsset(kind, id, days = 90) {
         <span style="color:var(--muted);font-size:.82rem">${ck.person_type==='driver'?'🚗 السائق':'👷 المشغل'}: ${cmEsc(ck.person_name)}</span>
         ${ck.not_efficient_count ? `<span class="badge badge-red">⚠️ ${ck.not_efficient_count} بند لا يعمل بكفاءة</span>` : '<span class="badge badge-green">كل البنود تعمل بكفاءة</span>'}
         <span style="font-size:.78rem;color:var(--muted)">درجة الفحص ${ck.score ?? '—'}%</span>
+        ${ck.link==='permission' ? '<span class="badge badge-yellow" title="الـ Check List لا تحدد المعدة؛ ظهرت هنا لأن صاحبها مصرّح له بهذه المعدة ولم يسجّل تشغيلاً في ذلك اليوم">🔗 حسب التصريح</span>' : ''}
       </summary>
       <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem">
         ${ck.items.map(it => `<span class="badge ${it.status==='efficient'?'badge-green':it.status==='not_efficient'?'badge-red':'badge-yellow'}">
