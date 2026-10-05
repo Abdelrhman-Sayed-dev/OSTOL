@@ -2015,6 +2015,7 @@ def _migrate_committees():
             decision       TEXT NOT NULL CHECK(decision IN ('fit','unfit')),
             reason         TEXT DEFAULT '',
             report         TEXT DEFAULT '',
+            odometer       REAL,
             status         TEXT DEFAULT 'active' CHECK(status IN ('active','superseded','revoked')),
             created_at     TEXT NOT NULL,
             revoked_by     TEXT DEFAULT '',
@@ -2027,6 +2028,10 @@ def _migrate_committees():
             "CREATE INDEX IF NOT EXISTS idx_cm_dec_committee ON committee_decisions(committee_id)",
         ):
             conn.execute(s)
+        try:
+            conn.execute("ALTER TABLE committee_decisions ADD COLUMN odometer REAL")
+        except Exception:
+            pass
         for tbl in ("cars", "equipment"):
             for col in ("fitness_status", "fitness_reason", "fitness_decided_by", "fitness_decided_at"):
                 try:
@@ -12723,6 +12728,7 @@ class CommitteeDecisionBody(BaseModel):
     asset_kind: str          # car | equipment
     asset_id: int
     decision: str            # fit | unfit
+    odometer: Optional[float] = None   # قراءة العداد وقت القرار (كم للمركبات / ساعات للمعدات) — إجباري
     reason: Optional[str] = ""
     report: Optional[str] = ""
 
@@ -13297,11 +13303,23 @@ async def cm_asset_reports(kind: str, aid: int, days: int = Query(90, ge=1, le=7
                 "items": _cm_norm_inspection_items(d.get("items_json")),
             })
         decisions = [dict(r) for r in conn.execute(
-            """SELECT id, committee_name, member_name, decision, reason, report, status, created_at, revoked_by, revoked_at
+            """SELECT id, committee_name, member_name, decision, odometer, reason, report, status, created_at, revoked_by, revoked_at
                FROM committee_decisions WHERE asset_kind=? AND asset_id=? ORDER BY id DESC LIMIT 30""",
             (kind, aid)).fetchall()]
+        # آخر قراءة عداد معروفة (للتلميح فقط): كم من آخر رحلة / ساعات من آخر وردية
+        last_reading = None
+        try:
+            if kind == "car":
+                r = conn.execute("SELECT MAX(MAX(COALESCE(end_odometer,0), COALESCE(start_odometer,0))) FROM trips WHERE car_id=?", (aid,)).fetchone()
+            else:
+                r = conn.execute("SELECT MAX(MAX(COALESCE(end_hours,0), COALESCE(start_hours,0))) FROM operator_shifts WHERE equipment_id=?", (asset["code"],)).fetchone()
+            last_reading = r[0] if r and r[0] else None
+        except Exception:
+            pass
         return {
             "asset": asset,
+            "meter_unit": "كم" if kind == "car" else "ساعة",
+            "last_reading": last_reading,
             "committees": [{"id": c["id"], "name": c["name"], "type": c["type"]} for c in eligible],
             "checklists": checklists,
             "inspections": inspections,
@@ -13320,6 +13338,10 @@ async def cm_make_decision(request: Request, body: CommitteeDecisionBody, cu: di
     report = (body.report or "").strip()
     if body.decision == "unfit" and len(reason) < 5:
         raise HTTPException(400, "لازم تكتب سبب عدم صلاحية المعدة للتشغيل")
+    if body.odometer is None:
+        raise HTTPException(400, "لازم تدخل قيمة العداد وقت القرار")
+    if not (body.odometer == body.odometer) or body.odometer < 0 or body.odometer > 100_000_000:
+        raise HTTPException(400, "قيمة العداد غير صالحة")
     with get_db() as conn:
         member = conn.execute(
             """SELECT m.full_name, m.position, c.id, c.name, c.branch, c.equipment_type, c.is_active
@@ -13339,17 +13361,17 @@ async def cm_make_decision(request: Request, body: CommitteeDecisionBody, cu: di
                      (body.asset_kind, body.asset_id))
         cur = conn.execute(
             """INSERT INTO committee_decisions(committee_id,committee_name,member_user_id,member_name,asset_kind,asset_id,
-                                               asset_label,decision,reason,report,status,created_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?,'active',?)""",
+                                               asset_label,decision,odometer,reason,report,status,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,'active',?)""",
             (member["id"], member["name"], cu["user_id"], member_name, body.asset_kind, body.asset_id,
-             asset["label"], body.decision, reason, report, now))
+             asset["label"], body.decision, body.odometer, reason, report, now))
         tbl = "cars" if body.asset_kind == "car" else "equipment"
         conn.execute(
             f"UPDATE {tbl} SET fitness_status=?, fitness_reason=?, fitness_decided_by=?, fitness_decided_at=? WHERE id=?",
             (body.decision, reason, f"{member_name} — {member['name']}", now, body.asset_id))
         label = "صالحة للاستخدام" if body.decision == "fit" else "غير صالحة للاستخدام"
         write_audit_log(cu["user_id"], cu["username"], cu["role"], "committee_decision",
-                        f"قرار لجنة '{member['name']}': {asset['label']} ← {label}" + (f" — {reason}" if reason else ""),
+                        f"قرار لجنة '{member['name']}': {asset['label']} ← {label} (العداد: {body.odometer:g})" + (f" — {reason}" if reason else ""),
                         request.client.host if request.client else "", cursor=conn)
         return {"id": cur.lastrowid, "decision": body.decision, "asset_label": asset["label"], "created_at": now}
 

@@ -12765,7 +12765,7 @@ async function cmSURenderDecisions() {
           ${sel('cmfS', 'status', [['', 'كل الحالات'], ['active', 'القرار الحالي'], ['superseded', 'سابقة'], ['revoked', 'ملغاة']])}
         </div></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>التاريخ</th><th>اللجنة</th><th>العضو</th><th>المعدة</th><th>القرار</th><th>السبب</th><th>التقرير</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>اللجنة</th><th>العضو</th><th>المعدة</th><th>القرار</th><th>العداد</th><th>السبب</th><th>التقرير</th><th>الحالة</th><th></th></tr></thead>
         <tbody>${rows.length ? rows.map(d => `
           <tr>
             <td style="white-space:nowrap">${fmtDT(d.created_at)}</td>
@@ -12773,11 +12773,12 @@ async function cmSURenderDecisions() {
             <td>${cmEsc(d.member_name)}</td>
             <td><b>${cmEsc(d.asset_label)}</b><div style="font-size:.72rem;color:var(--muted)">${d.asset_kind==='car'?'مركبة':'معدة'}</div></td>
             <td>${d.decision==='fit'?'<span class="badge badge-green">✅ صالحة</span>':'<span class="badge badge-red">⛔ غير صالحة</span>'}</td>
+            <td style="white-space:nowrap">${d.odometer ?? '—'}</td>
             <td style="max-width:220px;white-space:pre-wrap">${cmEsc(d.reason) || '—'}</td>
             <td style="max-width:260px;white-space:pre-wrap">${cmEsc(d.report) || '—'}</td>
             <td>${cmDecStatusBadge(d.status)}${d.status==='revoked' ? `<div style="font-size:.7rem;color:var(--muted)">${cmEsc(d.revoked_by)}${d.revoke_note ? ' — ' + cmEsc(d.revoke_note) : ''}</div>` : ''}</td>
             <td>${d.status==='active' ? `<button class="btn btn-outline btn-sm" onclick="revokeCommitteeDecision(${d.id})">↩️ إلغاء القرار</button>` : ''}</td>
-          </tr>`).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--muted)">لا توجد قرارات</td></tr>'}</tbody>
+          </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--muted)">لا توجد قرارات</td></tr>'}</tbody>
       </table></div></div>`;
 }
 
@@ -12906,11 +12907,12 @@ async function cmOpenAsset(kind, id, days = 90) {
   const history = r.decisions.length ? `
     <div class="card" style="margin-top:1rem"><div class="card-header"><div class="card-title">📜 سجل قرارات اللجان على هذه المعدة</div></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>التاريخ</th><th>اللجنة / العضو</th><th>القرار</th><th>السبب</th><th>التقرير</th><th>الحالة</th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>اللجنة / العضو</th><th>القرار</th><th>العداد</th><th>السبب</th><th>التقرير</th><th>الحالة</th></tr></thead>
         <tbody>${r.decisions.map(d => `<tr>
           <td style="white-space:nowrap">${fmtDT(d.created_at)}</td>
           <td>${cmEsc(d.committee_name)}<div style="font-size:.72rem;color:var(--muted)">${cmEsc(d.member_name)}</div></td>
           <td>${d.decision==='fit'?'<span class="badge badge-green">✅ صالحة</span>':'<span class="badge badge-red">⛔ غير صالحة</span>'}</td>
+          <td style="white-space:nowrap">${d.odometer ?? '—'}</td>
           <td style="white-space:pre-wrap;max-width:220px">${cmEsc(d.reason) || '—'}</td>
           <td style="white-space:pre-wrap;max-width:260px">${cmEsc(d.report) || '—'}</td>
           <td>${cmDecStatusBadge(d.status)}</td></tr>`).join('')}</tbody>
@@ -12928,7 +12930,7 @@ async function cmOpenAsset(kind, id, days = 90) {
         <div>${cmFitBadge(a.fitness_status)}</div>
       </div>
       ${curDec ? `<div style="background:${curDec.decision==='unfit'?'#fef2f2':'#f0fdf4'};border:1px solid ${curDec.decision==='unfit'?'#fecaca':'#bbf7d0'};border-radius:10px;padding:.7rem .9rem;font-size:.85rem">
-        <b>القرار الحالي:</b> ${curDec.decision==='unfit'?'غير صالحة للاستخدام':'صالحة للاستخدام'} — ${cmEsc(curDec.committee_name)} / ${cmEsc(curDec.member_name)} (${fmtDT(curDec.created_at)})
+        <b>القرار الحالي:</b> ${curDec.decision==='unfit'?'غير صالحة للاستخدام':'صالحة للاستخدام'} — ${cmEsc(curDec.committee_name)} / ${cmEsc(curDec.member_name)} (${fmtDT(curDec.created_at)}) — العداد: <b>${curDec.odometer ?? '—'}</b>
         ${curDec.reason ? `<div style="margin-top:.3rem;white-space:pre-wrap"><b>السبب:</b> ${cmEsc(curDec.reason)}</div>` : ''}
         ${curDec.report ? `<div style="margin-top:.3rem;white-space:pre-wrap"><b>التقرير:</b> ${cmEsc(curDec.report)}</div>` : ''}</div>` : ''}
     </div>
@@ -12944,6 +12946,9 @@ async function cmOpenAsset(kind, id, days = 90) {
         <label style="flex:1;min-width:200px;border:2px solid #fca5a5;background:#fef2f2;border-radius:10px;padding:.7rem;cursor:pointer;display:flex;gap:.5rem;align-items:center">
           <input type="radio" name="cmdDecision" value="unfit" style="width:auto" onchange="cmDecChange()"> <b style="color:#991b1b">⛔ غير صالحة للاستخدام</b></label>
       </div>
+      <div class="form-group"><label>قيمة العداد (${r.meter_unit}) <span class="req">*</span>
+        ${r.last_reading ? `<span style="font-size:.75rem;color:var(--muted)">— آخر قراءة مسجلة: ${r.last_reading} ${r.meter_unit}</span>` : ''}</label>
+        <input type="number" id="cmdOdo" min="0" step="any" inputmode="decimal" placeholder="أدخل قراءة العداد الحالية (${r.meter_unit === 'كم' ? 'كيلومترات' : 'ساعات التشغيل'})"></div>
       <div class="form-group" id="cmdReasonWrap" style="display:none"><label>سبب عدم الصلاحية <span class="req">*</span></label>
         <textarea id="cmdReason" placeholder="اذكر أسباب عدم قدرة المعدة على العمل (مطلوب)"></textarea></div>
       <div class="form-group"><label>تقرير اللجنة <span style="font-size:.75rem;color:var(--muted)">(اختياري لكن يُفضّل)</span></label>
@@ -12975,6 +12980,9 @@ async function cmSubmitDecision(kind, id) {
   const reason = (document.getElementById('cmdReason')?.value || '').trim();
   const report = (document.getElementById('cmdReport').value || '').trim();
   if (decision === 'unfit' && reason.length < 5) return showNotification('اكتب سبب عدم الصلاحية', 'error');
+  const odoRaw = (document.getElementById('cmdOdo').value || '').trim();
+  const odometer = parseFloat(odoRaw);
+  if (odoRaw === '' || !isFinite(odometer) || odometer < 0) return showNotification('أدخل قيمة العداد (مطلوبة)', 'error');
   const msg = decision === 'unfit'
     ? '⛔ سيتم منع تشغيل هذه المعدة (بدء رحلة / وردية) حتى تُصدر اللجنة قراراً جديداً.\nهل تؤكد القرار؟'
     : '✅ تأكيد قرار: المعدة صالحة للاستخدام؟';
@@ -12983,7 +12991,7 @@ async function cmSubmitDecision(kind, id) {
   try {
     await apiCall('/committee/decisions', 'POST', {
       committee_id: parseInt(document.getElementById('cmdCommittee').value),
-      asset_kind: kind, asset_id: id, decision, reason, report,
+      asset_kind: kind, asset_id: id, decision, odometer, reason, report,
     });
     showNotification('✅ تم تسجيل القرار', 'success');
     cmOpenAsset(kind, id);
@@ -12999,17 +13007,18 @@ async function renderCmDecisions() {
     <div class="card">
       <div class="card-header"><div class="card-title">📜 قرارات اللجنة (${rows.length})</div></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>التاريخ</th><th>اللجنة</th><th>العضو</th><th>المعدة</th><th>القرار</th><th>السبب</th><th>التقرير</th><th>الحالة</th></tr></thead>
+        <thead><tr><th>التاريخ</th><th>اللجنة</th><th>العضو</th><th>المعدة</th><th>القرار</th><th>العداد</th><th>السبب</th><th>التقرير</th><th>الحالة</th></tr></thead>
         <tbody>${rows.length ? rows.map(d => `<tr>
           <td style="white-space:nowrap">${fmtDT(d.created_at)}</td>
           <td>${cmEsc(d.committee_name)}</td>
           <td>${cmEsc(d.member_name)} ${d.mine ? '<span class="badge badge-blue">أنا</span>' : ''}</td>
           <td><b>${cmEsc(d.asset_label)}</b></td>
           <td>${d.decision==='fit'?'<span class="badge badge-green">✅ صالحة</span>':'<span class="badge badge-red">⛔ غير صالحة</span>'}</td>
+          <td style="white-space:nowrap">${d.odometer ?? '—'}</td>
           <td style="white-space:pre-wrap;max-width:220px">${cmEsc(d.reason) || '—'}</td>
           <td style="white-space:pre-wrap;max-width:260px">${cmEsc(d.report) || '—'}</td>
           <td>${cmDecStatusBadge(d.status)}</td></tr>`).join('')
-          : '<tr><td colspan="8" style="text-align:center;color:var(--muted)">لا توجد قرارات بعد</td></tr>'}</tbody>
+          : '<tr><td colspan="9" style="text-align:center;color:var(--muted)">لا توجد قرارات بعد</td></tr>'}</tbody>
       </table></div></div>`;
 }
 
